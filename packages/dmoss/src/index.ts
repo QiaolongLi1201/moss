@@ -39,6 +39,27 @@ export type {
 // --- Device Family taxonomy ---
 export type { DeviceFamily } from './contracts/device-family.js';
 
+// --- Host Adapter contract ---
+export {
+  MOSS_HOST_ADAPTER_CONTRACT_VERSION,
+  evaluateMossHostCompatibility,
+} from './contracts/host-adapter.js';
+export type {
+  MossHostAdapterContractVersion,
+  MossHostCapabilityKind,
+  MossHostCapabilityRef,
+  MossHostCapabilityStability,
+  MossHostCompatibilityReport,
+  MossHostCompatibilityRequirement,
+  MossHostCompatibilityStatus,
+  MossHostEventSinkRef,
+  MossHostKnowledgeRef,
+  MossHostPackageRef,
+  MossHostProviderRef,
+  MossHostRuntimeManifest,
+  MossHostToolRef,
+} from './contracts/host-adapter.js';
+
 // --- Robotics engineering prompts ---
 export {
   buildRoboticsEngineeringPrompt,

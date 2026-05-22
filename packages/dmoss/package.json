@@ -39,6 +39,11 @@
       "import": "./dist/contracts/device-family.js",
       "default": "./dist/contracts/device-family.js"
     },
+    "./contracts/host-adapter": {
+      "types": "./dist/contracts/host-adapter.d.ts",
+      "import": "./dist/contracts/host-adapter.js",
+      "default": "./dist/contracts/host-adapter.js"
+    },
     "./prompts/robotics": {
       "types": "./dist/prompts/robotics-engineering-prompt.d.ts",
       "import": "./dist/prompts/robotics-engineering-prompt.js",
@@ -67,6 +72,10 @@
       "./contracts/device-family": {
         "types": "./dist/contracts/device-family.d.ts",
         "import": "./dist/contracts/device-family.js"
+      },
+      "./contracts/host-adapter": {
+        "types": "./dist/contracts/host-adapter.d.ts",
+        "import": "./dist/contracts/host-adapter.js"
       },
       "./prompts/robotics": {
         "types": "./dist/prompts/robotics-engineering-prompt.d.ts",

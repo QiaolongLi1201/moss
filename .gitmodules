@@ -1,0 +1,3 @@
+[submodule "external/tree-sitter"]
+	path = external/tree-sitter
+	url = https://github.com/tree-sitter/tree-sitter.git

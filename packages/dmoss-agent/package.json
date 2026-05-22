@@ -140,13 +140,7 @@
     "typecheck": "tsc --noEmit",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
     "prepublishOnly": "npm run clean && npm run build",
-    "test:tool-loop": "npm run build && node test/tool-loop-guard.spec.mjs",
-    "test:post-tool-source-fix": "npm run build && node test/post-tool-source-fix.spec.mjs && node test/reasoning-history-roundtrip.spec.mjs",
-    "test:conversation-api-multiturn": "npm run build && node test/conversation-api-multiturn.spec.mjs",
-    "test:run-loop-bridge-thinking-approval": "npm run build && node test/dmoss-agent-run-loop-bridge-thinking-approval.spec.mjs",
-    "test:context-budget-planner": "npm run build && node test/context-budget-planner.spec.mjs",
-    "test:llm-error-classifier": "npm run build && node test/llm-error-classifier.spec.mjs",
-    "test:pruning-min-history-budget": "npx tsx test/pruning-min-history-budget.spec.mjs",
+    "test": "npm run build && node ../../scripts/run-package-tests.mjs",
     "cli": "npx tsx src/cli.ts",
     "docs": "typedoc --out docs-api src/index.ts src/core/index.ts src/knowledge/index.ts --tsconfig tsconfig.build.json"
   },
@@ -167,7 +161,7 @@
     "undici": { "optional": true }
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.16.0"
   },
   "keywords": ["dmoss", "agent", "robotics", "knowledge-module", "platform-extension", "edge-ai", "llm", "tools"]
 }

@@ -18,7 +18,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "check:boundaries": "node scripts/check-oss-boundaries.mjs",
-    "verify": "npm run check:boundaries && npm run build && npm run typecheck && npm run test"
+    "check:hygiene": "node scripts/check-workspace-hygiene.mjs",
+    "verify": "npm run check:boundaries && npm run check:hygiene && npm run build && npm run typecheck && npm run test"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

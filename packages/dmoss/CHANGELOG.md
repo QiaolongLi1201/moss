@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Published package surface now includes the canonical `DeviceFamily` taxonomy at
   `@dmoss/core/contracts/device-family`.
-- Release metadata and package boundaries are aligned for the Moss npm publish
-  gate (`publish:dmoss:verify`).
+- Release metadata and package boundaries are aligned for the Moss verification
+  gate (`npm run verify`).
 
 ### Compatibility
 

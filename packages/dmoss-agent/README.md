@@ -46,11 +46,11 @@ Build AI-powered developer tools for any robotics platform with pluggable knowle
 
 The open-source boundary is clean: `packages/dmoss/` + `packages/dmoss-agent/` in this monorepo are the stable public packages. Anything a host application builds on top (HTTP servers, desktop shells, SSH bridges, etc.) is the host's concern and not part of this package's public API.
 
-**Docs:** [`API.md`](./API.md) · [`CHANGELOG.md`](./CHANGELOG.md) · Examples: [`examples/README.md`](../../examples/README.md)
+**Docs:** [`API.md`](./API.md) · [`CHANGELOG.md`](./CHANGELOG.md)
 
 ### LLM integration: minimal path vs optional `pi-ai`
 
-- **What you must implement:** `LLMProvider` — the only contract `DmossAgent` needs to call a model. **For the smallest integration surface and full control over HTTP/SDKs**, implement it yourself (often with **`fetch()` only**; no Anthropic/OpenAI SDK required). See repo **`examples/minimal`**, **`examples/minimal-chat`**, and **`examples/openai-provider`**.
+- **What you must implement:** `LLMProvider` — the only contract `DmossAgent` needs to call a model. **For the smallest integration surface and full control over HTTP/SDKs**, implement it yourself (often with **`fetch()` only**; no Anthropic/OpenAI SDK required). See the `LLMProvider` section in [`API.md`](./API.md) for the interface and a minimal implementation pattern.
 - **What is optional:** **`PiAiLLMProvider`** — a convenience adapter for hosts that already use **`@mariozechner/pi-ai`** streaming. You do **not** need to use it to ship a product on `@dmoss/agent`.
 - **npm note:** `@dmoss/agent` currently **declares** `@mariozechner/pi-ai` as a runtime dependency so this adapter is always available when installed from npm. Your **application code** can still follow the minimal path by supplying only a custom `LLMProvider` and never importing `PiAiLLMProvider`. (A future optional split into `@dmoss/agent-pi-ai` would be a semver/major packaging decision.)
 
@@ -60,7 +60,7 @@ The open-source boundary is clean: `packages/dmoss/` + `packages/dmoss-agent/` i
 npm install @dmoss/agent@latest @dmoss/core@latest
 ```
 
-Requires **Node ≥ 20** (see `engines` in `package.json`). One-off CLI tryout:
+Requires **Node ≥ 22.16** (see `engines` in `package.json`). One-off CLI tryout:
 
 ```bash
 npx -y @dmoss/agent --help
@@ -282,10 +282,10 @@ agent.registerKnowledge(jetsonKnowledge);
 
 ## Known Limitations
 
-- **`LLMProvider` vs `pi-ai`:** The harness is built around **`LLMProvider`**. **`PiAiLLMProvider` + `@mariozechner/pi-ai` are optional** — use them only if you want the pre-built pi-ai bridge; otherwise prefer a **self-hosted `LLMProvider`** for minimal behavioral dependency (see examples above).
+- **`LLMProvider` vs `pi-ai`:** The harness is built around **`LLMProvider`**. **`PiAiLLMProvider` + `@mariozechner/pi-ai` are optional** — use them only if you want the pre-built pi-ai bridge; otherwise prefer a **self-hosted `LLMProvider`** for minimal behavioral dependency (see [`API.md`](./API.md) for the interface).
 - **Robotics prompt injected by default**: `DmossAgent.buildSystemPrompt()` includes the robotics engineering prompt from `@dmoss/core` unless opted out. Non-robotics hosts can set `domainPrompt: false` to skip it, or provide a custom `domainPrompt: () => string` to replace it with domain-specific guidance.
 - **Vendor plugin callbacks**: hosts should call `setVendorPluginCallbacks()` at startup before `applyPlatformExtension()` to enable the vendor plugin lifecycle. The mechanism is production-validated in real deployments.
-- **Publishing**: The Moss stack is prepared as publishable npm workspaces. Before a release, run `npm run publish:dmoss:verify` from the repo root; it covers publish lint, fresh consumer/CLI smoke, and the RDK Studio integration smoke.
+- **Publishing**: The Moss stack is prepared as publishable npm workspaces. Before a release, run `npm run verify` from the repo root; it covers OSS boundary checks, workspace hygiene, workspace builds, typechecks, and package tests. Use the release checklist for host consumption validation.
 
 ## Documentation
 

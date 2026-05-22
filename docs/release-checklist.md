@@ -12,8 +12,8 @@ npm run verify
 ```
 
 This must pass before the release is considered usable. It checks the
-open-source boundary, builds all workspaces, typechecks source, and runs package
-tests.
+open-source boundary, workspace hygiene, builds all workspaces, typechecks
+source, and runs package tests.
 
 ## Host Adapter Decision
 

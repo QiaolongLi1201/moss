@@ -1,14 +1,14 @@
 /** Core agent loop: orchestrates context prep, LLM turns, tool execution and follow-ups. */
 
-import type { EventStream } from '@mariozechner/pi-ai';
+import type {
+  Context as PiContext,
+  EventStream,
+  StopReason,
+} from '../provider/pi-ai-types.js';
 import { getRootLogger } from '../logger.js';
 
 const log = getRootLogger().child('agent:loop');
 import type { Message, ContentBlock } from './session-jsonl.js';
-import type {
-  Context as PiContext,
-  StopReason,
-} from '@mariozechner/pi-ai';
 import {
   isContextOverflowError,
   describeError,
@@ -98,6 +98,12 @@ export type { AgentLoopParams, AgentLoopPlatformConfig } from './agent-loop-type
 
 const DEFAULT_TOOL_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_TOOL_HEARTBEAT_INTERVAL_MS = 30_000;
+
+/** Hard cap on message count to prevent unbounded growth when context window is large. */
+const HARD_CAP_MESSAGE_COUNT = 200;
+
+/** Hard cap on total characters — force compaction when exceeded regardless of window economics. */
+const HARD_CAP_TOTAL_CHARS = 500_000;
 
 /** 上下文末尾是否为「刚写入的工具结果」user 消息，尚缺一次模型调用来读结果并回复用户 */
 export function lastMessageNeedsToolFollowUpLlm(messages: Message[]): boolean {
@@ -193,8 +199,9 @@ export function runAgentLoop(
       prepNextTurnParallelMs: 0,
     };
 
-    // Inter-turn latency + parallel savings observability.
+    // Inter-turn latency observability (rolling window, capped at 50 entries).
     const interTurnSilenceMs: number[] = [];
+    const INTER_TURN_SILENCE_WINDOW = 50;
     let lastTurnEndMs: number | null = null;
     const toolLoopGuard = createToolLoopGuardState();
 
@@ -237,7 +244,11 @@ export function runAgentLoop(
           turns++;
           // Sample inter-turn latency (null on first turn).
           if (lastTurnEndMs !== null) {
-            interTurnSilenceMs.push(Date.now() - lastTurnEndMs);
+            const silence = Date.now() - lastTurnEndMs;
+            interTurnSilenceMs.push(silence);
+            if (interTurnSilenceMs.length > INTER_TURN_SILENCE_WINDOW) {
+              interTurnSilenceMs.shift(); // rolling window cap
+            }
           }
           stream.push({ type: 'turn_start', turn: turns });
 
@@ -293,24 +304,36 @@ export function runAgentLoop(
             }),
           );
 
-          // ===== 主动压缩（窗口经济学） =====
+          // ===== Hard cap: force compaction when message count or char count is excessive =====
+          const hardCapExceeded =
+            currentMessages.length >= HARD_CAP_MESSAGE_COUNT ||
+            (rawTotalChars >= HARD_CAP_TOTAL_CHARS && !promptPruneCompactionSucceeded);
+
+          // ===== 主动压缩（窗口经济学 + 硬帽） =====
           if (
             !proactiveCompactionAttempted &&
             turns >= 2 &&
             !abortSignal.aborted &&
-            shouldProactiveCompactByWindowEconomics({
-              estimatedPromptTokens: promptUnitsForWindow,
-              effectiveContextWindowTokens: effectiveContextTokens,
-            }) &&
-            !pendingToolResultFollowUp &&
-            shouldTriggerCompaction({
-              messages: currentMessages,
-              contextWindowTokens: effectiveContextTokens,
-              systemPrompt,
-              charsPerTokenUnit: charsPerUnit,
-            })
+            (hardCapExceeded ||
+              (shouldProactiveCompactByWindowEconomics({
+                estimatedPromptTokens: promptUnitsForWindow,
+                effectiveContextWindowTokens: effectiveContextTokens,
+              }) &&
+                !pendingToolResultFollowUp &&
+                shouldTriggerCompaction({
+                  messages: currentMessages,
+                  contextWindowTokens: effectiveContextTokens,
+                  systemPrompt,
+                  charsPerTokenUnit: charsPerUnit,
+                })))
           ) {
             proactiveCompactionAttempted = true;
+            if (hardCapExceeded) {
+              log.info('hard cap triggered compaction', {
+                messageCount: currentMessages.length,
+                totalChars: rawTotalChars,
+              });
+            }
             const compaction = await runProactiveWindowCompaction({
               sessionKey,
               runId,

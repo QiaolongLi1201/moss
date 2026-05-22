@@ -19,7 +19,7 @@ import type { FollowUpGuardConfig } from './follow-up-guard.js';
 import type { CompactHookRegistry } from './compact-hooks.js';
 import type { SkillLearner } from './skill-learner.js';
 import type { AgentHooks } from './agent-hooks.js';
-import type { ThinkingLevel } from '@mariozechner/pi-ai';
+import type { ThinkingLevel } from '../provider/pi-ai-types.js';
 
 export interface DmossAgentConfig {
   llmProvider: LLMProvider;

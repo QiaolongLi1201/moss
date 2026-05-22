@@ -17,7 +17,7 @@ import type {
   TextContent as PiTextContent,
   ThinkingContent,
   ToolCall as PiToolCall,
-} from '@mariozechner/pi-ai';
+} from '../provider/pi-ai-types.js';
 
 type RoundTripContentBlock = {
   type?: string;

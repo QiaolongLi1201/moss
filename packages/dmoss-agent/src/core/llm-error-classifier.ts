@@ -1,4 +1,21 @@
-import { describeError, isContextOverflowError } from '../provider/errors.js';
+/**
+ * LLM error classifier — maps raw provider errors to stable categories
+ * used by the agent loop for retry/truncation decisions.
+ *
+ * Pattern matching is delegated to the canonical functions in
+ * `provider/errors.ts` (isRateLimitError, isTimeoutError, isServerError,
+ * isContextOverflowError, describeError) so there is a single source of
+ * truth for error-pattern across the codebase.
+ */
+
+import {
+  describeError,
+  isContextOverflowError,
+  isRateLimitError,
+  isTimeoutError,
+  isConnectionError,
+  isServerError,
+} from '../provider/errors.js';
 
 export type LlmErrorCategory =
   | 'context_overflow'
@@ -18,10 +35,6 @@ export interface LlmErrorClassification {
   message: string;
 }
 
-function hasStatus(message: string, pattern: RegExp): boolean {
-  return pattern.test(message);
-}
-
 function isAbortLike(message: string): boolean {
   const lower = message.toLowerCase();
   return (
@@ -35,33 +48,6 @@ function isPrematureClose(message: string): boolean {
   );
 }
 
-function isRateLimit(message: string): boolean {
-  return /\b429\b|rate[ _-]?limit|too many requests|resource exhausted|resource_exhausted/i.test(
-    message,
-  );
-}
-
-function isConnection(message: string): boolean {
-  return /econnreset|econnrefused|enotfound|eai_again|epipe|socket hang up|network ?error|fetch failed|networkerror/i.test(
-    message,
-  );
-}
-
-function isTimeout(message: string): boolean {
-  return /timed? ?out|timeout|deadline exceeded|first[ -]?chunk|first[ -]?event|no streaming output/i.test(
-    message,
-  );
-}
-
-function isServer(message: string): boolean {
-  return (
-    hasStatus(message, /\b5\d{2}\b/) ||
-    /overloaded|internal server error|bad gateway|service unavailable|gateway timeout|upstream.*error|server is busy/i.test(
-      message,
-    )
-  );
-}
-
 function isMaxTokens(message: string): boolean {
   const lower = message.toLowerCase();
   if (!lower.includes('max')) return false;
@@ -70,11 +56,12 @@ function isMaxTokens(message: string): boolean {
   );
 }
 
-function isClient(message: string): boolean {
+function isClientError(message: string): boolean {
   if (isContextOverflowError(message)) return false;
-  if (isRateLimit(message)) return false;
+  if (isRateLimitError(message)) return false;
+  const lower = message.toLowerCase();
   return (
-    hasStatus(message, /\b4\d{2}\b/) ||
+    /\b4\d{2}\b/.test(lower) ||
     /invalid request|bad request|unsupported|not supported|malformed|schema|tool.*not found|tool result.*not found/i.test(
       message,
     )
@@ -96,19 +83,19 @@ export function classifyLlmError(error: unknown): LlmErrorClassification {
   if (isPrematureClose(message)) {
     return { category: 'premature_close', retryable: true, message };
   }
-  if (isRateLimit(message)) {
+  if (isRateLimitError(message)) {
     return { category: 'rate_limit', retryable: true, message };
   }
-  if (isTimeout(message)) {
+  if (isTimeoutError(message)) {
     return { category: 'timeout', retryable: true, message };
   }
-  if (isConnection(message)) {
+  if (isConnectionError(message)) {
     return { category: 'connection', retryable: true, message };
   }
-  if (isServer(message)) {
+  if (isServerError(message)) {
     return { category: 'server_error', retryable: true, message };
   }
-  if (isClient(message)) {
+  if (isClientError(message)) {
     return { category: 'client_error', retryable: false, message };
   }
 

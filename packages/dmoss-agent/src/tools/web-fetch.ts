@@ -177,14 +177,55 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
       log.debug('start', { url: url.toString(), maxBytes, timeoutMs });
       const started = Date.now();
       try {
-        const res = await fetch(url.toString(), {
-          signal: mergedSignal,
-          headers: {
-            'User-Agent': userAgent,
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5',
-          },
-          redirect: 'follow',
-        });
+        let currentUrl = url;
+        let res: Response;
+        let redirectCount = 0;
+        const MAX_REDIRECTS = 5;
+
+        // Manual redirect following so we can re-check SSRF policy at each hop
+        for (;;) {
+          res = await fetch(currentUrl.toString(), {
+            signal: mergedSignal,
+            headers: {
+              'User-Agent': userAgent,
+              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5',
+            },
+            redirect: 'manual',
+          });
+          if (res.status >= 300 && res.status < 400 && redirectCount < MAX_REDIRECTS) {
+            const location = res.headers.get('location');
+            if (!location) break;
+            let nextUrl: URL;
+            try {
+              nextUrl = new URL(location, currentUrl);
+            } catch {
+              break;
+            }
+            redirectCount++;
+            if (blockPrivate && isPrivateHost(nextUrl.hostname)) {
+              res.body?.cancel?.();
+              throw new DmossError({
+                code: ErrorCode.TOOL_NOT_ALLOWED,
+                message: `web_fetch: redirect to private host "${nextUrl.hostname}" blocked (SSRF protection)`,
+                hint: 'The target server redirected to a private/internal address.',
+                recoverable: false,
+              });
+            }
+            if (allowHosts.length > 0 && !allowHosts.some((p) => hostMatches(nextUrl.hostname, p))) {
+              res.body?.cancel?.();
+              throw new DmossError({
+                code: ErrorCode.TOOL_NOT_ALLOWED,
+                message: `web_fetch: redirect to "${nextUrl.hostname}" not in allowlist`,
+                hint: 'Add the host to allowHosts when creating the tool.',
+                recoverable: false,
+              });
+            }
+            res.body?.cancel?.();
+            currentUrl = nextUrl;
+            continue;
+          }
+          break;
+        }
         const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
         if (!res.ok) {
           log.warn('non-2xx response', { url: url.toString(), status: res.status });

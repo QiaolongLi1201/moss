@@ -4,6 +4,7 @@ export {
   isContextOverflowError,
   isRateLimitError,
   isTimeoutError,
+  isConnectionError,
   isServerError,
   isTransientError,
   isAuthError,

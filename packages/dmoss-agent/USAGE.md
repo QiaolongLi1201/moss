@@ -45,7 +45,7 @@ npm install @dmoss/agent @dmoss/core
 
 ### LLM backends: minimal path vs optional `pi-ai`
 
-- **Recommended for new integrations:** implement **`LLMProvider`** yourself (e.g. with `fetch()` to Anthropic, OpenAI-compatible, or local servers). This is the **smallest behavioral dependency** — you never have to touch `@mariozechner/pi-ai` in your code. See repo **`examples/minimal`**, **`examples/minimal-chat`**, **`examples/openai-provider`**.
+- **Recommended for new integrations:** implement **`LLMProvider`** yourself (e.g. with `fetch()` to Anthropic, OpenAI-compatible, or local servers). This is the **smallest behavioral dependency** — you never have to touch `@mariozechner/pi-ai` in your code. The `create-dmoss-app` package can scaffold minimal and OpenAI-compatible starter projects.
 - **Optional:** **`PiAiLLMProvider`** — import from `@dmoss/agent` / `@dmoss/agent/provider` only if you already standardize on **pi-ai** streams inside your host. It is **not** required to use `DmossAgent`.
 
 > **npm install note:** `@dmoss/agent` lists `@mariozechner/pi-ai` as a runtime dependency so `PiAiLLMProvider` is always available to consumers who want it. That does **not** force your code path to use pi-ai — supply any `LLMProvider` implementation you prefer.

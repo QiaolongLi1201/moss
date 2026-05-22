@@ -1,4 +1,4 @@
-import type { Model, StreamFunction, ThinkingLevel } from '@mariozechner/pi-ai';
+import type { Model, StreamFunction, ThinkingLevel } from '../provider/pi-ai-types.js';
 import type { ContextPruningSettings } from '../context/pruning.js';
 import type { CompactHookRegistry } from './compact-hooks.js';
 import type { Message } from './session-jsonl.js';

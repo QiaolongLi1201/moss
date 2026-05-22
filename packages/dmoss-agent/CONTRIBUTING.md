@@ -32,9 +32,7 @@ From the monorepo root:
 npm install
 npm run typecheck --workspace=@dmoss/agent
 npm run build --workspace=@dmoss/agent
-npx vitest run \
-  packages/dmoss-agent/src/__tests__/exports.test.ts \
-  packages/dmoss-agent/src/core/__tests__/dmoss-agent.test.ts
+npm test --workspace=@dmoss/agent
 ```
 
 ## Dependency and security checks (monorepo)
@@ -97,7 +95,7 @@ When changing exports:
 `@dmoss/agent` may depend on:
 
 - `@dmoss/core`
-- `@mariozechner/pi-ai` (bundled so **`PiAiLLMProvider`** is always resolvable from npm — **hosts are not required to use it**; the supported minimal integration is a custom **`LLMProvider`**, see package `README.md` / `API.md` and repo `examples/minimal*`)
+- `@mariozechner/pi-ai` (bundled so **`PiAiLLMProvider`** is always resolvable from npm — **hosts are not required to use it**; the supported minimal integration is a custom **`LLMProvider`**, see package `README.md` / `API.md` and `create-dmoss-app`)
 - Node.js built-ins
 
 It must **not** import from:
@@ -119,7 +117,7 @@ It must **not** import from:
 
 Every meaningful runtime change should include one of:
 
-- a focused unit test in `src/**/__tests__/`
+- a focused unit test in `packages/dmoss-agent/test/*.spec.mjs`
 - an export snapshot update when the public surface changes
 - a regression test for a previously observed failure mode
 
@@ -128,10 +126,10 @@ Before opening a PR, run:
 ```bash
 npm run typecheck --workspace=@dmoss/agent
 npm run build --workspace=@dmoss/agent
-npx vitest run packages/dmoss-agent/src/__tests__/exports.test.ts
+npm test --workspace=@dmoss/agent
 ```
 
-If your change touches runtime behavior, run the relevant package tests under `packages/dmoss-agent/src/**/__tests__/`.
+If your change touches runtime behavior, run the relevant package tests under `packages/dmoss-agent/test/`, or run the full package test script.
 
 ## Documentation Expectations
 
@@ -231,10 +229,10 @@ registerKnowledgeModule(myPlatformModule);
 ### Step 5: Test and Submit
 
 ```bash
-npx vitest run  # ensure no regressions
+npm test --workspace=@dmoss/agent
 ```
 
-See [`examples/jetson-knowledge/`](../../examples/jetson-knowledge/) for a complete skeleton you can fork.
+Use the `KnowledgeModule` skeleton above as the starting point for a new device-family contribution.
 
 **Tip**: You don't need the actual hardware to write a KnowledgeModule. Start with public specs and docs, then refine with community feedback.
 

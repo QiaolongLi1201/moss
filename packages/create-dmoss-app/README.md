@@ -17,6 +17,9 @@ npx create-dmoss-app my-agent
 
 # With OpenAI template
 npx create-dmoss-app my-agent --template openai
+
+# Skip dependency install during scaffolding
+npx create-dmoss-app my-agent --skip-install
 ```
 
 ## Templates

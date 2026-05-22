@@ -4,7 +4,7 @@
  * pushes are dropped so the UI/event stream cannot interleave two runs.
  */
 
-import type { EventStream } from '@mariozechner/pi-ai';
+import type { EventStream } from '../provider/pi-ai-types.js';
 import type { MiniAgentEvent, MiniAgentResult } from './agent-events.js';
 
 const runEpochBySessionKey = new Map<string, number>();

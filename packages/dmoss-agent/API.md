@@ -33,6 +33,7 @@ npm install @dmoss/agent @dmoss/core
 | `@dmoss/agent/skills` | Skill registry |
 | `@dmoss/agent/utils` | Text smoothing, tracing, env helpers |
 | `@dmoss/agent/tools/builtin` | Built-in filesystem/shell/search tools |
+| `@dmoss/agent/mesh` | Multi-agent mesh (HTTP + LAN discovery) |
 
 ## API stability labels
 
@@ -44,7 +45,7 @@ These labels describe **semver intent** for `@dmoss/agent` **only** (not any emb
 | **Experimental** | May change in a minor release. Today this is reserved for features explicitly called out in `CHANGELOG.md` as experimental; if none are listed, treat all documented exports as **Stable**. |
 | **Internal** | Anything not re-exported from the supported entry points (e.g. deep imports into `src/...` paths, or host code under `server/`). **Do not rely on these.** |
 
-**Practical rule:** import only from documented paths in the table above; run `packages/dmoss-agent/src/__tests__/exports.test.ts` when adding exports.
+**Practical rule:** import only from documented paths in the table above; run `npm test --workspace=@dmoss/agent` when adding exports.
 
 ## Main Runtime API
 
@@ -125,11 +126,12 @@ type DmossAgentEvent =
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
   | { type: 'tool_start'; toolName: string; toolCallId: string; input: Record<string, unknown> }
-  | { type: 'tool_end'; toolName: string; toolCallId: string; result: string; isError: boolean }
+  | { type: 'tool_end'; toolName: string; toolCallId: string; result: string; isError: boolean; aborted?: { by: 'user' | 'timeout' } }
   | { type: 'turn_start'; turn: number }
   | { type: 'turn_end'; turn: number; stopReason: string }
   | { type: 'error'; error: string; retriable: boolean }
-  | { type: 'compaction'; summaryChars: number; droppedMessages: number }
+  | { type: 'compaction'; summaryChars: number; droppedMessages: number; checkpointOutline?: string[] }
+  | { type: 'working_context_checkpoint'; status: string; reason: string; goal: string; nextAction: string }
   | { type: 'steering'; pendingCount: number; firedRules: string[] }
   | { type: 'follow_up'; guidance: string }
   | { type: 'microcompact'; compressedCount: number; savedChars: number; savedTokens: number }
@@ -257,7 +259,7 @@ agent.tools.register({
 
 ### Minimal integration (recommended for new hosts)
 
-The **only** coupling between `DmossAgent` and any vendor SDK is **`LLMProvider`**. For the **smallest behavioral dependency** (and often **no extra LLM SDK** beyond `fetch()`), implement `LLMProvider` yourself and pass it to `DmossAgent`. The monorepo ships examples under `examples/minimal`, `examples/minimal-chat`, and `examples/openai-provider`.
+The **only** coupling between `DmossAgent` and any vendor SDK is **`LLMProvider`**. For the **smallest behavioral dependency** (and often **no extra LLM SDK** beyond `fetch()`), implement `LLMProvider` yourself and pass it to `DmossAgent`. See the interface definition in the `LLMProvider` section below.
 
 ### `LLMProvider`
 
@@ -347,6 +349,16 @@ Exported from `@dmoss/agent/safety` (a subset is also re-exported from the root 
 - `resolveSandboxPath()` — **only from `@dmoss/agent/safety`**
 - `assertSandboxPath()` — **only from `@dmoss/agent/safety`**
 
+## Agent Mesh
+
+Exported from `@dmoss/agent/mesh`:
+
+- `AgentMesh` — multi-agent peer discovery and communication
+- `createMeshTools()` — create mesh-backed tools for agent collaboration
+- `isMeshVerboseEnabled()` — check verbose logging flag
+- `LanDiscovery` — LAN peer discovery via UDP broadcast
+- Types: `MeshConfig`, `MeshPeer`, `MeshMessage`
+
 ## Context API
 
 Exported from `@dmoss/agent/context`:
@@ -371,6 +383,14 @@ Exported from `@dmoss/agent/tools/builtin`:
 - `registerBuiltinTools()`
 
 These are useful for minimal standalone hosts and CLI prototypes.
+
+### Web Fetch Tool
+
+Exported from `@dmoss/agent` (root):
+
+- `createWebFetchTool(opts?: WebFetchOptions): Tool`
+
+HTTP(S) fetch tool with SSRF protection, size limits, and HTML-to-text cleanup.
 
 ## Provider stream errors (implementation note)
 

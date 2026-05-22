@@ -17,6 +17,9 @@
   "bin": {
     "create-dmoss-app": "./index.mjs"
   },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "files": ["index.mjs", "README.md", "CHANGELOG.md", "LICENSE"],
   "publishConfig": {
     "access": "public"

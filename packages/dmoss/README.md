@@ -165,7 +165,7 @@ To add support for a new hardware platform:
 ## Known Limitations
 
 - **Robotics scope assumption**: `buildRoboticsEngineeringPrompt()` provides robotics-domain guidance. For non-robotics use cases (IoT sensors, edge AI inference, etc.), hosts should build their own domain prompt instead of using this function. A future version may move this to an optional `@dmoss/prompts-robotics` package.
-- **Publishing**: This package is prepared for public npm release as part of the Moss publish set. Before a release, run `npm run publish:dmoss:verify` from the repo root; it covers publish lint, fresh consumer/CLI smoke, and the RDK Studio integration smoke.
+- **Publishing**: This package is prepared for public npm release as part of the Moss publish set. Before a release, run `npm run verify` from the repo root; it covers OSS boundary checks, workspace hygiene, workspace builds, typechecks, and package tests. Use the release checklist for host consumption validation.
 
 ## Contributing
 

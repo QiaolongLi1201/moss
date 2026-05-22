@@ -3,7 +3,8 @@
  * JsonlSessionStore append-only regression.
  *
  * Run:
- *   npx tsx packages/dmoss-agent/test/jsonl-session-store.spec.mjs
+ *   npm run build -w @dmoss/agent
+ *   node packages/dmoss-agent/test/jsonl-session-store.spec.mjs
  */
 
 import assert from 'node:assert/strict';
@@ -11,7 +12,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { JsonlSessionStore } from '../src/core/jsonl-session-store.ts';
+import { JsonlSessionStore } from '../dist/core/jsonl-session-store.js';
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmoss-jsonl-session-'));
 const store = new JsonlSessionStore({ dir });

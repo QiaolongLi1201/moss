@@ -138,7 +138,7 @@ console.log('Agent:', result.response);
 
 function printUsage() {
   console.log(`
-  create-dmoss-app <project-name> [--template <name>]
+  create-dmoss-app <project-name> [--template <name>] [--skip-install]
 
   Templates:
     minimal   ${TEMPLATES.minimal.description}
@@ -147,6 +147,7 @@ function printUsage() {
   Examples:
     npx create-dmoss-app my-agent
     npx create-dmoss-app my-agent --template openai
+    npx create-dmoss-app my-agent --skip-install
     npm create dmoss-app my-agent
 `);
 }
@@ -160,6 +161,7 @@ if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
 const projectName = path.basename(args[0]);
 const templateIdx = args.indexOf('--template');
 const templateName = templateIdx !== -1 ? args[templateIdx + 1] : 'minimal';
+const skipInstall = args.includes('--skip-install');
 
 if (!projectName || projectName.startsWith('-')) {
   console.error('Please provide a project name.');
@@ -234,7 +236,6 @@ DMOSS_API_KEY=your-key npm start
 ## Learn More
 
 - [D-Moss Documentation](https://github.com/D-Moss/dmoss-agent)
-- [Examples](https://github.com/D-Moss/dmoss-agent/tree/main/examples)
 `;
 
 fs.writeFileSync(path.join(targetDir, 'README.md'), readme);
@@ -243,11 +244,15 @@ console.log('  Created package.json');
 console.log('  Created index.ts');
 console.log('  Created README.md');
 
-try {
-  console.log('\nInstalling dependencies...');
-  execSync('npm install', { cwd: targetDir, stdio: 'inherit' });
-} catch {
-  console.log('\nnpm install failed — run it manually after packages are published.');
+if (skipInstall) {
+  console.log('\nSkipped dependency install.');
+} else {
+  try {
+    console.log('\nInstalling dependencies...');
+    execSync('npm install', { cwd: targetDir, stdio: 'inherit' });
+  } catch {
+    console.log('\nnpm install failed — run it manually after packages are published.');
+  }
 }
 
 console.log(`

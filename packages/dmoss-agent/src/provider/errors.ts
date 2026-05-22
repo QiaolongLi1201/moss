@@ -18,6 +18,7 @@ export type FailoverReason =
   | "rate_limit"
   | "auth"
   | "timeout"
+  | "connection"
   | "billing"
   | "format"
   | "unknown";
@@ -81,6 +82,9 @@ const TIMEOUT_PATTERNS = [
   "deadline exceeded",
   "context deadline exceeded",
   "etimedout",
+];
+
+const CONNECTION_PATTERNS = [
   "econnreset",
   "econnrefused",
   "socket hang up",
@@ -189,6 +193,11 @@ export function isTimeoutError(message?: string): boolean {
   return !!message && matchesAny(message, TIMEOUT_PATTERNS);
 }
 
+/** 网络连接错误（连接拒绝、重置、DNS 失败等） */
+export function isConnectionError(message?: string): boolean {
+  return !!message && matchesAny(message, CONNECTION_PATTERNS);
+}
+
 /** 5xx 服务端错误（overloaded、internal server error 等） */
 export function isServerError(message?: string): boolean {
   if (!message) return false;
@@ -202,7 +211,7 @@ export function isServerError(message?: string): boolean {
  */
 export function isTransientError(message?: string): boolean {
   if (!message) return false;
-  return isRateLimitError(message) || isTimeoutError(message) || isServerError(message);
+  return isRateLimitError(message) || isTimeoutError(message) || isConnectionError(message) || isServerError(message);
 }
 
 export function isAuthError(message?: string): boolean {
@@ -220,6 +229,7 @@ export function classifyFailoverReason(message: string): FailoverReason | null {
   if (matchesAny(message, AUTH_PATTERNS)) return "auth";
   if (matchesAny(message, RATE_LIMIT_PATTERNS)) return "rate_limit";
   if (matchesAny(message, TIMEOUT_PATTERNS)) return "timeout";
+  if (matchesAny(message, CONNECTION_PATTERNS)) return "connection";
   if (matchesAny(message, FORMAT_PATTERNS)) return "format";
   return null;
 }
@@ -232,8 +242,8 @@ export function classifyFailoverReason(message: string): FailoverReason | null {
 export function isFailoverErrorMessage(message?: string): boolean {
   if (!message) return false;
   const reason = classifyFailoverReason(message);
-  // timeout 不触发 failover（可能只是网络抖动）
-  return reason !== null && reason !== "timeout";
+  // timeout 和 connection 不触发 failover（网络抖动，不是 provider 能力问题）
+  return reason !== null && reason !== "timeout" && reason !== "connection";
 }
 
 // ============== 指数退避重试 ==============

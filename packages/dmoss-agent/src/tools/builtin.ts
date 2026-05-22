@@ -14,12 +14,25 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import type { Tool } from '../core/tool-types.js';
-import { resolveSandboxPath } from '../safety/sandbox-paths.js';
+import { assertSandboxPath } from '../safety/sandbox-paths.js';
 
 const IS_WIN = process.platform === 'win32';
 
-function safePath(inputPath: string, workspaceDir: string): string {
-  const { resolved } = resolveSandboxPath({
+/** Block dangerous env vars from leaking to child processes. */
+const DANGEROUS_ENV_KEYS = new Set([
+  'SSHPASS', 'DMOSS_DEVICE_PASSWORD', 'DMOSS_API_KEY',
+  'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY',
+  'GROQ_API_KEY', 'AZURE_API_KEY', 'HF_TOKEN',
+]);
+
+function childEnv(workspaceDir: string): Record<string, string> {
+  const env: Record<string, string> = { ...process.env, LANG: process.env.LANG || 'en_US.UTF-8' };
+  for (const key of DANGEROUS_ENV_KEYS) delete env[key];
+  return env;
+}
+
+async function safePath(inputPath: string, workspaceDir: string): Promise<string> {
+  const { resolved } = await assertSandboxPath({
     filePath: inputPath,
     cwd: workspaceDir,
     root: workspaceDir,
@@ -30,6 +43,10 @@ function safePath(inputPath: string, workspaceDir: string): string {
 export const readFileTool: Tool = {
   name: 'read_file',
   description: 'Read the contents of a file within the workspace.',
+  metadata: {
+    sideEffectClass: 'readonly',
+    planMode: 'allow',
+  },
   inputSchema: {
     type: 'object',
     properties: {
@@ -39,7 +56,7 @@ export const readFileTool: Tool = {
   },
   async execute(input, ctx) {
     try {
-      const filePath = safePath(input.path, ctx.workspaceDir);
+      const filePath = await safePath(input.path, ctx.workspaceDir);
       const content = await fs.readFile(filePath, 'utf-8');
       if (content.length > 100_000) {
         return content.slice(0, 100_000) + `\n\n[... truncated, total ${content.length} chars]`;
@@ -54,6 +71,10 @@ export const readFileTool: Tool = {
 export const writeFileTool: Tool = {
   name: 'write_file',
   description: 'Write content to a file within the workspace. Creates parent directories if needed.',
+  metadata: {
+    sideEffectClass: 'local_write',
+    planMode: 'requires_user_confirmation',
+  },
   inputSchema: {
     type: 'object',
     properties: {
@@ -64,7 +85,7 @@ export const writeFileTool: Tool = {
   },
   async execute(input, ctx) {
     try {
-      const filePath = safePath(input.path, ctx.workspaceDir);
+      const filePath = await safePath(input.path, ctx.workspaceDir);
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, input.content, 'utf-8');
       return `Successfully wrote ${input.content.length} chars to ${input.path}`;
@@ -77,6 +98,10 @@ export const writeFileTool: Tool = {
 export const listDirectoryTool: Tool = {
   name: 'list_directory',
   description: 'List files and directories within the workspace.',
+  metadata: {
+    sideEffectClass: 'readonly',
+    planMode: 'allow',
+  },
   inputSchema: {
     type: 'object',
     properties: {
@@ -85,7 +110,7 @@ export const listDirectoryTool: Tool = {
   },
   async execute(input, ctx) {
     try {
-      const dirPath = safePath(input.path || '.', ctx.workspaceDir);
+      const dirPath = await safePath(input.path || '.', ctx.workspaceDir);
       const entries = await fs.readdir(dirPath, { withFileTypes: true });
       const lines = entries.map((e) => {
         const suffix = e.isDirectory() ? '/' : '';
@@ -107,6 +132,11 @@ export const execTool: Tool = {
   description:
     'Execute a shell command in the workspace directory. Returns stdout + stderr. Commands run with cwd set to the workspace. ' +
     'On Windows, this is the host PC shell (not the RDK board); prefer device_exec when SSH is configured.',
+  metadata: {
+    sideEffectClass: 'local_write',
+    planMode: 'requires_user_confirmation',
+    permissionBoundary: 'Host must enforce approval via AgentHooks.onBeforeToolExec. Do not allow unattended exec without explicit user consent.',
+  },
   inputSchema: {
     type: 'object',
     properties: {
@@ -130,7 +160,7 @@ export const execTool: Tool = {
         maxBuffer: 10 * 1024 * 1024,
         encoding: 'utf-8',
         shell,
-        env: { ...process.env, LANG: process.env.LANG || 'en_US.UTF-8' },
+        env: childEnv(ctx.workspaceDir),
       });
       return String(result).trim() || '(no output)';
     } catch (err: any) {
@@ -145,6 +175,10 @@ export const execTool: Tool = {
 export const searchFilesTool: Tool = {
   name: 'search_files',
   description: 'Search for files matching a glob pattern within the workspace.',
+  metadata: {
+    sideEffectClass: 'readonly',
+    planMode: 'allow',
+  },
   inputSchema: {
     type: 'object',
     properties: {
@@ -155,7 +189,7 @@ export const searchFilesTool: Tool = {
   },
   async execute(input, ctx) {
     try {
-      const searchDir = safePath(input.path || '.', ctx.workspaceDir);
+      const searchDir = await safePath(input.path || '.', ctx.workspaceDir);
       const results = await walkMatch(searchDir, input.pattern, 100);
       return results.length > 0 ? results.join('\n') : 'No files found';
     } catch (err) {
@@ -189,10 +223,18 @@ async function walkMatch(dir: string, pattern: string, limit: number): Promise<s
 }
 
 function globToRegex(pattern: string): RegExp {
+  // Guard against ReDoS: cap wildcard count and use non-backtracking alternation
+  const starCount = (pattern.match(/\*/g) || []).length;
+  if (starCount > 20) {
+    // Fall back to literal match for pathological patterns
+    return new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+  }
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
+    .replace(/\*\*/g, ' ')        // temp placeholder for **
+    .replace(/\*/g, '[^/]*')            // single * matches non-slash chars only (no backtrack)
+    .replace(/ /g, '.*')           // ** matches anything
+    .replace(/\?/g, '[^/]');            // ? matches single non-slash char
   return new RegExp(`^${escaped}$`, 'i');
 }
 

@@ -7,7 +7,7 @@
  *   Layer 3: Agent.emit(event) → listeners → external subscribers (CLI, UI)
  */
 
-import { EventStream } from '@mariozechner/pi-ai';
+import { EventStream } from '../provider/pi-ai-types.js';
 import type { Message } from './session-jsonl.js';
 import type {
   ContextBudgetActionKind,

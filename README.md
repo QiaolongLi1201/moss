@@ -79,6 +79,13 @@ Read the detailed contract guide:
 
 - [`docs/host-adapter-contract.md`](docs/host-adapter-contract.md)
 
+## Project Goal And Roadmap
+
+Moss is being developed as a robotics-grade, host-neutral agent runtime. The
+roadmap defines the north star, non-goals, six-month target, and phase plan:
+
+- [`docs/roadmap.md`](docs/roadmap.md)
+
 ## What Does Not Belong In Moss
 
 Keep product-specific code in the host repository.
@@ -109,9 +116,11 @@ npm run verify
 `npm run verify` runs:
 
 1. Open-source boundary checks.
-2. Workspace builds.
-3. Typechecks.
-4. Package tests.
+2. Workspace hygiene checks for Node engine consistency, package test scripts,
+   and local Markdown links.
+3. Workspace builds.
+4. Typechecks.
+5. Package tests.
 
 The boundary check can be run directly:
 

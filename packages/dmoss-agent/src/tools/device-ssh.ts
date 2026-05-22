@@ -23,6 +23,11 @@ export interface DeviceSshConfig {
   keyPath?: string;
 }
 
+/** Escape a single shell argument for POSIX sh. */
+function shellEscape(arg: string): string {
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
 function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string {
   const user = config.user || 'root';
   const port = config.port || 22;
@@ -40,6 +45,10 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
   const deviceExec: Tool = {
     name: 'device_exec',
     description: `Execute a shell command on the connected device (${config.host}) via SSH.`,
+    metadata: {
+      sideEffectClass: 'device_mutation',
+      planMode: 'requires_user_confirmation',
+    },
     inputSchema: {
       type: 'object',
       properties: {
@@ -69,6 +78,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
   const deviceInfo: Tool = {
     name: 'device_info',
     description: 'Get basic information about the connected device (hostname, OS, CPU, memory).',
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: { type: 'object', properties: {} },
     async execute() {
       const commands = [
@@ -98,6 +108,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
   const deviceFileRead: Tool = {
     name: 'device_file_read',
     description: 'Read a file from the connected device.',
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: {
       type: 'object',
       properties: {
@@ -106,7 +117,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       required: ['path'],
     },
     async execute(input) {
-      const sshCmd = buildSshCommand(config, `cat "${input.path}"`);
+      const sshCmd = buildSshCommand(config, `cat ${shellEscape(input.path)}`);
       try {
         const result = execSync(sshCmd, {
           timeout: 15_000,
@@ -127,6 +138,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
   const deviceFileList: Tool = {
     name: 'device_file_list',
     description: 'List files in a directory on the connected device.',
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: {
       type: 'object',
       properties: {
@@ -135,7 +147,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
     },
     async execute(input) {
       const dir = input.path || '/home';
-      const sshCmd = buildSshCommand(config, `ls -la "${dir}"`);
+      const sshCmd = buildSshCommand(config, `ls -la ${shellEscape(dir)}`);
       try {
         const result = execSync(sshCmd, { timeout: 10_000, encoding: 'utf-8' });
         return result.trim();

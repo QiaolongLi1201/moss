@@ -5,7 +5,7 @@ import type {
   StopReason,
   StreamFunction,
   ThinkingLevel,
-} from '@mariozechner/pi-ai';
+} from '../provider/pi-ai-types.js';
 import type { MiniAgentEvent } from './agent-events.js';
 import type { ContentBlock, Message } from './session-jsonl.js';
 import type { Tool } from './tool-types.js';

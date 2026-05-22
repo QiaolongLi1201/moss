@@ -3,13 +3,15 @@
  * Regression: systemPromptTokens 远超 contextWindow + charsPerTokenUnit=1
  * 时不应把对话历史剪到「几乎只剩当前一条」。
  *
- * Run: npx tsx packages/dmoss-agent/test/pruning-min-history-budget.spec.mjs
+ * Run:
+ *   npm run build -w @dmoss/agent
+ *   node packages/dmoss-agent/test/pruning-min-history-budget.spec.mjs
  */
 
 import assert from 'node:assert/strict';
 
-import { pruneContextMessages } from '../src/context/pruning.ts';
-import { createCompactionSummaryMessage } from '../src/core/session-jsonl.ts';
+import { pruneContextMessages } from '../dist/context/pruning.js';
+import { createCompactionSummaryMessage } from '../dist/core/session-jsonl.js';
 
 /** @param {'user'|'assistant'} role */
 const msg = (role, n) => ({ role, content: 'あ'.repeat(n) });

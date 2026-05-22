@@ -1,4 +1,4 @@
-import type { Model } from '@mariozechner/pi-ai';
+import type { Model } from '../provider/pi-ai-types.js';
 import type { MiniAgentEvent, MiniAgentResult } from './agent-events.js';
 import type { ChatResult, DmossAgentConfig, DmossAgentEvent } from './dmoss-agent.js';
 import type { ToolCall, ToolResult } from './tool-types.js';

@@ -26,6 +26,31 @@ const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bnpm\s+(un)?publish\b/i, reason: '禁止外部通道发布/撤回 npm 包' },
   { pattern: /\bgit\s+push\s+.*--force\b/i, reason: '禁止强制推送' },
   { pattern: /\b(curl|wget)\b.*\|\s*(python|python3|perl|ruby|node)\b/i, reason: '禁止从网络管道执行脚本' },
+  // Privilege escalation
+  { pattern: /\b(chown|chgrp)\b/i, reason: '禁止修改文件所有者/组' },
+  { pattern: /\b(useradd|usermod|userdel|groupadd|groupmod|passwd)\b/i, reason: '禁止用户/密码管理操作' },
+  // Reverse shells and network exfiltration
+  { pattern: /\b(nc|ncat|socat|nmap)\b/i, reason: '禁止网络工具/反弹 shell' },
+  { pattern: /\/dev\/tcp\//i, reason: '禁止 bash 反向 shell' },
+  // Arbitrary code execution
+  { pattern: /\b(python|python3|perl|ruby|node)\s+-[a-zA-Z]*c\b/i, reason: '禁止解释器 -c 任意代码执行' },
+  { pattern: /\b(node|python|python3|perl|ruby)\s+-e\b/i, reason: '禁止解释器 -e 任意代码执行' },
+  // Persistent/scheduled execution
+  { pattern: /\bcrontab\b/i, reason: '禁止定时任务修改' },
+  { pattern: /\bat\s+/i, reason: '禁止延迟任务执行' },
+  // Filesystem manipulation
+  { pattern: /\bmount\b|\bumount\b/i, reason: '禁止挂载/卸载文件系统' },
+  { pattern: /\biptables\b|\bufw\b|\bpft?ctl\b/i, reason: '禁止防火墙修改' },
+  // Indirect command execution
+  { pattern: /\bfind\s+.*-exec\b/i, reason: '禁止 find -exec 任意命令执行' },
+  { pattern: /\bxargs\b/i, reason: '禁止 xargs 任意命令执行' },
+  { pattern: /\bawk\s+.*system\b/i, reason: '禁止 awk system 调用' },
+  { pattern: /\btar\b.*--checkpoint-action/i, reason: '禁止 tar 命令注入' },
+  { pattern: /\bzip\b.*-T[T]/i, reason: '禁止 zip 命令注入' },
+  // Encoded/binary payload
+  { pattern: /\bbase64\b.*\|\s*(sh|bash|zsh|dash)/i, reason: '禁止 base64 解码执行' },
+  // Shell escape from editors/pagers
+  { pattern: /\b(vim?|nano|less|more)\b/i, reason: '禁止编辑器/分页器（支持 shell escape）' },
 ];
 
 const BASE_PROTECTED_PATH_KEYWORDS = [

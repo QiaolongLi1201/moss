@@ -1,0 +1,97 @@
+/**
+ * D-Moss Agent tool system types — generic tool definition, context, and result types.
+ *
+ * Host applications extend ToolContext with product-specific fields.
+ */
+
+/**
+ * Tool execution context — the base context available to every tool.
+ * Host applications can extend this via intersection types
+ * to add product-specific fields (device bindings, etc.).
+ */
+export interface ToolContext {
+  workspaceDir: string;
+  bootstrapDir?: string;
+  extraAllowedRoots?: string[];
+  sessionKey: string;
+  sessionId?: string;
+  agentId?: string;
+  abortSignal?: AbortSignal;
+  toolCallId?: string;
+  spawnSubagent?: (params: {
+    task: string;
+    label?: string;
+    cleanup?: 'keep' | 'delete';
+  }) => Promise<{ runId: string; sessionKey: string }>;
+}
+
+/**
+ * Tool interface — defines a tool that the LLM can invoke.
+ *
+ * Generic TInput allows type-safe parameter definitions during development.
+ */
+
+export type ToolSideEffectClass =
+  | 'readonly'
+  | 'local_write'
+  | 'device_mutation'
+  | 'credential'
+  | 'external_message'
+  | 'memory_write'
+  | 'runtime_state'
+  | 'subagent';
+
+export type ToolPlanMode = 'allow' | 'audit' | 'requires_user_confirmation';
+
+export interface ToolMetadata {
+  permissionBoundary?: string;
+  sideEffectClass?: ToolSideEffectClass;
+  planMode?: ToolPlanMode;
+  ui?: {
+    surface?: 'timeline' | 'block' | 'silent';
+  };
+}
+
+export interface Tool<TInput = any> {
+  name: string;
+  description: string;
+  metadata?: ToolMetadata;
+  inputSchema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+  /**
+   * Optional deterministic input normalizer run before tool_start/tool_execute.
+   * Use this for tool-specific guardrails where the safe value can be derived
+   * locally from the model's arguments, so UI events and persisted tool_use
+   * blocks reflect the actual call.
+   */
+  normalizeInput?: (input: TInput, ctx?: Pick<ToolContext, 'sessionKey' | 'sessionId'>) => TInput;
+  execute: (input: TInput, ctx: ToolContext) => Promise<string>;
+}
+
+/**
+ * 宿主侧「意图注入」：仅当工具 JSON Schema **无必填字段** 时，可用 `{}` 安全代调；
+ * 若 `required` 非空，必须由模型在协议中产出 `tool_calls`（或用户补充参数），不可盲注。
+ */
+export function canHostInjectToolWithEmptyInput(tool: Tool): boolean {
+  const req = tool.inputSchema?.required;
+  return !req || req.length === 0;
+}
+
+/** Parsed tool_use block from the LLM response */
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+/** Result of tool execution, returned to the LLM */
+export interface ToolResult {
+  toolUseId: string;
+  content: string;
+  isError?: boolean;
+  /** Host-provided metadata for user/timeout cancellation; consumers may ignore it. */
+  aborted?: { by: 'user' | 'timeout' };
+}

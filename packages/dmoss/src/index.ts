@@ -1,0 +1,46 @@
+/**
+ * @dmoss/core — vendor-neutral contracts and robotics prompts for the D-Moss Agent framework.
+ *
+ * This package is the open-source kernel of D-Moss. It contains:
+ *  - KnowledgeModule: pluggable domain knowledge for any hardware platform
+ *  - VendorPlugin / PromptContributor / ToolContributor: extension points
+ *  - PlatformExtension: the primary integration point for new device ecosystems
+ *  - Robotics engineering prompts (board/vendor-agnostic)
+ *
+ * This package has ZERO host dependencies — it can be published and consumed standalone.
+ */
+
+// --- Knowledge Module contracts ---
+export type {
+  KnowledgeModule,
+  DeviceProfileBase,
+  CameraInterface,
+  GpioSpec,
+  DocIndexEntry,
+  PromptFragment,
+  CommandPattern,
+  FailureHint,
+  EndorsedSkillRef,
+} from './contracts/knowledge-module.js';
+
+// --- Vendor Plugin contracts ---
+export type {
+  DmossPromptContributor,
+  DmossToolContributor,
+  DmossVendorPlugin,
+} from './contracts/vendor-plugin.js';
+
+// --- Platform Extension contracts ---
+export type {
+  DmossPlatformExtensionIdentities,
+  DmossPlatformExtension,
+} from './contracts/platform-extension.js';
+
+// --- Device Family taxonomy ---
+export type { DeviceFamily } from './contracts/device-family.js';
+
+// --- Robotics engineering prompts ---
+export {
+  buildRoboticsEngineeringPrompt,
+  buildRoboticsEngineeringPromptQuick,
+} from './prompts/robotics-engineering-prompt.js';

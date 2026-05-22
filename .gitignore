@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+*.log
+.DS_Store
+sessions/
+tmp/
+.tmp/
+.npmrc

@@ -1,0 +1,28 @@
+{
+  "name": "create-dmoss-app",
+  "version": "0.1.1",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "description": "Scaffold a new D-Moss agent project in seconds",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/D-Moss/dmoss-agent.git",
+    "directory": "packages/create-dmoss-app"
+  },
+  "bugs": {
+    "url": "https://github.com/D-Moss/dmoss-agent/issues"
+  },
+  "homepage": "https://github.com/D-Moss/dmoss-agent/tree/main/packages/create-dmoss-app#readme",
+  "bin": {
+    "create-dmoss-app": "./index.mjs"
+  },
+  "files": ["index.mjs", "README.md", "CHANGELOG.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "keywords": ["dmoss", "agent", "robotics", "scaffold", "create-app"]
+}

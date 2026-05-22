@@ -1,0 +1,173 @@
+{
+  "name": "@dmoss/agent",
+  "version": "0.3.1",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "description": "D-Moss Agent: a standalone robotics agent runtime with pluggable knowledge modules, platform extensions, and tool framework.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./knowledge": {
+      "types": "./dist/knowledge/index.d.ts",
+      "import": "./dist/knowledge/index.js",
+      "default": "./dist/knowledge/index.js"
+    },
+    "./extensions": {
+      "types": "./dist/extensions/index.d.ts",
+      "import": "./dist/extensions/index.js",
+      "default": "./dist/extensions/index.js"
+    },
+    "./safety": {
+      "types": "./dist/safety/index.d.ts",
+      "import": "./dist/safety/index.js",
+      "default": "./dist/safety/index.js"
+    },
+    "./prompts": {
+      "types": "./dist/prompts/index.d.ts",
+      "import": "./dist/prompts/index.js",
+      "default": "./dist/prompts/index.js"
+    },
+    "./skills": {
+      "types": "./dist/skills/index.d.ts",
+      "import": "./dist/skills/index.js",
+      "default": "./dist/skills/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "import": "./dist/utils/index.js",
+      "default": "./dist/utils/index.js"
+    },
+    "./context": {
+      "types": "./dist/context/index.d.ts",
+      "import": "./dist/context/index.js",
+      "default": "./dist/context/index.js"
+    },
+    "./provider": {
+      "types": "./dist/provider/index.d.ts",
+      "import": "./dist/provider/index.js",
+      "default": "./dist/provider/index.js"
+    },
+    "./tools/builtin": {
+      "types": "./dist/tools/builtin.d.ts",
+      "import": "./dist/tools/builtin.js",
+      "default": "./dist/tools/builtin.js"
+    },
+    "./mesh": {
+      "types": "./dist/mesh/index.d.ts",
+      "import": "./dist/mesh/index.js",
+      "default": "./dist/mesh/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./knowledge": {
+        "types": "./dist/knowledge/index.d.ts",
+        "import": "./dist/knowledge/index.js"
+      },
+      "./extensions": {
+        "types": "./dist/extensions/index.d.ts",
+        "import": "./dist/extensions/index.js"
+      },
+      "./safety": {
+        "types": "./dist/safety/index.d.ts",
+        "import": "./dist/safety/index.js"
+      },
+      "./prompts": {
+        "types": "./dist/prompts/index.d.ts",
+        "import": "./dist/prompts/index.js"
+      },
+      "./skills": {
+        "types": "./dist/skills/index.d.ts",
+        "import": "./dist/skills/index.js"
+      },
+      "./core": {
+        "types": "./dist/core/index.d.ts",
+        "import": "./dist/core/index.js"
+      },
+      "./utils": {
+        "types": "./dist/utils/index.d.ts",
+        "import": "./dist/utils/index.js"
+      },
+      "./context": {
+        "types": "./dist/context/index.d.ts",
+        "import": "./dist/context/index.js"
+      },
+      "./provider": {
+        "types": "./dist/provider/index.d.ts",
+        "import": "./dist/provider/index.js"
+      },
+      "./tools/builtin": {
+        "types": "./dist/tools/builtin.d.ts",
+        "import": "./dist/tools/builtin.js"
+      },
+      "./mesh": {
+        "types": "./dist/mesh/index.d.ts",
+        "import": "./dist/mesh/index.js"
+      }
+    },
+    "bin": {
+      "dmoss-agent": "./dist/cli.js"
+    }
+  },
+  "bin": {
+    "dmoss-agent": "./dist/cli.js"
+  },
+  "files": ["dist", "src", "README.md", "USAGE.md", "API.md", "CONTRIBUTING.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/D-Moss/dmoss-agent.git"
+  },
+  "bugs": {
+    "url": "https://github.com/D-Moss/dmoss-agent/issues"
+  },
+  "homepage": "https://github.com/D-Moss/dmoss-agent#readme",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
+    "prepublishOnly": "npm run clean && npm run build",
+    "test:tool-loop": "npm run build && node test/tool-loop-guard.spec.mjs",
+    "test:post-tool-source-fix": "npm run build && node test/post-tool-source-fix.spec.mjs && node test/reasoning-history-roundtrip.spec.mjs",
+    "test:conversation-api-multiturn": "npm run build && node test/conversation-api-multiturn.spec.mjs",
+    "test:run-loop-bridge-thinking-approval": "npm run build && node test/dmoss-agent-run-loop-bridge-thinking-approval.spec.mjs",
+    "test:context-budget-planner": "npm run build && node test/context-budget-planner.spec.mjs",
+    "test:llm-error-classifier": "npm run build && node test/llm-error-classifier.spec.mjs",
+    "test:pruning-min-history-budget": "npx tsx test/pruning-min-history-budget.spec.mjs",
+    "cli": "npx tsx src/cli.ts",
+    "docs": "typedoc --out docs-api src/index.ts src/core/index.ts src/knowledge/index.ts --tsconfig tsconfig.build.json"
+  },
+  "dependencies": {
+    "@dmoss/core": "^0.3.1",
+    "@mariozechner/pi-ai": "^0.50.7",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "peerDependencies": {
+    "zod": ">=3.0.0",
+    "undici": ">=6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "zod": { "optional": true },
+    "undici": { "optional": true }
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": ["dmoss", "agent", "robotics", "knowledge-module", "platform-extension", "edge-ai", "llm", "tools"]
+}

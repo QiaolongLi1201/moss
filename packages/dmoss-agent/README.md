@@ -1,0 +1,305 @@
+# @dmoss/agent
+
+> **An AI agent runtime built for robotics and edge devices.**
+> Pluggable LLMs, LAN-native Agent Mesh, framework-level tool-call self-healing, Chinese-first UX.
+
+<p align="center">
+  <a href="#install"><img src="https://img.shields.io/npm/v/@dmoss/agent?logo=npm&color=ff6b00" alt="npm" /></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A522.16-brightgreen?logo=node.js&logoColor=white" alt="node >= 22.16" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT" />
+  <img src="https://img.shields.io/badge/tests-200%2B%20passing-brightgreen" alt="tests" />
+  <img src="https://img.shields.io/badge/provider-agnostic-8a67f6" alt="provider-agnostic" />
+</p>
+
+```bash
+# Try it in 30 seconds
+npx -y @dmoss/agent "帮我检查当前目录"
+```
+
+## Why D-Moss
+
+| D-Moss has | Most agent libs don't |
+|---|---|
+| ✅ **LAN Agent Mesh** — P2P peer discovery over UDP, zero cloud dependency | Relies on a central orchestrator |
+| ✅ **Framework-level tool self-healing** — reconstructs `tool_use` from plan text when LLM stream drops `tool_calls` | Retries the whole turn or just fails |
+| ✅ **Built-in ROS2 / device SSH / device diagnostics tools** | You wire these yourself |
+| ✅ **Context compaction + steering + follow-up guard** out of the box | Single-loop prompt → response |
+| ✅ **Chinese as first-class locale** (prompts, errors, CLI) | English-only |
+| ✅ **Board delegation** — run LLMs on an edge gateway, not the cloud | Cloud API only |
+
+**D-Moss Agent** — a standalone, vendor-neutral robotics agent runtime.
+
+Build AI-powered developer tools for any robotics platform with pluggable knowledge modules, tools, and LLM providers.
+
+## Open-source scope (the harness)
+
+**D-Moss is not “just an LLM wrapper”.** These packages ship a **reusable robotics Agent harness**: the tool loop, context governance (pruning / compaction), safety and approval hooks, session persistence, structured errors and retries, and pluggable `KnowledgeModule`s — so your application can focus on devices, UX, and policies.
+
+| In `@dmoss/core` + `@dmoss/agent` | Outside the stable `@dmoss/*` API (host / product) |
+|-----------------------------------|-----------------------------------------------------|
+| Contracts, `DmossAgent`, `ToolRegistry`, hooks | HTTP/Socket APIs, desktop UI, SSH |
+| Pruning, compaction, token budgeting | Your own installers, fleet routing, dashboards |
+| `LLMProvider` (host implements; **recommended minimum integration**) | Your model transport (REST, WebSocket, local inference, etc.) |
+| Optional `PiAiLLMProvider` (bridges `@mariozechner/pi-ai` → `LLMProvider`) | Use only if you already build on pi-ai streams; otherwise skip in **your** code |
+| Safety helpers, protected paths (host registers paths) | Concrete device tools and deployment scripts |
+| Default robotics/domain prompts from `@dmoss/core` (tunable via `DmossAgent` config) | Product-specific prompts wired in `server/dmoss/*` (host) |
+
+The open-source boundary is clean: `packages/dmoss/` + `packages/dmoss-agent/` in this monorepo are the stable public packages. Anything a host application builds on top (HTTP servers, desktop shells, SSH bridges, etc.) is the host's concern and not part of this package's public API.
+
+**Docs:** [`API.md`](./API.md) · [`CHANGELOG.md`](./CHANGELOG.md) · Examples: [`examples/README.md`](../../examples/README.md)
+
+### LLM integration: minimal path vs optional `pi-ai`
+
+- **What you must implement:** `LLMProvider` — the only contract `DmossAgent` needs to call a model. **For the smallest integration surface and full control over HTTP/SDKs**, implement it yourself (often with **`fetch()` only**; no Anthropic/OpenAI SDK required). See repo **`examples/minimal`**, **`examples/minimal-chat`**, and **`examples/openai-provider`**.
+- **What is optional:** **`PiAiLLMProvider`** — a convenience adapter for hosts that already use **`@mariozechner/pi-ai`** streaming. You do **not** need to use it to ship a product on `@dmoss/agent`.
+- **npm note:** `@dmoss/agent` currently **declares** `@mariozechner/pi-ai` as a runtime dependency so this adapter is always available when installed from npm. Your **application code** can still follow the minimal path by supplying only a custom `LLMProvider` and never importing `PiAiLLMProvider`. (A future optional split into `@dmoss/agent-pi-ai` would be a semver/major packaging decision.)
+
+## Install
+
+```bash
+npm install @dmoss/agent@latest @dmoss/core@latest
+```
+
+Requires **Node ≥ 20** (see `engines` in `package.json`). One-off CLI tryout:
+
+```bash
+npx -y @dmoss/agent --help
+```
+
+### Path 2 — Local tarballs (maintainers / CI)
+
+From the monorepo root:
+
+```bash
+npm pack --workspace=@dmoss/core
+npm pack --workspace=@dmoss/agent
+```
+
+Install the generated `.tgz` files in a downstream project:
+
+```bash
+npm install ./dmoss-core-*.tgz ./dmoss-agent-*.tgz
+```
+
+Or run the CLI straight from a tarball:
+
+```bash
+npx -y ./dmoss-agent-*.tgz --help
+```
+
+### Path 3 — From source (contributors)
+
+```bash
+git clone <this-repo>
+cd <this-repo>
+npm install                 # links workspace packages (@dmoss/core, @dmoss/agent, create-dmoss-app)
+npm run build -w @dmoss/agent
+# Run the CLI against a real model:
+DMOSS_API_KEY=sk-xxx node packages/dmoss-agent/dist/cli.js "check disk usage on /"
+# Or the interactive REPL:
+DMOSS_API_KEY=sk-xxx node packages/dmoss-agent/dist/cli.js
+```
+
+### CLI flags recap
+
+```
+--debug                 verbose logging (level=debug)
+--quiet                 only warnings & errors
+--log-level=<lv>        debug | info | warn | error
+--json                  emit structured JSON log lines
+--no-color              disable ANSI colors
+--help, -h              show the full usage page
+--version, -v           show version
+```
+
+All flags also available via env vars: `DMOSS_LOG_LEVEL`, `DMOSS_LOG_JSON=1`, `DMOSS_NO_COLOR=1`.
+
+## Quick Start
+
+```typescript
+import { DmossAgent, InMemorySessionStore } from '@dmoss/agent';
+import type { LLMProvider, AgentHooks } from '@dmoss/agent';
+
+// 1. Implement your LLM provider (Anthropic, OpenAI, etc.)
+const myProvider: LLMProvider = { /* ... */ };
+
+// 2. Create the agent
+const agent = new DmossAgent({
+  llmProvider: myProvider,
+  sessionStore: new InMemorySessionStore(),
+  model: 'claude-sonnet-4-20250514',
+  hooks: {
+    onBeforeToolExec: async (req) => ({ approved: true }),
+    onStream: (event) => console.log(event),
+  },
+});
+
+// 3. Register knowledge for your hardware
+import type { KnowledgeModule } from '@dmoss/core';
+const myKnowledge: KnowledgeModule = { /* ... */ };
+agent.registerKnowledge(myKnowledge);
+
+// 4. Register tools
+agent.tools.register({
+  name: 'device_exec',
+  description: 'Execute a command on the connected device',
+  inputSchema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+  execute: async (input) => { /* ... */ },
+});
+
+// 5. Chat
+const result = await agent.chat('session-1', 'Check the camera status', {
+  platform: 'my-board-v1',
+});
+console.log(result.response);
+```
+
+## Architecture
+
+```
+@dmoss/core      → Contracts (KnowledgeModule, PlatformExtension, VendorPlugin, etc.)
+@dmoss/agent     → Runtime (this package)
+  ├── DmossAgent         — Central orchestrator (chat loop, tool execution, hooks)
+  ├── ToolRegistry       — Pluggable tool registration and discovery
+  ├── Knowledge Registry — Domain knowledge aggregation from all modules
+  ├── Extension System   — Platform extension lifecycle management
+  ├── Safety             — Secret sanitization, dangerous command detection
+  ├── Skills             — SKILL.md scanning and matching
+  ├── Session            — JSONL session persistence + in-memory option
+  ├── Context            — Pruning, compaction, token estimation
+  ├── Provider           — Error classification, retry with exponential backoff
+  ├── Prompts            — Robotics engineering prompts, telemetry
+  └── Utils              — Stream smoother, trace logging, abort signals
+```
+
+## Public API
+
+### Core
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `DmossAgent` | class | Central agent orchestrator |
+| `ToolRegistry` | class | Register/discover/group tools |
+| `InMemorySessionStore` | class | Built-in session store |
+| `SkillRegistry` | class | SKILL.md scanner |
+
+### Interfaces (implement these in your host)
+
+| Interface | Description |
+|-----------|-------------|
+| `LLMProvider` | Abstract LLM interaction (Anthropic, OpenAI, etc.) |
+| `SessionStore` | Session persistence (file, database, in-memory) |
+| `AgentHooks` | Lifecycle hooks (approval, events, context enrichment) |
+
+### Types
+
+| Type | Description |
+|------|-------------|
+| `Tool<T>` | Tool definition with inputSchema and execute |
+| `ToolContext` | Execution context (workspace, session, abort) |
+| `ToolCall` / `ToolResult` | Tool invocation and response |
+| `LLMMessage` / `LLMContentBlock` | LLM message types |
+| `ChannelSafetyResult` | Command safety check result |
+| `SkillMeta` | Skill metadata |
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `registerKnowledgeModule()` | Register a hardware knowledge module |
+| `findModuleForPlatform()` | Find knowledge for a specific platform |
+| `getAllDeviceProfiles()` | Aggregate all device profiles |
+| `buildRoboticsEngineeringPrompt()` | Generic robotics system prompt |
+| `sanitizeSecrets()` | Mask API keys in text |
+| `isCommandDangerous()` | Check shell commands for safety |
+
+## Streaming API
+
+For real-time UI integration, use `streamChat()` which yields events as they occur:
+
+```typescript
+for await (const event of agent.streamChat('session-1', 'Check camera')) {
+  switch (event.type) {
+    case 'text_delta':
+      process.stdout.write(event.delta);
+      break;
+    case 'tool_start':
+      console.log(`Running tool: ${event.toolName}`);
+      break;
+    case 'tool_end':
+      console.log(`Tool ${event.toolName}: ${event.isError ? 'FAILED' : 'OK'}`);
+      break;
+    case 'done':
+      console.log(`\nCompleted: ${event.result.toolCalls.length} tool calls`);
+      break;
+  }
+}
+```
+
+## Hooks System
+
+```typescript
+const hooks: AgentHooks = {
+  // Tool approval (block dangerous operations)
+  onBeforeToolExec: async (req) => {
+    if (isDangerous(req.input)) return { approved: false, reason: 'Blocked' };
+    return { approved: true };
+  },
+  // Audit logging
+  onToolResult: (call, result) => auditLog(call, result),
+  // Real-time streaming to UI
+  onStream: (event) => socket.emit('stream', event),
+  // Error handling
+  onError: async (err, ctx) => isRetryable(err),
+  // Inject host-specific context
+  enrichToolContext: (ctx, key) => ({ ...ctx, deviceId: getDevice(key) }),
+};
+```
+
+## Adding a New Hardware Platform
+
+Implement the `KnowledgeModule` interface from `@dmoss/core` for your hardware platform.
+
+```typescript
+import type { KnowledgeModule } from '@dmoss/core';
+
+const jetsonKnowledge: KnowledgeModule = {
+  id: 'jetson',
+  name: 'NVIDIA Jetson',
+  version: '1.0.0',
+  description: 'Jetson developer kit knowledge',
+  platforms: ['jetson-nano', 'jetson-orin'],
+  getDeviceProfiles: () => ({ /* ... */ }),
+  getDocIndex: () => [],
+  getPromptFragments: () => [{ id: 'cuda-tips', /* ... */ }],
+  getCommandPatterns: () => [{ pattern: /tegrastats/i, /* ... */ }],
+  getFailureHints: () => [{ errorPattern: /CUDA out of memory/i, /* ... */ }],
+  getEcosystemPrompt: () => '## NVIDIA Jetson\n...',
+};
+
+agent.registerKnowledge(jetsonKnowledge);
+```
+
+## Known Limitations
+
+- **`LLMProvider` vs `pi-ai`:** The harness is built around **`LLMProvider`**. **`PiAiLLMProvider` + `@mariozechner/pi-ai` are optional** — use them only if you want the pre-built pi-ai bridge; otherwise prefer a **self-hosted `LLMProvider`** for minimal behavioral dependency (see examples above).
+- **Robotics prompt injected by default**: `DmossAgent.buildSystemPrompt()` includes the robotics engineering prompt from `@dmoss/core` unless opted out. Non-robotics hosts can set `domainPrompt: false` to skip it, or provide a custom `domainPrompt: () => string` to replace it with domain-specific guidance.
+- **Vendor plugin callbacks**: hosts should call `setVendorPluginCallbacks()` at startup before `applyPlatformExtension()` to enable the vendor plugin lifecycle. The mechanism is production-validated in real deployments.
+- **Publishing**: The Moss stack is prepared as publishable npm workspaces. Before a release, run `npm run publish:dmoss:verify` from the repo root; it covers publish lint, fresh consumer/CLI smoke, and the RDK Studio integration smoke.
+
+## Documentation
+
+- [API.md](./API.md) — stable public API surface, event model, and import recommendations
+- [USAGE.md](./USAGE.md) — extended usage examples and host integration patterns
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — package-specific contribution guide
+- [SECURITY.md](./SECURITY.md) — vulnerability reporting and security scope
+
+## API Stability
+
+The stable open-source surface of `@dmoss/agent` is the package export map defined in `package.json` and documented in [API.md](./API.md).
+
+Host-level routes and product integrations belong to the embedding application and should not be treated as the public API of this package.
+
+## License
+
+[MIT](./LICENSE)

@@ -1,0 +1,30 @@
+{
+  "name": "moss-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Moss open-source workspace: runtime, agent, memory, skills, teaching, and scaffolding packages.",
+  "workspaces": [
+    "packages/dmoss",
+    "packages/dmoss-agent",
+    "packages/dmoss-memory",
+    "packages/dmoss-skills",
+    "packages/dmoss-teaching",
+    "packages/create-dmoss-app"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "check:boundaries": "node scripts/check-oss-boundaries.mjs",
+    "verify": "npm run check:boundaries && npm run build && npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  }
+}

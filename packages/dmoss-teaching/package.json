@@ -1,0 +1,46 @@
+{
+  "name": "@dmoss/teaching",
+  "version": "0.3.1",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "description": "D-Moss Teaching: teach-while-solve annotation layer — pre/post teaching hooks, annotation collector, and tool digest utilities.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": ["dist", "src", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/D-Moss/dmoss-teaching.git"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "@dmoss/agent": "^0.3.1",
+    "@dmoss/skills": "^0.3.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": ["dmoss", "teaching", "teach-while-solve", "annotation", "agent", "robotics"]
+}

@@ -1,0 +1,92 @@
+{
+  "name": "@dmoss/core",
+  "version": "0.3.1",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "description": "D-Moss: vendor-neutral robotics agent framework. Contracts for KnowledgeModule, PlatformExtension, VendorPlugin, and robotics engineering prompts.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/D-Moss/dmoss-core.git"
+  },
+  "bugs": {
+    "url": "https://github.com/D-Moss/dmoss-core/issues"
+  },
+  "homepage": "https://github.com/D-Moss/dmoss-core#readme",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./contracts/knowledge-module": {
+      "types": "./dist/contracts/knowledge-module.d.ts",
+      "import": "./dist/contracts/knowledge-module.js",
+      "default": "./dist/contracts/knowledge-module.js"
+    },
+    "./contracts/vendor-plugin": {
+      "types": "./dist/contracts/vendor-plugin.d.ts",
+      "import": "./dist/contracts/vendor-plugin.js",
+      "default": "./dist/contracts/vendor-plugin.js"
+    },
+    "./contracts/platform-extension": {
+      "types": "./dist/contracts/platform-extension.d.ts",
+      "import": "./dist/contracts/platform-extension.js",
+      "default": "./dist/contracts/platform-extension.js"
+    },
+    "./contracts/device-family": {
+      "types": "./dist/contracts/device-family.d.ts",
+      "import": "./dist/contracts/device-family.js",
+      "default": "./dist/contracts/device-family.js"
+    },
+    "./prompts/robotics": {
+      "types": "./dist/prompts/robotics-engineering-prompt.d.ts",
+      "import": "./dist/prompts/robotics-engineering-prompt.js",
+      "default": "./dist/prompts/robotics-engineering-prompt.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./contracts/knowledge-module": {
+        "types": "./dist/contracts/knowledge-module.d.ts",
+        "import": "./dist/contracts/knowledge-module.js"
+      },
+      "./contracts/vendor-plugin": {
+        "types": "./dist/contracts/vendor-plugin.d.ts",
+        "import": "./dist/contracts/vendor-plugin.js"
+      },
+      "./contracts/platform-extension": {
+        "types": "./dist/contracts/platform-extension.d.ts",
+        "import": "./dist/contracts/platform-extension.js"
+      },
+      "./contracts/device-family": {
+        "types": "./dist/contracts/device-family.d.ts",
+        "import": "./dist/contracts/device-family.js"
+      },
+      "./prompts/robotics": {
+        "types": "./dist/prompts/robotics-engineering-prompt.d.ts",
+        "import": "./dist/prompts/robotics-engineering-prompt.js"
+      }
+    }
+  },
+  "files": ["dist", "src", "README.md", "LICENSE", "CONTRIBUTING.md", "CHANGELOG.md", "SECURITY.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
+    "prepublishOnly": "npm run clean && npm run build",
+    "docs": "typedoc --out docs-api src/index.ts --tsconfig tsconfig.build.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": ["dmoss", "agent", "robotics", "knowledge-module", "platform-extension", "edge-ai", "iot"]
+}

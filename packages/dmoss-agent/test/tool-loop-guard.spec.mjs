@@ -1,0 +1,267 @@
+#!/usr/bin/env node
+/**
+ * Self-test for DmossAgent tool-loop guard.
+ *
+ * Run:
+ *   npm run build -w @dmoss/agent
+ *   node packages/dmoss-agent/test/tool-loop-guard.spec.mjs
+ *
+ * The test uses a fake LLM provider and in-memory tools so it does not touch
+ * real models, devices, network, or user data.
+ */
+
+import assert from 'node:assert/strict';
+import {
+  DmossAgent,
+  InMemorySessionStore,
+  SteeringEngine,
+  BUILTIN_ERROR_RECOVERY_RULE,
+  BUILTIN_TOOL_LOOP_RULE,
+} from '../dist/core/index.js';
+
+const GUARD_MARKER = '[dmoss-agent] Tool loop guard stopped';
+
+function makeTool(name, calls) {
+  return {
+    name,
+    description: `${name} test tool`,
+    inputSchema: {
+      type: 'object',
+      properties: { value: { type: 'string' } },
+    },
+    async execute(input) {
+      calls.push({ name, input });
+      return `${name}:ok:${JSON.stringify(input)}`;
+    },
+  };
+}
+
+function lastToolResultText(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== 'user' || typeof msg.content === 'string') continue;
+    const block = msg.content.find((b) => b.type === 'tool_result');
+    if (block) return String(block.content ?? '');
+  }
+  return '';
+}
+
+class ScriptedProvider {
+  constructor(toolUses) {
+    this.id = 'scripted';
+    this.displayName = 'Scripted Provider';
+    this.toolUses = toolUses;
+    this.index = 0;
+    this.requests = [];
+  }
+
+  async complete(options) {
+    this.requests.push(options);
+    const previousToolResult = lastToolResultText(options.messages);
+    if (previousToolResult.includes(GUARD_MARKER)) {
+      return {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: 'saw guard and pivoted' }],
+      };
+    }
+    const next = this.toolUses[this.index++];
+    if (!next) {
+      return {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: 'done' }],
+      };
+    }
+    return {
+      stopReason: 'tool_use',
+      content: [{ type: 'tool_use', id: `tool_${this.index}`, ...next }],
+    };
+  }
+
+  async stream(options, onEvent) {
+    const response = await this.complete(options);
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        onEvent({ type: 'content_block_delta', text: block.text, deltaRole: 'visible' });
+      }
+    }
+    onEvent({ type: 'message_delta', stopReason: response.stopReason });
+    return response;
+  }
+}
+
+async function runChatScenario(name, toolUses, env, assertFn) {
+  const previousEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    previousEnv[key] = process.env[key];
+    process.env[key] = String(value);
+  }
+
+  try {
+    const provider = new ScriptedProvider(toolUses);
+    const store = new InMemorySessionStore();
+    const calls = [];
+    const agent = new DmossAgent({
+      llmProvider: provider,
+      sessionStore: store,
+      domainPrompt: false,
+      enableContextPruning: false,
+      enableCompaction: false,
+      maxAgentTurns: 16,
+    });
+    agent.tools.register(makeTool('preset_probe', calls));
+    agent.tools.register(makeTool('web_search', calls));
+    agent.tools.register(makeTool('device_exec', calls));
+
+    const result = await agent.chat(`test-${name}`, 'start');
+    const messages = await store.loadMessages(`test-${name}`);
+    assertFn({ provider, calls, result, messages });
+    console.log(`  [PASS] ${name}`);
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+async function runStreamScenario() {
+  const oldIdentical = process.env.DMOSS_TOOL_LOOP_IDENTICAL_LIMIT;
+  process.env.DMOSS_TOOL_LOOP_IDENTICAL_LIMIT = '2';
+  try {
+    const provider = new ScriptedProvider([
+      { name: 'preset_probe', input: { value: 'same' } },
+      { name: 'preset_probe', input: { value: 'same' } },
+      { name: 'preset_probe', input: { value: 'same' } },
+    ]);
+    const store = new InMemorySessionStore();
+    const calls = [];
+    const agent = new DmossAgent({
+      llmProvider: provider,
+      sessionStore: store,
+      domainPrompt: false,
+      enableContextPruning: false,
+      enableCompaction: false,
+      maxAgentTurns: 16,
+    });
+    agent.tools.register(makeTool('preset_probe', calls));
+
+    const events = [];
+    for await (const event of agent.streamChat('test-stream', 'start')) {
+      events.push(event);
+    }
+
+    const toolEnds = events.filter((e) => e.type === 'tool_end');
+    assert.equal(calls.length, 1, 'stream path should execute only the first identical non-mutating call; second is replayed');
+    assert.equal(toolEnds.length, 3, 'stream path should still surface all three tool_end events');
+    assert.ok(toolEnds[2].result.includes(GUARD_MARKER), 'third stream tool result should be guard text');
+    assert.ok(toolEnds[2].result.includes('web_search/web_fetch'), 'guard text should tell the model to pivot to independent evidence');
+    console.log('  [PASS] streamChat identical-repeat guard mirrors chat');
+  } finally {
+    if (oldIdentical === undefined) delete process.env.DMOSS_TOOL_LOOP_IDENTICAL_LIMIT;
+    else process.env.DMOSS_TOOL_LOOP_IDENTICAL_LIMIT = oldIdentical;
+  }
+}
+
+function runSteeringTests() {
+  const errorEngine = new SteeringEngine([BUILTIN_ERROR_RECOVERY_RULE]);
+  const errorGuidance = errorEngine.evaluate({
+    messages: [],
+    turn: 3,
+    consecutiveToolErrors: 3,
+    totalToolCalls: 3,
+    contextUsageRatio: 0,
+    sessionKey: 'test',
+  });
+  assert.equal(errorGuidance.firedRules[0], 'error-recovery');
+  assert.ok(errorGuidance.guidances.join('\n').includes('web_search/web_fetch'));
+  assert.ok(errorGuidance.guidances.join('\n').includes('lower-level device commands'));
+
+  const loopEngine = new SteeringEngine([BUILTIN_TOOL_LOOP_RULE]);
+  const loopGuidance = loopEngine.evaluate({
+    messages: Array.from({ length: 4 }, (_, i) => ({
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: `t${i}`, name: 'preset_probe', input: {} }],
+    })),
+    turn: 8,
+    consecutiveToolErrors: 0,
+    totalToolCalls: 8,
+    contextUsageRatio: 0,
+    sessionKey: 'test',
+  });
+  assert.equal(loopGuidance.firedRules[0], 'tool-loop');
+  assert.ok(loopGuidance.guidances.join('\n').includes('switch to a different source of evidence'));
+  console.log('  [PASS] steering nudges explicitly require fallback evidence');
+}
+
+await runChatScenario(
+  'identical input short-circuits on third request',
+  [
+    { name: 'preset_probe', input: { value: 'same' } },
+    { name: 'preset_probe', input: { value: 'same' } },
+    { name: 'preset_probe', input: { value: 'same' } },
+  ],
+  { DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: 2 },
+  ({ calls, result, messages }) => {
+    assert.equal(calls.length, 1, 'second identical non-mutating call should replay, not execute');
+    assert.equal(result.response, 'saw guard and pivoted');
+    assert.ok(lastToolResultText(messages).includes(GUARD_MARKER));
+    assert.ok(lastToolResultText(messages).includes('web_search/web_fetch'));
+  },
+);
+
+await runChatScenario(
+  'single tool budget short-circuits distinct inputs',
+  [
+    { name: 'preset_probe', input: { value: '0' } },
+    { name: 'preset_probe', input: { value: '1' } },
+    { name: 'preset_probe', input: { value: '2' } },
+    { name: 'preset_probe', input: { value: '3' } },
+  ],
+  {
+    DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: 99,
+    DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT: 3,
+    DMOSS_TOOL_LOOP_TOTAL_LIMIT: 99,
+  },
+  ({ calls, messages }) => {
+    assert.equal(calls.length, 3);
+    assert.ok(lastToolResultText(messages).includes('preset_probe has already been requested 3 time(s)'));
+  },
+);
+
+await runChatScenario(
+  'total tool budget catches cross-tool churn',
+  [
+    { name: 'preset_probe', input: { value: '0' } },
+    { name: 'web_search', input: { value: '1' } },
+    { name: 'device_exec', input: { value: '2' } },
+    { name: 'preset_probe', input: { value: '3' } },
+    { name: 'web_search', input: { value: '4' } },
+  ],
+  {
+    DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: 99,
+    DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT: 99,
+    DMOSS_TOOL_LOOP_TOTAL_LIMIT: 4,
+  },
+  ({ calls, messages }) => {
+    assert.equal(calls.length, 4);
+    assert.ok(lastToolResultText(messages).includes('user turn already requested 4 tool call(s)'));
+  },
+);
+
+await runChatScenario(
+  'invalid env values fall back to default limits',
+  [
+    { name: 'preset_probe', input: { value: 'same' } },
+    { name: 'preset_probe', input: { value: 'same' } },
+    { name: 'preset_probe', input: { value: 'same' } },
+  ],
+  { DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: 'not-a-number' },
+  ({ messages }) => {
+    assert.ok(lastToolResultText(messages).includes('identical input was already requested 2 time(s)'));
+  },
+);
+
+await runStreamScenario();
+runSteeringTests();
+
+console.log('\n[pass] tool-loop-guard self-test: 6/6');

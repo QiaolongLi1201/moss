@@ -1,0 +1,53 @@
+{
+  "name": "@dmoss/memory",
+  "version": "0.3.1",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "description": "D-Moss Memory: context-aware memory selection and self-learning memory draft generation for agent runtime.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": ["dist", "src", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/D-Moss/dmoss-memory.git"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "@dmoss/core": "^0.3.1"
+  },
+  "peerDependencies": {
+    "@dmoss/agent": "^0.3.1"
+  },
+  "peerDependenciesMeta": {
+    "@dmoss/agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": ["dmoss", "memory", "context-selector", "self-learning", "agent", "robotics"]
+}

@@ -83,14 +83,28 @@ function makeToolPrunablePredicate(
   };
 }
 
-/** 简易 glob 匹配 (仅支持 * 通配符) */
+/** 简易 glob 匹配 (仅支持 * 通配符)。使用字符串 indexOf 避免 regex 回溯 ReDoS。 */
 function matchGlob(value: string, pattern: string): boolean {
   if (pattern === "*") return true;
   if (!pattern.includes("*")) return value === pattern;
-  const regex = new RegExp(
-    `^${pattern.replace(/[.*+?^${}()|[\]\\]/g, (ch) => (ch === "*" ? ".*" : `\\${ch}`))}$`,
-  );
-  return regex.test(value);
+
+  const parts = pattern.split("*");
+  // 开头必须匹配第一个字面片段
+  if (parts[0] !== "" && !value.startsWith(parts[0])) return false;
+  let pos = parts[0].length;
+
+  // 中间片段按序匹配
+  for (let i = 1; i < parts.length - 1; i++) {
+    if (parts[i] === "") continue;
+    const idx = value.indexOf(parts[i], pos);
+    if (idx === -1) return false;
+    pos = idx + parts[i].length;
+  }
+
+  // 结尾必须匹配最后一个字面片段
+  const last = parts[parts.length - 1];
+  if (last === "") return true;
+  return value.length >= pos + last.length && value.endsWith(last);
 }
 
 // ============== 配置 ==============

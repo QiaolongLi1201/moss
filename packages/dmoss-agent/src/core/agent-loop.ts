@@ -102,7 +102,11 @@ const DEFAULT_TOOL_HEARTBEAT_INTERVAL_MS = 30_000;
 /** Hard cap on message count to prevent unbounded growth when context window is large. */
 const HARD_CAP_MESSAGE_COUNT = 200;
 
-/** Hard cap on total characters — force compaction when exceeded regardless of window economics. */
+/**
+ * Hard cap on total characters — force compaction when exceeded regardless of window economics.
+ * Once compaction succeeds the char cap backs off (message-count cap stays active),
+ * to avoid compaction loops when the model outputs a naturally long context.
+ */
 const HARD_CAP_TOTAL_CHARS = 500_000;
 
 /** 上下文末尾是否为「刚写入的工具结果」user 消息，尚缺一次模型调用来读结果并回复用户 */

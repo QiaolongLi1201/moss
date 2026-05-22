@@ -82,6 +82,9 @@ const TIMEOUT_PATTERNS = [
   "deadline exceeded",
   "context deadline exceeded",
   "etimedout",
+  "first chunk",
+  "first event",
+  "no streaming output",
 ];
 
 const CONNECTION_PATTERNS = [

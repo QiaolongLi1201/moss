@@ -20,6 +20,8 @@ The public contract lives in `@dmoss/core/contracts/host-adapter`.
 A Moss release can be adopted by a host without changing host code when:
 
 - `contractVersion` matches `MOSS_HOST_ADAPTER_CONTRACT_VERSION`.
+- Or, when Moss only needs a compatible range, the host contract version falls
+  within `minContractVersion` and `maxContractVersion`.
 - The host version satisfies the Moss release requirement.
 - Required capability kinds are present in the host manifest.
 - Required event schemas and provider families are present.
@@ -27,6 +29,10 @@ A Moss release can be adopted by a host without changing host code when:
 If one of those checks fails, the host adapter must be updated before the Moss
 bundle is upgraded. This keeps the normal path simple while making incompatible
 changes explicit.
+
+Exact `contractVersion` still wins if it is present in the requirement. Range
+fields are only used when Moss intentionally allows more than one host contract
+version.
 
 ## Minimal Host Manifest
 
@@ -63,6 +69,17 @@ const report = evaluateMossHostCompatibility(manifest, {
   requiredCapabilities: ['llm_provider'],
 });
 ```
+
+## Manifest Validation
+
+`evaluateMossHostCompatibility()` now rejects obviously invalid manifests with
+`status: 'invalid_manifest'` before it performs compatibility checks. That
+includes missing top-level sections such as `capabilities`, `providers`,
+`tools`, `eventSinks`, or `knowledgeModules`, plus malformed records in the
+sections that the compatibility check actually reads.
+
+This is intentionally lightweight. It catches malformed input early without
+turning the adapter into a full schema validator.
 
 ## Compatibility Promise
 

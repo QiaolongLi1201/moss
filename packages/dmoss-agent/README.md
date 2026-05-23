@@ -45,6 +45,8 @@ Build AI-powered developer tools for any robotics platform with pluggable knowle
 | Safety helpers, protected paths (host registers paths) | Concrete device tools and deployment scripts |
 | Default robotics/domain prompts from `@dmoss/core` (tunable via `DmossAgent` config) | Product-specific prompts wired in `server/dmoss/*` (host) |
 | Goal Mode runtime: goal state, agent methods, prompt injection | CLI slash commands, UI controls, approval policy, background execution |
+| Observability helpers for tracing, usage logging, and redaction via `@dmoss/agent/observability` | Host-owned telemetry pipeline and exporters |
+| Mesh event bus and orchestration helpers via `@dmoss/agent/mesh` | Ad hoc text parsing for child runs and peer events |
 
 The open-source boundary is clean: `packages/dmoss/` + `packages/dmoss-agent/` in this monorepo are the stable public packages. Anything a host application builds on top (HTTP servers, desktop shells, SSH bridges, etc.) is the host's concern and not part of this package's public API.
 

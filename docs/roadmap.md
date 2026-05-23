@@ -79,6 +79,28 @@ This target is met when:
 - Release notes record host adapter impact, verification commands, and RDK
   Studio consumption status.
 
+## Current Gate
+
+The authoritative local and CI gate is `npm run verify`. It runs open-source
+boundary checks, workspace hygiene checks, workspace builds, typechecks, and
+recursive package tests, including nested e2e replay scenarios under package
+test directories.
+
+Host Adapter acceptance is covered by the `@dmoss/core` conformance suite and
+the `@dmoss/agent` fixture host. Both run through the package test entrypoints
+and therefore through the root gate.
+
+Dead-code cleanup remains a separate audit-backed lane: prove a symbol is unused
+with source search, build/typecheck output, import/export checks, and tests
+before deleting it.
+
+## Next Target
+
+The next optimization target is stable host integration with an observable
+runtime and a dead-code-free public surface. Keep Host Adapter, telemetry, mesh
+events, and public exports contract-first; keep deletion work isolated from
+feature work.
+
 ## Phases
 
 ### Phase 1: Trustworthy Project Hygiene

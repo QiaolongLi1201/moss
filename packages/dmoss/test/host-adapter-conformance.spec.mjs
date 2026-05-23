@@ -2,9 +2,9 @@
 /**
  * Conformance tests for the Moss Host Adapter contract.
  *
- * Covers all 6 compatibility status outcomes plus edge cases for
- * semantic versioning, empty requirements, extra capabilities, and
- * multiple missing items in a single report.
+ * Covers all compatibility status outcomes plus edge cases for
+ * contract negotiation, semantic versioning, empty requirements,
+ * extra capabilities, and multiple missing items in a single report.
  *
  * Run: `node packages/dmoss/test/host-adapter-conformance.spec.mjs`
  * Exit 0 on pass; exit 1 on any assertion failure.
@@ -304,6 +304,85 @@ total++;
   assert.equal(result.status, 'ok');
   assert.equal(result.compatible, true);
   console.log('  [PASS] requirement with no contractVersion defaults to MOSS_HOST_ADAPTER_CONTRACT_VERSION');
+  passed++;
+}
+
+/* ---- Test 17: contract version range accepts an in-range manifest ---- */
+
+total++;
+{
+  const futureCompatibleManifest = { ...fixtureManifest, contractVersion: 2 };
+  const result = evaluateMossHostCompatibility(futureCompatibleManifest, {
+    minContractVersion: 1,
+    maxContractVersion: 2,
+  });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.compatible, true);
+  console.log('  [PASS] contract version range accepts in-range manifest');
+  passed++;
+}
+
+/* ---- Test 18: contract version range rejects an out-of-range manifest ---- */
+
+total++;
+{
+  const tooNewManifest = { ...fixtureManifest, contractVersion: 3 };
+  const result = evaluateMossHostCompatibility(tooNewManifest, {
+    minContractVersion: 1,
+    maxContractVersion: 2,
+  });
+  assert.equal(result.status, 'contract_mismatch');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('outside Moss requirement range'));
+  console.log('  [PASS] contract version range rejects out-of-range manifest');
+  passed++;
+}
+
+/* ---- Test 19: exact contractVersion keeps priority over range fields ---- */
+
+total++;
+{
+  const result = evaluateMossHostCompatibility(fixtureManifest, {
+    contractVersion: 2,
+    minContractVersion: 1,
+    maxContractVersion: 1,
+  });
+  assert.equal(result.status, 'contract_mismatch');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('does not match Moss requirement v2'));
+  console.log('  [PASS] exact contractVersion takes priority over range fields');
+  passed++;
+}
+
+/* ---- Test 20: invalid manifest shape is reported before compatibility checks ---- */
+
+total++;
+{
+  const invalidManifest = { ...fixtureManifest, capabilities: undefined };
+  const result = evaluateMossHostCompatibility(invalidManifest, {
+    minContractVersion: 1,
+    maxContractVersion: 1,
+  });
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('capabilities'));
+  console.log('  [PASS] invalid manifest shape returns invalid_manifest');
+  passed++;
+}
+
+/* ---- Test 21: invalid nested provider record is also rejected ---- */
+
+total++;
+{
+  const invalidManifest = { ...fixtureManifest, providers: [{}] };
+  const result = evaluateMossHostCompatibility(invalidManifest, {
+    minContractVersion: 1,
+    maxContractVersion: 1,
+  });
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('providers'));
+  console.log('  [PASS] invalid nested provider record returns invalid_manifest');
   passed++;
 }
 

@@ -317,6 +317,17 @@ check('manifest passes strict compatibility check', () => {
   assert.equal(strictReport.status, 'ok');
 });
 
+const negotiatedReport = evaluateMossHostCompatibility(manifest, {
+  minContractVersion: 1,
+  maxContractVersion: MOSS_HOST_ADAPTER_CONTRACT_VERSION,
+  requiredCapabilities: ['llm_provider', 'tool_registry', 'event_sink'],
+});
+
+check('manifest passes contract version range negotiation', () => {
+  assert.equal(negotiatedReport.compatible, true, `reasons: ${negotiatedReport.reasons.join(', ')}`);
+  assert.equal(negotiatedReport.status, 'ok');
+});
+
 // ─── Summary ───────────────────────────────────────────────
 
 const total = passCount + failCount;

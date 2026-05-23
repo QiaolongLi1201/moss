@@ -27,6 +27,7 @@ npm install @dmoss/agent @dmoss/core
 | `@dmoss/agent/context` | Context window, truncation, compaction helpers |
 | `@dmoss/agent/provider` | Provider adapter and retry/error helpers |
 | `@dmoss/agent/safety` | Secret masking, command/path safety |
+| `@dmoss/agent/observability` | Redaction, tracing, and LLM usage helpers |
 | `@dmoss/agent/knowledge` | Knowledge registry access |
 | `@dmoss/agent/extensions` | Platform extension lifecycle |
 | `@dmoss/agent/prompts` | Prompt telemetry helpers |
@@ -40,6 +41,7 @@ npm install @dmoss/agent @dmoss/core
 Some modules exist for internal runtime wiring but are not stable public entry points:
 
 - `@dmoss/agent/core/subagent-orchestrator.js` is an internal implementation detail for fan-out / pipeline orchestration. Host applications should not deep import it.
+- Observability helpers are stable from `@dmoss/agent/observability`; they are not re-exported from the root `@dmoss/agent` entry.
 - `dmossRunTrace` remains available from `@dmoss/agent/utils`, not from the root `@dmoss/agent` entry.
 
 ## API stability labels
@@ -389,7 +391,18 @@ Exported from `@dmoss/agent/mesh`:
 - `createMeshTools()` — create mesh-backed tools for agent collaboration
 - `isMeshVerboseEnabled()` — check verbose logging flag
 - `LanDiscovery` — LAN peer discovery via UDP broadcast
-- Types: `MeshConfig`, `MeshPeer`, `MeshMessage`
+- `MeshEventBus` — structured event sink for child runs, approvals, cancellations, and mesh peer lifecycle
+- Types: `MeshConfig`, `MeshPeer`, `MeshMessage`, `MeshEvent`, `MeshEventSink`
+
+## Observability API
+
+Exported from `@dmoss/agent/observability`:
+
+- `redactSensitiveData()` and `parseTelemetryAllow()` — redact prompts, credentials, IPs, and file-like payloads before telemetry leaves the runtime
+- `setTracer()`, `getTracer()`, `withSpan()` — install and use a host-owned tracing bridge
+- `turnAttributes()`, `toolAttributes()`, `llmRequestAttributes()` — build stable span attributes
+- `logLLMUsage()`, `readUsageLog()`, `summarizeUsage()`, `formatUsageSummary()` — write and inspect JSONL usage records
+- `estimateLLMCost()` and `registerModelPricing()` — optional local cost estimation
 
 ## Context API
 

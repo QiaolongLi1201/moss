@@ -9,7 +9,7 @@
 
 export const MOSS_HOST_ADAPTER_CONTRACT_VERSION = 1;
 
-export type MossHostAdapterContractVersion = typeof MOSS_HOST_ADAPTER_CONTRACT_VERSION;
+export type MossHostAdapterContractVersion = number;
 
 export type MossHostCapabilityStability = 'stable' | 'evolving' | 'experimental';
 
@@ -101,6 +101,8 @@ export interface MossHostRuntimeManifest {
 export interface MossHostCompatibilityRequirement {
   minHostVersion?: string;
   contractVersion?: MossHostAdapterContractVersion;
+  minContractVersion?: MossHostAdapterContractVersion;
+  maxContractVersion?: MossHostAdapterContractVersion;
   requiredCapabilities?: readonly MossHostCapabilityKind[];
   requiredEventSchemas?: readonly string[];
   requiredProviderFamilies?: readonly string[];
@@ -108,6 +110,7 @@ export interface MossHostCompatibilityRequirement {
 
 export type MossHostCompatibilityStatus =
   | 'ok'
+  | 'invalid_manifest'
   | 'host_version_incompatible'
   | 'contract_mismatch'
   | 'missing_capability'
@@ -140,34 +143,164 @@ function compareSemver(a: string, b: string): number {
   return 0;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function validateMossHostManifestShape(manifest: unknown): string | null {
+  if (!isRecord(manifest)) return 'manifest must be an object';
+  if (manifest.schema !== 'moss_host_adapter.v1') {
+    return 'manifest.schema must be moss_host_adapter.v1';
+  }
+  if (typeof manifest.contractVersion !== 'number') {
+    return 'manifest.contractVersion must be a number';
+  }
+
+  if (!isRecord(manifest.host)) return 'manifest.host must be an object';
+  if (
+    typeof manifest.host.id !== 'string' ||
+    typeof manifest.host.name !== 'string' ||
+    typeof manifest.host.version !== 'string'
+  ) {
+    return 'manifest.host must include string id, name, and version';
+  }
+
+  if (!isRecord(manifest.moss)) return 'manifest.moss must be an object';
+  if (typeof manifest.moss.version !== 'string' || !Array.isArray(manifest.moss.packages)) {
+    return 'manifest.moss must include string version and packages array';
+  }
+
+  if (!Array.isArray(manifest.capabilities)) return 'manifest.capabilities must be an array';
+  if (
+    manifest.capabilities.some(
+      (capability) =>
+        !isRecord(capability) ||
+        typeof capability.kind !== 'string' ||
+        typeof capability.version !== 'string' ||
+        typeof capability.stability !== 'string' ||
+        typeof capability.summary !== 'string',
+    )
+  ) {
+    return 'manifest.capabilities must be an array of capability records';
+  }
+
+  if (!Array.isArray(manifest.providers)) return 'manifest.providers must be an array';
+  if (
+    manifest.providers.some(
+      (provider) =>
+        !isRecord(provider) ||
+        typeof provider.id !== 'string' ||
+        !isStringArray(provider.families) ||
+        typeof provider.configuredByHost !== 'boolean' ||
+        typeof provider.streaming !== 'boolean' ||
+        typeof provider.toolCalling !== 'boolean',
+    )
+  ) {
+    return 'manifest.providers must be an array of provider records';
+  }
+
+  if (!Array.isArray(manifest.tools)) return 'manifest.tools must be an array';
+  if (
+    manifest.tools.some(
+      (tool) =>
+        !isRecord(tool) ||
+        typeof tool.name !== 'string' ||
+        typeof tool.boundaryId !== 'string' ||
+        typeof tool.sideEffectClass !== 'string' ||
+        typeof tool.approval !== 'string' ||
+        typeof tool.source !== 'string',
+    )
+  ) {
+    return 'manifest.tools must be an array of tool records';
+  }
+
+  if (!Array.isArray(manifest.eventSinks)) return 'manifest.eventSinks must be an array';
+  if (
+    manifest.eventSinks.some(
+      (sink) =>
+        !isRecord(sink) ||
+        typeof sink.id !== 'string' ||
+        !isStringArray(sink.schemas) ||
+        typeof sink.supportsStreaming !== 'boolean',
+    )
+  ) {
+    return 'manifest.eventSinks must be an array of event sink records';
+  }
+
+  if (!Array.isArray(manifest.knowledgeModules)) {
+    return 'manifest.knowledgeModules must be an array';
+  }
+
+  return null;
+}
+
+function emptyFailureReport(
+  status: Exclude<MossHostCompatibilityStatus, 'ok'>,
+  reasons: readonly string[],
+): MossHostCompatibilityReport {
+  return {
+    compatible: false,
+    status,
+    reasons,
+    missingCapabilities: [],
+    missingEventSchemas: [],
+    missingProviderFamilies: [],
+  };
+}
+
 export function evaluateMossHostCompatibility(
-  manifest: MossHostRuntimeManifest,
+  manifest: unknown,
   requirement: MossHostCompatibilityRequirement = {},
 ): MossHostCompatibilityReport {
-  const expectedContractVersion =
-    requirement.contractVersion ?? MOSS_HOST_ADAPTER_CONTRACT_VERSION;
   const reasons: string[] = [];
+  const invalidManifestReason = validateMossHostManifestShape(manifest);
 
-  if (manifest.contractVersion !== expectedContractVersion) {
+  if (invalidManifestReason) {
+    reasons.push(invalidManifestReason);
+    return emptyFailureReport('invalid_manifest', reasons);
+  }
+
+  const runtimeManifest = manifest as MossHostRuntimeManifest;
+
+  if (requirement.contractVersion !== undefined) {
+    if (runtimeManifest.contractVersion !== requirement.contractVersion) {
+      reasons.push(
+        `host adapter contract v${runtimeManifest.contractVersion} does not match Moss requirement v${requirement.contractVersion}`,
+      );
+      return emptyFailureReport('contract_mismatch', reasons);
+    }
+  } else if (
+    requirement.minContractVersion !== undefined ||
+    requirement.maxContractVersion !== undefined
+  ) {
+    const minContractVersion = requirement.minContractVersion ?? Number.NEGATIVE_INFINITY;
+    const maxContractVersion = requirement.maxContractVersion ?? Number.POSITIVE_INFINITY;
+    if (
+      runtimeManifest.contractVersion < minContractVersion ||
+      runtimeManifest.contractVersion > maxContractVersion
+    ) {
+      reasons.push(
+        `host adapter contract v${runtimeManifest.contractVersion} is outside Moss requirement range ${minContractVersion}..${maxContractVersion}`,
+      );
+      return emptyFailureReport('contract_mismatch', reasons);
+    }
+  } else if (runtimeManifest.contractVersion !== MOSS_HOST_ADAPTER_CONTRACT_VERSION) {
     reasons.push(
-      `host adapter contract v${manifest.contractVersion} does not match Moss requirement v${expectedContractVersion}`,
+      `host adapter contract v${runtimeManifest.contractVersion} does not match Moss requirement v${MOSS_HOST_ADAPTER_CONTRACT_VERSION}`,
     );
-    return {
-      compatible: false,
-      status: 'contract_mismatch',
-      reasons,
-      missingCapabilities: [],
-      missingEventSchemas: [],
-      missingProviderFamilies: [],
-    };
+    return emptyFailureReport('contract_mismatch', reasons);
   }
 
   if (
     requirement.minHostVersion &&
-    compareSemver(manifest.host.version, requirement.minHostVersion) < 0
+    compareSemver(runtimeManifest.host.version, requirement.minHostVersion) < 0
   ) {
     reasons.push(
-      `host ${manifest.host.version} is older than required ${requirement.minHostVersion}`,
+      `host ${runtimeManifest.host.version} is older than required ${requirement.minHostVersion}`,
     );
     return {
       compatible: false,
@@ -179,7 +312,9 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const capabilityKinds = new Set(manifest.capabilities.map((capability) => capability.kind));
+  const capabilityKinds = new Set(
+    runtimeManifest.capabilities.map((capability) => capability.kind),
+  );
   const missingCapabilities = (requirement.requiredCapabilities ?? []).filter(
     (kind) => !capabilityKinds.has(kind),
   );
@@ -195,7 +330,7 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const eventSchemas = new Set(manifest.eventSinks.flatMap((sink) => [...sink.schemas]));
+  const eventSchemas = new Set(runtimeManifest.eventSinks.flatMap((sink) => [...sink.schemas]));
   const missingEventSchemas = (requirement.requiredEventSchemas ?? []).filter(
     (schema) => !eventSchemas.has(schema),
   );
@@ -211,7 +346,9 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const providerFamilies = new Set(manifest.providers.flatMap((provider) => [...provider.families]));
+  const providerFamilies = new Set(
+    runtimeManifest.providers.flatMap((provider) => [...provider.families]),
+  );
   const missingProviderFamilies = (requirement.requiredProviderFamilies ?? []).filter(
     (family) => !providerFamilies.has(family),
   );

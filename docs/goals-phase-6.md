@@ -19,6 +19,14 @@
 
 **行动**: Tree-sitter 整体移入 Phase 7。Host Adapter 升为 Week 1 唯一焦点。Mesh 补事件协议。E2E 补 mock/golden 素材。Observability 补 redaction layer。
 
+## 当前进展（2026-05-23）
+
+- `npm run verify` 已作为权威 gate 跑通：boundary/hygiene/build/typecheck/package tests，并覆盖嵌套 e2e replay。
+- Host Adapter 已补 exact/range contract negotiation、`invalid_manifest`、conformance tests 与 fixture host 验证。
+- Observability 已有 runtime smoke：`DmossAgent.chat()` 触发 span、usage log、失败路径 redaction。
+- Public API 已明确：root export 保持小而稳定，mesh 与 observability 作为 subpath-only surface。
+- 剩余高风险 lane：dead-code 删除。首批 helper-file 删除已完成；后续仍必须先独立 audit，再按批删除并跑 `npm run verify`。
+
 ---
 
 ## A — Host Adapter v1 正式合约 (5-7 天) 🔴 最高优先级

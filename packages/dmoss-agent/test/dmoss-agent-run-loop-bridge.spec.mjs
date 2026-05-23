@@ -12,6 +12,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DmossAgent, InMemorySessionStore, JsonlSessionStore } from '../dist/core/index.js';
+import { setTracer } from '../dist/observability/index.js';
 
 function createModelEventProvider(handler) {
   const requests = [];
@@ -73,6 +74,90 @@ function createModelEventProvider(handler) {
 
   const stored = await store.loadMessages('bridge-text');
   assert(stored.some((message) => message.role === 'assistant'));
+}
+
+{
+  const usageDir = await mkdtemp(path.join(os.tmpdir(), 'dmoss-observability-bridge-'));
+  const origUsageLog = process.env.DMOSS_LLM_USAGE_LOG;
+  process.env.DMOSS_LLM_USAGE_LOG = path.join(usageDir, 'llm-usage.jsonl');
+
+  const spans = [];
+  const noopTracer = {
+    startSpan() {
+      return {
+        setAttribute() {},
+        addEvent() {},
+        setStatus() {},
+        end() {},
+      };
+    },
+  };
+  setTracer({
+    startSpan(name, attributes) {
+      const spanRecord = { name, attributes, events: [], attributesSet: {}, status: undefined, ended: false };
+      spans.push(spanRecord);
+      return {
+        setAttribute(key, value) {
+          spanRecord.attributesSet[key] = value;
+        },
+        addEvent(eventName, eventAttributes) {
+          spanRecord.events.push({ name: eventName, attributes: eventAttributes });
+        },
+        setStatus(ok, message) {
+          spanRecord.status = { ok, message };
+        },
+        end() {
+          spanRecord.ended = true;
+        },
+      };
+    },
+  });
+
+  try {
+    const store = new InMemorySessionStore();
+    const { provider } = createModelEventProvider(() => {
+      throw new Error('device unreachable at 192.168.1.42');
+    });
+    const agent = new DmossAgent({
+      llmProvider: provider,
+      sessionStore: store,
+      model: 'fake-model',
+      domainPrompt: false,
+      includeRegisteredKnowledgePrompts: false,
+      baseSystemPrompt: 'base',
+      maxAgentTurns: 1,
+    });
+
+    await assert.rejects(
+      () => agent.chat('bridge-observability-redaction', 'trigger redacted failure'),
+      /device unreachable|provider_error|llm/i,
+    );
+
+    const llmTurnSpan = spans.find((span) => span.name === 'agent.llm_turn');
+    assert(llmTurnSpan, 'expected real DmossAgent.chat() to start agent.llm_turn span');
+    assert.equal(llmTurnSpan.ended, true, 'expected llm turn span to end');
+    assert.equal(llmTurnSpan.status?.ok, false, 'expected failed provider turn to mark span failed');
+
+    const raw = await readFile(path.join(usageDir, 'llm-usage.jsonl'), 'utf8');
+    const records = raw
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+
+    assert.equal(records.length, 1, 'expected one failed usage record');
+    assert.equal(records[0].success, false);
+    assert.equal(records[0].error, '[REDACTED]');
+    assert.doesNotMatch(JSON.stringify(records[0]), /192\.168\.1\.42/);
+  } finally {
+    setTracer(noopTracer);
+    if (origUsageLog) {
+      process.env.DMOSS_LLM_USAGE_LOG = origUsageLog;
+    } else {
+      delete process.env.DMOSS_LLM_USAGE_LOG;
+    }
+    await rm(usageDir, { recursive: true, force: true });
+  }
 }
 
 {

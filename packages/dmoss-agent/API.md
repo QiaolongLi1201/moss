@@ -35,6 +35,13 @@ npm install @dmoss/agent @dmoss/core
 | `@dmoss/agent/tools/builtin` | Built-in filesystem/shell/search tools |
 | `@dmoss/agent/mesh` | Multi-agent mesh (HTTP + LAN discovery) |
 
+### Internal runtime helpers
+
+Some modules exist for internal runtime wiring but are not stable public entry points:
+
+- `@dmoss/agent/core/subagent-orchestrator.js` is an internal implementation detail for fan-out / pipeline orchestration. Host applications should not deep import it.
+- `dmossRunTrace` remains available from `@dmoss/agent/utils`, not from the root `@dmoss/agent` entry.
+
 ## API stability labels
 
 These labels describe **semver intent** for `@dmoss/agent` **only** (not any embedding host application).
@@ -112,6 +119,29 @@ Returned by `chat()` and emitted by `streamChat()` on `done`:
 | `compactions` | `number` | Number of compaction passes |
 | `steeringEvents` | `string[]` | Fired steering guidance |
 | `stopReason` | `'max_turns_reached' \| 'tool_followup_cap_reached'` | Early termination reason |
+
+### Goal Mode
+
+Goal Mode is a host-neutral runtime capability for a session/thread. `DmossAgent` stores the current goal in the configured `SessionStore` as an internal checkpoint message and injects active or paused goal context into the system prompt during `chat()` / `streamChat()`.
+
+The runtime does **not** start automatic background work. CLI slash commands, UI controls, approval policy, scheduling, and any autonomous execution loop are host responsibilities.
+
+| Method | Purpose |
+|--------|---------|
+| `setGoal(sessionKey, objective)` | Create or replace the thread goal for a session |
+| `getGoal(sessionKey)` | View the current `GoalState`, or `undefined` when no goal is stored |
+| `pauseGoal(sessionKey, reason?)` | Mark the goal as paused and preserve the reason for prompt context |
+| `resumeGoal(sessionKey)` | Mark a paused goal as active again |
+| `completeGoal(sessionKey, reason?)` | Mark the goal as completed |
+| `blockGoal(sessionKey, reason?)` | Mark the goal as blocked |
+| `clearGoal(sessionKey)` | Remove goal state from the session |
+
+| Type | Purpose |
+|------|---------|
+| `GoalState` | Session goal with objective, status, timestamps, and optional status reason |
+| `GoalStatus` | Goal lifecycle status: `active`, `paused`, `completed`, or `blocked` |
+
+Completed and blocked goals are stored for hosts to inspect until cleared, but only active or paused goals are injected as model guidance.
 
 ## Event Model
 
@@ -290,6 +320,8 @@ Built-in stores:
 - `InMemorySessionStore`
 - `JsonlSessionStore`
 
+Goal Mode uses the existing `SessionStore` message stream. No new `SessionStore` methods are required; the runtime writes and strips its internal goal checkpoint messages before sending chat history to the model.
+
 Session helpers available from `@dmoss/agent/core`:
 
 - `resolveSessionKey()`
@@ -419,6 +451,8 @@ if (!surface.silent) {
 The following should be treated as **host-specific** or **internal**, unless separately documented:
 
 - Host application HTTP routes and socket payloads
+- CLI slash command syntax and UI controls for goal management
+- Background or autonomous execution loops built around a stored goal
 - Host-specific SDKs and orchestration engines
 - Product-specific tool names and approval policies implemented by the host
 

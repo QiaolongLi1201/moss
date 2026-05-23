@@ -56,6 +56,17 @@ export type SubAgentRunner = (
   signal: AbortSignal,
 ) => Promise<SubAgentResult>;
 
+function emitChildRunProgress(eventBus: MeshEventBus | undefined, runId: string): void {
+  eventBus?.emit({
+    type: 'child_run_progress',
+    runId,
+    turn: 0,
+    toolCalls: [],
+    status: 'running',
+    timestamp: Date.now(),
+  });
+}
+
 // ── Fan-out (parallel dispatch) ─────────────────────────────────
 
 export async function runFanOut(
@@ -81,6 +92,7 @@ export async function runFanOut(
       toolSet: [...(resolveSpawnToolSet(config.scope) ?? [])],
       timestamp: Date.now(),
     });
+    emitChildRunProgress(eventBus, config.runId);
 
     try {
       const result = await runner(config, controller.signal);
@@ -173,6 +185,7 @@ export async function runPipeline(
       toolSet: [...(resolveSpawnToolSet(augmentedConfig.scope) ?? [])],
       timestamp: Date.now(),
     });
+    emitChildRunProgress(eventBus, augmentedConfig.runId);
 
     try {
       const result = await runner(augmentedConfig, controller.signal);

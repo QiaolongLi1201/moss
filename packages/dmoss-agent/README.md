@@ -24,6 +24,7 @@ npx -y @dmoss/agent "帮我检查当前目录"
 | ✅ **Framework-level tool self-healing** — reconstructs `tool_use` from plan text when LLM stream drops `tool_calls` | Retries the whole turn or just fails |
 | ✅ **Built-in ROS2 / device SSH / device diagnostics tools** | You wire these yourself |
 | ✅ **Context compaction + steering + follow-up guard** out of the box | Single-loop prompt → response |
+| ✅ **Thread Goal Mode** — session-backed goals injected into the system prompt | Untracked objective hidden in chat history |
 | ✅ **Chinese as first-class locale** (prompts, errors, CLI) | English-only |
 | ✅ **Board delegation** — run LLMs on an edge gateway, not the cloud | Cloud API only |
 
@@ -43,6 +44,7 @@ Build AI-powered developer tools for any robotics platform with pluggable knowle
 | Optional `PiAiLLMProvider` (bridges `@mariozechner/pi-ai` → `LLMProvider`) | Use only if you already build on pi-ai streams; otherwise skip in **your** code |
 | Safety helpers, protected paths (host registers paths) | Concrete device tools and deployment scripts |
 | Default robotics/domain prompts from `@dmoss/core` (tunable via `DmossAgent` config) | Product-specific prompts wired in `server/dmoss/*` (host) |
+| Goal Mode runtime: goal state, agent methods, prompt injection | CLI slash commands, UI controls, approval policy, background execution |
 
 The open-source boundary is clean: `packages/dmoss/` + `packages/dmoss-agent/` in this monorepo are the stable public packages. Anything a host application builds on top (HTTP servers, desktop shells, SSH bridges, etc.) is the host's concern and not part of this package's public API.
 
@@ -166,6 +168,7 @@ console.log(result.response);
   ├── Safety             — Secret sanitization, dangerous command detection
   ├── Skills             — SKILL.md scanning and matching
   ├── Session            — JSONL session persistence + in-memory option
+  ├── Goal Mode          — Session-backed thread goals for prompt context
   ├── Context            — Pruning, compaction, token estimation
   ├── Provider           — Error classification, retry with exponential backoff
   ├── Prompts            — Robotics engineering prompts, telemetry
@@ -201,6 +204,14 @@ console.log(result.response);
 | `LLMMessage` / `LLMContentBlock` | LLM message types |
 | `ChannelSafetyResult` | Command safety check result |
 | `SkillMeta` | Skill metadata |
+| `GoalState` | Thread goal with objective, status, and timestamps |
+| `GoalStatus` | Goal lifecycle status (`active`, `paused`, `completed`, `blocked`) |
+
+### Runtime capabilities
+
+| Capability | Description |
+|------------|-------------|
+| Goal Mode | `DmossAgent` can set, view, pause, resume, complete, block, and clear a session goal, then inject active or paused goal context into the system prompt |
 
 ### Functions
 
@@ -255,6 +266,26 @@ const hooks: AgentHooks = {
   enrichToolContext: (ctx, key) => ({ ...ctx, deviceId: getDevice(key) }),
 };
 ```
+
+## Goal Mode
+
+D-Moss provides **thread-level goal tracking** without autonomous background execution. The runtime stores one goal per session in the configured `SessionStore` and injects active or paused goal context into the system prompt during chat turns.
+
+```typescript
+// Host sets the goal; the runtime stores it in session state.
+await agent.setGoal('session-1', 'Migrate CI pipeline to GitHub Actions');
+
+const goal = await agent.getGoal('session-1');
+
+// Host controls the lifecycle.
+await agent.pauseGoal('session-1', 'waiting for reviewer feedback');
+await agent.resumeGoal('session-1');
+await agent.completeGoal('session-1', 'verified in CI');
+// Or: await agent.blockGoal('session-1', 'blocked on missing credentials');
+await agent.clearGoal('session-1');
+```
+
+Hosts own the product behavior around this API: CLI slash commands, UI controls, approval workflows, and any background execution loop. `@dmoss/agent` only stores the goal and surfaces it to the model as runtime guidance.
 
 ## Adding a New Hardware Platform
 

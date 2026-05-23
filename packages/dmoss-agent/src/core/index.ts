@@ -283,5 +283,18 @@ export {
   type TaskFrameToolFinding,
 } from './task-frame.js';
 
+// Goal Mode
+export {
+  buildGoalModeContext,
+  createGoalCheckpointMessage,
+  createGoalState,
+  isGoalCheckpointMessage,
+  splitGoalCheckpointMessages,
+  stripGoalCheckpointsFromLlmMessages,
+  updateGoalState,
+  type GoalState,
+  type GoalStatus,
+} from './goal-state.js';
+
 // Skill Learner — auto-distill reusable skills from successful sessions.
 export { SkillLearner, type LearnedSkill, type SkillLearnerConfig } from './skill-learner.js';

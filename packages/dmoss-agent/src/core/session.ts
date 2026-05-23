@@ -64,12 +64,17 @@ export class InMemorySessionStore implements SessionStore {
   }
 
   async replaceMessages(sessionKey: string, messages: LLMMessage[]): Promise<void> {
-    const session = this.sessions.get(sessionKey);
-    if (session) {
-      session.messages = [...messages];
-      session.meta.updatedAt = Date.now();
-      session.meta.messageCount = messages.length;
+    let session = this.sessions.get(sessionKey);
+    if (!session) {
+      session = {
+        messages: [],
+        meta: { sessionKey, createdAt: Date.now(), updatedAt: Date.now(), messageCount: 0 },
+      };
+      this.sessions.set(sessionKey, session);
     }
+    session.messages = [...messages];
+    session.meta.updatedAt = Date.now();
+    session.meta.messageCount = messages.length;
   }
 
   async listSessions(): Promise<SessionMeta[]> {

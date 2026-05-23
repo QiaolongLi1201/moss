@@ -155,8 +155,10 @@ function makeConfigs(n, parentRunId) {
   await runFanOut(configs, runner, bus);
 
   assert.ok(events.includes('child_run_started'), 'events: should include child_run_started');
+  assert.ok(events.includes('child_run_progress'), 'events: should include child_run_progress');
   assert.ok(events.includes('child_run_completed'), 'events: should include child_run_completed');
   assert.equal(events.filter((e) => e === 'child_run_started').length, 2, 'events: 2 started events');
+  assert.equal(events.filter((e) => e === 'child_run_progress').length, 2, 'events: 2 progress events');
   assert.equal(events.filter((e) => e === 'child_run_completed').length, 2, 'events: 2 completed events');
   console.log('  [PASS] fan-out emits structured events');
 }
@@ -174,10 +176,29 @@ function makeConfigs(n, parentRunId) {
   await runFanOut(configs, runner, bus);
 
   assert.ok(events.includes('child_run_failed'), 'events: should include child_run_failed');
+  assert.ok(events.includes('child_run_progress'), 'events: should include child_run_progress');
   console.log('  [PASS] fan-out emits child_run_failed for failures');
 }
 
-// Test 9: empty fan-out returns immediately
+// Test 9: pipeline emits child_run_progress events
+{
+  const bus = new MeshEventBus();
+  const events = [];
+  bus.on((e) => events.push(e.type));
+
+  const configs = makeConfigs(2, 'parent-9');
+  const runner = makeMockRunner([
+    { runId: '', summary: 'Step A', toolResults: 1, turns: 1, durationMs: 5, success: true },
+    { runId: '', summary: 'Step B', toolResults: 2, turns: 2, durationMs: 8, success: true },
+  ]);
+  await runPipeline(configs, runner, bus);
+
+  assert.ok(events.includes('child_run_progress'), 'events: should include child_run_progress');
+  assert.equal(events.filter((e) => e === 'child_run_progress').length, 2, 'events: 2 progress events');
+  console.log('  [PASS] pipeline emits child_run_progress');
+}
+
+// Test 10: empty fan-out returns immediately
 {
   const result = await runFanOut([], makeMockRunner([]));
   assert.equal(result.results.length, 0);
@@ -185,7 +206,7 @@ function makeConfigs(n, parentRunId) {
   console.log('  [PASS] empty fan-out returns immediately');
 }
 
-// Test 10: empty pipeline returns immediately
+// Test 11: empty pipeline returns immediately
 {
   const result = await runPipeline([], makeMockRunner([]));
   assert.equal(result.results.length, 0);
@@ -193,4 +214,4 @@ function makeConfigs(n, parentRunId) {
   console.log('  [PASS] empty pipeline returns immediately');
 }
 
-console.log('\n[pass] subagent-orchestrator: 10/10');
+console.log('\n[pass] subagent-orchestrator: 11/11');

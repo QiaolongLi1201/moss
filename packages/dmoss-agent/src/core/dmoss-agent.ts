@@ -95,6 +95,14 @@ import {
   stripTaskFrameCheckpointsFromLlmMessages,
   type TaskFrame,
 } from './task-frame.js';
+import {
+  buildGoalModeContext,
+  createGoalCheckpointMessage,
+  createGoalState,
+  splitGoalCheckpointMessages,
+  updateGoalState,
+  type GoalState,
+} from './goal-state.js';
 import { runAgentLoop } from './agent-loop.js';
 import type { SkillLearner } from './skill-learner.js';
 import {
@@ -256,6 +264,70 @@ export class DmossAgent {
     };
   }
 
+  private async loadGoalState(sessionKey: string): Promise<{
+    goal?: GoalState;
+    messages: LLMMessage[];
+  }> {
+    const latest = await this.config.sessionStore.loadMessages(sessionKey);
+    return splitGoalCheckpointMessages(latest);
+  }
+
+  private async saveGoalState(sessionKey: string, goal?: GoalState): Promise<void> {
+    const latest = await this.config.sessionStore.loadMessages(sessionKey);
+    const split = splitGoalCheckpointMessages(latest);
+    const messages = goal
+      ? [...split.messages, createGoalCheckpointMessage(goal)]
+      : split.messages;
+    await this.config.sessionStore.replaceMessages(sessionKey, messages);
+  }
+
+  async setGoal(sessionKey: string, objective: string): Promise<GoalState> {
+    const goal = createGoalState({ sessionKey, objective });
+    await this.saveGoalState(sessionKey, goal);
+    return goal;
+  }
+
+  async getGoal(sessionKey: string): Promise<GoalState | undefined> {
+    const split = await this.loadGoalState(sessionKey);
+    return split.goal;
+  }
+
+  async pauseGoal(sessionKey: string, reason?: string): Promise<GoalState | undefined> {
+    const current = await this.getGoal(sessionKey);
+    if (!current) return undefined;
+    const next = updateGoalState(current, { status: 'paused', statusReason: reason });
+    await this.saveGoalState(sessionKey, next);
+    return next;
+  }
+
+  async resumeGoal(sessionKey: string): Promise<GoalState | undefined> {
+    const current = await this.getGoal(sessionKey);
+    if (!current) return undefined;
+    const next = updateGoalState(current, { status: 'active' });
+    await this.saveGoalState(sessionKey, next);
+    return next;
+  }
+
+  async completeGoal(sessionKey: string, reason?: string): Promise<GoalState | undefined> {
+    const current = await this.getGoal(sessionKey);
+    if (!current) return undefined;
+    const next = updateGoalState(current, { status: 'completed', statusReason: reason });
+    await this.saveGoalState(sessionKey, next);
+    return next;
+  }
+
+  async blockGoal(sessionKey: string, reason?: string): Promise<GoalState | undefined> {
+    const current = await this.getGoal(sessionKey);
+    if (!current) return undefined;
+    const next = updateGoalState(current, { status: 'blocked', statusReason: reason });
+    await this.saveGoalState(sessionKey, next);
+    return next;
+  }
+
+  async clearGoal(sessionKey: string): Promise<void> {
+    await this.saveGoalState(sessionKey);
+  }
+
   // ─── Streaming chat ───────────────────────────────────────────
 
   private async *streamChatViaAgentLoop(
@@ -277,7 +349,10 @@ export class DmossAgent {
     const abortSignal = options?.abortSignal ?? new AbortController().signal;
 
     const loadedMessages = (await store.loadMessages(sessionKey)) as unknown as InternalMessage[];
-    const taskFrameLoad = splitTaskFrameCheckpointMessages(toSessionMessages(loadedMessages));
+    const goalLoad = splitGoalCheckpointMessages(loadedMessages as unknown as LLMMessage[]);
+    const taskFrameLoad = splitTaskFrameCheckpointMessages(
+      toSessionMessages(goalLoad.messages as unknown as InternalMessage[]),
+    );
     const continuationIntent = detectContinuationIntent(userMessage);
     let taskFrame: TaskFrame = createOrUpdateTaskFrame({
       previous: taskFrameLoad.frame,
@@ -291,7 +366,10 @@ export class DmossAgent {
     await store.appendMessage(sessionKey, userMsg as unknown as LLMMessage);
 
     const workingContext = buildTaskFrameContext(taskFrame, continuationIntent);
-    const extraContext = [options?.extraContext, workingContext].filter(Boolean).join('\n\n');
+    const goalContext = goalLoad.goal ? buildGoalModeContext(goalLoad.goal) : '';
+    const extraContext = [options?.extraContext, goalContext, workingContext]
+      .filter(Boolean)
+      .join('\n\n');
     const systemPrompt = this.buildSystemPrompt({
       platform: options?.platform,
       extraContext,
@@ -313,11 +391,24 @@ export class DmossAgent {
 
     const persistTaskFrame = async (reason: string): Promise<DmossAgentEvent> => {
       const latest = await store.loadMessages(sessionKey);
-      const cleanMessages = stripTaskFrameCheckpointsFromLlmMessages(latest);
+      const goalSplit = splitGoalCheckpointMessages(latest);
+      const cleanMessages = stripTaskFrameCheckpointsFromLlmMessages(goalSplit.messages);
       const checkpoint = createTaskFrameCheckpointMessage(taskFrame);
+      const goalCheckpoint = goalSplit.goal
+        ? createGoalCheckpointMessage(goalSplit.goal)
+        : undefined;
       const nextMessages = lastMessageNeedsToolFollowUp(cleanMessages)
-        ? [...cleanMessages.slice(0, -1), checkpoint, cleanMessages[cleanMessages.length - 1]]
-        : [...cleanMessages, checkpoint];
+        ? [
+            ...cleanMessages.slice(0, -1),
+            ...(goalCheckpoint ? [goalCheckpoint] : []),
+            checkpoint,
+            cleanMessages[cleanMessages.length - 1],
+          ]
+        : [
+            ...cleanMessages,
+            ...(goalCheckpoint ? [goalCheckpoint] : []),
+            checkpoint,
+          ];
       await store.replaceMessages(sessionKey, nextMessages);
       return {
         type: 'working_context_checkpoint',

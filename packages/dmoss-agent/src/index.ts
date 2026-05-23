@@ -94,6 +94,7 @@ export {
   isTaskFrameCheckpointMessage,
   stripTaskFrameCheckpointsFromLlmMessages,
 } from './core/index.js';
+export type { GoalState, GoalStatus } from './core/index.js';
 export {
   enqueueInLane,
   setLaneConcurrency,
@@ -105,7 +106,6 @@ export type { EnqueueOpts } from './core/index.js';
 
 // --- Utils ---
 export { TextDeltaSmoother } from './utils/index.js';
-export { dmossRunTrace } from './utils/index.js';
 export { parseAtRefs, hasAtRefs } from './utils/index.js';
 export {
   DMOSS_DEFAULT_MAX_AGENT_TURNS,

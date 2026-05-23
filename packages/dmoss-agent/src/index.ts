@@ -66,6 +66,24 @@ export {
 export { DmossAgent } from './core/index.js';
 export type { DmossAgentConfig, ChatOptions, ChatResult, DmossAgentEvent } from './core/index.js';
 export type { AgentHooks, ToolApprovalRequest, ToolApprovalDecision } from './core/index.js';
+export {
+  executeGoalCommand,
+  formatGoalCommandResult,
+  handleGoalCommand,
+  isGoalCommand,
+  parseGoalCommand,
+} from './goal.js';
+export type {
+  GoalCommandAction,
+  GoalCommandAgent,
+  GoalCommandEvent,
+  GoalCommandOptions,
+  GoalCommandResult,
+  GoalState,
+  GoalStatus,
+  HandleGoalCommandParams,
+  ParsedGoalCommand,
+} from './goal.js';
 export { createInlineThinkingRouter, splitThinkingTagsFromAssistantText } from './core/index.js';
 export type { InlineThinkingRouter } from './core/index.js';
 export { ToolRegistry } from './core/index.js';
@@ -94,7 +112,6 @@ export {
   isTaskFrameCheckpointMessage,
   stripTaskFrameCheckpointsFromLlmMessages,
 } from './core/index.js';
-export type { GoalState, GoalStatus } from './core/index.js';
 export {
   enqueueInLane,
   setLaneConcurrency,

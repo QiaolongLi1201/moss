@@ -41,6 +41,11 @@
       "import": "./dist/core/index.js",
       "default": "./dist/core/index.js"
     },
+    "./goal": {
+      "types": "./dist/goal.d.ts",
+      "import": "./dist/goal.js",
+      "default": "./dist/goal.js"
+    },
     "./utils": {
       "types": "./dist/utils/index.d.ts",
       "import": "./dist/utils/index.js",
@@ -102,6 +107,10 @@
       "./core": {
         "types": "./dist/core/index.d.ts",
         "import": "./dist/core/index.js"
+      },
+      "./goal": {
+        "types": "./dist/goal.d.ts",
+        "import": "./dist/goal.js"
       },
       "./utils": {
         "types": "./dist/utils/index.d.ts",

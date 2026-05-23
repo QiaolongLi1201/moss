@@ -126,7 +126,7 @@ Returned by `chat()` and emitted by `streamChat()` on `done`:
 
 Goal Mode is a host-neutral runtime capability for a session/thread. `DmossAgent` stores the current goal in the configured `SessionStore` as an internal checkpoint message and injects active or paused goal context into the system prompt during `chat()` / `streamChat()`.
 
-The runtime does **not** start automatic background work. CLI slash commands, UI controls, approval policy, scheduling, and any autonomous execution loop are host responsibilities.
+The runtime does **not** start automatic background work, change host approval policy, or bind to UI. Hosts own command routing, UI controls, scheduling, and any autonomous execution loop. `@dmoss/agent/goal` provides an optional `/goal` command adapter so hosts can route commands without duplicating Goal Mode semantics.
 
 | Method | Purpose |
 |--------|---------|
@@ -138,10 +138,25 @@ The runtime does **not** start automatic background work. CLI slash commands, UI
 | `blockGoal(sessionKey, reason?)` | Mark the goal as blocked |
 | `clearGoal(sessionKey)` | Remove goal state from the session |
 
+| Command Adapter | Purpose |
+|-----------------|---------|
+| `isGoalCommand(input)` | Fast predicate for host routers before normal chat |
+| `parseGoalCommand(input)` | Parse `/goal` input into a structured command |
+| `executeGoalCommand(agent, sessionKey, parsedCommand, options?)` | Apply a parsed command through the existing agent goal methods |
+| `handleGoalCommand({ agent, sessionKey, input, locale? })` | Parse and execute in one call |
+| `formatGoalCommandResult(result, locale?)` | Format a structured result for display |
+
 | Type | Purpose |
 |------|---------|
 | `GoalState` | Session goal with objective, status, timestamps, and optional status reason |
 | `GoalStatus` | Goal lifecycle status: `active`, `paused`, `completed`, or `blocked` |
+| `GoalCommandResult` | Machine-readable command result with `handled`, `action`, `event`, `goal`, `message`, and `error` fields |
+
+Supported commands are `/goal`, `/goal status`, `/goal set <objective>`, `/goal pause [reason]`, `/goal resume`, `/goal complete [reason]`, `/goal block [reason]`, and `/goal clear`.
+
+Command results use stable event names for observability: `goal_status`, `goal_set`, `goal_paused`, `goal_resumed`, `goal_completed`, `goal_blocked`, and `goal_cleared`.
+
+`sessionKey` is the goal ownership boundary. A goal belongs only to the exact `sessionKey` passed to the agent or command adapter. Subagents, mesh peer queries, external channel sessions, and other host-specific conversations do not inherit a parent goal unless the host explicitly passes or copies that goal into their own session. Mesh peer queries should use their own session keys when they must not mutate a Studio main session goal.
 
 Completed and blocked goals are stored for hosts to inspect until cleared, but only active or paused goals are injected as model guidance.
 

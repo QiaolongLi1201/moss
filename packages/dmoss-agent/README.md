@@ -273,6 +273,8 @@ const hooks: AgentHooks = {
 
 D-Moss provides **thread-level goal tracking** without autonomous background execution. The runtime stores one goal per session in the configured `SessionStore` and injects active or paused goal context into the system prompt during chat turns.
 
+For host integrations that want a thin command router, `@dmoss/agent/goal` exposes a stable `/goal` adapter with `isGoalCommand()`, `parseGoalCommand()`, `executeGoalCommand()`, and `handleGoalCommand()`. Results are structured, so hosts can echo `message` now and map `action`/`event` into UI or observability later.
+
 ```typescript
 // Host sets the goal; the runtime stores it in session state.
 await agent.setGoal('session-1', 'Migrate CI pipeline to GitHub Actions');
@@ -287,7 +289,7 @@ await agent.completeGoal('session-1', 'verified in CI');
 await agent.clearGoal('session-1');
 ```
 
-Hosts own the product behavior around this API: CLI slash commands, UI controls, approval workflows, and any background execution loop. `@dmoss/agent` only stores the goal and surfaces it to the model as runtime guidance.
+Goals are bound to the exact `sessionKey` passed in by the host. Subagents, mesh peer queries, and external channel sessions should use their own session keys unless the host explicitly wants goal inheritance. Hosts own the product behavior around this API: routing, UI controls, approval workflows, and any background execution loop. `@dmoss/agent` only stores the goal and surfaces it to the model as runtime guidance.
 
 ## Adding a New Hardware Platform
 

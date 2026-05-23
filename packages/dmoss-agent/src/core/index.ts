@@ -285,6 +285,20 @@ export {
 
 // Goal Mode
 export {
+  executeGoalCommand,
+  formatGoalCommandResult,
+  handleGoalCommand,
+  isGoalCommand,
+  parseGoalCommand,
+  type GoalCommandAction,
+  type GoalCommandAgent,
+  type GoalCommandEvent,
+  type GoalCommandOptions,
+  type GoalCommandResult,
+  type HandleGoalCommandParams,
+  type ParsedGoalCommand,
+} from './goal-command.js';
+export {
   buildGoalModeContext,
   createGoalCheckpointMessage,
   createGoalState,

@@ -1,0 +1,3 @@
+{"text":"Hi there! I'm D-Moss, your robotics engineering assistant. How can I help you today?","stopReason":"end_turn","usage":{"inputTokens":15,"outputTokens":18}}
+{"text":"2 + 2 equals 4. This is basic arithmetic.","stopReason":"end_turn","usage":{"inputTokens":12,"outputTokens":14}}
+{"text":"Robotics combines mechanical engineering, electrical engineering, and computer science to build autonomous systems.","stopReason":"end_turn","usage":{"inputTokens":20,"outputTokens":22}}

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'coverage']);
+const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'coverage', 'external']);
 const findings = [];
 
 function readJson(relPath) {

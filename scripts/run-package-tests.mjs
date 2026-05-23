@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const testDir = join(process.cwd(), 'test');
 
-let entries;
 try {
-  entries = readdirSync(testDir);
+  readdirSync(testDir);
 } catch (err) {
   if (err && err.code === 'ENOENT') {
     console.error(`[test] missing test directory: ${testDir}`);
@@ -16,11 +15,20 @@ try {
   throw err;
 }
 
-const testFiles = entries
-  .filter((name) => name.endsWith('.spec.mjs'))
-  .map((name) => join(testDir, name))
-  .filter((file) => statSync(file).isFile())
-  .sort();
+function collectTestFiles(dir) {
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const file = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectTestFiles(file));
+    } else if (entry.isFile() && entry.name.endsWith('.spec.mjs')) {
+      files.push(file);
+    }
+  }
+  return files;
+}
+
+const testFiles = collectTestFiles(testDir).sort();
 
 if (testFiles.length === 0) {
   console.error(`[test] no *.spec.mjs files found in ${testDir}`);

@@ -120,6 +120,7 @@ export interface AgentLoopLlmTurnResult {
   turnTextParts: string[];
   streamStopReason: StopReason | undefined;
   firstTokenMs: number | null;
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
 export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promise<AgentLoopLlmTurnResult> {
@@ -140,6 +141,7 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
     runStartMs,
   } = params;
   let firstTokenMs = params.firstTokenMs;
+  let usage: { inputTokens: number; outputTokens: number } | undefined;
   const assistantContent: ContentBlock[] = [];
   /**
    * Per-turn reasoning collector (industry-standard one-shot per-turn
@@ -396,6 +398,10 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
           clearFirstChunkTimer();
           const piAssistant = await abortable(eventStream.result(), abortSignal);
           streamStopReason = piAssistant.stopReason;
+          usage = {
+            inputTokens: piAssistant.usage.input,
+            outputTokens: piAssistant.usage.output,
+          };
 
           /** 部分网关仅把完整 assistant 放在 result.content，流式事件未写入 assistantContent → message_end 空 */
           const llmTail = (piAssistant as { content?: unknown[] }).content;
@@ -479,5 +485,6 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
     turnTextParts,
     streamStopReason,
     firstTokenMs,
+    usage,
   };
 }

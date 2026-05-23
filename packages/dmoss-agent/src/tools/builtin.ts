@@ -238,6 +238,109 @@ function globToRegex(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`, 'i');
 }
 
+/** Directories to skip during recursive searches. */
+const IGNORE_DIRS = new Set([
+  'node_modules', '.git', '.hg', '.svn',
+  '__pycache__', '.tox', '.venv', 'venv',
+  '.next', '.nuxt', '.svelte-kit',
+  'dist', 'build', 'out',
+]);
+
+export const searchCodeTool: Tool = {
+  name: 'search_code',
+  description: 'Search for a regex or text pattern within files in the workspace. Returns matching file paths and line excerpts.',
+  metadata: {
+    sideEffectClass: 'readonly',
+    planMode: 'allow',
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pattern: { type: 'string', description: 'Regex or literal text to search for' },
+      path: { type: 'string', description: 'Subdirectory to search within (defaults to workspace root)' },
+      fileTypes: { type: 'string', description: 'Comma-separated extensions to include, e.g. ".ts,.js,.json"' },
+      maxResults: { type: 'number', description: 'Max matching lines to return (default 50, max 200)' },
+      maxFileSize: { type: 'number', description: 'Skip files larger than this in bytes (default 100KB)' },
+    },
+    required: ['pattern'],
+  },
+  async execute(input, ctx) {
+    const maxResults = Math.min(Number(input.maxResults) || 50, 200);
+    const maxFileSize = Number(input.maxFileSize) || 100 * 1024;
+    const extensions = input.fileTypes
+      ? String(input.fileTypes).split(',').map((e) => e.trim().toLowerCase())
+      : null;
+
+    let regex: RegExp;
+    try {
+      regex = new RegExp(String(input.pattern), 'i');
+    } catch (err) {
+      return `Invalid regex pattern: ${err instanceof Error ? err.message : String(err)}`;
+    }
+
+    try {
+      const searchDir = await safePath(input.path || '.', ctx.workspaceDir);
+      const matches = await grepWalk(searchDir, regex, extensions, maxResults, maxFileSize, 30_000);
+      if (matches.length === 0) return 'No matches found';
+      return matches.join('\n');
+    } catch (err) {
+      return `Error searching code: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  },
+};
+
+/**
+ * Recursively walk directories and grep file contents for a regex pattern.
+ * Respects extension filter, file size limit, result limit, and timeout.
+ */
+async function grepWalk(
+  dir: string,
+  regex: RegExp,
+  extensions: string[] | null,
+  limit: number,
+  maxFileSize: number,
+  timeoutMs: number,
+): Promise<string[]> {
+  const results: string[] = [];
+  const deadline = Date.now() + timeoutMs;
+
+  async function walk(d: string) {
+    if (results.length >= limit || Date.now() > deadline) return;
+    let entries;
+    try { entries = await fs.readdir(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (results.length >= limit || Date.now() > deadline) return;
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) {
+        if (IGNORE_DIRS.has(e.name)) continue;
+        await walk(full);
+      } else if (e.isFile()) {
+        if (extensions && !extensions.some((ext) => e.name.toLowerCase().endsWith(ext))) continue;
+        try {
+          const stat = await fs.stat(full);
+          if (stat.size > maxFileSize) continue;
+          const content = await fs.readFile(full, 'utf-8');
+          const lines = content.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (results.length >= limit) break;
+            if (regex.test(lines[i])) {
+              // filepath:linenum: excerpt (1-indexed line numbers)
+              const relPath = path.relative(dir, full);
+              const excerpt = lines[i].trim().slice(0, 200);
+              results.push(`${relPath}:${i + 1}: ${excerpt}`);
+            }
+          }
+        } catch {
+          // Skip unreadable or binary files
+        }
+      }
+    }
+  }
+
+  await walk(dir);
+  return results;
+}
+
 /**
  * All built-in tools for D-Moss Agent.
  * Register these with `agent.tools.register(tool)` for each tool,
@@ -249,6 +352,7 @@ export const builtinTools: Tool[] = [
   listDirectoryTool,
   execTool,
   searchFilesTool,
+  searchCodeTool,
 ];
 
 /**

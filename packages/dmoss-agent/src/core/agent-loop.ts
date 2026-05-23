@@ -61,6 +61,14 @@ import {
   getEffectiveContextWindowTokens,
   shouldProactiveCompactByWindowEconomics,
 } from '../context/window-economics.js';
+import {
+  logLLMUsage,
+} from '../observability/llm-usage.js';
+import {
+  withSpan,
+  turnAttributes,
+} from '../observability/tracing.js';
+import { redactSensitiveData } from '../observability/redact.js';
 import { shouldTriggerCompaction } from '../context/compaction.js';
 import {
   buildProviderToolDeclarations,
@@ -208,6 +216,33 @@ export function runAgentLoop(
     const INTER_TURN_SILENCE_WINDOW = 50;
     let lastTurnEndMs: number | null = null;
     const toolLoopGuard = createToolLoopGuardState();
+    const shouldRecordLlmUsage =
+      Boolean(process.env.DMOSS_LLM_USAGE_LOG) ||
+      process.env.DMOSS_LLM_USAGE === '1' ||
+      process.env.DMOSS_LLM_USAGE === 'true';
+
+    const recordLlmUsage = async (record: {
+      runId: string;
+      providerId: string;
+      model: string;
+      inputTokens: number;
+      outputTokens: number;
+      durationMs: number;
+      success: boolean;
+      error?: string;
+    }): Promise<void> => {
+      if (!shouldRecordLlmUsage) return;
+      try {
+        await logLLMUsage(record);
+      } catch (err) {
+        log.warn('failed to record llm usage', {
+          runId: record.runId,
+          providerId: record.providerId,
+          model: record.model,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
 
     try {
       for (const syn of consumePendingAbortedToolSyntheticMessages(sessionKey)) {
@@ -491,32 +526,73 @@ export function runAgentLoop(
           let turnTextParts: string[];
           let streamStopReason: StopReason | undefined;
 
+          const llmTurnStartedAt = Date.now();
           try {
-            const llmTurn = await runAgentLoopLlmTurn({
-              stream,
-              modelDef,
-              piContext,
-              streamFn,
-              apiKey,
-              temperature,
-              reasoning,
-              topP,
-              abortSignal,
-              messagesForModel,
-              toolsForRun,
-              sessionKey,
-              turn: turns,
-              runStartMs,
-              firstTokenMs,
-              logDebug: (message, meta) => log.debug(message, meta),
-            });
+            const llmTurn = await withSpan(
+              'agent.llm_turn',
+              turnAttributes(runId, turns, String(modelDef.id)),
+              async (span) => {
+                span.addEvent('prompt_window', {
+                  messages: messagesForModel.length,
+                  tools: toolsForRun.length,
+                });
+                const turn = await runAgentLoopLlmTurn({
+                  stream,
+                  modelDef,
+                  piContext,
+                  streamFn,
+                  apiKey,
+                  temperature,
+                  reasoning,
+                  topP,
+                  abortSignal,
+                  messagesForModel,
+                  toolsForRun,
+                  sessionKey,
+                  turn: turns,
+                  runStartMs,
+                  firstTokenMs,
+                  logDebug: (message, meta) => log.debug(message, meta),
+                });
+                if (turn.usage) {
+                  span.setAttribute('inputTokens', turn.usage.inputTokens);
+                  span.setAttribute('outputTokens', turn.usage.outputTokens);
+                  span.addEvent('usage', {
+                    inputTokens: turn.usage.inputTokens,
+                    outputTokens: turn.usage.outputTokens,
+                  });
+                }
+                return turn;
+              },
+            );
             assistantContent = llmTurn.assistantContent;
             messageThinkingChunks = llmTurn.messageThinkingChunks;
             toolCalls = llmTurn.toolCalls;
             turnTextParts = llmTurn.turnTextParts;
             streamStopReason = llmTurn.streamStopReason;
             firstTokenMs = llmTurn.firstTokenMs;
+            if (llmTurn.usage) {
+              await recordLlmUsage({
+                runId,
+                providerId: String(modelDef.provider),
+                model: String(modelDef.id),
+                inputTokens: llmTurn.usage.inputTokens,
+                outputTokens: llmTurn.usage.outputTokens,
+                durationMs: Date.now() - llmTurnStartedAt,
+                success: true,
+              });
+            }
           } catch (llmError) {
+            await recordLlmUsage({
+              runId,
+              providerId: String(modelDef.provider),
+              model: String(modelDef.id),
+              inputTokens: 0,
+              outputTokens: 0,
+              durationMs: Date.now() - llmTurnStartedAt,
+              success: false,
+              error: String(redactSensitiveData(describeError(llmError))),
+            });
             const errorText = describeError(llmError);
             if (
               isContextOverflowError(errorText) &&

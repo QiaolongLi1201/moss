@@ -52,7 +52,7 @@ function hostToolsForScope(scope: string): string[] {
   return _hostSpawnToolExtensions[scope] ?? _hostSpawnToolExtensions['*'] ?? [];
 }
 
-/** 各范围允许的工具名；full 不使用此表（由上层不传 filter 表示全量） */
+/** 各范围允许的工具名（不含宿主扩展）；full 不使用此表（由上层不传 filter 表示全量） */
 export const SPAWN_TOOL_SCOPE_SETS: Record<
   Exclude<SpawnToolScope, "full">,
   Set<string>
@@ -61,7 +61,6 @@ export const SPAWN_TOOL_SCOPE_SETS: Record<
   "device-read": new Set([
     ...CORE_READ_TOOLS,
     ...DEVICE_READ_TOOLS,
-    ...hostToolsForScope("device-read"),
   ]),
   explore: new Set([
     ...CORE_READ_TOOLS,
@@ -69,7 +68,6 @@ export const SPAWN_TOOL_SCOPE_SETS: Record<
     ...WEB_TOOLS,
     ...SKILL_TOOLS,
     ...DEVICE_READ_TOOLS,
-    ...hostToolsForScope("explore"),
   ]),
   plan: new Set([
     ...CORE_READ_TOOLS,
@@ -78,7 +76,6 @@ export const SPAWN_TOOL_SCOPE_SETS: Record<
     ...SKILL_TOOLS,
     "create_plan", "update_plan",
     ...DEVICE_READ_TOOLS,
-    ...hostToolsForScope("plan"),
   ]),
   verify: new Set([
     ...CORE_READ_TOOLS,
@@ -87,7 +84,6 @@ export const SPAWN_TOOL_SCOPE_SETS: Record<
     ...SKILL_TOOLS,
     "exec", "device_exec",
     ...DEVICE_READ_TOOLS,
-    ...hostToolsForScope("verify"),
   ]),
 };
 
@@ -95,7 +91,13 @@ export function resolveSpawnToolSet(
   scope: SpawnToolScope | undefined,
 ): Set<string> | null {
   if (!scope || scope === "full") return null;
-  return SPAWN_TOOL_SCOPE_SETS[scope];
+  // Merge base tools + host extensions at call time (not module init)
+  // to avoid the singleton timing bug where extensions registered after
+  // module load were silently ignored.
+  const base = SPAWN_TOOL_SCOPE_SETS[scope];
+  const merged = new Set(base);
+  for (const t of hostToolsForScope(scope)) merged.add(t);
+  return merged;
 }
 
 /**

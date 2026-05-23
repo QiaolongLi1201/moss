@@ -1,0 +1,2 @@
+{"text":"I'll read the file for you.","toolCalls":[{"name":"read_file","input":{"path":"/tmp/test.txt"}}],"usage":{"inputTokens":25,"outputTokens":15}}
+{"text":"The file /tmp/test.txt contains configuration data for your robot project.","stopReason":"end_turn","usage":{"inputTokens":30,"outputTokens":20}}

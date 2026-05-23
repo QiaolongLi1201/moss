@@ -1,0 +1,2 @@
+{"text":"Let me discover the peer at 192.168.1.100.","toolCalls":[{"name":"mesh_discover","input":{"host":"192.168.1.100","port":9090}}],"usage":{"inputTokens":18,"outputTokens":15}}
+{"text":"Successfully discovered peer: robot-arm-1. It has manipulation and navigation capabilities.","stopReason":"end_turn","usage":{"inputTokens":28,"outputTokens":22}}

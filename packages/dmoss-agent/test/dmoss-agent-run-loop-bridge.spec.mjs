@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { DmossAgent, InMemorySessionStore, JsonlSessionStore } from '../dist/core/index.js';
@@ -73,6 +73,58 @@ function createModelEventProvider(handler) {
 
   const stored = await store.loadMessages('bridge-text');
   assert(stored.some((message) => message.role === 'assistant'));
+}
+
+{
+  const usageDir = await mkdtemp(path.join(os.tmpdir(), 'dmoss-llm-usage-bridge-'));
+  const origUsageLog = process.env.DMOSS_LLM_USAGE_LOG;
+  process.env.DMOSS_LLM_USAGE_LOG = path.join(usageDir, 'llm-usage.jsonl');
+
+  try {
+    const store = new InMemorySessionStore();
+    const { provider } = createModelEventProvider(() => ({
+      stopReason: 'end_turn',
+      content: [{ type: 'text', text: 'usage tracked' }],
+      usage: { inputTokens: 7, outputTokens: 11 },
+    }));
+    const agent = new DmossAgent({
+      llmProvider: provider,
+      sessionStore: store,
+      model: 'fake-model',
+      domainPrompt: false,
+      includeRegisteredKnowledgePrompts: false,
+      baseSystemPrompt: 'base',
+      maxAgentTurns: 3,
+    });
+
+    const events = [];
+    for await (const event of agent.streamChat('bridge-usage', 'track usage')) {
+      events.push(event);
+    }
+
+    assert(events.some((event) => event.type === 'done'), 'expected done event');
+
+    const raw = await readFile(path.join(usageDir, 'llm-usage.jsonl'), 'utf8');
+    const records = raw
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+
+    assert.equal(records.length, 1, 'expected one usage record');
+    assert.equal(records[0].providerId, 'fake-provider');
+    assert.equal(records[0].model, 'fake-model');
+    assert.equal(records[0].inputTokens, 7);
+    assert.equal(records[0].outputTokens, 11);
+    assert.equal(records[0].success, true);
+  } finally {
+    if (origUsageLog) {
+      process.env.DMOSS_LLM_USAGE_LOG = origUsageLog;
+    } else {
+      delete process.env.DMOSS_LLM_USAGE_LOG;
+    }
+    await rm(usageDir, { recursive: true, force: true });
+  }
 }
 
 {

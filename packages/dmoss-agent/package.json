@@ -65,6 +65,11 @@
       "types": "./dist/mesh/index.d.ts",
       "import": "./dist/mesh/index.js",
       "default": "./dist/mesh/index.js"
+    },
+    "./observability": {
+      "types": "./dist/observability/index.d.ts",
+      "import": "./dist/observability/index.js",
+      "default": "./dist/observability/index.js"
     }
   },
   "publishConfig": {
@@ -117,6 +122,10 @@
       "./mesh": {
         "types": "./dist/mesh/index.d.ts",
         "import": "./dist/mesh/index.js"
+      },
+      "./observability": {
+        "types": "./dist/observability/index.d.ts",
+        "import": "./dist/observability/index.js"
       }
     },
     "bin": {

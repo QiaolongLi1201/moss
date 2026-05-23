@@ -18,6 +18,7 @@
 
 import http from 'node:http';
 import type { Tool } from '../core/tool-types.js';
+import type { MeshEventBus } from './mesh-events.js';
 
 export interface MeshPeer {
   id: string;
@@ -50,6 +51,8 @@ export interface MeshMessage {
 }
 
 type QueryHandler = (query: string, fromPeer: MeshPeer) => Promise<string>;
+type ShareSkillHandler = (skill: Record<string, unknown>, fromPeer: MeshPeer) => Promise<{ accepted: boolean; reason?: string }>;
+type ShareMemoryHandler = (memory: Record<string, unknown>, fromPeer: MeshPeer) => Promise<{ accepted: boolean; reason?: string }>;
 
 /** Set `DMOSS_MESH_VERBOSE=true` to print mesh traffic and (from CLI) startup / peer logs. */
 export function isMeshVerboseEnabled(): boolean {
@@ -62,7 +65,10 @@ export class AgentMesh {
   private peers = new Map<string, MeshPeer>();
   private server: http.Server | null = null;
   private queryHandler: QueryHandler | null = null;
+  private shareSkillHandler: ShareSkillHandler | null = null;
+  private shareMemoryHandler: ShareMemoryHandler | null = null;
   private running = false;
+  private eventBus: MeshEventBus | null = null;
 
   constructor(config: MeshConfig) {
     this.config = config;
@@ -71,6 +77,19 @@ export class AgentMesh {
 
   onQuery(handler: QueryHandler): void {
     this.queryHandler = handler;
+  }
+
+  onShareSkill(handler: ShareSkillHandler): void {
+    this.shareSkillHandler = handler;
+  }
+
+  onShareMemory(handler: ShareMemoryHandler): void {
+    this.shareMemoryHandler = handler;
+  }
+
+  /** Attach an event bus so the mesh emits structured lifecycle events. */
+  setEventBus(bus: MeshEventBus): void {
+    this.eventBus = bus;
   }
 
   async start(): Promise<void> {
@@ -140,7 +159,7 @@ export class AgentMesh {
   private async handleMessage(msg: MeshMessage): Promise<Record<string, unknown>> {
     switch (msg.type) {
       case 'announce': {
-        this.peers.set(msg.fromId, {
+        const peer: MeshPeer = {
           id: msg.fromId,
           name: msg.fromName,
           host: String(msg.payload.host || ''),
@@ -148,7 +167,21 @@ export class AgentMesh {
           capabilities: (msg.payload.capabilities as string[]) || [],
           deviceInfo: String(msg.payload.deviceInfo || ''),
           lastSeen: Date.now(),
-        });
+        };
+        const isNew = !this.peers.has(msg.fromId);
+        this.peers.set(msg.fromId, peer);
+
+        if (isNew && this.eventBus) {
+          this.eventBus.emit({
+            type: 'mesh_joined',
+            peerId: peer.id,
+            peerName: peer.name,
+            capabilities: peer.capabilities,
+            deviceInfo: peer.deviceInfo || '',
+            timestamp: Date.now(),
+          });
+        }
+
         return { ack: true, peerId: this.config.id };
       }
 
@@ -185,6 +218,24 @@ export class AgentMesh {
           return { response, fromId: this.config.id, fromName: this.config.name };
         }
         return { response: '(no handler)', fromId: this.config.id };
+      }
+
+      case 'share_skill': {
+        if (!this.shareSkillHandler) {
+          return { error: 'skill sharing not configured on this peer' };
+        }
+        const skillPeer = this.makePeerFromMessage(msg);
+        const result = await this.shareSkillHandler(msg.payload as Record<string, unknown>, skillPeer);
+        return { ack: result.accepted, reason: result.reason, peerId: this.config.id };
+      }
+
+      case 'share_memory': {
+        if (!this.shareMemoryHandler) {
+          return { error: 'memory sharing not configured on this peer' };
+        }
+        const memPeer = this.makePeerFromMessage(msg);
+        const result = await this.shareMemoryHandler(msg.payload as Record<string, unknown>, memPeer);
+        return { ack: result.accepted, reason: result.reason, peerId: this.config.id };
       }
 
       default:
@@ -273,6 +324,33 @@ export class AgentMesh {
 
   getPeers(): MeshPeer[] {
     return [...this.peers.values()];
+  }
+
+  /** Remove a peer by id. Emits mesh_left if the peer was known. */
+  removePeer(peerId: string, reason: string = 'manual'): void {
+    const peer = this.peers.get(peerId);
+    if (peer) {
+      this.peers.delete(peerId);
+      if (this.eventBus) {
+        this.eventBus.emit({
+          type: 'mesh_left',
+          peerId: peer.id,
+          reason,
+          timestamp: Date.now(),
+        });
+      }
+    }
+  }
+
+  private makePeerFromMessage(msg: MeshMessage): MeshPeer {
+    return {
+      id: msg.fromId,
+      name: msg.fromName,
+      host: '',
+      port: 0,
+      capabilities: [],
+      lastSeen: Date.now(),
+    };
   }
 
   private async sendToPeer(

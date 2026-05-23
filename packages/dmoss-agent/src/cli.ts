@@ -66,7 +66,10 @@ import { createDeviceSshTools, getDeviceConfigFromEnv } from './tools/device-ssh
 import { createDeviceDiagnosticsTools } from './tools/device-diagnostics.js';
 import { createRos2Tools } from './tools/device-ros2.js';
 import { AgentMesh, createMeshTools, isMeshVerboseEnabled } from './mesh/agent-mesh.js';
+import { MeshEventBus } from './mesh/index.js';
 import { LanDiscovery } from './mesh/lan-discovery.js';
+import { setTracer } from './observability/tracing.js';
+import { redactSensitiveData } from './observability/redact.js';
 
 /** When false (default), suppress [tool] / [learned] stderr noise. Set DMOSS_VERBOSE_TOOLS=true to show. */
 function dmossVerboseTools(): boolean {
@@ -193,6 +196,10 @@ configureRootLogger({
   json: argv.includes('--json') || process.env.DMOSS_LOG_JSON === '1',
 });
 
+if (process.env.DMOSS_TRACE === 'console' || process.env.DMOSS_TRACE === '1' || process.env.DMOSS_TRACE === 'true') {
+  setTracer('console');
+}
+
 if (argv.includes('--help') || argv.includes('-h')) {
   const configDir = resolveConfigDir();
   const lines = [
@@ -234,6 +241,9 @@ if (argv.includes('--help') || argv.includes('-h')) {
     `    ${c.magenta('DMOSS_DEVICE_KEY')}        ${c.dim('path to SSH private key')}`,
     `    ${c.magenta('DMOSS_LOG_LEVEL')}         ${c.dim('overrides default log level')}`,
     `    ${c.magenta('DMOSS_LOG_JSON')}          ${c.dim('=1 → JSON log lines')}`,
+    `    ${c.magenta('DMOSS_TRACE')}             ${c.dim('console → emit tracing spans to stderr')}`,
+    `    ${c.magenta('DMOSS_LLM_USAGE_LOG')}     ${c.dim('path to append LLM usage JSONL records')}`,
+    `    ${c.magenta('DMOSS_LLM_USAGE')}         ${c.dim('=1 → enable usage logging even without explicit path')}`,
     '',
     `  ${c.bold('Config file')}`,
     `    ${c.gray(path.join(configDir, 'config.json'))}`,
@@ -608,6 +618,12 @@ async function main() {
       capabilities: deviceConfig ? ['device-control', 'ros2'] : ['general'],
       deviceInfo: deviceConfig ? `${deviceConfig.host}` : undefined,
       allowIncoming,
+    });
+    const meshEvents = new MeshEventBus();
+    mesh.setEventBus(meshEvents);
+    meshEvents.on((event) => {
+      if (!isMeshVerboseEnabled()) return;
+      console.error(`[mesh:event] ${event.type} ${JSON.stringify(redactSensitiveData(event))}`);
     });
 
     mesh.onQuery(async (query) => {

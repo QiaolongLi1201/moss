@@ -88,7 +88,7 @@
 - **Version negotiation 规则**: 宿主声明 `minContractVersion` + `maxContractVersion`，Moss 运行时协商可接受的版本
 - **Breaking change policy**: 什么算 breaking change，minor/patch 各允许多大改动，migration 窗口多长
 
-**当前状态**: `packages/dmoss/src/contracts/host-adapter.ts` 定义 `MOSS_HOST_ADAPTER_CONTRACT_VERSION = 1`、13 种 capability kind，并提供返回 `ok` + 6 种失败 status 的 `evaluateMossHostCompatibility()`。当前 evaluator 已包含轻量运行时 manifest shape 校验、合约版本协商、host semver、capability、event schema 与 provider family 检查；schema 生成、fixture host 与 conformance suite 仍是待交付合约产物。
+**当前状态**: `packages/dmoss/src/contracts/host-adapter.ts` 定义 `MOSS_HOST_ADAPTER_CONTRACT_VERSION = 1`、13 种 capability kind，并提供返回 `ok` + 6 种失败 status 的 `evaluateMossHostCompatibility()`。当前 evaluator 已包含轻量运行时 manifest shape 校验、合约版本协商、host semver、capability、event schema 与 provider family 检查；fixture host 与 conformance suite 已存在并通过；JSON Schema 生成仍是待交付合约产物。
 
 ### A.2 兼容性测试体系
 

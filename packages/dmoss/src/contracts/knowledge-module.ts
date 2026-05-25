@@ -103,6 +103,45 @@ export interface DeviceProfileBase {
   vendorExtensions?: Record<string, unknown>;
 }
 
+export interface KnowledgeSourceRef {
+  type: string;
+  url?: string;
+  repo?: string;
+  commit?: string;
+  documentVersion?: string;
+  retrievedAt?: string;
+}
+
+export interface KnowledgeCompatibilityScope {
+  platforms?: string[];
+  boards?: string[];
+  socs?: string[];
+  rdkVersions?: string[];
+  osVersions?: string[];
+  toolchains?: string[];
+}
+
+export interface KnowledgeChunkPolicy {
+  strategy: 'none' | 'heading' | 'paragraph' | 'qa' | 'command' | 'release-note';
+  maxTokens?: number;
+  overlapTokens?: number;
+}
+
+export interface KnowledgeRecordMetadata {
+  id: string;
+  source?: KnowledgeSourceRef;
+  scope?: KnowledgeCompatibilityScope;
+  status?: string;
+  confidence?: string;
+  priority?: number;
+  lastReviewedAt?: string;
+  validFrom?: string;
+  validTo?: string;
+  supersedes?: string[];
+  citationLabel?: string;
+  chunkPolicy?: KnowledgeChunkPolicy;
+}
+
 /** An entry in the documentation index for search and prompt injection. */
 export interface DocIndexEntry {
   /** Document title */
@@ -113,6 +152,8 @@ export interface DocIndexEntry {
   section: string;
   /** Search tags for retrieval matching */
   tags: string[];
+  /** Optional governance/provenance metadata from trusted knowledge packages. */
+  metadata?: KnowledgeRecordMetadata;
 }
 
 /**
@@ -141,6 +182,8 @@ export interface PromptFragment {
   content: string;
   /** Sort priority (higher values appear earlier in prompt assembly) */
   priority: number;
+  /** Optional governance/provenance metadata from trusted knowledge packages. */
+  metadata?: KnowledgeRecordMetadata;
 }
 
 /**
@@ -159,6 +202,8 @@ export interface CommandPattern {
   description: string;
   /** Risk assessment: `safe` (read-only), `moderate` (reversible), `dangerous` (destructive) */
   riskLevel: 'safe' | 'moderate' | 'dangerous';
+  /** Optional governance/provenance metadata from trusted knowledge packages. */
+  metadata?: KnowledgeRecordMetadata;
 }
 
 /**
@@ -177,6 +222,8 @@ export interface FailureHint {
   suggestion: string;
   /** Optional documentation URL for further reference */
   docUrl?: string;
+  /** Optional governance/provenance metadata from trusted knowledge packages. */
+  metadata?: KnowledgeRecordMetadata;
 }
 
 /**
@@ -212,6 +259,8 @@ export interface EndorsedSkillRef {
    * over endorsement scores.
    */
   priority?: number;
+  /** Optional governance/provenance metadata from trusted knowledge packages. */
+  metadata?: KnowledgeRecordMetadata;
 }
 
 export interface KnowledgeModule {

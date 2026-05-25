@@ -8,7 +8,7 @@ Together with `@dmoss/agent`, it forms the **contract side** of the open-source 
 
 ## Features
 
-- **KnowledgeModule** — plug in domain knowledge for any hardware: device profiles, documentation indexes, command semantics, failure recovery hints
+- **KnowledgeModule** — plug in domain knowledge for any hardware: device profiles, documentation indexes, command semantics, failure recovery hints, and optional provenance metadata
 - **PlatformExtension** — the primary integration point for new device ecosystems, bundling knowledge + vendor plugins + tool contributions
 - **VendorPlugin** — extend the agent's prompt layers and tool capabilities per vendor
 - **Robotics Engineering Prompts** — battle-tested, vendor-agnostic prompt fragments for robotics agent orchestration
@@ -145,6 +145,11 @@ To add support for a new hardware platform:
 | `PromptFragment` | Typed prompt fragment with priority and filtering |
 | `CommandPattern` | Command semantics for risk analysis |
 | `FailureHint` | Error pattern to recovery suggestion mapping |
+
+Knowledge records can carry optional `metadata` with source, compatibility
+scope, status, confidence, citation label, and chunking hints. Consumers that do
+not need trusted-package governance can ignore the field; hosts that do can
+preserve it across search, prompt assembly, citations, and audits.
 
 ### Functions
 

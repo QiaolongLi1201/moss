@@ -64,23 +64,14 @@ export class LanDiscovery {
         // L1: Validate capabilities
         if (!Array.isArray(msg.capabilities)) msg.capabilities = [];
 
-        const peer: MeshPeer = {
-          id: msg.id,
-          name: msg.name,
-          host: rinfo.address,
-          port: port,
-          capabilities: msg.capabilities || [],
-          deviceInfo: msg.deviceInfo,
-          lastSeen: Date.now(),
-        };
-
         const existing = this.config.mesh.getPeers().find(p => p.id === msg.id);
         if (!existing) {
           // L2: Log peer discovery failures instead of swallowing them
-          this.config.mesh.discoverPeer(rinfo.address, port).catch((err) => console.warn('[lan-discovery] peer discovery failed:', err?.message ?? err));
-          if (this.onPeerDiscovered) {
-            this.onPeerDiscovered(peer);
-          }
+          this.config.mesh.discoverPeer(rinfo.address, port, { allowPrivate: true })
+            .then((discovered) => {
+              if (discovered && this.onPeerDiscovered) this.onPeerDiscovered(discovered);
+            })
+            .catch((err) => console.warn('[lan-discovery] peer discovery failed:', err?.message ?? err));
         }
       } catch { /* ignore invalid messages */ }
     });

@@ -17,6 +17,7 @@
  */
 
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import type { Tool } from '../core/tool-types.js';
 import type { MeshEventBus } from './mesh-events.js';
 
@@ -34,8 +35,10 @@ export interface MeshConfig {
   id: string;
   name: string;
   port?: number;
-  /** HTTP bind address (default `0.0.0.0` so LAN peers can reach the service). */
+  /** HTTP bind address. Defaults to loopback; LAN exposure requires `sharedSecret`. */
   listenHost?: string;
+  /** Optional shared secret required by peers. Required when listening beyond loopback. */
+  sharedSecret?: string;
   peers?: Array<{ host: string; port: number }>;
   capabilities?: string[];
   deviceInfo?: string;
@@ -54,6 +57,22 @@ type QueryHandler = (query: string, fromPeer: MeshPeer) => Promise<string>;
 type ShareSkillHandler = (skill: Record<string, unknown>, fromPeer: MeshPeer) => Promise<{ accepted: boolean; reason?: string }>;
 type ShareMemoryHandler = (memory: Record<string, unknown>, fromPeer: MeshPeer) => Promise<{ accepted: boolean; reason?: string }>;
 
+const MESH_SECRET_HEADER = 'x-dmoss-mesh-secret';
+
+function isLoopbackHost(host: string): boolean {
+  return /^(localhost|127(?:\.\d{1,3}){3}|::1|\[::1\])$/i.test(host.trim());
+}
+
+function isPrivateOrLoopbackHost(host: string): boolean {
+  return /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|\[::1\]|localhost)/i.test(host.trim());
+}
+
+function secureEquals(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  return aBuf.length === bBuf.length && timingSafeEqual(aBuf, bBuf);
+}
+
 /** Set `DMOSS_MESH_VERBOSE=true` to print mesh traffic and (from CLI) startup / peer logs. */
 export function isMeshVerboseEnabled(): boolean {
   return process.env.DMOSS_MESH_VERBOSE === 'true';
@@ -69,10 +88,12 @@ export class AgentMesh {
   private shareMemoryHandler: ShareMemoryHandler | null = null;
   private running = false;
   private eventBus: MeshEventBus | null = null;
+  private readonly sharedSecret: string;
 
   constructor(config: MeshConfig) {
     this.config = config;
     this.port = config.port || 9090;
+    this.sharedSecret = config.sharedSecret?.trim() || '';
   }
 
   onQuery(handler: QueryHandler): void {
@@ -94,9 +115,13 @@ export class AgentMesh {
 
   async start(): Promise<void> {
     if (this.running) return;
+    const host = this.config.listenHost ?? '127.0.0.1';
+    if (!isLoopbackHost(host) && !this.sharedSecret) {
+      throw new Error('DMOSS mesh requires sharedSecret when listening beyond loopback');
+    }
 
     this.server = http.createServer(async (req, res) => {
-      // M5: TODO(security): mesh HTTP server has no authentication. Consider adding a shared secret or token for production deployments.
+      if (!this.authorizeRequest(req, res)) return;
       if (req.method !== 'POST') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
@@ -130,8 +155,6 @@ export class AgentMesh {
         res.end(JSON.stringify({ error: String(err) }));
       }
     });
-
-    const host = this.config.listenHost ?? '0.0.0.0';
 
     await new Promise<void>((resolve, reject) => {
       const srv = this.server!;
@@ -307,17 +330,26 @@ export class AgentMesh {
     return results;
   }
 
-  async discoverPeer(host: string, port: number): Promise<MeshPeer | null> {
-    // M1: SSRF protection — reject private/loopback IPs
+  async discoverPeer(
+    host: string,
+    port: number,
+    options: { allowPrivate?: boolean } = {},
+  ): Promise<MeshPeer | null> {
     const hostStr = String(host);
-    if (/^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|localhost)/i.test(hostStr)) {
+    const privateOrLoopback = isPrivateOrLoopbackHost(hostStr);
+    if (!options.allowPrivate && privateOrLoopback) {
+      return null;
+    }
+    if (options.allowPrivate && privateOrLoopback && !this.sharedSecret) {
       return null;
     }
     try {
       const res = await fetch(`http://${host}:${port}`, {
         method: 'GET',
+        headers: this.meshHeaders(),
         signal: AbortSignal.timeout(5000),
       });
+      if (!res.ok) return null;
       const data = (await res.json()) as Record<string, unknown>;
       const peer: MeshPeer = {
         id: String(data.id || `${host}:${port}`),
@@ -373,11 +405,31 @@ export class AgentMesh {
   ): Promise<Record<string, unknown>> {
     const res = await fetch(`http://${host}:${port}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.meshHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(msg),
       signal: AbortSignal.timeout(10_000),
     });
+    if (!res.ok) throw new Error(`mesh peer rejected request: HTTP ${res.status}`);
     return res.json() as Promise<Record<string, unknown>>;
+  }
+
+  private meshHeaders(base: Record<string, string> = {}): Record<string, string> {
+    if (!this.sharedSecret) return base;
+    return { ...base, [MESH_SECRET_HEADER]: this.sharedSecret };
+  }
+
+  private authorizeRequest(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+    if (!this.sharedSecret) return true;
+    const raw = req.headers[MESH_SECRET_HEADER];
+    const headerSecret = Array.isArray(raw) ? raw[0] : raw;
+    const authRaw = req.headers.authorization;
+    const auth = Array.isArray(authRaw) ? authRaw[0] : authRaw;
+    const bearerSecret = auth?.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
+    const received = headerSecret || bearerSecret;
+    if (received && secureEquals(received, this.sharedSecret)) return true;
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'mesh authentication required' }));
+    return false;
   }
 }
 

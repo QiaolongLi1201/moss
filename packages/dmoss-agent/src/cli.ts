@@ -600,6 +600,9 @@ async function main() {
     const meshPort = parseInt(process.env.DMOSS_MESH_PORT || '9090', 10);
     const meshId = process.env.DMOSS_MESH_ID || `dmoss-${Date.now()}`;
     const meshName = process.env.DMOSS_MESH_NAME || `D-Moss @ ${os.hostname()}`;
+    const meshListenHost = process.env.DMOSS_MESH_LISTEN_HOST || undefined;
+    const meshSharedSecret =
+      process.env.DMOSS_MESH_SHARED_SECRET || process.env.DMOSS_MESH_SECRET || undefined;
     const meshPeers = (process.env.DMOSS_MESH_PEERS || '')
       .split(',')
       .filter(Boolean)
@@ -614,6 +617,8 @@ async function main() {
       id: meshId,
       name: meshName,
       port: meshPort,
+      listenHost: meshListenHost,
+      sharedSecret: meshSharedSecret,
       peers: meshPeers,
       capabilities: deviceConfig ? ['device-control', 'ros2'] : ['general'],
       deviceInfo: deviceConfig ? `${deviceConfig.host}` : undefined,
@@ -635,6 +640,8 @@ async function main() {
     await mesh.announce();
     if (isMeshVerboseEnabled()) {
       console.error(`[mesh] Agent mesh started on port ${meshPort} (id: ${meshId})`);
+      console.error(`[mesh] Listen host: ${meshListenHost || '127.0.0.1'}`);
+      console.error(`[mesh] Shared secret: ${meshSharedSecret ? 'configured' : 'not configured'}`);
       console.error(
         `[mesh] Incoming queries: ${allowIncoming ? 'ALLOWED' : 'BLOCKED'} (set DMOSS_MESH_ALLOW_INCOMING=false to block)`,
       );

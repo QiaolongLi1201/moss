@@ -29,6 +29,7 @@ const DNS_CHECK_TIMEOUT_MS = 3_000;
 const DNS_CACHE_TTL_MS = 60_000;
 
 const dnsCache = new Map<string, { addresses: string[]; expiresAt: number }>();
+type HostAddressResolver = (hostname: string) => Promise<string[]>;
 
 export interface WebFetchOptions {
   /** Per-tool-call upper bound on response body size in bytes (post-HTTP, pre-decode). Default 1 MB. */
@@ -43,6 +44,8 @@ export interface WebFetchOptions {
   allowHosts?: string[];
   /** Custom User-Agent. Default: `dmoss-agent/<version>`. */
   userAgent?: string;
+  /** Optional resolver override for tests or embedded hosts. */
+  resolveHostAddresses?: HostAddressResolver;
 }
 
 const PRIVATE_IP_RES = [
@@ -53,12 +56,30 @@ const PRIVATE_IP_RES = [
   /^169\.254\./,
   /^0\./,
   /^::1$/i,
+  /^::ffff:(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.|169\.254\.|0\.)/i,
   /^fe80:/i,
   /^fc[0-9a-f]{2}:/i,
   /^fd[0-9a-f]{2}:/i,
 ];
 
-async function isPrivateHost(hostname: string): Promise<boolean> {
+async function resolveHostAddresses(hostname: string): Promise<string[]> {
+  const records = await dns.lookup(hostname, { all: true });
+  return records.map((record) => record.address);
+}
+
+async function resolveHostAddressesWithTimeout(hostname: string, resolver: HostAddressResolver): Promise<string[]> {
+  return Promise.race([
+    resolver(hostname),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('dns timeout')), DNS_CHECK_TIMEOUT_MS),
+    ),
+  ]);
+}
+
+export async function isPrivateHost(
+  hostname: string,
+  resolver: HostAddressResolver = resolveHostAddresses,
+): Promise<boolean> {
   const h = hostname.toLowerCase();
   if (h === 'localhost') return true;
   if (h === '0.0.0.0') return true;
@@ -69,22 +90,20 @@ async function isPrivateHost(hostname: string): Promise<boolean> {
     const now = Date.now();
     let addresses: string[];
     const cached = dnsCache.get(h);
-    if (cached && cached.expiresAt > now) {
+    if (resolver === resolveHostAddresses && cached && cached.expiresAt > now) {
       addresses = cached.addresses;
     } else {
-      addresses = await Promise.race([
-        dns.resolve4(h),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('dns timeout')), DNS_CHECK_TIMEOUT_MS),
-        ),
-      ]);
-      dnsCache.set(h, { addresses, expiresAt: now + DNS_CACHE_TTL_MS });
+      addresses = await resolveHostAddressesWithTimeout(h, resolver);
+      if (resolver === resolveHostAddresses) {
+        dnsCache.set(h, { addresses, expiresAt: now + DNS_CACHE_TTL_MS });
+      }
     }
     for (const ip of addresses) {
       if (PRIVATE_IP_RES.some((re) => re.test(ip))) return true;
     }
   } catch {
-    // DNS resolution failed or timed out — treat as non-private (can't verify)
+    // Fail closed: if SSRF preflight cannot verify the host, do not fetch it.
+    return true;
   }
   return false;
 }
@@ -136,6 +155,7 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
   const blockPrivate = opts.blockPrivateNetwork !== false;
   const userAgent = opts.userAgent ?? 'dmoss-agent/0.1 (+https://github.com/D-Moss)';
   const allowHosts = (opts.allowHosts ?? []).map((s) => s.toLowerCase());
+  const resolveAddresses = opts.resolveHostAddresses ?? resolveHostAddresses;
 
   return {
     name: 'web_fetch',
@@ -188,7 +208,7 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
           recoverable: false,
         });
       }
-      if (blockPrivate && await isPrivateHost(url.hostname)) {
+      if (blockPrivate && await isPrivateHost(url.hostname, resolveAddresses)) {
         throw new DmossError({
           code: ErrorCode.TOOL_NOT_ALLOWED,
           message: `web_fetch: refused to connect to private host "${url.hostname}"`,
@@ -233,7 +253,7 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
               break;
             }
             redirectCount++;
-            if (blockPrivate && await isPrivateHost(nextUrl.hostname)) {
+            if (blockPrivate && await isPrivateHost(nextUrl.hostname, resolveAddresses)) {
               res.body?.cancel?.();
               throw new DmossError({
                 code: ErrorCode.TOOL_NOT_ALLOWED,

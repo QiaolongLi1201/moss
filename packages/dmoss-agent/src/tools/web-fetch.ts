@@ -23,6 +23,12 @@ const log = getRootLogger().child('tool:web-fetch');
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_BYTES = 1_000_000;
 const DEFAULT_MAX_TEXT_CHARS = 16_000;
+/** DNS resolution timeout for SSRF check (ms). Prevents unbounded latency on slow/unreachable resolvers. */
+const DNS_CHECK_TIMEOUT_MS = 3_000;
+/** DNS result cache TTL (ms). Avoids repeated lookups for the same host within an agent session. */
+const DNS_CACHE_TTL_MS = 60_000;
+
+const dnsCache = new Map<string, { addresses: string[]; expiresAt: number }>();
 
 export interface WebFetchOptions {
   /** Per-tool-call upper bound on response body size in bytes (post-HTTP, pre-decode). Default 1 MB. */
@@ -57,14 +63,28 @@ async function isPrivateHost(hostname: string): Promise<boolean> {
   if (h === 'localhost') return true;
   if (h === '0.0.0.0') return true;
   if (PRIVATE_IP_RES.some((re) => re.test(h))) return true;
-  // Resolve DNS and check resolved IPs to prevent DNS rebinding attacks
+  // Resolve DNS with timeout and cache to prevent DNS rebinding attacks
+  // without adding unbounded latency to web_fetch tool calls.
   try {
-    const addresses = await dns.resolve4(h);
+    const now = Date.now();
+    let addresses: string[];
+    const cached = dnsCache.get(h);
+    if (cached && cached.expiresAt > now) {
+      addresses = cached.addresses;
+    } else {
+      addresses = await Promise.race([
+        dns.resolve4(h),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('dns timeout')), DNS_CHECK_TIMEOUT_MS),
+        ),
+      ]);
+      dnsCache.set(h, { addresses, expiresAt: now + DNS_CACHE_TTL_MS });
+    }
     for (const ip of addresses) {
       if (PRIVATE_IP_RES.some((re) => re.test(ip))) return true;
     }
   } catch {
-    // DNS resolution failed — treat as non-private (can't verify)
+    // DNS resolution failed or timed out — treat as non-private (can't verify)
   }
   return false;
 }

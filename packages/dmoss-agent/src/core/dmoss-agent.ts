@@ -199,10 +199,9 @@ export class DmossAgent {
       'against the user\'s intent before acting on it.',
     );
 
-    const ecosystem = getAggregatedEcosystemPrompt();
-    if (ecosystem) parts.push(ecosystem);
-
     if (this.config.includeRegisteredKnowledgePrompts !== false) {
+      const ecosystem = getAggregatedEcosystemPrompt();
+      if (ecosystem) parts.push(ecosystem);
       const fragments = getAllPromptFragments({ tier: 'all', mode: 'all' });
       if (fragments.length > 0) {
         parts.push(fragments.map((f) => f.content).join('\n\n'));

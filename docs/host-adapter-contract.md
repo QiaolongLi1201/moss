@@ -91,3 +91,86 @@ Changes to this file follow semver:
 
 Hosts should validate the manifest during CI and expose the report in product
 diagnostics so a Moss upgrade cannot silently degrade the user experience.
+
+## Code Reality (2026-05-24 Audit)
+
+The contract is implemented in `packages/dmoss/src/contracts/host-adapter.ts`.
+Key code-level facts from this audit snapshot:
+
+### Capability Kinds (13)
+
+```
+llm_provider, tool_registry, approval_gate, event_sink, workspace,
+memory, knowledge, prompt_context, skill_runtime, artifact_runtime,
+device_runtime, channel_runtime, telemetry
+```
+
+### Compatibility Statuses (7)
+
+```
+ok, invalid_manifest, host_version_incompatible, contract_mismatch,
+missing_capability, missing_event_schema, missing_provider_family
+```
+
+### Approval Levels (3)
+
+```
+not_required, plan_audit, execute_audit
+```
+
+### Side-Effect Classes (8)
+
+```
+readonly, local_write, device_mutation, credential, external_message,
+memory_write, runtime_state, subagent
+```
+
+### Semver Handling
+
+`evaluateMossHostCompatibility()` includes built-in semver parsing and
+comparison for `minHostVersion` checks — no external dependency. It accepts
+`MAJOR.MINOR.PATCH` with optional `-prerelease` or `+build` suffixes; suffixes
+are tolerated in the input string but ignored during numeric comparison. That
+means `1.2.3-rc.1`, `1.2.3+build.4`, and `1.2.3` compare as equal; the adapter
+does not implement full prerelease ordering. Invalid version strings fall back
+to `localeCompare()`.
+
+Contract versions are numeric, not semver. They use exact `contractVersion`
+matching when specified, otherwise `minContractVersion` / `maxContractVersion`
+range checks.
+
+### RDK Studio Manifest
+
+The RDK Studio audit identifies a concrete manifest generator in
+`rdstudio-web/server/dmoss/studio-host-adapter-contract.ts` that requires
+12 of 13 capability kinds (all except `telemetry`, which is optional).
+Tool references are derived from `listDeclaredToolCapabilityPolicies()` and
+`classifyToolPermissionBoundary()`. That manifest is the compatibility
+diagnostics surface evaluated with `evaluateMossHostCompatibility()`; it is
+not the same path as the chat runtime's direct Moss API usage.
+
+### DMossApp Integration
+
+`rdstudio-web/server/dmoss/app.ts` is the chat/runtime bridge between RDK
+Studio and Moss. DMossApp directly imports and uses Moss runtime APIs such as:
+- `PiAiLLMProvider` — model provider adapter
+- `JsonlSessionStore` — JSONL session persistence
+- `MemoryManager` + `selectMemoriesForContext` — memory management
+- `AgentMesh` — multi-agent collaboration
+- `maybePersistConversationSkill` + `createStudioTeachingHooks` — skill learning
+
+The `_executeChat` method implements the full chat lifecycle: setup → context
+assembly → LLM execution → finalization. The runtime manifest is therefore a
+diagnostics and upgrade-compatibility artifact, while DMossApp's normal
+execution path consumes the Moss APIs directly.
+
+### Known Gaps
+
+1. Keep DMossApp's direct Moss API usage and the generated runtime manifest
+   documented as separate integration surfaces.
+2. When Studio adds or removes direct Moss capabilities, update both the
+   DMossApp integration notes and the manifest generator consumed by runtime
+   diagnostics.
+3. Knowledge module version accuracy still needs a smoke check: Studio's
+   generated manifest should report the current device-knowledge module
+   identity/version semantics rather than stale package metadata.

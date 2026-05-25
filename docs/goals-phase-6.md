@@ -22,10 +22,55 @@
 ## 当前进展（2026-05-23）
 
 - `npm run verify` 已作为权威 gate 跑通：boundary/hygiene/build/typecheck/package tests，并覆盖嵌套 e2e replay。
-- Host Adapter 已补 exact/range contract negotiation、`invalid_manifest`、conformance tests 与 fixture host 验证。
+- Host Adapter（截至 2026-05-23）已补 exact/range contract negotiation、`invalid_manifest`、conformance tests 与 fixture host 验证。
 - Observability 已有 runtime smoke：`DmossAgent.chat()` 触发 span、usage log、失败路径 redaction。
 - Public API 已明确：root export 保持小而稳定，mesh 与 observability 作为 subpath-only surface。
 - 剩余高风险 lane：dead-code 删除。首批 helper-file 删除已完成；后续仍必须先独立 audit，再按批删除并跑 `npm run verify`。
+
+### 2026-05-24 代码审计补充
+
+逐文件代码审读验证了 Phase 6 文档与代码的匹配度。以下为 2026-05-24 审计快照；文件规模会随实现变化，不作为长期精确事实：
+
+**Agent Loop (`agent-loop.ts`):**
+- Double-loop architecture: outer loop for follow-ups, inner loop for per-turn context prep → LLM call → tool execution
+- Hard caps: `HARD_CAP_MESSAGE_COUNT = 200`, `HARD_CAP_TOTAL_CHARS = 500_000`, `MAX_OUTPUT_CONTINUATIONS = 3`
+- Overflow recovery state machine with 3 levels
+- Roundtrip repair for dangling `tool_use`/`tool_result` pairs
+
+**Context Management:**
+- Pruning (`pruning.ts`): three-layer strategy
+  - Soft Trim (ratio > 0.3): keep head+tail of tool results
+  - Hard Clear (ratio > 0.5): replace with "[Old tool result content cleared]"
+  - Message Drop: protect last 3 assistant turns, preserve tool_use→tool_result chains
+  - `MIN_MESSAGE_HISTORY_TOKEN_UNITS = 4096`
+- Compaction (`compaction.ts`): three-level fallback
+  - LLM-based compaction → smaller-chunks retry → deterministic rule-based
+  - `BASE_CHUNK_RATIO = 0.4`, `MIN_CHUNK_RATIO = 0.15`, `SAFETY_MARGIN = 1.2`
+  - `DEFAULT_COMPACTION_SETTINGS`: reserveTokens 20K, keepRecentTokens 20K
+  - File operation extraction from dropped messages into XML tags
+
+**DmossAgent (`dmoss-agent.ts`):**
+- ToolRegistry + ToolHookRegistry (secret-sanitizer always installed)
+- SteeringEngine for behavioral guidance
+- `buildSystemPrompt()`: base → domain → injection defense → ecosystem → knowledge → device profile → extras
+- `streamChatViaAgentLoop()`: session loading, goal/task-frame, provider adapter, agent loop, skill learning
+
+**Agent Mesh (`agent-mesh.ts` + `lan-discovery.ts`):**
+- HTTP server (port 9090): handles query/announce/share_skill/share_memory
+- `share_skill`/`share_memory` have explicit handlers; if no handler is configured, they return a configured-error response rather than falling through to unknown message type
+- LAN discovery: UDP broadcast (port 9091, 10s interval), correct subnet broadcast calculation
+- `createMeshTools()`: mesh_ask_peers, mesh_list_peers, mesh_discover
+
+**Host Adapter (`host-adapter.ts`):**
+- `MOSS_HOST_ADAPTER_CONTRACT_VERSION = 1`
+- 13 capability kinds, 7 compatibility statuses, 3 approval levels, 8 side-effect classes
+- Built-in semver parsing (no external dependency)
+- `evaluateMossHostCompatibility()`: shape → contract version → host semver → capabilities → event schemas → provider families
+
+**文档与代码匹配度评估：**
+- roadmap.md — ✅ 高度匹配，Phase 1-4 描述与代码一致
+- host-adapter-contract.md — ✅ 匹配，但缺少具体代码指标（已补充）
+- goals-phase-6.md — ✅ B.2 (mesh share_skill/share_memory) 基础处理器已存在；后续重点是验收共享语义和端到端覆盖
 
 ---
 
@@ -43,11 +88,11 @@
 - **Version negotiation 规则**: 宿主声明 `minContractVersion` + `maxContractVersion`，Moss 运行时协商可接受的版本
 - **Breaking change policy**: 什么算 breaking change，minor/patch 各允许多大改动，migration 窗口多长
 
-**当前状态**: `packages/dmoss/src/contracts/host-adapter.ts` (238 行)，`MOSS_HOST_ADAPTER_CONTRACT_VERSION = 1`，13 种 capability kind，`evaluateMossHostCompatibility()` 含 6 种 failure mode。但纯类型定义——无运行时协议实现。
+**当前状态**: `packages/dmoss/src/contracts/host-adapter.ts` 定义 `MOSS_HOST_ADAPTER_CONTRACT_VERSION = 1`、13 种 capability kind，并提供返回 `ok` + 6 种失败 status 的 `evaluateMossHostCompatibility()`。当前 evaluator 已包含轻量运行时 manifest shape 校验、合约版本协商、host semver、capability、event schema 与 provider family 检查；schema 生成、fixture host 与 conformance suite 仍是待交付合约产物。
 
 ### A.2 兼容性测试体系
 
-- `evaluateMossHostCompatibility()` 单元测试：覆盖全部 6 种 failure mode + 正常路径
+- `evaluateMossHostCompatibility()` 单元测试：覆盖 `ok` 正常路径 + 全部 6 种失败 status
 - manifest schema validator（手写或 Zod）
 - fixture manifest 作为 conformance test 的输入
 
@@ -90,15 +135,15 @@ cancellation_propagated { runId, source, targetRuns }
 ```
 
 ### B.2 Mesh 协议补全
-**当前状态**: `packages/dmoss-agent/src/mesh/agent-mesh.ts` (352 行) 已有 `query/response/announce`，`share_skill/share_memory` 落到 `default` 分支返回 "unknown message type"。
+**当前状态**: `packages/dmoss-agent/src/mesh/agent-mesh.ts` 已有 `query/response/announce/share_skill/share_memory` 处理。`share_skill` 与 `share_memory` 在未配置 handler 时返回明确错误，在配置 handler 时调用对应共享处理器。
 
-- 实现 `share_skill` / `share_memory` 处理器
+- 验证 `share_skill` / `share_memory` 处理器的端到端共享语义
 - Mesh 节点身份验证（共享密钥 / token）
 - 消息加密（NaCl box 或 TLS）
 
 ### B.3 子智能体编排运行时
 
-**当前状态**: `spawn-profile.ts` (172 行) 定义 6 种 scope + 工具集，但无 spawn runtime。
+**当前状态**: `spawn-profile.ts` 定义 6 种 scope + 工具集，但无 spawn runtime。
 
 - 子智能体上下文隔离：独立 system prompt、受限工具集、独立会话
 - 父子通信协议：task → child / summary → parent

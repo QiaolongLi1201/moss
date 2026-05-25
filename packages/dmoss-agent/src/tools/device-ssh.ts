@@ -61,7 +61,9 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       const timeout = Number(input.timeout_ms) || 30_000;
       const sshCmd = buildSshCommand(config, input.command);
       try {
-        const result = execFileSync('ssh', sshCmd, {
+        const sshBin = config.password ? 'sshpass' : 'ssh';
+        const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
+        const result = execFileSync(sshBin, sshArgs, {
           timeout,
           maxBuffer: 10 * 1024 * 1024,
           encoding: 'utf-8',
@@ -93,7 +95,9 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       ];
       const sshCmd = buildSshCommand(config, commands.join(' && '));
       try {
-        const result = execFileSync('ssh', sshCmd, {
+        const sshBin = config.password ? 'sshpass' : 'ssh';
+        const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
+        const result = execFileSync(sshBin, sshArgs, {
           timeout: 15_000,
           encoding: 'utf-8',
           maxBuffer: 1024 * 1024,
@@ -119,7 +123,9 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
     async execute(input) {
       const sshCmd = buildSshCommand(config, `cat ${shellEscape(input.path)}`);
       try {
-        const result = execFileSync('ssh', sshCmd, {
+        const sshBin = config.password ? 'sshpass' : 'ssh';
+        const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
+        const result = execFileSync(sshBin, sshArgs, {
           timeout: 15_000,
           encoding: 'utf-8',
           maxBuffer: 5 * 1024 * 1024,
@@ -149,7 +155,9 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       const dir = input.path || '/home';
       const sshCmd = buildSshCommand(config, `ls -la ${shellEscape(dir)}`);
       try {
-        const result = execFileSync('ssh', sshCmd, { timeout: 10_000, encoding: 'utf-8' });
+        const sshBin = config.password ? 'sshpass' : 'ssh';
+        const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
+        const result = execFileSync(sshBin, sshArgs, { timeout: 10_000, encoding: 'utf-8' });
         return result.trim();
       } catch (err: any) {
         return `Failed to list ${dir}: ${err.message}`;

@@ -14,6 +14,7 @@ const BUILTIN_MUTATING_EXACT = new Set<string>([
   'memory_write',
   'memory_save',
   'web_search',
+  'write_file',
 ]);
 
 /** Built-in mutating tool prefixes */

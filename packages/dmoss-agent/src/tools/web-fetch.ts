@@ -13,6 +13,7 @@
  *   - A search engine — see `web-search.ts` for a separate tool.
  */
 
+import dns from 'node:dns/promises';
 import type { Tool, ToolContext } from '../core/tool-types.js';
 import { getRootLogger } from '../logger.js';
 import { DmossError, ErrorCode } from '../errors.js';
@@ -51,11 +52,21 @@ const PRIVATE_IP_RES = [
   /^fd[0-9a-f]{2}:/i,
 ];
 
-function isPrivateHost(hostname: string): boolean {
+async function isPrivateHost(hostname: string): Promise<boolean> {
   const h = hostname.toLowerCase();
   if (h === 'localhost') return true;
   if (h === '0.0.0.0') return true;
-  return PRIVATE_IP_RES.some((re) => re.test(h));
+  if (PRIVATE_IP_RES.some((re) => re.test(h))) return true;
+  // Resolve DNS and check resolved IPs to prevent DNS rebinding attacks
+  try {
+    const addresses = await dns.resolve4(h);
+    for (const ip of addresses) {
+      if (PRIVATE_IP_RES.some((re) => re.test(ip))) return true;
+    }
+  } catch {
+    // DNS resolution failed — treat as non-private (can't verify)
+  }
+  return false;
 }
 
 function hostMatches(host: string, pattern: string): boolean {
@@ -157,7 +168,7 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
           recoverable: false,
         });
       }
-      if (blockPrivate && isPrivateHost(url.hostname)) {
+      if (blockPrivate && await isPrivateHost(url.hostname)) {
         throw new DmossError({
           code: ErrorCode.TOOL_NOT_ALLOWED,
           message: `web_fetch: refused to connect to private host "${url.hostname}"`,
@@ -202,7 +213,7 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
               break;
             }
             redirectCount++;
-            if (blockPrivate && isPrivateHost(nextUrl.hostname)) {
+            if (blockPrivate && await isPrivateHost(nextUrl.hostname)) {
               res.body?.cancel?.();
               throw new DmossError({
                 code: ErrorCode.TOOL_NOT_ALLOWED,
@@ -306,7 +317,11 @@ function anySignal(a: AbortSignal, b: AbortSignal): AbortSignal {
   if (a.aborted) return a;
   if (b.aborted) return b;
   const ctrl = new AbortController();
-  const on = () => ctrl.abort();
+  const on = () => {
+    ctrl.abort();
+    a.removeEventListener('abort', on);
+    b.removeEventListener('abort', on);
+  };
   a.addEventListener('abort', on, { once: true });
   b.addEventListener('abort', on, { once: true });
   return ctrl.signal;

@@ -89,14 +89,11 @@ function extractFileOpsFromMessage(message: Message, fileOps: FileOps): void {
       continue;
     }
     switch (block.name) {
-      case "read":
+      case "read_file":
         fileOps.read.add(path);
         break;
-      case "write":
+      case "write_file":
         fileOps.written.add(path);
-        break;
-      case "edit":
-        fileOps.edited.add(path);
         break;
     }
   }

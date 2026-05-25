@@ -31,7 +31,9 @@ function sshExec(config: DeviceSshConfig, cmd: string, timeout = 15_000): string
   const sshArgs = buildSshCommand(config, remoteCmd);
 
   try {
-    return execFileSync('ssh', sshArgs, {
+    const sshBin = config.password ? 'sshpass' : 'ssh';
+    const sshAllArgs = config.password ? ['-e', 'ssh', ...sshArgs] : sshArgs;
+    return execFileSync(sshBin, sshAllArgs, {
       timeout,
       encoding: 'utf-8',
       maxBuffer: 5 * 1024 * 1024,

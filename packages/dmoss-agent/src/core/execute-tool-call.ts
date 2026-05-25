@@ -32,7 +32,7 @@ import { runPreToolHookChain, validateToolInputObject } from './tool-pipeline.js
 const logger = getRootLogger();
 
 /** Tool names eligible for internal transient retry (readonly, no side effects). */
-const TRANSIENT_RETRY_TOOLS = new Set(['read', 'grep', 'glob']);
+const TRANSIENT_RETRY_TOOLS = new Set(['read_file', 'search_code', 'search_files']);
 /** Max additional attempts after the initial failure (3 total including initial call). */
 const MAX_RETRY_ATTEMPTS = 2;
 

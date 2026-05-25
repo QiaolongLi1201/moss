@@ -285,7 +285,7 @@ export const searchCodeTool: Tool = {
     let regex: RegExp;
     try {
       if (!isSafeRegex(String(input.pattern))) {
-        return { output: 'Error: pattern rejected as potentially unsafe (ReDoS risk). Use a simpler pattern.' };
+        return 'Error: pattern rejected as potentially unsafe (ReDoS risk). Use a simpler pattern.';
       }
       regex = new RegExp(String(input.pattern), 'i');
     } catch (err) {

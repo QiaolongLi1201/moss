@@ -109,11 +109,13 @@ export async function assertSandboxPath(params: {
 
   // TOCTOU mitigation: re-verify via realpath that no symlink was inserted
   // between the lstat walk above and the caller's subsequent file operation.
+  // Both sides must be realpath-resolved: on macOS /var → /private/var etc.
   try {
     const realResolved = await fs.realpath(resolved.resolved);
+    const realRoot = await fs.realpath(resolved.matchedRoot);
     if (
-      !realResolved.startsWith(resolved.matchedRoot + path.sep) &&
-      realResolved !== resolved.matchedRoot
+      !realResolved.startsWith(realRoot + path.sep) &&
+      realResolved !== realRoot
     ) {
       throw new Error(`path escapes sandbox after realpath resolution: ${params.filePath}`);
     }

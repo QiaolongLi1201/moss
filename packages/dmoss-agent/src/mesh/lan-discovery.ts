@@ -57,11 +57,18 @@ export class LanDiscovery {
         if (msg.type !== 'dmoss-announce') return;
         if (msg.id === this.config.agentId) return;
 
+        // L1: Validate meshPort
+        const port = Number(msg.meshPort);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) return;
+
+        // L1: Validate capabilities
+        if (!Array.isArray(msg.capabilities)) msg.capabilities = [];
+
         const peer: MeshPeer = {
           id: msg.id,
           name: msg.name,
           host: rinfo.address,
-          port: msg.meshPort,
+          port: port,
           capabilities: msg.capabilities || [],
           deviceInfo: msg.deviceInfo,
           lastSeen: Date.now(),
@@ -69,7 +76,8 @@ export class LanDiscovery {
 
         const existing = this.config.mesh.getPeers().find(p => p.id === msg.id);
         if (!existing) {
-          this.config.mesh.discoverPeer(rinfo.address, msg.meshPort).catch(() => {});
+          // L2: Log peer discovery failures instead of swallowing them
+          this.config.mesh.discoverPeer(rinfo.address, port).catch((err) => console.warn('[lan-discovery] peer discovery failed:', err?.message ?? err));
           if (this.onPeerDiscovered) {
             this.onPeerDiscovered(peer);
           }

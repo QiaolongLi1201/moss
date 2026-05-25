@@ -10,7 +10,7 @@
  * The workspace directory is mounted as /workspace inside the container.
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import type { Tool } from '../core/tool-types.js';
 
 const IS_WIN = process.platform === 'win32';
@@ -57,24 +57,21 @@ export function createDockerExecTool(config: DockerExecConfig): Tool {
         ? workDir.replace(/\\/g, '/')
         : workDir;
 
-      const dockerCmd = [
-        'docker', 'run', '--rm',
-        '-v', `"${mountPath}:/workspace"`,
-        '-w', '/workspace',
-        '--network', 'none',
-        '--memory', '512m',
-        '--cpus', '1',
-        image,
-        '/bin/sh', '-c', JSON.stringify(input.command),
-      ].join(' ');
-
       try {
-        const shell = IS_WIN ? process.env.COMSPEC || 'cmd.exe' : '/bin/sh';
-        const result = execSync(dockerCmd, {
+        // C2: Use execFileSync to avoid host shell interpretation of user command
+        const result = execFileSync('docker', [
+          'run', '--rm',
+          '-v', `${mountPath}:/workspace`,
+          '-w', '/workspace',
+          '--network', 'none',
+          '--memory', '512m',
+          '--cpus', '1',
+          image,
+          '/bin/sh', '-c', String(input.command),
+        ], {
           timeout: timeoutMs + 10_000,
           maxBuffer: 10 * 1024 * 1024,
           encoding: 'utf-8',
-          shell,
         });
         return String(result).trim() || '(no output)';
       } catch (err: any) {

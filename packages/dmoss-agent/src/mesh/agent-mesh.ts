@@ -96,6 +96,7 @@ export class AgentMesh {
     if (this.running) return;
 
     this.server = http.createServer(async (req, res) => {
+      // M5: TODO(security): mesh HTTP server has no authentication. Consider adding a shared secret or token for production deployments.
       if (req.method !== 'POST') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
@@ -109,8 +110,15 @@ export class AgentMesh {
         return;
       }
 
+      // H4: Bound request body size to prevent DoS
+      const MAX_BODY = 1 * 1024 * 1024;
       let body = '';
-      for await (const chunk of req) body += chunk;
+      let bodyLen = 0;
+      for await (const chunk of req) {
+        bodyLen += chunk.length;
+        if (bodyLen > MAX_BODY) { req.destroy(); return; }
+        body += chunk;
+      }
 
       try {
         const msg: MeshMessage = JSON.parse(body);
@@ -300,6 +308,11 @@ export class AgentMesh {
   }
 
   async discoverPeer(host: string, port: number): Promise<MeshPeer | null> {
+    // M1: SSRF protection — reject private/loopback IPs
+    const hostStr = String(host);
+    if (/^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|localhost)/i.test(hostStr)) {
+      return null;
+    }
     try {
       const res = await fetch(`http://${host}:${port}`, {
         method: 'GET',

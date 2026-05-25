@@ -8,17 +8,27 @@
 
 import type { Tool } from '../core/tool-types.js';
 import type { DeviceSshConfig } from './device-ssh.js';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
-function sshExec(config: DeviceSshConfig, cmd: string, timeout = 10_000): string {
+/** Escape a single shell argument for POSIX sh. */
+function shellEscape(arg: string): string {
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string[] {
   const user = config.user || 'root';
   const port = config.port || 22;
-  const parts = ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=5'];
+  const parts = ['-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=5'];
   if (config.keyPath) parts.push('-i', config.keyPath);
-  parts.push('-p', String(port), `${user}@${config.host}`, cmd);
+  parts.push('-p', String(port), `${user}@${config.host}`, shellEscape(remoteCmd));
+  return parts;
+}
+
+function sshExec(config: DeviceSshConfig, cmd: string, timeout = 10_000): string {
+  const sshArgs = buildSshCommand(config, cmd);
 
   try {
-    return execSync(parts.join(' '), {
+    return execFileSync('ssh', sshArgs, {
       timeout,
       encoding: 'utf-8',
       maxBuffer: 1024 * 1024,
@@ -81,7 +91,8 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
       },
     },
     async execute(input) {
-      const count = input.count || 10;
+      // H1: Coerce to number and clamp to safe range [1, 100]
+      const count = Math.max(1, Math.min(Number(input.count) || 10, 100));
       return sshExec(config, `ps aux --sort=-%cpu | head -${count + 1}`);
     },
   };

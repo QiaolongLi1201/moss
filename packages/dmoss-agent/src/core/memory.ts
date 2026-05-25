@@ -210,6 +210,7 @@ export class MemoryManager {
   private baseDir: string;
   private entries: MemoryEntry[] = [];
   private loaded = false;
+  private _writeChain: Promise<void> = Promise.resolve();
 
   constructor(baseDir: string = './.dmoss/memory') {
     this.baseDir = baseDir;
@@ -223,7 +224,9 @@ export class MemoryManager {
     if (this.loaded) return;
     try {
       const content = await fs.readFile(this.indexPath, 'utf-8');
-      this.entries = JSON.parse(content);
+      const parsed = JSON.parse(content);
+      // M6: Validate parsed JSON is an array
+      this.entries = Array.isArray(parsed) ? parsed : [];
     } catch {
       this.entries = [];
     }
@@ -232,7 +235,10 @@ export class MemoryManager {
 
   private async save(): Promise<void> {
     await fs.mkdir(this.baseDir, { recursive: true });
-    await fs.writeFile(this.indexPath, JSON.stringify(this.entries, null, 2));
+    // M3: Atomic write — write to temp file then rename
+    const tmpPath = this.indexPath + '.tmp';
+    await fs.writeFile(tmpPath, JSON.stringify(this.entries, null, 2), 'utf-8');
+    await fs.rename(tmpPath, this.indexPath);
   }
 
   private hashContent(content: string): string {
@@ -245,48 +251,56 @@ export class MemoryManager {
     filePath?: string,
     options?: { scope?: MemoryScope; scopeRef?: string; pinned?: boolean; topic?: string; starred?: boolean },
   ): Promise<string> {
-    await this.load();
+    // H3: Serialize writes through a promise chain to prevent race conditions
+    const result = this._writeChain.then(async () => {
+      await this.load();
 
-    const hash = this.hashContent(content);
-    const id = `mem_${hash}`;
+      const hash = this.hashContent(content);
+      const id = `mem_${hash}`;
 
-    const existingIndex = this.entries.findIndex((e) => e.hash === hash);
-    if (existingIndex >= 0) {
-      this.entries[existingIndex].content = content;
-      this.entries[existingIndex].path = filePath;
-      if (options?.scope !== undefined) this.entries[existingIndex].scope = options.scope;
-      if (options?.scopeRef !== undefined) this.entries[existingIndex].scopeRef = options.scopeRef;
-      if (options?.pinned !== undefined) this.entries[existingIndex].pinned = options.pinned;
-      if (options?.topic !== undefined) {
-        if (options.topic === '') delete this.entries[existingIndex].topic;
-        else this.entries[existingIndex].topic = options.topic;
+      const existingIndex = this.entries.findIndex((e) => e.hash === hash);
+      if (existingIndex >= 0) {
+        this.entries[existingIndex].content = content;
+        this.entries[existingIndex].path = filePath;
+        if (options?.scope !== undefined) this.entries[existingIndex].scope = options.scope;
+        if (options?.scopeRef !== undefined) this.entries[existingIndex].scopeRef = options.scopeRef;
+        if (options?.pinned !== undefined) this.entries[existingIndex].pinned = options.pinned;
+        if (options?.topic !== undefined) {
+          if (options.topic === '') delete this.entries[existingIndex].topic;
+          else this.entries[existingIndex].topic = options.topic;
+        }
+        if (options?.starred !== undefined) {
+          if (!options.starred) delete this.entries[existingIndex].starred;
+          else this.entries[existingIndex].starred = true;
+        }
+        await this.save();
+        return this.entries[existingIndex].id;
       }
-      if (options?.starred !== undefined) {
-        if (!options.starred) delete this.entries[existingIndex].starred;
-        else this.entries[existingIndex].starred = true;
-      }
+
+      const entry: MemoryEntry = {
+        id,
+        content,
+        source,
+        path: filePath,
+        hash,
+        createdAt: Date.now(),
+        ...(options?.scope !== undefined ? { scope: options.scope } : {}),
+        ...(options?.scopeRef !== undefined ? { scopeRef: options.scopeRef } : {}),
+        ...(options?.pinned !== undefined ? { pinned: options.pinned } : {}),
+        ...(options?.topic !== undefined && options.topic !== ''
+          ? { topic: options.topic }
+          : {}),
+        ...(options?.starred !== undefined && options.starred ? { starred: true } : {}),
+      };
+      this.entries.push(entry);
       await this.save();
-      return this.entries[existingIndex].id;
-    }
-
-    const entry: MemoryEntry = {
-      id,
-      content,
-      source,
-      path: filePath,
-      hash,
-      createdAt: Date.now(),
-      ...(options?.scope !== undefined ? { scope: options.scope } : {}),
-      ...(options?.scopeRef !== undefined ? { scopeRef: options.scopeRef } : {}),
-      ...(options?.pinned !== undefined ? { pinned: options.pinned } : {}),
-      ...(options?.topic !== undefined && options.topic !== ''
-        ? { topic: options.topic }
-        : {}),
-      ...(options?.starred !== undefined && options.starred ? { starred: true } : {}),
-    };
-    this.entries.push(entry);
-    await this.save();
-    return id;
+      return id;
+    }).catch(err => {
+      console.warn('[memory] write chain error:', err);
+      return '';
+    });
+    this._writeChain = result.then(() => {});
+    return result;
   }
 
   /**
@@ -299,27 +313,35 @@ export class MemoryManager {
       Pick<MemoryEntry, 'content' | 'scope' | 'scopeRef' | 'pinned' | 'topic' | 'starred'>
     >,
   ): Promise<boolean> {
-    await this.load();
-    const idx = this.entries.findIndex((e) => e.id === id);
-    if (idx === -1) return false;
-    const entry = this.entries[idx];
-    if (patch.content !== undefined && typeof patch.content === 'string') {
-      entry.content = patch.content;
-      entry.hash = this.hashContent(patch.content);
-    }
-    if (patch.scope !== undefined) entry.scope = patch.scope;
-    if (patch.scopeRef !== undefined) entry.scopeRef = patch.scopeRef;
-    if (patch.pinned !== undefined) entry.pinned = patch.pinned;
-    if (patch.topic !== undefined) {
-      if (patch.topic === '') delete entry.topic;
-      else entry.topic = patch.topic;
-    }
-    if (patch.starred !== undefined) {
-      if (!patch.starred) delete entry.starred;
-      else entry.starred = true;
-    }
-    await this.save();
-    return true;
+    // H3: Serialize writes through the promise chain
+    const result = this._writeChain.then(async () => {
+      await this.load();
+      const idx = this.entries.findIndex((e) => e.id === id);
+      if (idx === -1) return false;
+      const entry = this.entries[idx];
+      if (patch.content !== undefined && typeof patch.content === 'string') {
+        entry.content = patch.content;
+        entry.hash = this.hashContent(patch.content);
+      }
+      if (patch.scope !== undefined) entry.scope = patch.scope;
+      if (patch.scopeRef !== undefined) entry.scopeRef = patch.scopeRef;
+      if (patch.pinned !== undefined) entry.pinned = patch.pinned;
+      if (patch.topic !== undefined) {
+        if (patch.topic === '') delete entry.topic;
+        else entry.topic = patch.topic;
+      }
+      if (patch.starred !== undefined) {
+        if (!patch.starred) delete entry.starred;
+        else entry.starred = true;
+      }
+      await this.save();
+      return true;
+    }).catch(err => {
+      console.warn('[memory] write chain error:', err);
+      return false;
+    });
+    this._writeChain = result.then(() => {});
+    return result;
   }
 
   /** pin / unpin 的快捷入口；返回 true = 命中并写入；false = id 不存在。 */
@@ -427,12 +449,20 @@ export class MemoryManager {
   }
 
   async delete(id: string): Promise<boolean> {
-    await this.load();
-    const idx = this.entries.findIndex((e) => e.id === id);
-    if (idx === -1) return false;
-    this.entries.splice(idx, 1);
-    await this.save();
-    return true;
+    // H3: Serialize writes through the promise chain
+    const result = this._writeChain.then(async () => {
+      await this.load();
+      const idx = this.entries.findIndex((e) => e.id === id);
+      if (idx === -1) return false;
+      this.entries.splice(idx, 1);
+      await this.save();
+      return true;
+    }).catch(err => {
+      console.warn('[memory] write chain error:', err);
+      return false;
+    });
+    this._writeChain = result.then(() => {});
+    return result;
   }
 
   async getAll(): Promise<MemoryEntry[]> {
@@ -441,7 +471,14 @@ export class MemoryManager {
   }
 
   async clear(): Promise<void> {
-    this.entries = [];
-    await this.save();
+    // H3: Serialize writes through the promise chain
+    const result = this._writeChain.then(async () => {
+      this.entries = [];
+      await this.save();
+    }).catch(err => {
+      console.warn('[memory] write chain error:', err);
+    });
+    this._writeChain = result;
+    return result;
   }
 }

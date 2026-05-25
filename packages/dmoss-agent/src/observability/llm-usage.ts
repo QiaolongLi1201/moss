@@ -132,7 +132,10 @@ export async function readUsageLog(): Promise<LLMUsageRecord[]> {
       .trim()
       .split('\n')
       .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line));
+      .flatMap((line) => {
+        // M4: Gracefully skip corrupt JSONL lines
+        try { return [JSON.parse(line) as LLMUsageRecord]; } catch { return []; }
+      });
   } catch {
     return [];
   }

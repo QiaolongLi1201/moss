@@ -316,7 +316,7 @@ export function createStudioTeachingHooks(p: StudioTeachingLayerParams): {
       const pre = { why, concept, ...(pitfalls.length ? { pitfalls } : {}) };
       setCacheJson(cacheKey, pre);
       p.emitTeachingMeta({ v: 1, argsDigest: digest, phase: "pre", patch: pre, streamDone: true });
-    })();
+    })().catch(() => {});
 
     return { approved: true };
   };
@@ -395,7 +395,7 @@ export function createStudioTeachingHooks(p: StudioTeachingLayerParams): {
 
       setCacheJson(postCacheKey, patch);
       p.emitTeachingMeta({ v: 1, toolCallId: call.id, phase: "post", patch, streamDone: true });
-    })();
+    })().catch(() => {});
   };
 
   return { onBeforeToolExec, onToolResult };

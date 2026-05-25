@@ -234,6 +234,17 @@ function validateMossHostManifestShape(manifest: unknown): string | null {
   if (!Array.isArray(manifest.knowledgeModules)) {
     return 'manifest.knowledgeModules must be an array';
   }
+  if (
+    manifest.knowledgeModules.some(
+      (km) =>
+        !isRecord(km) ||
+        typeof km.id !== 'string' ||
+        typeof km.version !== 'string' ||
+        typeof km.stability !== 'string',
+    )
+  ) {
+    return 'manifest.knowledgeModules must be an array of knowledge module records';
+  }
 
   return null;
 }

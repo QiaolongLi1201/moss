@@ -106,5 +106,22 @@ export async function assertSandboxPath(params: {
 }): Promise<{ resolved: string; relative: string }> {
   const resolved = resolveSandboxPath(params);
   await assertNoSymlink(resolved.relative, resolved.matchedRoot);
+
+  // TOCTOU mitigation: re-verify via realpath that no symlink was inserted
+  // between the lstat walk above and the caller's subsequent file operation.
+  try {
+    const realResolved = await fs.realpath(resolved.resolved);
+    if (
+      !realResolved.startsWith(resolved.matchedRoot + path.sep) &&
+      realResolved !== resolved.matchedRoot
+    ) {
+      throw new Error(`path escapes sandbox after realpath resolution: ${params.filePath}`);
+    }
+  } catch (err) {
+    const anyErr = err as { code?: string };
+    if (anyErr.code !== 'ENOENT') throw err;
+    // ENOENT is acceptable — the file may not exist yet.
+  }
+
   return { resolved: resolved.resolved, relative: resolved.relative };
 }

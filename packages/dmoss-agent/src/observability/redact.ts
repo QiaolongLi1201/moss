@@ -32,6 +32,7 @@ const PROMPT_FIELD_PATTERN = /prompt/i;
  * Avoids matching bare numbers by requiring the dotted structure.
  */
 const IPV4_PATTERN = /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b/;
+const IPV4_PATTERN_GLOBAL = new RegExp(IPV4_PATTERN.source, 'g');
 
 /**
  * IPv6 — matches full, compressed (::), and mixed forms.
@@ -39,6 +40,7 @@ const IPV4_PATTERN = /\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2
  */
 const IPV6_PATTERN =
   /(?<![0-9a-fA-F:])(?:(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}|:(?::[0-9a-fA-F]{1,4}){1,7}|::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|::)(?![0-9a-fA-F:])/;
+const IPV6_PATTERN_GLOBAL = new RegExp(IPV6_PATTERN.source, 'g');
 
 /** URL with embedded credentials: protocol://user:pass@host */
 const URL_WITH_CREDENTIALS_PATTERN = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\/[^:]+:[^@]+@/;
@@ -72,9 +74,6 @@ function isSensitiveValue(value: string, extraPatterns?: RegExp[]): boolean {
     }
   }
 
-  // IP addresses
-  if (IPV4_PATTERN.test(value) || IPV6_PATTERN.test(value)) return true;
-
   // URL with credentials
   if (URL_WITH_CREDENTIALS_PATTERN.test(value)) return true;
 
@@ -86,6 +85,14 @@ function isSensitiveValue(value: string, extraPatterns?: RegExp[]): boolean {
   }
 
   return false;
+}
+
+// ── IP redaction ─────────────────────────────────────────────────────
+
+function redactIPs(value: string): string {
+  return value
+    .replace(IPV4_PATTERN_GLOBAL, '[IP_REDACTED]')
+    .replace(IPV6_PATTERN_GLOBAL, '[IP_REDACTED]');
 }
 
 // ── Core redaction ──────────────────────────────────────────────────
@@ -100,7 +107,7 @@ function walk(
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') {
     if (isSensitiveValue(value, extraPatterns)) return REDACTED;
-    return value;
+    return redactIPs(value);
   }
   if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'symbol' || typeof value === 'bigint') {
     return value;

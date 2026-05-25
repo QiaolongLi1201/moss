@@ -246,6 +246,17 @@ const IGNORE_DIRS = new Set([
   'dist', 'build', 'out',
 ]);
 
+/** Detect known ReDoS patterns: nested quantifiers, repeating alternations, excessive length. */
+function isSafeRegex(pattern: string): boolean {
+  // 检测嵌套量词: (x+)+, (x*)+, (x+)*, (x*)*
+  if (/(\([^)]*[+*]\)[+*])/.test(pattern)) return false;
+  // 检测交替重复: (x|y)*, (a|aa)*
+  if (/(\([^)]*\|[^)]*\)[+*])/.test(pattern)) return false;
+  // 限制总长度
+  if (pattern.length > 500) return false;
+  return true;
+}
+
 export const searchCodeTool: Tool = {
   name: 'search_code',
   description: 'Search for a regex or text pattern within files in the workspace. Returns matching file paths and line excerpts.',
@@ -273,6 +284,9 @@ export const searchCodeTool: Tool = {
 
     let regex: RegExp;
     try {
+      if (!isSafeRegex(String(input.pattern))) {
+        return { output: 'Error: pattern rejected as potentially unsafe (ReDoS risk). Use a simpler pattern.' };
+      }
       regex = new RegExp(String(input.pattern), 'i');
     } catch (err) {
       return `Invalid regex pattern: ${err instanceof Error ? err.message : String(err)}`;

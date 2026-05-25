@@ -271,12 +271,13 @@ export class DmossAgent {
     return splitGoalCheckpointMessages(latest);
   }
 
-  private async saveGoalState(sessionKey: string, goal?: GoalState): Promise<void> {
-    const latest = await this.config.sessionStore.loadMessages(sessionKey);
-    const split = splitGoalCheckpointMessages(latest);
+  private async saveGoalState(sessionKey: string, goal?: GoalState, existingMessages?: LLMMessage[]): Promise<void> {
+    const baseMessages = existingMessages ?? splitGoalCheckpointMessages(
+      await this.config.sessionStore.loadMessages(sessionKey),
+    ).messages;
     const messages = goal
-      ? [...split.messages, createGoalCheckpointMessage(goal)]
-      : split.messages;
+      ? [...baseMessages, createGoalCheckpointMessage(goal)]
+      : baseMessages;
     await this.config.sessionStore.replaceMessages(sessionKey, messages);
   }
 
@@ -292,34 +293,34 @@ export class DmossAgent {
   }
 
   async pauseGoal(sessionKey: string, reason?: string): Promise<GoalState | undefined> {
-    const current = await this.getGoal(sessionKey);
+    const { goal: current, messages } = await this.loadGoalState(sessionKey);
     if (!current) return undefined;
     const next = updateGoalState(current, { status: 'paused', statusReason: reason });
-    await this.saveGoalState(sessionKey, next);
+    await this.saveGoalState(sessionKey, next, messages);
     return next;
   }
 
   async resumeGoal(sessionKey: string): Promise<GoalState | undefined> {
-    const current = await this.getGoal(sessionKey);
+    const { goal: current, messages } = await this.loadGoalState(sessionKey);
     if (!current) return undefined;
     const next = updateGoalState(current, { status: 'active' });
-    await this.saveGoalState(sessionKey, next);
+    await this.saveGoalState(sessionKey, next, messages);
     return next;
   }
 
   async completeGoal(sessionKey: string, reason?: string): Promise<GoalState | undefined> {
-    const current = await this.getGoal(sessionKey);
+    const { goal: current, messages } = await this.loadGoalState(sessionKey);
     if (!current) return undefined;
     const next = updateGoalState(current, { status: 'completed', statusReason: reason });
-    await this.saveGoalState(sessionKey, next);
+    await this.saveGoalState(sessionKey, next, messages);
     return next;
   }
 
   async blockGoal(sessionKey: string, reason?: string): Promise<GoalState | undefined> {
-    const current = await this.getGoal(sessionKey);
+    const { goal: current, messages } = await this.loadGoalState(sessionKey);
     if (!current) return undefined;
     const next = updateGoalState(current, { status: 'blocked', statusReason: reason });
-    await this.saveGoalState(sessionKey, next);
+    await this.saveGoalState(sessionKey, next, messages);
     return next;
   }
 

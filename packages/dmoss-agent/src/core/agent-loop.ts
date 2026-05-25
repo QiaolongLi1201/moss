@@ -201,6 +201,7 @@ export function runAgentLoop(
     let planToolNudgeAttempts = 0;
     /** 工具已经执行后，若模型只吐 reasoning、不吐可见总结，最多额外追问一次。 */
     let postToolThinkingOnlyRetryAttempts = 0;
+    let compactionRetries = 0;
 
     const runStartMs = Date.now();
     let firstTokenMs: number | null = null;
@@ -391,6 +392,11 @@ export function runAgentLoop(
               overflowState.contextCompactions++;
             }
             if (compaction.retrySameTurn) {
+              if (compactionRetries >= 2) {
+                // 超过重试上限，继续使用当前上下文
+                break;
+              }
+              compactionRetries++;
               turns--;
               continue;
             }
@@ -444,6 +450,11 @@ export function runAgentLoop(
               overflowState.contextCompactions++;
             }
             if (compaction.retrySameTurn) {
+              if (compactionRetries >= 2) {
+                // 超过重试上限，继续使用当前上下文
+                break;
+              }
+              compactionRetries++;
               turns--;
               continue;
             }

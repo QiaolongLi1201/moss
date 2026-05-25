@@ -333,6 +333,15 @@ export class SkillLearner {
       .slice(0, 60) || `skill-${Date.now()}`;
   }
 
+  private yamlSafeString(value: string): string {
+    return value
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
+  }
+
   private async saveSkill(skill: LearnedSkill): Promise<string> {
     await fs.mkdir(this.skillsDir, { recursive: true });
 
@@ -346,7 +355,7 @@ export class SkillLearner {
     const content = [
       '---',
       `name: ${skill.name}`,
-      `description: "${skill.description.replace(/"/g, '\\"')}"`,
+      `description: "${this.yamlSafeString(skill.description)}"`,
       `confidence: ${skill.confidence.toFixed(2)}`,
       `occurrence_count: ${skill.occurrenceCount}`,
       `tools:`,

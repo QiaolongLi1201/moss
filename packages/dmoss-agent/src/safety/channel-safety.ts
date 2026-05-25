@@ -88,11 +88,30 @@ export function stripShellPrefixBeforeHeredoc(command: string): string {
   return command.slice(0, idx);
 }
 
+/** Check if a string matches any dangerous command patterns. */
+function matchesDangerousPatterns(text: string): boolean {
+  for (const { pattern } of DANGEROUS_COMMAND_PATTERNS) {
+    if (pattern.test(text)) return true;
+  }
+  return false;
+}
+
 export function isCommandDangerous(command: string): ChannelSafetyResult {
   const shellOnly = stripShellPrefixBeforeHeredoc(command);
-  for (const { pattern, reason } of DANGEROUS_COMMAND_PATTERNS) {
-    if (pattern.test(shellOnly)) {
-      return { blocked: true, reason };
+  // 扫描前缀部分
+  if (matchesDangerousPatterns(shellOnly)) {
+    for (const { pattern, reason } of DANGEROUS_COMMAND_PATTERNS) {
+      if (pattern.test(shellOnly)) return { blocked: true, reason };
+    }
+  }
+  // 额外扫描 heredoc 内容（如果存在）
+  const heredocMatch = command.match(/<<-?\s*['"]?(\w+)['"]?\s*\n([\s\S]*?)\n\1/);
+  if (heredocMatch) {
+    const heredocBody = heredocMatch[2];
+    if (matchesDangerousPatterns(heredocBody)) {
+      for (const { pattern, reason } of DANGEROUS_COMMAND_PATTERNS) {
+        if (pattern.test(heredocBody)) return { blocked: true, reason };
+      }
     }
   }
   return { blocked: false };
@@ -129,15 +148,6 @@ export function matchTextApproval(text: string): TextApprovalResult {
   }
   if (APPROVAL_KEYWORDS_DENY.some((kw) => trimmed === kw)) {
     return { matched: true, decision: 'deny' };
-  }
-
-  if (trimmed.length <= 6) {
-    if (APPROVAL_KEYWORDS_ALLOW.some((kw) => trimmed.startsWith(kw))) {
-      return { matched: true, decision: 'allow_once' };
-    }
-    if (APPROVAL_KEYWORDS_DENY.some((kw) => trimmed.startsWith(kw))) {
-      return { matched: true, decision: 'deny' };
-    }
   }
 
   return { matched: false };

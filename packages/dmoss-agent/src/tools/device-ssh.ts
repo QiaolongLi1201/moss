@@ -12,7 +12,7 @@
  *   DMOSS_DEVICE_KEY      — Path to SSH private key (alternative to password)
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { Tool } from '../core/tool-types.js';
 
 export interface DeviceSshConfig {
@@ -28,17 +28,17 @@ function shellEscape(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`;
 }
 
-function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string {
+function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string[] {
   const user = config.user || 'root';
   const port = config.port || 22;
-  const parts = ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=10'];
+  const parts = ['-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=10'];
 
   if (config.keyPath) {
     parts.push('-i', config.keyPath);
   }
 
-  parts.push('-p', String(port), `${user}@${config.host}`, remoteCmd);
-  return parts.join(' ');
+  parts.push('-p', String(port), `${user}@${config.host}`, shellEscape(remoteCmd));
+  return parts;
 }
 
 export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
@@ -61,7 +61,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       const timeout = Number(input.timeout_ms) || 30_000;
       const sshCmd = buildSshCommand(config, input.command);
       try {
-        const result = execSync(sshCmd, {
+        const result = execFileSync('ssh', sshCmd, {
           timeout,
           maxBuffer: 10 * 1024 * 1024,
           encoding: 'utf-8',
@@ -93,7 +93,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       ];
       const sshCmd = buildSshCommand(config, commands.join(' && '));
       try {
-        const result = execSync(sshCmd, {
+        const result = execFileSync('ssh', sshCmd, {
           timeout: 15_000,
           encoding: 'utf-8',
           maxBuffer: 1024 * 1024,
@@ -119,7 +119,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
     async execute(input) {
       const sshCmd = buildSshCommand(config, `cat ${shellEscape(input.path)}`);
       try {
-        const result = execSync(sshCmd, {
+        const result = execFileSync('ssh', sshCmd, {
           timeout: 15_000,
           encoding: 'utf-8',
           maxBuffer: 5 * 1024 * 1024,
@@ -149,7 +149,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       const dir = input.path || '/home';
       const sshCmd = buildSshCommand(config, `ls -la ${shellEscape(dir)}`);
       try {
-        const result = execSync(sshCmd, { timeout: 10_000, encoding: 'utf-8' });
+        const result = execFileSync('ssh', sshCmd, { timeout: 10_000, encoding: 'utf-8' });
         return result.trim();
       } catch (err: any) {
         return `Failed to list ${dir}: ${err.message}`;

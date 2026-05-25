@@ -96,8 +96,6 @@ export async function runFanOut(
 
     try {
       const result = await runner(config, controller.signal);
-      clearTimeout(timeout);
-      parentSignal?.removeEventListener('abort', onParentAbort);
 
       if (result.success) {
         eventBus?.emit({
@@ -121,9 +119,6 @@ export async function runFanOut(
 
       return result;
     } catch (err) {
-      clearTimeout(timeout);
-      parentSignal?.removeEventListener('abort', onParentAbort);
-
       eventBus?.emit({
         type: 'child_run_failed',
         runId: config.runId,
@@ -141,6 +136,9 @@ export async function runFanOut(
         success: false,
         error: err instanceof Error ? err.message : String(err),
       };
+    } finally {
+      clearTimeout(timeout);
+      parentSignal?.removeEventListener('abort', onParentAbort);
     }
   });
 
@@ -189,8 +187,6 @@ export async function runPipeline(
 
     try {
       const result = await runner(augmentedConfig, controller.signal);
-      clearTimeout(timeout);
-      parentSignal?.removeEventListener('abort', onParentAbort);
       results.push(result);
       previousSummary = result.summary;
 
@@ -215,8 +211,6 @@ export async function runPipeline(
         break; // pipeline stops on first failure
       }
     } catch (err) {
-      clearTimeout(timeout);
-      parentSignal?.removeEventListener('abort', onParentAbort);
       results.push({
         runId: config.runId,
         summary: '',
@@ -235,6 +229,9 @@ export async function runPipeline(
         timestamp: Date.now(),
       });
       break;
+    } finally {
+      clearTimeout(timeout);
+      parentSignal?.removeEventListener('abort', onParentAbort);
     }
   }
 

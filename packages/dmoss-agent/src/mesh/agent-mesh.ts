@@ -485,7 +485,7 @@ export function createMeshTools(mesh: AgentMesh): Tool[] {
     },
     async execute(input) {
       const port = input.port || 9090;
-      const peer = await mesh.discoverPeer(input.host, port);
+      const peer = await mesh.discoverPeer(input.host, port, { allowPrivate: true });
       if (!peer) return `No D-Moss agent found at ${input.host}:${port}`;
       return `Discovered: ${peer.name} (${peer.id}) — capabilities: ${peer.capabilities.join(', ') || 'general'} — device: ${peer.deviceInfo || 'unknown'}`;
     },

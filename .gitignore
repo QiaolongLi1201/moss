@@ -9,3 +9,5 @@ sessions/
 tmp/
 .tmp/
 .npmrc
+.codegraph/
+.codex-claude-code/

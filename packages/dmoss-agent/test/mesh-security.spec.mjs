@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { AgentMesh } from '../dist/mesh/index.js';
+import { AgentMesh, createMeshTools } from '../dist/mesh/index.js';
 
 async function getFreePort() {
   const server = http.createServer();
@@ -100,8 +100,69 @@ async function testLanDiscoveryCanOptIntoPrivatePeerProbe() {
   }
 }
 
+async function testMeshDiscoverToolFindsLanPeer() {
+  const port = await getFreePort();
+  const peer = new AgentMesh({
+    id: 'tool-lan-peer',
+    name: 'Tool LAN Peer',
+    port,
+    listenHost: '127.0.0.1',
+    sharedSecret: 'tool-mesh-secret',
+  });
+  await peer.start();
+  try {
+    const local = new AgentMesh({
+      id: 'tool-local',
+      name: 'Tool Local',
+      sharedSecret: 'tool-mesh-secret',
+    });
+    const tools = createMeshTools(local);
+    const discover = tools.find((t) => t.name === 'mesh_discover');
+    assert.ok(discover, 'mesh_discover tool must exist');
+
+    const result = await discover.execute({ host: '127.0.0.1', port }, {});
+    assert.ok(
+      result.includes('tool-lan-peer'),
+      `mesh_discover must find LAN peer on private address, got: ${result}`,
+    );
+  } finally {
+    await peer.stop();
+  }
+}
+
+async function testMeshDiscoverToolRejectsPrivateWithoutSecret() {
+  const port = await getFreePort();
+  const peer = new AgentMesh({
+    id: 'tool-secure-peer',
+    name: 'Tool Secure Peer',
+    port,
+    listenHost: '127.0.0.1',
+    sharedSecret: 'required-secret',
+  });
+  await peer.start();
+  try {
+    const noSecret = new AgentMesh({
+      id: 'tool-no-secret',
+      name: 'Tool No Secret',
+    });
+    const tools = createMeshTools(noSecret);
+    const discover = tools.find((t) => t.name === 'mesh_discover');
+    assert.ok(discover, 'mesh_discover tool must exist');
+
+    const result = await discover.execute({ host: '127.0.0.1', port }, {});
+    assert.ok(
+      result.includes('No D-Moss agent found'),
+      `mesh_discover without sharedSecret must not probe private peers, got: ${result}`,
+    );
+  } finally {
+    await peer.stop();
+  }
+}
+
 await testNonLoopbackRequiresSecret();
 await testSharedSecretGuardsMetadataEndpoint();
 await testLanDiscoveryCanOptIntoPrivatePeerProbe();
+await testMeshDiscoverToolFindsLanPeer();
+await testMeshDiscoverToolRejectsPrivateWithoutSecret();
 
 console.log('[PASS] mesh security and LAN discovery checks passed');

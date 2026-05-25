@@ -142,6 +142,87 @@ function htmlToText(html: string, maxChars: number): string {
   return out;
 }
 
+/**
+ * Stream a `ReadableStream<Uint8Array>` body up to `maxBytes`, cancelling the
+ * reader (and therefore the underlying HTTP connection) as soon as the cap is
+ * reached. Returns the concatenated bytes, the total bytes actually buffered,
+ * and whether the stream was cut short.
+ *
+ * Replaces the previous `await res.arrayBuffer()` approach, which always
+ * buffered the full response in memory before post-hoc truncation and so
+ * could blow up the agent process on a multi-MB page.
+ */
+async function readBodyCapped(
+  body: ReadableStream<Uint8Array> | null,
+  maxBytes: number,
+): Promise<{ buffer: Buffer; truncated: boolean; totalBytes: number }> {
+  if (!body) {
+    return { buffer: Buffer.alloc(0), truncated: false, totalBytes: 0 };
+  }
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let truncated = false;
+  try {
+    while (total < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.length === 0) continue;
+      if (total + value.length > maxBytes) {
+        const need = maxBytes - total;
+        if (need > 0) chunks.push(value.subarray(0, need));
+        total = maxBytes;
+        truncated = true;
+        try {
+          await reader.cancel();
+        } catch {
+          /* cancel is best-effort; the socket teardown below handles the rest */
+        }
+        break;
+      }
+      chunks.push(value);
+      total += value.length;
+    }
+    /**
+     * If we filled exactly to `maxBytes` without triggering the over-cap
+     * branch, probe for one more chunk to find out whether the stream has
+     * more data. Without this probe, a response sized exactly at the cap
+     * would not be marked truncated — but more importantly, a response
+     * even one byte larger would also not be detected until the caller
+     * noticed missing content.
+     */
+    if (!truncated && total === maxBytes) {
+      const probe = await reader.read();
+      if (!probe.done && probe.value && probe.value.length > 0) {
+        truncated = true;
+        try {
+          await reader.cancel();
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+  } catch (err) {
+    try {
+      await reader.cancel();
+    } catch {
+      /* ignore cancel failure while unwinding a real error */
+    }
+    throw err;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      /* releaseLock may throw if the stream is already closed; safe to ignore */
+    }
+  }
+  const buffer = Buffer.concat(
+    chunks.map((c) => (c instanceof Uint8Array && !(c instanceof Buffer) ? Buffer.from(c) : (c as Buffer))),
+    total,
+  );
+  return { buffer, truncated, totalBytes: total };
+}
+
 function coerceString(v: unknown, fallback = ''): string {
   if (typeof v === 'string') return v;
   if (v === undefined || v === null) return fallback;
@@ -283,14 +364,15 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
           return `web_fetch_error: HTTP ${res.status} ${res.statusText} — ${url.toString()}`;
         }
         /**
-         * Read body into Buffer but cap by maxBytes to avoid memory blow-up on huge pages.
-         * Using `arrayBuffer` with streaming would be more memory-efficient but requires ReadableStream;
-         * typical docs pages are well under 1 MB so this is acceptable.
+         * Stream the body up to `maxBytes`, cancelling the response stream
+         * (and therefore the underlying socket) once the cap is reached.
+         * This avoids buffering multi-MB pages into the agent process.
          */
-        const ab = await res.arrayBuffer();
-        const buf = Buffer.from(ab);
-        const truncated = buf.length > maxBytes;
-        const body = truncated ? buf.subarray(0, maxBytes) : buf;
+        const { buffer: body, truncated, totalBytes } = await readBodyCapped(
+          res.body as ReadableStream<Uint8Array> | null,
+          maxBytes,
+        );
+        const buf = body;
         const isJson = contentType.includes('application/json');
         const isText = contentType.startsWith('text/') || isJson || contentType.includes('xml');
         let out: string;
@@ -305,7 +387,7 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
           const text = body.toString('utf-8');
           out = contentType.includes('html') ? htmlToText(text, maxTextChars) : text.slice(0, maxTextChars);
         } else {
-          out = `web_fetch_ok: ${buf.length} bytes, binary content-type=${contentType || 'unknown'}; not returning binary data as text.`;
+          out = `web_fetch_ok: ${totalBytes} bytes, binary content-type=${contentType || 'unknown'}; not returning binary data as text.`;
         }
         if (out.length > maxTextChars) {
           out = out.slice(0, maxTextChars) + `\n\n… (truncated at ${maxTextChars} chars)`;
@@ -314,12 +396,12 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
         log.debug('ok', {
           url: url.toString(),
           status: res.status,
-          bytes: buf.length,
+          bytes: totalBytes,
           outChars: out.length,
           truncatedBytes: truncated,
           elapsedMs: elapsed,
         });
-        const header = `web_fetch_ok: ${url.toString()} · HTTP ${res.status} · ${buf.length}B${truncated ? ' (body truncated)' : ''} · ${elapsed}ms\n`;
+        const header = `web_fetch_ok: ${url.toString()} · HTTP ${res.status} · ${totalBytes}B${truncated ? ' (body truncated)' : ''} · ${elapsed}ms\n`;
         return header + '\n' + out;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

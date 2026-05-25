@@ -147,7 +147,7 @@ function createModelEventProvider(handler) {
 
     assert.equal(records.length, 1, 'expected one failed usage record');
     assert.equal(records[0].success, false);
-    assert.equal(records[0].error, '[REDACTED]');
+    assert.equal(records[0].error, 'LLM stream error: device unreachable at [IP_REDACTED]');
     assert.doesNotMatch(JSON.stringify(records[0]), /192\.168\.1\.42/);
   } finally {
     setTracer(noopTracer);

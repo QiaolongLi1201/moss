@@ -88,45 +88,51 @@ console.log('  [PASS] redacts passwords');
 
 console.log('  [PASS] redacts prompt fields');
 
-// ── redacts IP addresses in string values ──
+// ── redacts IP addresses inline (preserves surrounding context) ──
 
 {
   const input = { ip: '192.168.1.1', status: 'ok' };
   const result = redactSensitiveData(input);
-  assert.deepEqual(result, { ip: '[REDACTED]', status: 'ok' });
+  assert.deepEqual(result, { ip: '[IP_REDACTED]', status: 'ok' });
 }
 
 {
   const input = { address: '10.0.0.255' };
   const result = redactSensitiveData(input);
-  assert.deepEqual(result, { address: '[REDACTED]' });
+  assert.deepEqual(result, { address: '[IP_REDACTED]' });
 }
 
 {
   const input = { server: '172.16.0.1:8080' };
   const result = redactSensitiveData(input);
-  assert.deepEqual(result, { server: '[REDACTED]' });
+  assert.deepEqual(result, { server: '[IP_REDACTED]:8080' });
 }
 
 {
   const input = { ipv6: '::1' };
   const result = redactSensitiveData(input);
-  assert.deepEqual(result, { ipv6: '[REDACTED]' });
+  assert.deepEqual(result, { ipv6: '[IP_REDACTED]' });
 }
 
 {
   const input = { ipv6full: '2001:0db8:85a3:0000:0000:8a2e:0370:7334' };
   const result = redactSensitiveData(input);
-  assert.deepEqual(result, { ipv6full: '[REDACTED]' });
+  assert.deepEqual(result, { ipv6full: '[IP_REDACTED]' });
 }
 
 {
   // Standalone IP string
   const result = redactSensitiveData('192.168.0.1');
-  assert.equal(result, '[REDACTED]');
+  assert.equal(result, '[IP_REDACTED]');
 }
 
-console.log('  [PASS] redacts IP addresses (IPv4 and IPv6)');
+{
+  // IP embedded in a message — surrounding text preserved
+  const result = redactSensitiveData('device unreachable at 192.168.1.42');
+  assert.equal(result, 'device unreachable at [IP_REDACTED]');
+}
+
+console.log('  [PASS] redacts IP addresses inline (IPv4 and IPv6)');
 
 // ── redacts URLs with credentials ──
 
@@ -268,8 +274,8 @@ console.log('  [PASS] handles circular references gracefully');
 }
 
 {
-  // Primitive string that is an IP
-  assert.equal(redactSensitiveData('10.0.0.1'), '[REDACTED]');
+  // Primitive string that is an IP — redacted inline
+  assert.equal(redactSensitiveData('10.0.0.1'), '[IP_REDACTED]');
 }
 
 console.log('  [PASS] handles primitives safely');
@@ -285,7 +291,7 @@ console.log('  [PASS] handles primitives safely');
 {
   const input = ['192.168.1.1', 'safe string', '10.0.0.1'];
   const result = redactSensitiveData(input);
-  assert.deepEqual(result, ['[REDACTED]', 'safe string', '[REDACTED]']);
+  assert.deepEqual(result, ['[IP_REDACTED]', 'safe string', '[IP_REDACTED]']);
 }
 
 {

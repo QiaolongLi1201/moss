@@ -31,6 +31,9 @@ const DNS_CACHE_TTL_MS = 60_000;
 
 const dnsCache = new Map<string, { addresses: string[]; expiresAt: number }>();
 type HostAddressResolver = (hostname: string) => Promise<string[]>;
+type BodyProbeReader = {
+  read(): Promise<{ done: boolean; value?: Uint8Array }>;
+};
 
 export interface WebFetchOptions {
   /** Per-tool-call upper bound on response body size in bytes (post-HTTP, pre-decode). Default 1 MB. */
@@ -217,7 +220,7 @@ async function readBodyCapped(
 }
 
 async function readProbeWithTimeout(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reader: BodyProbeReader,
   timeoutMs: number,
 ): Promise<{ done: boolean; value?: Uint8Array } | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;

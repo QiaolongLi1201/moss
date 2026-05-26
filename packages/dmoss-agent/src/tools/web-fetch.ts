@@ -23,6 +23,7 @@ const log = getRootLogger().child('tool:web-fetch');
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_BYTES = 1_000_000;
 const DEFAULT_MAX_TEXT_CHARS = 16_000;
+const BODY_CAP_PROBE_TIMEOUT_MS = 100;
 /** DNS resolution timeout for SSRF check (ms). Prevents unbounded latency on slow/unreachable resolvers. */
 const DNS_CHECK_TIMEOUT_MS = 3_000;
 /** DNS result cache TTL (ms). Avoids repeated lookups for the same host within an agent session. */
@@ -183,17 +184,9 @@ async function readBodyCapped(
       chunks.push(value);
       total += value.length;
     }
-    /**
-     * If we filled exactly to `maxBytes` without triggering the over-cap
-     * branch, probe for one more chunk to find out whether the stream has
-     * more data. Without this probe, a response sized exactly at the cap
-     * would not be marked truncated — but more importantly, a response
-     * even one byte larger would also not be detected until the caller
-     * noticed missing content.
-     */
     if (!truncated && total === maxBytes) {
-      const probe = await reader.read();
-      if (!probe.done && probe.value && probe.value.length > 0) {
+      const probe = await readProbeWithTimeout(reader, BODY_CAP_PROBE_TIMEOUT_MS);
+      if (!probe || !probe.done) {
         truncated = true;
         try {
           await reader.cancel();
@@ -221,6 +214,24 @@ async function readBodyCapped(
     total,
   );
   return { buffer, truncated, totalBytes: total };
+}
+
+async function readProbeWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number,
+): Promise<{ done: boolean; value?: Uint8Array } | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function coerceString(v: unknown, fallback = ''): string {
@@ -372,7 +383,6 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
           res.body as ReadableStream<Uint8Array> | null,
           maxBytes,
         );
-        const buf = body;
         const isJson = contentType.includes('application/json');
         const isText = contentType.startsWith('text/') || isJson || contentType.includes('xml');
         let out: string;

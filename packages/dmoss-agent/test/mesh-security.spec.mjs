@@ -159,10 +159,34 @@ async function testMeshDiscoverToolRejectsPrivateWithoutSecret() {
   }
 }
 
+async function testMeshDiscoverToolRejectsResolvedPrivateHostnameWithoutSecret() {
+  const noSecret = new AgentMesh({
+    id: 'tool-no-secret-dns',
+    name: 'Tool No Secret DNS',
+  });
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = async (...args) => {
+    fetchCalled = true;
+    return originalFetch(...args);
+  };
+  try {
+    const peer = await noSecret.discoverPeer('mesh-private.test', 9090, {
+      allowPrivate: true,
+      resolveHostAddresses: async () => ['192.168.1.42'],
+    });
+    assert.equal(peer, null, 'private hostname probe without sharedSecret must be rejected');
+    assert.equal(fetchCalled, false, 'private hostname probe without sharedSecret must not call fetch');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 await testNonLoopbackRequiresSecret();
 await testSharedSecretGuardsMetadataEndpoint();
 await testLanDiscoveryCanOptIntoPrivatePeerProbe();
 await testMeshDiscoverToolFindsLanPeer();
 await testMeshDiscoverToolRejectsPrivateWithoutSecret();
+await testMeshDiscoverToolRejectsResolvedPrivateHostnameWithoutSecret();
 
 console.log('[PASS] mesh security and LAN discovery checks passed');

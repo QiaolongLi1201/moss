@@ -197,8 +197,53 @@ async function testExactCapNotTruncated() {
   }
 }
 
+/**
+ * Test 5: A peer may send exactly `maxBytes` and then stall without EOF.
+ * `web_fetch` must not wait for the global timeout just to decide whether one
+ * more byte exists; once the body cap is reached it should return promptly.
+ */
+async function testExactCapThenStallReturnsPromptly() {
+  const maxBytes = 4096;
+  const state = { socket: null };
+  const sockets = new Set();
+  const server = http.createServer((req, res) => {
+    state.socket = req.socket;
+    sockets.add(req.socket);
+    req.socket.on('close', () => sockets.delete(req.socket));
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.write(Buffer.alloc(maxBytes, 0x79 /* 'y' */));
+    // Intentionally do not call res.end(); this reproduces a stalled peer.
+  });
+  const port = await listen(server);
+  try {
+    const tool = createWebFetchTool({
+      blockPrivateNetwork: false,
+      maxBytes,
+      timeoutMs: 2_000,
+    });
+    const started = Date.now();
+    const result = await tool.execute(
+      { url: `http://127.0.0.1:${port}/stall` },
+      { workspaceDir: '/tmp', sessionKey: 'web-fetch-maxbytes-stream-stall' },
+    );
+    const elapsed = Date.now() - started;
+    assert.ok(
+      elapsed < 1_000,
+      `web_fetch should return promptly after reaching maxBytes, not wait for timeout (elapsed=${elapsed}ms)`,
+    );
+    assert.match(result, new RegExp(`· HTTP 200 · ${maxBytes}B`));
+  } finally {
+    for (const s of sockets) {
+      try { s.destroy(); } catch { /* best-effort */ }
+    }
+    sockets.clear();
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
 await testStreamingTruncation();
 await testSmallResponseIntact();
 await testExactCapNotTruncated();
+await testExactCapThenStallReturnsPromptly();
 
 console.log('[PASS] web_fetch streams the body and cancels at maxBytes without buffering the full response');

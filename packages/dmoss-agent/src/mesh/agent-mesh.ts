@@ -18,6 +18,7 @@
 
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
+import dns from 'node:dns/promises';
 import type { Tool } from '../core/tool-types.js';
 import type { MeshEventBus } from './mesh-events.js';
 
@@ -56,8 +57,10 @@ export interface MeshMessage {
 type QueryHandler = (query: string, fromPeer: MeshPeer) => Promise<string>;
 type ShareSkillHandler = (skill: Record<string, unknown>, fromPeer: MeshPeer) => Promise<{ accepted: boolean; reason?: string }>;
 type ShareMemoryHandler = (memory: Record<string, unknown>, fromPeer: MeshPeer) => Promise<{ accepted: boolean; reason?: string }>;
+type HostAddressResolver = (hostname: string) => Promise<string[]>;
 
 const MESH_SECRET_HEADER = 'x-dmoss-mesh-secret';
+const DNS_CHECK_TIMEOUT_MS = 3_000;
 
 function isLoopbackHost(host: string): boolean {
   return /^(localhost|127(?:\.\d{1,3}){3}|::1|\[::1\])$/i.test(host.trim());
@@ -65,6 +68,42 @@ function isLoopbackHost(host: string): boolean {
 
 function isPrivateOrLoopbackHost(host: string): boolean {
   return /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|\[::1\]|localhost)/i.test(host.trim());
+}
+
+async function resolveHostAddresses(hostname: string): Promise<string[]> {
+  const records = await dns.lookup(hostname, { all: true });
+  return records.map((record) => record.address);
+}
+
+async function resolveHostAddressesWithTimeout(
+  hostname: string,
+  resolver: HostAddressResolver,
+): Promise<string[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      resolver(hostname),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('mesh discovery DNS timeout')), DNS_CHECK_TIMEOUT_MS);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function isPrivateOrLoopbackTarget(
+  host: string,
+  resolver: HostAddressResolver = resolveHostAddresses,
+): Promise<boolean> {
+  if (isPrivateOrLoopbackHost(host)) return true;
+  try {
+    const addresses = await resolveHostAddressesWithTimeout(host, resolver);
+    return addresses.some(isPrivateOrLoopbackHost);
+  } catch {
+    return true;
+  }
 }
 
 function secureEquals(a: string, b: string): boolean {
@@ -333,10 +372,10 @@ export class AgentMesh {
   async discoverPeer(
     host: string,
     port: number,
-    options: { allowPrivate?: boolean } = {},
+    options: { allowPrivate?: boolean; resolveHostAddresses?: HostAddressResolver } = {},
   ): Promise<MeshPeer | null> {
     const hostStr = String(host);
-    const privateOrLoopback = isPrivateOrLoopbackHost(hostStr);
+    const privateOrLoopback = await isPrivateOrLoopbackTarget(hostStr, options.resolveHostAddresses);
     if (!options.allowPrivate && privateOrLoopback) {
       return null;
     }

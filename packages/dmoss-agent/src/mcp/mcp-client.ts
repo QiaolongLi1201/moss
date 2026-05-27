@@ -144,16 +144,34 @@ class McpServerConnection {
     }
   }
 
-  async request(method: string, params?: unknown): Promise<unknown> {
+  async request(method: string, params?: unknown, signal?: AbortSignal): Promise<unknown> {
     if (this.closed) throw new Error(`MCP server ${this.serverName} is closed`);
+    if (signal?.aborted) throw new Error(`MCP request aborted: ${signal.reason ?? 'aborted'}`);
     const id = this.nextId++;
     const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
     return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        const pending = this.pending.get(id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pending.delete(id);
+          pending.reject(new Error(`MCP request aborted: ${signal!.reason ?? 'aborted'}`));
+        }
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      const cleanup = () => {
+        signal?.removeEventListener('abort', onAbort);
+      };
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        cleanup();
         reject(new Error(`MCP server ${this.serverName} request timeout after ${this.requestTimeoutMs}ms`));
       }, this.requestTimeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, {
+        resolve: (v) => { cleanup(); resolve(v); },
+        reject: (e) => { cleanup(); reject(e); },
+        timer,
+      });
       this.process.stdin!.write(JSON.stringify(msg) + '\n');
     });
   }
@@ -178,8 +196,8 @@ class McpServerConnection {
     return result.tools;
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.request('tools/call', { name, arguments: args });
+  async callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+    return this.request('tools/call', { name, arguments: args }, signal);
   }
 
   async close(): Promise<void> {
@@ -224,8 +242,8 @@ function mcpToolToTool(
     metadata: {
       sideEffectClass: 'external_message',
     },
-    async execute(input: Record<string, unknown>, _ctx: ToolContext): Promise<string> {
-      const result = await conn.callTool(mcpTool.name, input);
+    async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+      const result = await conn.callTool(mcpTool.name, input, ctx.abortSignal);
       const callResult = result as {
         content?: Array<{ type: string; text?: string }>;
         isError?: boolean;

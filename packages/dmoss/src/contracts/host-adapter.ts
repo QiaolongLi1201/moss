@@ -7,6 +7,11 @@
  * run unchanged, needs a small adapter update, or is incompatible.
  */
 
+/**
+ * Contract version for Host Adapter compatibility.
+ * Bump this when making breaking changes to the Host Adapter interface.
+ * Must match the major version of package.json (e.g., contract v1 = package v1.x.x).
+ */
 export const MOSS_HOST_ADAPTER_CONTRACT_VERSION = 1;
 
 export type MossHostAdapterContractVersion = number;

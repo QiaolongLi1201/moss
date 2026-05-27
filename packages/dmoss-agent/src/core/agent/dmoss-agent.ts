@@ -69,6 +69,7 @@ import {
 } from './dmoss-agent-loop-adapter.js';
 import { createStreamFunctionFromLlmProvider } from '../llm/llm-provider-stream-adapter.js';
 import { ToolHookRegistry, createSecretSanitizerHook } from '../tools/tool-hooks.js';
+import { CommandQueueRegistry } from './command-queue.js';
 import { sanitizeSecrets } from '../../safety/secret-sanitizer.js';
 import type {
   DmossAgentConfig as SharedDmossAgentConfig,
@@ -123,6 +124,7 @@ export class DmossAgent {
   readonly tools: ToolRegistry;
   readonly config: DmossAgentConfig;
   readonly extensions: PlatformExtensionRegistry;
+  readonly commandQueues: CommandQueueRegistry;
 
   /** Instance-scoped knowledge registry — isolates modules per agent. */
   private readonly knowledge = new KnowledgeRegistry();
@@ -139,6 +141,7 @@ export class DmossAgent {
     this.config = config;
     this.tools = new ToolRegistry();
     this.extensions = getDefaultExtensionsRegistry();
+    this.commandQueues = new CommandQueueRegistry();
     this.toolHooks = new ToolHookRegistry();
     this.toolHooks.registerPost(createSecretSanitizerHook(sanitizeSecrets));
     setTraceRedactor(sanitizeSecrets);

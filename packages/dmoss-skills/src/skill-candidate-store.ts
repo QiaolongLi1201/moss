@@ -68,6 +68,15 @@ export interface CandidateStoreResult {
 const CANDIDATES_DIR = "skill-candidates";
 const CANDIDATE_FILE = "candidate.json";
 
+async function atomicWriteFile(
+  filePath: string,
+  data: string,
+): Promise<void> {
+  const tmpPath = `${filePath}.tmp`;
+  await fs.promises.writeFile(tmpPath, data, "utf-8");
+  await fs.promises.rename(tmpPath, filePath);
+}
+
 function redactInput(value: unknown): unknown {
   if (Array.isArray(value)) return value.slice(0, 8).map(redactInput);
   if (!value || typeof value !== "object") {
@@ -231,10 +240,9 @@ export async function writeSkillCandidate(input: {
   };
 
   const candidatePath = path.join(targetDir, CANDIDATE_FILE);
-  await fs.promises.writeFile(
+  await atomicWriteFile(
     candidatePath,
     JSON.stringify(evidence, null, 2),
-    "utf-8",
   );
 
   return {

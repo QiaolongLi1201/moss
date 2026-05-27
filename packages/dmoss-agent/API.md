@@ -41,7 +41,7 @@ npm install @dmoss/agent @dmoss/core
 Some modules exist for internal runtime wiring but are not stable public entry points:
 
 - `@dmoss/agent/core/subagent-orchestrator.js` is an internal implementation detail for fan-out / pipeline orchestration. Host applications should not deep import it.
-- Observability helpers are stable from `@dmoss/agent/observability`; they are not re-exported from the root `@dmoss/agent` entry.
+- Observability helpers are stable from `@dmoss/agent/observability` and are also re-exported from the root `@dmoss/agent` entry (index.ts:256-278).
 - `dmossRunTrace` remains available from `@dmoss/agent/utils`, not from the root `@dmoss/agent` entry.
 
 ## API stability labels
@@ -473,6 +473,57 @@ if (!surface.silent) {
 ```
 
 用户主动取消（`abortReason: 'user'`）时 `surface.silent === true`，不应再写入 assistant 消息。写入数据库 `error_detail` 前请对 raw 串调用 `sanitizeRawErrorForDetail`。
+
+## Additional Root Exports
+
+The following are also re-exported from the root `@dmoss/agent` entry (index.ts):
+
+### Built-in LLM Providers (native fetch, no SDK)
+
+```ts
+import { AnthropicLLMProvider, OpenAILLMProvider } from '@dmoss/agent'
+import type { AnthropicLLMProviderConfig, OpenAILLMProviderConfig } from '@dmoss/agent'
+```
+
+- `AnthropicLLMProvider` — native Anthropic API adapter (index.ts:180-181)
+- `OpenAILLMProvider` — native OpenAI API adapter (index.ts:182-183)
+
+### MCP (Model Context Protocol client)
+
+```ts
+import { loadMcpConfig, connectMcpServers } from '@dmoss/agent'
+import type { McpServerConfig, McpConfig, McpTool, McpConnection } from '@dmoss/agent'
+```
+
+- `loadMcpConfig()` — load MCP server configuration from file (index.ts:186)
+- `connectMcpServers()` — establish connections to configured MCP servers (index.ts:186)
+
+### ToolHookRegistry
+
+```ts
+import { ToolHookRegistry } from '@dmoss/agent'
+import type { PreToolUseHook, PostToolUseHook, PostToolUseFailureHook, PreToolUseDecision } from '@dmoss/agent'
+```
+
+- `ToolHookRegistry` — pre/post tool execution hook pipeline (index.ts:281)
+
+### Logger
+
+```ts
+import { createLogger, configureRootLogger, getRootLogger, redactSensitive } from '@dmoss/agent'
+import type { LogLevel, LogEntry, Logger, LoggerOptions } from '@dmoss/agent'
+```
+
+Unified logging API aligned with `docs/logging.md` (index.ts:232-241).
+
+### DmossError and ErrorCode
+
+```ts
+import { ErrorCode, DmossError, isDmossError, throwDmoss, wrapAsDmoss, formatDmossError, isDmossErrorRecoverable } from '@dmoss/agent'
+import type { DmossErrorDetails } from '@dmoss/agent'
+```
+
+Actionable error classification API aligned with `docs/logging.md` (index.ts:244-253).
 
 ## What Is Not Stable
 

@@ -20,8 +20,17 @@ const TEMPLATES = {
   minimal: {
     description: 'Minimal agent with Anthropic provider (default)',
     files: {
-      'index.ts': `import { DmossAgent, InMemorySessionStore } from '@dmoss/agent';
-import type { LLMProvider, LLMRequestOptions, LLMResponse, LLMStreamEvent, LLMContentBlock } from '@dmoss/agent';
+      'mcp.json.example': `{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/dir"],
+      "env": {}
+    }
+  }
+}
+`,
+      'index.ts': `import { DmossAgent, InMemorySessionStore, AnthropicLLMProvider } from '@dmoss/agent';
 
 const API_KEY = process.env.DMOSS_API_KEY || '';
 if (!API_KEY) {
@@ -29,45 +38,25 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const provider: LLMProvider = {
-  id: 'anthropic',
-  displayName: 'Anthropic',
-
-  async complete(opts: LLMRequestOptions): Promise<LLMResponse> {
-    return this.stream(opts, () => {});
-  },
-
-  async stream(opts: LLMRequestOptions, _onEvent: (e: LLMStreamEvent) => void): Promise<LLMResponse> {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        system: opts.systemPrompt,
-        messages: opts.messages.map(m => ({ role: m.role, content: m.content })),
-      }),
-      signal: opts.abortSignal,
-    });
-
-    if (!res.ok) throw new Error(\`API \${res.status}: \${await res.text()}\`);
-    const data = await res.json() as any;
-    const content: LLMContentBlock[] = (data.content || []).map((b: any) =>
-      b.type === 'text' ? { type: 'text' as const, text: b.text } : b
-    );
-    return { content, stopReason: data.stop_reason };
-  },
-};
+const provider = new AnthropicLLMProvider({ apiKey: API_KEY });
 
 const agent = new DmossAgent({
   llmProvider: provider,
   sessionStore: new InMemorySessionStore(),
   model: 'claude-sonnet-4-20250514',
 });
+
+// Load MCP servers from mcp.json (copy mcp.json.example to mcp.json and edit)
+// import { loadMcpConfig, connectMcpServers } from '@dmoss/agent';
+// const config = loadMcpConfig('./mcp.json');
+// if (config) {
+//   const connections = await connectMcpServers(config);
+//   for (const conn of connections) {
+//     for (const tool of conn.tools) {
+//       agent.tools.register(tool);
+//     }
+//   }
+// }
 
 const result = await agent.chat('demo', 'Hello! What can you help me with?');
 console.log('Agent:', result.response);
@@ -77,8 +66,7 @@ console.log('Agent:', result.response);
   openai: {
     description: 'Agent with OpenAI-compatible provider',
     files: {
-      'index.ts': `import { DmossAgent, InMemorySessionStore } from '@dmoss/agent';
-import type { LLMProvider, LLMRequestOptions, LLMResponse, LLMStreamEvent, LLMContentBlock } from '@dmoss/agent';
+      'index.ts': `import { DmossAgent, InMemorySessionStore, OpenAILLMProvider } from '@dmoss/agent';
 
 const API_KEY = process.env.OPENAI_API_KEY || process.env.DMOSS_API_KEY || '';
 const BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com';
@@ -89,38 +77,7 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const provider: LLMProvider = {
-  id: 'openai',
-  displayName: \`OpenAI (\${new URL(BASE_URL).hostname})\`,
-
-  async complete(opts: LLMRequestOptions): Promise<LLMResponse> {
-    return this.stream(opts, () => {});
-  },
-
-  async stream(opts: LLMRequestOptions, _onEvent: (e: LLMStreamEvent) => void): Promise<LLMResponse> {
-    const res = await fetch(\`\${BASE_URL}/v1/chat/completions\`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${API_KEY}\` },
-      body: JSON.stringify({
-        model: opts.model || MODEL,
-        max_tokens: opts.maxTokens || 4096,
-        messages: [
-          ...(opts.systemPrompt ? [{ role: 'system', content: opts.systemPrompt }] : []),
-          ...opts.messages.map(m => ({
-            role: m.role,
-            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          })),
-        ],
-      }),
-      signal: opts.abortSignal,
-    });
-
-    if (!res.ok) throw new Error(\`API \${res.status}: \${await res.text()}\`);
-    const data = await res.json() as any;
-    const text = data.choices?.[0]?.message?.content || '';
-    return { content: [{ type: 'text', text }], stopReason: 'end_turn' };
-  },
-};
+const provider = new OpenAILLMProvider({ apiKey: API_KEY, baseUrl: BASE_URL });
 
 const agent = new DmossAgent({
   llmProvider: provider,
@@ -128,7 +85,7 @@ const agent = new DmossAgent({
   model: MODEL,
 });
 
-console.log(\`Using \${provider.displayName} with model: \${MODEL}\`);
+console.log(\`Using OpenAI provider with model: \${MODEL}\`);
 const result = await agent.chat('demo', 'Hello! What can you help me with?');
 console.log('Agent:', result.response);
 `,
@@ -233,6 +190,19 @@ npm run typecheck
 DMOSS_API_KEY=your-key npm start
 \`\`\`
 
+## MCP (Model Context Protocol)
+
+MCP lets your agent use external tools (filesystem, databases, APIs) via standardized servers.
+
+1. Copy the example config:
+   \`\`\`bash
+   cp mcp.json.example mcp.json
+   \`\`\`
+2. Edit \`mcp.json\` to point to your desired directories or services.
+3. Uncomment the MCP loading code in \`index.ts\` to connect MCP servers and register their tools with your agent.
+
+See the [MCP documentation](https://modelcontextprotocol.io) for available servers and configuration options.
+
 ## Learn More
 
 - [D-Moss Documentation](https://github.com/D-Moss/dmoss-agent)
@@ -242,6 +212,7 @@ fs.writeFileSync(path.join(targetDir, 'README.md'), readme);
 
 console.log('  Created package.json');
 console.log('  Created index.ts');
+console.log('  Created mcp.json.example');
 console.log('  Created README.md');
 
 if (skipInstall) {

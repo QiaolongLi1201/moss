@@ -38,10 +38,13 @@ const forbiddenText = [
 ];
 
 const allowedFakeFragments = [
-  'sk-proj-abc',
-  'sk-ant-oat-abcdef',
-  'sk-ant-api03',
-  'sk-test',
+  'sk-proj-abc123def456ghi789jkl',
+  'sk-ant-oat-abcdef1234567890ghij',
+  'sk-ant-api03-abcdef1234567890ghij',
+  'sk-ant-api03-abcdef1234567890ghijklmnopqrstuv',
+  'sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdef',
+  'sk-ant-api03-aaa1234567890123456789',
+  'sk-test-00000000000000000000',
   'sk-xxx',
   'sk-xxxxxxxx',
 ];
@@ -79,9 +82,10 @@ for (const relPkg of packages) {
     if (!sourceExt.test(file)) continue;
     const body = fs.readFileSync(file, 'utf8');
     for (const pattern of forbiddenText) {
-      const match = body.match(pattern);
-      if (match) {
-        if (allowedFakeFragments.some((fragment) => match[0].includes(fragment))) continue;
+      const globalPattern = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g');
+      const matches = [...body.matchAll(globalPattern)];
+      for (const match of matches) {
+        if (allowedFakeFragments.some((fragment) => match[0] === fragment)) continue;
         findings.push(`${rel}:${lineAt(body, match.index || 0)} forbidden OSS boundary text: ${match[0].slice(0, 80)}`);
       }
     }

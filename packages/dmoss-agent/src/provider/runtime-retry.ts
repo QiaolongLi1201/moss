@@ -118,6 +118,8 @@ function delayWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
 /**
  * 包装一个 async fn 让它在 transient 错误（`surface.retryable === true`）下做
  * 最多一次透明重试。
+ *
+ * @deprecated since 0.4.0, removal target 1.0. Use retryAsync instead. See MIGRATION.md.
  */
 export async function runWithProviderRetry<T>(
   fn: () => Promise<T>,

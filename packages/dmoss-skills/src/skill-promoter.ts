@@ -21,6 +21,15 @@ import {
   type SkillValidationResult,
 } from "./skill-validation.js";
 
+async function atomicWriteFile(
+  filePath: string,
+  data: string,
+): Promise<void> {
+  const tmpPath = `${filePath}.tmp`;
+  await fs.promises.writeFile(tmpPath, data, "utf-8");
+  await fs.promises.rename(tmpPath, filePath);
+}
+
 export interface PromoteResult {
   skillId: string;
   skillPath: string;
@@ -96,33 +105,39 @@ export async function promoteSkillCandidate(
 
   await fs.promises.mkdir(skillDir, { recursive: true });
   const skillPath = path.join(skillDir, "SKILL.md");
-  await fs.promises.writeFile(skillPath, normalized, "utf-8");
-
-  // Write promoted metadata — this is what `isPromotedConversationSkill`
-  // checks to allow the skill through the routing filter.
   const metaPath = path.join(skillDir, ".rdkstudio-skill.json");
   const promotedAt = Date.now();
-  await fs.promises.writeFile(
-    metaPath,
-    JSON.stringify(
-      {
-        sourceKind: "conversation",
-        status: "promoted",
-        promotedAt,
-        sourceCandidateId: candidateId,
-        sourceSessionKey: evidence.sourceSessionKey,
-        toolNames: evidence.toolNames,
-        gate: evidence.gate,
-        ...(confidence !== undefined ? { confidence } : {}),
-        updatedAt: promotedAt,
-      },
-      null,
-      2,
-    ),
-    "utf-8",
-  );
 
-  // Clean up candidate — promotion is a move, not a copy
+  try {
+    await atomicWriteFile(skillPath, normalized);
+
+    await atomicWriteFile(
+      metaPath,
+      JSON.stringify(
+        {
+          sourceKind: "conversation",
+          status: "promoted",
+          promotedAt,
+          sourceCandidateId: candidateId,
+          sourceSessionKey: evidence.sourceSessionKey,
+          toolNames: evidence.toolNames,
+          gate: evidence.gate,
+          ...(confidence !== undefined ? { confidence } : {}),
+          updatedAt: promotedAt,
+        },
+        null,
+        2,
+      ),
+    );
+  } catch (err) {
+    try {
+      await fs.promises.rm(skillDir, { recursive: true, force: true });
+    } catch {
+      // rollback best-effort
+    }
+    throw err;
+  }
+
   await removeCandidate(workspaceDir, candidateId);
 
   const result: PromoteResult = {

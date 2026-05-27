@@ -108,7 +108,7 @@ function getDefault(): PlatformExtensionRegistry {
  */
 export function getDefaultExtensionsRegistry(): PlatformExtensionRegistry {
   _agentWireCount++;
-  if (_agentWireCount === 2) {
+  if (_agentWireCount >= 2) {
     log.warn(
       'Multiple DmossAgent instances sharing PlatformExtensionRegistry singleton. ' +
       'Extension knowledge bindings are NOT isolated — last agent wins. ' +
@@ -121,14 +121,14 @@ export function getDefaultExtensionsRegistry(): PlatformExtensionRegistry {
 /** @internal Reset wire counter — tests only. */
 export function resetExtensionsWireCountForTests(): void {
   _agentWireCount = 0;
-  _deprecatedWarned = false;
+  _deprecatedWarnedFunctions.clear();
 }
 
-let _deprecatedWarned = false;
+const _deprecatedWarnedFunctions = new Set<string>();
 
 function warnDeprecated(name: string): void {
-  if (_deprecatedWarned) return;
-  _deprecatedWarned = true;
+  if (_deprecatedWarnedFunctions.has(name)) return;
+  _deprecatedWarnedFunctions.add(name);
   log.warn(
     `Deprecated extension free function "${name}" called. ` +
     'Migrate to agent.extensions.* for per-agent isolation. ' +

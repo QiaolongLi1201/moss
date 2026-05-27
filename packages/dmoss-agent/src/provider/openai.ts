@@ -195,8 +195,8 @@ export class OpenAILLMProvider implements LLMProvider {
       let input: Record<string, unknown> = {};
       try {
         input = JSON.parse(tc.arguments);
-      } catch {
-        /* keep empty */
+      } catch (err) {
+        console.warn(`[openai-provider] Failed to parse tool call arguments for ${tc.name}: ${err instanceof Error ? err.message : String(err)}`);
       }
       content.push({ type: 'tool_use', id: tc.id, name: tc.name, input });
     }

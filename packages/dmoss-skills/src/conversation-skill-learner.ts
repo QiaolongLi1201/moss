@@ -471,6 +471,7 @@ async function writeGeneratedSkill(input: {
   await fs.promises.writeFile(
     path.join(skillDir, GENERATED_META_FILE),
     JSON.stringify({
+      schemaVersion: 1,
       sourceKind: "conversation",
       updatedAt: input.createdAt,
       sourceSessionKey: input.sessionKey,

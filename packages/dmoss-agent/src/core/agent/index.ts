@@ -5,6 +5,7 @@ export type {
   ToolApprovalDecision,
 } from './agent-hooks.js';
 export {
+  CommandQueueRegistry,
   enqueueInLane,
   setLaneConcurrency,
   resolveSessionLane,

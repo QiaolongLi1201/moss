@@ -6,6 +6,7 @@ export type {
   ToolApprovalDecision,
 } from './agent/index.js';
 export {
+  CommandQueueRegistry,
   enqueueInLane,
   setLaneConcurrency,
   resolveSessionLane,

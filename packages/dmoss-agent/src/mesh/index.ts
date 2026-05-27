@@ -3,6 +3,8 @@
  */
 export { AgentMesh, createMeshTools, isMeshVerboseEnabled } from './agent-mesh.js';
 export type { MeshConfig, MeshPeer, MeshMessage } from './agent-mesh.js';
+export { PeerRegistry } from './peer-registry.js';
+export { MeshTransport } from './transport.js';
 export { LanDiscovery } from './lan-discovery.js';
 export { MeshEventBus } from './mesh-events.js';
 export type {

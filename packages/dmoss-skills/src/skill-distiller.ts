@@ -166,6 +166,7 @@ function buildDraftMarkdown(
   ].join(",");
 
   return `---
+schemaVersion: 1
 name: ${yamlScalar(name, 120)}
 description: ${yamlScalar(description, 1024)}
 version: 1.0.0

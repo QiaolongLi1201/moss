@@ -12,7 +12,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { runProcess, ProcessError } from '../utils/run-process.js';
 import type { Tool } from '../core/tools/tool-types.js';
 import { assertSandboxPath } from '../safety/sandbox-paths.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
@@ -160,22 +160,19 @@ export const execTool: Tool = {
     }
     try {
       const shell = IS_WIN ? process.env.COMSPEC || 'cmd.exe' : '/bin/sh';
-      const result = execSync(input.command, {
-        cwd: ctx.workspaceDir,
+      const result = await runProcess(shell, {
+        args: IS_WIN ? ['/c', input.command] : ['-c', input.command],
         timeout: timeoutMs,
         maxBuffer: 10 * 1024 * 1024,
-        encoding: 'utf-8',
-        shell,
+        signal: ctx.abortSignal,
         env: childEnv(ctx.workspaceDir),
+        cwd: ctx.workspaceDir,
       });
-      return String(result).trim() || '(no output)';
+      return result.stdout.trim() || '(no output)';
     } catch (err) {
-      if (err && typeof err === 'object' && 'status' in err) {
-        const execErr = err as { status: number | null; stdout?: string | Buffer; stderr?: string | Buffer; message: string };
-        const stderr = execErr.stderr ? String(execErr.stderr).trim() : '';
-        const stdout = execErr.stdout ? String(execErr.stdout).trim() : '';
-        const output = [stdout, stderr].filter(Boolean).join('\n');
-        return `Command failed (exit ${execErr.status ?? 'unknown'}):\n${output || execErr.message}`;
+      if (err instanceof ProcessError) {
+        const output = [err.stdout.trim(), err.stderr.trim()].filter(Boolean).join('\n');
+        return `Command failed (exit ${err.exitCode}):\n${output || err.message}`;
       }
       throw err;
     }

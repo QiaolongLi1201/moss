@@ -138,6 +138,7 @@ export {
  * Re-exported via subpath `@dmoss/agent/core` for advanced use cases.
  */
 export {
+  CommandQueueRegistry,
   enqueueInLane,
   setLaneConcurrency,
   resolveSessionLane,
@@ -227,7 +228,7 @@ export {
 // --- Web Tools (generic http fetch, SSRF-safe, no external deps) ---
 export { createWebFetchTool, type WebFetchOptions } from './tools/web-fetch.js';
 
-// --- Logger (统一日志，对齐 docs/logging.md 规范) ---
+// --- Logger (unified logging, aligned with docs/logging.md) ---
 export {
   createLogger,
   configureRootLogger,
@@ -239,7 +240,7 @@ export {
   type LoggerOptions,
 } from './logger.js';
 
-// --- Errors (actionable error classification，对齐 docs/logging.md) ---
+// --- Errors (actionable error classification, aligned with docs/logging.md) ---
 export {
   ErrorCode,
   DmossError,

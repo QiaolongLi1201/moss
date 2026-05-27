@@ -52,5 +52,5 @@ test('scaffolds openai template without installing dependencies', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const source = fs.readFileSync(path.join(cwd, 'openai-agent', 'index.ts'), 'utf8');
   assert.match(source, /OPENAI_API_KEY/);
-  assert.match(source, /chat\/completions/);
+  assert.match(source, /OpenAILLMProvider/);
 });

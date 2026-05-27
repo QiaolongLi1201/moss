@@ -46,6 +46,10 @@ function enqueue(sessionKey: string, fn: () => Promise<void>): void {
     if (sessionQueues.get(sessionKey) === next) {
       sessionQueues.delete(sessionKey);
     }
+  }).catch(() => {
+    if (sessionQueues.get(sessionKey) === next) {
+      sessionQueues.delete(sessionKey);
+    }
   });
 }
 
@@ -57,12 +61,16 @@ function enqueue(sessionKey: string, fn: () => Promise<void>): void {
 export function bridgeAgentToChannel(agent: DmossAgent, channel: MessageChannel): void {
   channel.onMessage((msg) => {
     const sessionKey = `${channel.id}-${msg.senderId}`;
-    return new Promise<ChannelResponse>((resolve) => {
+    return new Promise<ChannelResponse>((resolve, reject) => {
       enqueue(sessionKey, async () => {
-        const result = await agent.chat(sessionKey, msg.text);
-        resolve({
-          text: result.response || '(no response)',
-        });
+        try {
+          const result = await agent.chat(sessionKey, msg.text);
+          resolve({
+            text: result.response || '(no response)',
+          });
+        } catch (err) {
+          reject(err);
+        }
       });
     });
   });

@@ -80,16 +80,14 @@ async function resolveHostAddressesWithTimeout(hostname: string, resolver: HostA
   ]);
 }
 
-export async function isPrivateHost(
+export async function resolveHostIp(
   hostname: string,
   resolver: HostAddressResolver = resolveHostAddresses,
-): Promise<boolean> {
+): Promise<string | null> {
   const h = hostname.toLowerCase();
-  if (h === 'localhost') return true;
-  if (h === '0.0.0.0') return true;
-  if (PRIVATE_IP_RES.some((re) => re.test(h))) return true;
-  // Resolve DNS with timeout and cache to prevent DNS rebinding attacks
-  // without adding unbounded latency to web_fetch tool calls.
+  if (h === 'localhost') return null;
+  if (h === '0.0.0.0') return null;
+  if (PRIVATE_IP_RES.some((re) => re.test(h))) return null;
   try {
     const now = Date.now();
     let addresses: string[];
@@ -103,13 +101,19 @@ export async function isPrivateHost(
       }
     }
     for (const ip of addresses) {
-      if (PRIVATE_IP_RES.some((re) => re.test(ip))) return true;
+      if (PRIVATE_IP_RES.some((re) => re.test(ip))) return null;
     }
+    return addresses[0] ?? null;
   } catch {
-    // Fail closed: if SSRF preflight cannot verify the host, do not fetch it.
-    return true;
+    return null;
   }
-  return false;
+}
+
+export async function isPrivateHost(
+  hostname: string,
+  resolver: HostAddressResolver = resolveHostAddresses,
+): Promise<boolean> {
+  return (await resolveHostIp(hostname, resolver)) === null;
 }
 
 function hostMatches(host: string, pattern: string): boolean {
@@ -303,15 +307,19 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
           recoverable: false,
         });
       }
-      if (blockPrivate && await isPrivateHost(url.hostname, resolveAddresses)) {
-        throw new DmossError({
-          code: ErrorCode.TOOL_NOT_ALLOWED,
-          message: `web_fetch: refused to connect to private host "${url.hostname}"`,
-          hint:
-            'Private/loopback/link-local IPs are blocked by default (SSRF protection). ' +
-            'If you really need this (e.g. a trusted device), create the tool with `blockPrivateNetwork: false`.',
-          recoverable: false,
-        });
+      let verifiedIp: string | null = null;
+      if (blockPrivate) {
+        verifiedIp = await resolveHostIp(url.hostname, resolveAddresses);
+        if (verifiedIp === null) {
+          throw new DmossError({
+            code: ErrorCode.TOOL_NOT_ALLOWED,
+            message: `web_fetch: refused to connect to private host "${url.hostname}"`,
+            hint:
+              'Private/loopback/link-local IPs are blocked by default (SSRF protection). ' +
+              'If you really need this (e.g. a trusted device), create the tool with `blockPrivateNetwork: false`.',
+            recoverable: false,
+          });
+        }
       }
 
       const controller = new AbortController();
@@ -330,11 +338,17 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
 
         // Manual redirect following so we can re-check SSRF policy at each hop
         for (;;) {
-          res = await fetch(currentUrl.toString(), {
+          const fetchUrl = new URL(currentUrl.toString());
+          const originalHost = currentUrl.host;
+          if (verifiedIp) {
+            fetchUrl.hostname = verifiedIp;
+          }
+          res = await fetch(fetchUrl.toString(), {
             signal: mergedSignal,
             headers: {
               'User-Agent': userAgent,
               Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5',
+              ...(verifiedIp ? { Host: originalHost } : {}),
             },
             redirect: 'manual',
           });
@@ -348,14 +362,17 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
               break;
             }
             redirectCount++;
-            if (blockPrivate && await isPrivateHost(nextUrl.hostname, resolveAddresses)) {
-              res.body?.cancel?.();
-              throw new DmossError({
-                code: ErrorCode.TOOL_NOT_ALLOWED,
-                message: `web_fetch: redirect to private host "${nextUrl.hostname}" blocked (SSRF protection)`,
-                hint: 'The target server redirected to a private/internal address.',
-                recoverable: false,
-              });
+            if (blockPrivate) {
+              verifiedIp = await resolveHostIp(nextUrl.hostname, resolveAddresses);
+              if (verifiedIp === null) {
+                res.body?.cancel?.();
+                throw new DmossError({
+                  code: ErrorCode.TOOL_NOT_ALLOWED,
+                  message: `web_fetch: redirect to private host "${nextUrl.hostname}" blocked (SSRF protection)`,
+                  hint: 'The target server redirected to a private/internal address.',
+                  recoverable: false,
+                });
+              }
             }
             if (allowHosts.length > 0 && !allowHosts.some((p) => hostMatches(nextUrl.hostname, p))) {
               res.body?.cancel?.();

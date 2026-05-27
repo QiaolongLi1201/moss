@@ -98,6 +98,33 @@ const toSessionMessages = sharedToSessionMessages;
 const fromSessionMessages = sharedFromSessionMessages;
 const toLLMMessages = sharedToLLMMessages;
 
+function formatAgentError(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    if (typeof record.errorMessage === 'string') return record.errorMessage;
+    if (typeof record.message === 'string') return record.message;
+    try {
+      return JSON.stringify(record);
+    } catch {
+      return String(error);
+    }
+  }
+  return String(error);
+}
+
+function createPreAbortedRunError(sessionKey: string, reason: unknown): DmossError {
+  const reasonText = reason === undefined ? '' : `: ${formatAgentError(reason)}`;
+  return new DmossError({
+    code: ErrorCode.USER_ABORTED,
+    message: `agent run aborted before start${reasonText}`,
+    recoverable: true,
+    cause: reason,
+    context: { sessionKey },
+  });
+}
+
 // ─── Agent loop run state ──────────────────────────────────────
 
 /** Mutable state tracked across the agent loop run lifecycle. */
@@ -247,22 +274,26 @@ export class DmossAgent {
    */
   async chat(sessionKey: string, userMessage: string, options?: ChatOptions): Promise<ChatResult> {
     let finalResult: ChatResult | undefined;
-    let lastError: string | undefined;
+    let lastError: unknown;
     for await (const event of this.streamChat(sessionKey, userMessage, options)) {
       if (event.type === 'done') {
         finalResult = event.result;
       } else if (event.type === 'error') {
         lastError = event.error;
+        break;
       }
     }
+    if (lastError) {
+      throw new DmossError({
+        code: ErrorCode.INTERNAL_INVARIANT_VIOLATED,
+        message: formatAgentError(lastError),
+      });
+    }
     if (finalResult) return finalResult;
-    if (lastError) throw new DmossError({ code: ErrorCode.INTERNAL_INVARIANT_VIOLATED, message: lastError });
-    return {
-      response: '',
-      toolCalls: [],
-      toolResults: [],
-      stopReason: 'empty_stream',
-    };
+    throw new DmossError({
+      code: ErrorCode.INTERNAL_INVARIANT_VIOLATED,
+      message: 'agent stream ended without done or error event',
+    });
   }
 
   private async loadGoalState(sessionKey: string): Promise<{
@@ -353,6 +384,9 @@ export class DmossAgent {
     const temperature = options?.temperature ?? this.config.temperature;
     const runId = options?.runId ?? crypto.randomUUID();
     const abortSignal = options?.abortSignal ?? new AbortController().signal;
+    if (abortSignal.aborted) {
+      throw createPreAbortedRunError(sessionKey, abortSignal.reason);
+    }
 
     // ── Session & task-frame loading ──
     // Type bridge: InternalMessage and LLMMessage have compatible runtime shapes but different type definitions due to module boundaries

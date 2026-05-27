@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -479,5 +479,395 @@ rl.on('line', (line) => {
 }
 
 console.log('  [PASS] real MCP server: rich content maps to structured tool blocks');
+
+// ── Real MCP server: abort sends MCP cancellation notification ──
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-cancel-test-'));
+  const mockServerPath = join(dir, 'mock_mcp_cancel.mjs');
+  const cancelledPath = join(dir, 'cancelled.json');
+  const sideEffectPath = join(dir, 'side-effect.txt');
+  const serverCode = `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+import { writeFileSync } from 'node:fs';
+
+const rl = createInterface({ input: process.stdin });
+let active = null;
+
+function respond(id, result) {
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n');
+}
+
+rl.on('line', (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+
+  if (msg.method === 'notifications/cancelled') {
+    if (active && msg.params && msg.params.requestId === active.id) {
+      clearTimeout(active.sideEffectTimer);
+      clearTimeout(active.responseTimer);
+      writeFileSync(${JSON.stringify(cancelledPath)}, JSON.stringify(msg));
+      active = null;
+    }
+    return;
+  }
+
+  if (msg.id === undefined || msg.id === null) return;
+
+  switch (msg.method) {
+    case 'initialize':
+      respond(msg.id, {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'cancel-server', version: '1.0.0' },
+      });
+      break;
+    case 'tools/list':
+      respond(msg.id, {
+        tools: [{
+          name: 'slow_side_effect',
+          description: 'Delayed side effect',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+        }],
+      });
+      break;
+    case 'tools/call':
+      active = {
+        id: msg.id,
+        sideEffectTimer: setTimeout(() => {
+          writeFileSync(${JSON.stringify(sideEffectPath)}, 'side effect happened');
+        }, 600),
+        responseTimer: setTimeout(() => {
+          respond(msg.id, { content: [{ type: 'text', text: 'done' }] });
+          active = null;
+        }, 900),
+      };
+      break;
+    default:
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: msg.id,
+        error: { code: -32601, message: 'Method not found' },
+      }) + '\\n');
+  }
+});
+`;
+  writeFileSync(mockServerPath, serverCode);
+
+  try {
+    const connections = await withTimeout(
+      connectMcpServers({
+        mcpServers: {
+          cancelserver: {
+            command: 'node',
+            args: [mockServerPath],
+          },
+        },
+      }),
+      10000,
+      'connectMcpServers(cancelserver)',
+    );
+
+    const slowTool = connections[0].tools.find((t) => t.name === 'cancelserver__slow_side_effect');
+    assert.ok(slowTool);
+
+    const ac = new AbortController();
+    const executePromise = slowTool.execute(
+      {},
+      { workspaceDir: '/tmp', sessionKey: 'mcp-cancel', abortSignal: ac.signal },
+    );
+    setTimeout(() => ac.abort('user cancelled'), 100);
+
+    await assert.rejects(executePromise, /aborted|cancelled/i);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    assert.equal(existsSync(sideEffectPath), false, 'server side effect should be cancelled before it runs');
+    assert.equal(existsSync(cancelledPath), true, 'server should receive notifications/cancelled');
+    const cancellation = JSON.parse(readFileSync(cancelledPath, 'utf8'));
+    assert.equal(cancellation.jsonrpc, '2.0');
+    assert.equal(cancellation.method, 'notifications/cancelled');
+    assert.equal(typeof cancellation.params.requestId, 'number');
+    assert.match(String(cancellation.params.reason), /cancelled|aborted/i);
+
+    await withTimeout(connections[0].close(), 5000, 'close');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log('  [PASS] abort sends MCP cancellation notification before side effects continue');
+
+// ── Real MCP server: timeout sends MCP cancellation notification ──
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-timeout-cancel-test-'));
+  const mockServerPath = join(dir, 'mock_mcp_timeout_cancel.mjs');
+  const cancelledPath = join(dir, 'cancelled.json');
+  const sideEffectPath = join(dir, 'side-effect.txt');
+  const serverCode = `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+import { writeFileSync } from 'node:fs';
+
+const rl = createInterface({ input: process.stdin });
+let active = null;
+
+function respond(id, result) {
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n');
+}
+
+rl.on('line', (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+
+  if (msg.method === 'notifications/cancelled') {
+    if (active && msg.params && msg.params.requestId === active.id) {
+      clearTimeout(active.sideEffectTimer);
+      writeFileSync(${JSON.stringify(cancelledPath)}, JSON.stringify(msg));
+      active = null;
+    }
+    return;
+  }
+
+  if (msg.id === undefined || msg.id === null) return;
+
+  switch (msg.method) {
+    case 'initialize':
+      respond(msg.id, {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'timeout-cancel-server', version: '1.0.0' },
+      });
+      break;
+    case 'tools/list':
+      respond(msg.id, {
+        tools: [{
+          name: 'never_finishes',
+          description: 'Never responds unless cancelled',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+        }],
+      });
+      break;
+    case 'tools/call':
+      active = {
+        id: msg.id,
+        sideEffectTimer: setTimeout(() => {
+          writeFileSync(${JSON.stringify(sideEffectPath)}, 'side effect happened');
+        }, 600),
+      };
+      break;
+    default:
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: msg.id,
+        error: { code: -32601, message: 'Method not found' },
+      }) + '\\n');
+  }
+});
+`;
+  writeFileSync(mockServerPath, serverCode);
+
+  try {
+    const connections = await withTimeout(
+      connectMcpServers({
+        mcpServers: {
+          timeoutserver: {
+            command: 'node',
+            args: [mockServerPath],
+            requestTimeoutMs: 120,
+          },
+        },
+      }),
+      10000,
+      'connectMcpServers(timeoutserver)',
+    );
+
+    const slowTool = connections[0].tools.find((t) => t.name === 'timeoutserver__never_finishes');
+    assert.ok(slowTool);
+
+    await assert.rejects(
+      slowTool.execute({}, { workspaceDir: '/tmp', sessionKey: 'mcp-timeout' }),
+      /timeout/i,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 700));
+
+    assert.equal(existsSync(sideEffectPath), false, 'server side effect should be cancelled on timeout');
+    assert.equal(existsSync(cancelledPath), true, 'server should receive timeout cancellation');
+    const cancellation = JSON.parse(readFileSync(cancelledPath, 'utf8'));
+    assert.equal(cancellation.jsonrpc, '2.0');
+    assert.equal(cancellation.method, 'notifications/cancelled');
+    assert.equal(typeof cancellation.params.requestId, 'number');
+    assert.match(String(cancellation.params.reason), /timeout/i);
+
+    await withTimeout(connections[0].close(), 5000, 'close');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log('  [PASS] timeout sends MCP cancellation notification before side effects continue');
+
+// ── Real MCP server: initialize timeout is not cancelled ──
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-initialize-timeout-test-'));
+  const mockServerPath = join(dir, 'mock_mcp_initialize_timeout.mjs');
+  const cancelledPath = join(dir, 'initialize-cancelled.json');
+  const serverCode = `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+import { writeFileSync } from 'node:fs';
+
+const rl = createInterface({ input: process.stdin });
+rl.on('line', (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+
+  if (msg.method === 'notifications/cancelled') {
+    writeFileSync(${JSON.stringify(cancelledPath)}, JSON.stringify(msg.params ?? {}));
+    return;
+  }
+
+  if (msg.method === 'initialize') {
+    return;
+  }
+
+  if (msg.id !== undefined && msg.id !== null) {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: msg.id,
+      error: { code: -32601, message: 'Method not found' },
+    }) + '\\n');
+  }
+});
+`;
+  writeFileSync(mockServerPath, serverCode);
+
+  try {
+    await assert.rejects(
+      withTimeout(
+        connectMcpServers({
+          mcpServers: {
+            initserver: {
+              command: 'node',
+              args: [mockServerPath],
+              requestTimeoutMs: 120,
+            },
+          },
+        }),
+        5000,
+        'connectMcpServers(initserver)',
+      ),
+      /timeout/i,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    assert.equal(
+      existsSync(cancelledPath),
+      false,
+      'initialize requests must not be cancelled by the client',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log('  [PASS] initialize timeout does not send MCP cancellation notification');
+
+// ── Real MCP server: abort after response does not send late cancellation ──
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-late-abort-test-'));
+  const mockServerPath = join(dir, 'mock_mcp_late_abort.mjs');
+  const cancelledPath = join(dir, 'late-cancelled.json');
+  const serverCode = `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+import { writeFileSync } from 'node:fs';
+
+const rl = createInterface({ input: process.stdin });
+function respond(id, result) {
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n');
+}
+
+rl.on('line', (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+
+  if (msg.method === 'notifications/cancelled') {
+    writeFileSync(${JSON.stringify(cancelledPath)}, JSON.stringify(msg.params ?? {}));
+    return;
+  }
+
+  if (msg.id === undefined || msg.id === null) return;
+
+  switch (msg.method) {
+    case 'initialize':
+      respond(msg.id, {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'late-abort-server', version: '1.0.0' },
+      });
+      break;
+    case 'tools/list':
+      respond(msg.id, {
+        tools: [{
+          name: 'fast_tool',
+          description: 'Responds immediately',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+        }],
+      });
+      break;
+    case 'tools/call':
+      respond(msg.id, { content: [{ type: 'text', text: 'done' }] });
+      break;
+    default:
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: msg.id,
+        error: { code: -32601, message: 'Method not found' },
+      }) + '\\n');
+  }
+});
+`;
+  writeFileSync(mockServerPath, serverCode);
+
+  try {
+    const connections = await withTimeout(
+      connectMcpServers({
+        mcpServers: {
+          lateserver: {
+            command: 'node',
+            args: [mockServerPath],
+          },
+        },
+      }),
+      10000,
+      'connectMcpServers(lateserver)',
+    );
+
+    const fastTool = connections[0].tools.find((t) => t.name === 'lateserver__fast_tool');
+    assert.ok(fastTool);
+
+    const ac = new AbortController();
+    const result = await fastTool.execute(
+      {},
+      { workspaceDir: '/tmp', sessionKey: 'mcp-late-abort', abortSignal: ac.signal },
+    );
+    assert.equal(result, 'done');
+
+    ac.abort('too late');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    assert.equal(
+      existsSync(cancelledPath),
+      false,
+      'abort after a completed response must not send a late cancellation notification',
+    );
+
+    await withTimeout(connections[0].close(), 5000, 'close');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log('  [PASS] abort after response does not send late MCP cancellation');
 
 console.log('All MCP client checks passed.');

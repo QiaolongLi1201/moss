@@ -179,10 +179,19 @@ class McpServerConnection {
     const id = this.nextId++;
     const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
     return new Promise((resolve, reject) => {
+      const sendCancellation = (reason: string) => {
+        if (method === 'initialize') return;
+        try {
+          this.notify('notifications/cancelled', { requestId: id, reason });
+        } catch {
+          // Best-effort MCP cancellation; local request rejection still proceeds.
+        }
+      };
       const onAbort = () => {
         const pending = this.pending.get(id);
         if (pending) {
           clearTimeout(pending.timer);
+          sendCancellation(`MCP request aborted: ${signal!.reason ?? 'aborted'}`);
           this.pending.delete(id);
           pending.reject(new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP request aborted: ${signal!.reason ?? 'aborted'}` }));
         }
@@ -192,6 +201,7 @@ class McpServerConnection {
         signal?.removeEventListener('abort', onAbort);
       };
       const timer = setTimeout(() => {
+        sendCancellation(`MCP server ${this.serverName} request timeout after ${this.requestTimeoutMs}ms`);
         this.pending.delete(id);
         cleanup();
         reject(new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP server ${this.serverName} request timeout after ${this.requestTimeoutMs}ms` }));

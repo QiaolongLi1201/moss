@@ -2,7 +2,9 @@
  * JSONL Session Store — file-based session persistence using JSON Lines format.
  *
  * Each session is stored as a `.jsonl` file where each line is a JSON-encoded message.
- * This is a reference implementation of the SessionStore interface for production use.
+ * This is a single-process-safe reference implementation of the SessionStore interface
+ * for production use. It serializes writes within one Node process and fsyncs each
+ * successful append. For multi-process writers, use SessionManager.
  *
  * Usage:
  * ```ts
@@ -25,40 +27,83 @@ type JsonlSessionEntry =
   | { type: 'state_replace'; messages: LLMMessage[]; ts?: number };
 
 export class JsonlSessionStore implements SessionStore {
+  private static readonly writeChains = new Map<string, Promise<void>>();
+
   private readonly dir: string;
 
   constructor(config: JsonlSessionStoreConfig) {
-    this.dir = config.dir;
+    this.dir = path.resolve(config.dir);
+  }
+
+  private encodedSessionStem(sessionKey: string): string {
+    return encodeURIComponent(sessionKey);
+  }
+
+  private decodeSessionStem(stem: string): string {
+    try {
+      return decodeURIComponent(stem);
+    } catch {
+      return stem;
+    }
   }
 
   private sessionPath(sessionKey: string): string {
-    const safe = sessionKey.replace(/[^a-zA-Z0-9_-]/g, '_');
-    return path.join(this.dir, `${safe}.jsonl`);
+    return path.join(this.dir, `${this.encodedSessionStem(sessionKey)}.jsonl`);
   }
 
   private async ensureDir(): Promise<void> {
     await fsp.mkdir(this.dir, { recursive: true });
   }
 
+  private enqueueWrite(filePath: string, fn: () => Promise<void>): Promise<void> {
+    const chains = JsonlSessionStore.writeChains;
+    const prev = chains.get(filePath) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    chains.set(filePath, next);
+    const cleanup = () => {
+      if (chains.get(filePath) === next) {
+        chains.delete(filePath);
+      }
+    };
+    next.then(cleanup, cleanup);
+    return next;
+  }
+
+  private async appendLineDurably(filePath: string, line: string): Promise<void> {
+    let handle: fsp.FileHandle | undefined;
+    try {
+      handle = await fsp.open(filePath, 'a');
+      await handle.appendFile(line, 'utf-8');
+      await handle.sync();
+    } finally {
+      await handle?.close();
+    }
+  }
+
+  private replayMessagesFromContent(raw: string): { messages: LLMMessage[]; malformedCount: number } {
+    const lines = raw.split('\n').filter((l) => l.trim());
+    const messages: LLMMessage[] = [];
+    let malformedCount = 0;
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line) as JsonlSessionEntry;
+        if (entry.type === 'message' && entry.message) {
+          messages.push(entry.message);
+        } else if (entry.type === 'state_replace' && Array.isArray(entry.messages)) {
+          messages.splice(0, messages.length, ...entry.messages);
+        }
+      } catch {
+        malformedCount++;
+      }
+    }
+    return { messages, malformedCount };
+  }
+
   async loadMessages(sessionKey: string): Promise<LLMMessage[]> {
     const filePath = this.sessionPath(sessionKey);
     try {
       const raw = await fsp.readFile(filePath, 'utf-8');
-      const lines = raw.split('\n').filter((l) => l.trim());
-      const messages: LLMMessage[] = [];
-      let malformedCount = 0;
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line) as JsonlSessionEntry;
-          if (entry.type === 'message' && entry.message) {
-            messages.push(entry.message);
-          } else if (entry.type === 'state_replace' && Array.isArray(entry.messages)) {
-            messages.splice(0, messages.length, ...entry.messages);
-          }
-        } catch {
-          malformedCount++;
-        }
-      }
+      const { messages, malformedCount } = this.replayMessagesFromContent(raw);
       if (malformedCount > 0) {
         console.warn(`[session] ${sessionKey}: skipped ${malformedCount} malformed line(s) during load`);
       }
@@ -70,21 +115,25 @@ export class JsonlSessionStore implements SessionStore {
   }
 
   async appendMessage(sessionKey: string, message: LLMMessage): Promise<void> {
-    await this.ensureDir();
     const filePath = this.sessionPath(sessionKey);
     const entry = JSON.stringify({ type: 'message', message, ts: Date.now() });
-    await fsp.appendFile(filePath, entry + '\n', 'utf-8');
+    await this.enqueueWrite(filePath, async () => {
+      await this.ensureDir();
+      await this.appendLineDurably(filePath, entry + '\n');
+    });
   }
 
   async replaceMessages(sessionKey: string, messages: LLMMessage[]): Promise<void> {
-    await this.ensureDir();
     const filePath = this.sessionPath(sessionKey);
     const entry = JSON.stringify({
       type: 'state_replace',
       messages,
       ts: Date.now(),
     });
-    await fsp.appendFile(filePath, entry + '\n', 'utf-8');
+    await this.enqueueWrite(filePath, async () => {
+      await this.ensureDir();
+      await this.appendLineDurably(filePath, entry + '\n');
+    });
   }
 
   async listSessions(): Promise<SessionMeta[]> {
@@ -93,17 +142,17 @@ export class JsonlSessionStore implements SessionStore {
       const sessions: SessionMeta[] = [];
       for (const file of files) {
         if (!file.endsWith('.jsonl')) continue;
-        const sessionKey = file.replace(/\.jsonl$/, '');
+        const sessionKey = this.decodeSessionStem(file.replace(/\.jsonl$/, ''));
         const filePath = path.join(this.dir, file);
         try {
           const stat = await fsp.stat(filePath);
           const content = await fsp.readFile(filePath, 'utf-8');
-          const lineCount = content.split('\n').filter((l) => l.trim()).length;
+          const activeMessageCount = this.replayMessagesFromContent(content).messages.length;
           sessions.push({
             sessionKey,
             createdAt: stat.birthtimeMs,
             updatedAt: stat.mtimeMs,
-            messageCount: lineCount,
+            messageCount: activeMessageCount,
           });
         } catch {
           // skip inaccessible files
@@ -118,11 +167,13 @@ export class JsonlSessionStore implements SessionStore {
 
   async deleteSession(sessionKey: string): Promise<void> {
     const filePath = this.sessionPath(sessionKey);
-    try {
-      await fsp.unlink(filePath);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-    }
+    await this.enqueueWrite(filePath, async () => {
+      try {
+        await fsp.unlink(filePath);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+    });
   }
 
   async exists(sessionKey: string): Promise<boolean> {

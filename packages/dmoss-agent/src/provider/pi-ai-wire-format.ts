@@ -385,6 +385,7 @@ function appendStructuredTextContent(block: { structuredContent?: unknown }, tex
       typeof (item as { text?: unknown }).text === 'string',
     )
     .map((item) => item.text)
+    .filter((text) => !textContent.includes(text))
     .join('\n');
   if (!extraText) return textContent;
   return textContent ? `${textContent}\n${extraText}` : extraText;

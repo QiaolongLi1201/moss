@@ -162,6 +162,7 @@ export function convertMessagesToPi(
             const extraText = block.structuredContent
               .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
               .map((b) => b.text)
+              .filter((text) => !textContent.includes(text))
               .join('\n');
             if (extraText) {
               textContent = textContent ? `${textContent}\n${extraText}` : extraText;

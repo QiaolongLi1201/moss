@@ -17,6 +17,8 @@ import {
   fromSessionMessages,
   toLLMMessages,
 } from '../dist/core/agent/dmoss-agent-types.js';
+import { convertMessagesToPi } from '../dist/core/tools/message-convert.js';
+import { convertMessages as convertMessagesToPiAiWire } from '../dist/provider/pi-ai-wire-format.js';
 
 // ── Test 1: Simple text round-trip ──
 {
@@ -273,4 +275,55 @@ import {
   console.log('[PASS] Structured tool result content round-trip');
 }
 
-console.log('\n[pass] message-conversion-roundtrip: 8/8');
+// ── Test 9: Structured text is not duplicated when content already mirrors it ──
+{
+  const messages = [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'call-dup',
+          content: 'hello structured result',
+          is_error: false,
+          structuredContent: [{ type: 'text', text: 'hello structured result' }],
+        },
+      ],
+      timestamp: 1000,
+    },
+  ];
+
+  const pi = convertMessagesToPi(messages, {
+    api: 'openai-completions',
+    provider: 'test',
+    id: 'test-model',
+  });
+
+  assert.equal(pi.length, 1);
+  assert.equal(pi[0].role, 'toolResult');
+  assert.equal(pi[0].content[0].text, 'hello structured result');
+  assert.equal(
+    (pi[0].content[0].text.match(/hello structured result/g) ?? []).length,
+    1,
+    'structured text already present in block.content must not be appended again',
+  );
+
+  const piAiWire = convertMessagesToPiAiWire(
+    [{
+      role: 'user',
+      content: messages[0].content,
+    }],
+    {
+      api: 'openai-chat',
+      provider: 'test',
+      id: 'test-model',
+      reasoning: false,
+    },
+    false,
+  );
+  assert.equal(piAiWire[0].content[0].text, 'hello structured result');
+
+  console.log('[PASS] Structured tool result text is not duplicated for pi conversion');
+}
+
+console.log('\n[pass] message-conversion-roundtrip: 9/9');

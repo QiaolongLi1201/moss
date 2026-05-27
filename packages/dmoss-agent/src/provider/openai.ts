@@ -100,7 +100,9 @@ export class OpenAILLMProvider implements LLMProvider {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: `OpenAI API error ${res.status}: ${text}` });
+      const retryAfter = res.headers.get('retry-after');
+      const retryHint = retryAfter ? ` (Retry-After: ${retryAfter})` : '';
+      throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: `OpenAI API error ${res.status}${retryHint}: ${text}` });
     }
 
     if (!res.body) {

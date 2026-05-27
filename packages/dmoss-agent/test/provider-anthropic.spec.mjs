@@ -150,6 +150,27 @@ function rawSse(res, lines) {
   console.log('[PASS] API error handling');
 }
 
+// ── Test 5: Retry-After header is preserved for retry backoff ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '4' });
+    res.end('Rate limit exceeded');
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  try {
+    await provider.complete({ model: 'test', systemPrompt: '', messages: [] });
+    assert.fail('should have thrown');
+  } catch (err) {
+    assert.ok(err instanceof Error);
+    assert.ok(err.message.includes('429'));
+    assert.ok(err.message.includes('Retry-After: 4'));
+  }
+
+  server.close();
+  console.log('[PASS] Retry-After header is preserved');
+}
+
 // ── Test 5: Ping events are keepalive, not content ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {

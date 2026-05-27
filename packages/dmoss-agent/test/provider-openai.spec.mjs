@@ -154,7 +154,7 @@ function rawSse(res, lines) {
 // ── Test 5: API error handling ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {
-    res.writeHead(429, { 'Content-Type': 'text/plain' });
+    res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '7' });
     res.end('Rate limit exceeded');
   });
 
@@ -165,6 +165,7 @@ function rawSse(res, lines) {
   } catch (err) {
     assert.ok(err instanceof Error);
     assert.ok(err.message.includes('429'));
+    assert.ok(err.message.includes('Retry-After: 7'));
   }
 
   server.close();

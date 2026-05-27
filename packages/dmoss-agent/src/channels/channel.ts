@@ -6,6 +6,7 @@
  * platform (WeChat, Telegram, Discord, etc.) with DmossAgent.
  */
 import type { DmossAgent } from '../core/agent/dmoss-agent.js';
+import { DmossError, ErrorCode } from '../errors.js';
 
 export interface ChannelMessage {
   id: string;
@@ -34,6 +35,57 @@ export interface MessageChannel {
   onMessage(handler: (msg: ChannelMessage) => Promise<ChannelResponse>): void;
 }
 
+export interface BridgeAgentToChannelOptions {
+  /**
+   * Upper bound for a single channel message agent turn. Default: 120 seconds.
+   *
+   * When this expires the bridge aborts the agent call and releases the
+   * per-sender queue. Providers and tools are expected to honor AbortSignal;
+   * otherwise their late work may continue outside the channel queue.
+   */
+  chatTimeoutMs?: number;
+}
+
+const DEFAULT_CHAT_TIMEOUT_MS = 120_000;
+
+async function chatWithTimeout(
+  agent: DmossAgent,
+  sessionKey: string,
+  text: string,
+  timeoutMs: number,
+) {
+  if (timeoutMs <= 0) {
+    return agent.chat(sessionKey, text);
+  }
+
+  const controller = new AbortController();
+  const timeoutError = new DmossError({
+    code: ErrorCode.TOOL_EXECUTION_TIMEOUT,
+    message: `channel message timed out after ${timeoutMs}ms`,
+    hint: 'The upstream model or a tool did not finish before the channel timeout.',
+    recoverable: true,
+    context: { sessionKey, timeoutMs },
+  });
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort(timeoutError);
+      reject(timeoutError);
+    }, timeoutMs);
+  });
+  const chatPromise = agent.chat(sessionKey, text, { abortSignal: controller.signal });
+  chatPromise.catch(() => {
+    /* suppress late rejection if timeout wins the race */
+  });
+
+  try {
+    return await Promise.race([chatPromise, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Bridge a DmossAgent with a messaging channel.
  * Each incoming message is routed to agent.chat() with a per-sender session.
@@ -43,9 +95,14 @@ export interface MessageChannel {
  * (agent, channel) bridges in the same process get independent queues,
  * so a sessionKey collision across bridges cannot cause cross-talk.
  */
-export function bridgeAgentToChannel(agent: DmossAgent, channel: MessageChannel): void {
+export function bridgeAgentToChannel(
+  agent: DmossAgent,
+  channel: MessageChannel,
+  options?: BridgeAgentToChannelOptions,
+): void {
   /** Per-session message queue scoped to this bridge instance. */
   const sessionQueues = new Map<string, Promise<void>>();
+  const chatTimeoutMs = options?.chatTimeoutMs ?? DEFAULT_CHAT_TIMEOUT_MS;
 
   const enqueue = (sessionKey: string, fn: () => Promise<void>): void => {
     const prev = sessionQueues.get(sessionKey) ?? Promise.resolve();
@@ -65,7 +122,7 @@ export function bridgeAgentToChannel(agent: DmossAgent, channel: MessageChannel)
     return new Promise<ChannelResponse>((resolve, reject) => {
       enqueue(sessionKey, async () => {
         try {
-          const result = await agent.chat(sessionKey, msg.text);
+          const result = await chatWithTimeout(agent, sessionKey, msg.text, chatTimeoutMs);
           resolve({
             text: result.response || '(no response)',
           });

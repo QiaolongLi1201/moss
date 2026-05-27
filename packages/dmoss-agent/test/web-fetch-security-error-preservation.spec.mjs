@@ -46,4 +46,45 @@ console.log('[TEST] Redirect to private host error preservation');
   }
 }
 
+console.log('[TEST] Redirect to unsupported protocol is blocked');
+{
+  const originalFetch = globalThis.fetch;
+  const redirectedTool = createWebFetchTool({
+    blockPrivateNetwork: false,
+    timeoutMs: 5_000,
+  });
+  const seenUrls = [];
+  globalThis.fetch = async (url) => {
+    seenUrls.push(String(url));
+    if (String(url).startsWith('http://example.com')) {
+      return new Response('', {
+        status: 302,
+        headers: { location: 'data:text/plain,should-not-fetch' },
+      });
+    }
+    return new Response('redirect payload', {
+      status: 200,
+      headers: { 'content-type': 'text/plain' },
+    });
+  };
+  try {
+    await assert.rejects(
+      () => redirectedTool.execute(
+        { url: 'http://example.com/redirect' },
+        { workspaceDir: '/tmp', sessionKey: 'test' },
+      ),
+      (err) => {
+        assert.ok(err instanceof DmossError, 'Should be DmossError');
+        assert.equal(err.code, ErrorCode.USER_INPUT_INVALID);
+        assert.equal(err.recoverable, false);
+        return true;
+      },
+    );
+    assert.deepEqual(seenUrls, ['http://example.com/redirect']);
+    console.log('  ✓ Redirect to data: is rejected before second fetch');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 console.log('[PASS] web_fetch security error downgrade tests');

@@ -1,5 +1,6 @@
 export {
   bridgeAgentToChannel,
+  type BridgeAgentToChannelOptions,
   type ChannelMessage,
   type ChannelResponse,
   type MessageChannel,

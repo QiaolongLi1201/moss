@@ -367,6 +367,15 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
             } catch {
               break;
             }
+            if (nextUrl.protocol !== 'http:' && nextUrl.protocol !== 'https:') {
+              res.body?.cancel?.();
+              throw new DmossError({
+                code: ErrorCode.USER_INPUT_INVALID,
+                message: `web_fetch: redirect to unsupported protocol ${nextUrl.protocol}`,
+                hint: 'Only http: and https: redirects are allowed.',
+                recoverable: false,
+              });
+            }
             redirectCount++;
             if (blockPrivate) {
               verifiedIp = await resolveHostIp(nextUrl.hostname, resolveAddresses);

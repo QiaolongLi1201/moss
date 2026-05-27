@@ -30,6 +30,7 @@ interface AnthropicSseEvent {
   content_block?: Record<string, unknown>;
   message?: Record<string, unknown>;
   usage?: Record<string, number>;
+  error?: { type?: string; message?: string };
 }
 
 export class AnthropicLLMProvider implements LLMProvider {
@@ -100,12 +101,144 @@ export class AnthropicLLMProvider implements LLMProvider {
     let currentTextBlock = -1;
     let currentToolBlock = -1;
     let toolInputJson = '';
+    let sawMessageStop = false;
 
     onEvent({ type: 'message_start' });
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+
+    const processLine = (line: string): void => {
+      if (!line.startsWith('data: ')) return;
+      const jsonStr = line.slice(6).trim();
+      if (!jsonStr) return;
+
+      let event: AnthropicSseEvent;
+      try {
+        event = JSON.parse(jsonStr);
+      } catch (err) {
+        throw new DmossError({
+          code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+          message: 'Anthropic provider: malformed SSE JSON frame',
+          hint: 'The upstream API or gateway returned an invalid streaming payload.',
+          recoverable: true,
+          cause: err,
+          context: { payload: jsonStr.slice(0, 200) },
+        });
+      }
+
+      switch (event.type) {
+        case 'message_start': {
+          const usage = event.message?.usage as Record<string, number> | undefined;
+          if (usage) {
+            inputTokens = usage.input_tokens ?? 0;
+          }
+          break;
+        }
+
+        case 'content_block_start': {
+          const block = event.content_block;
+          if (block?.type === 'text') {
+            currentTextBlock = event.index ?? content.length;
+            content.push({ type: 'text', text: '' });
+            onEvent({ type: 'content_block_start', toolUse: undefined });
+          } else if (block?.type === 'tool_use') {
+            currentToolBlock = event.index ?? content.length;
+            content.push({
+              type: 'tool_use',
+              id: String(block.id || ''),
+              name: String(block.name || ''),
+              input: {},
+            });
+            toolInputJson = '';
+            onEvent({
+              type: 'content_block_start',
+              toolUse: { id: String(block.id || ''), name: String(block.name || '') },
+            });
+          }
+          break;
+        }
+
+        case 'content_block_delta': {
+          const delta = event.delta;
+          if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+            const idx = event.index ?? currentTextBlock;
+            if (idx >= 0 && idx < content.length && content[idx]?.type === 'text') {
+              (content[idx] as { type: 'text'; text: string }).text += delta.text;
+              onEvent({ type: 'content_block_delta', text: delta.text, deltaRole: 'visible' });
+            }
+          } else if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+            toolInputJson += delta.partial_json;
+            onEvent({ type: 'content_block_delta', partialJson: delta.partial_json });
+          } else if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+            onEvent({ type: 'content_block_delta', text: delta.thinking, deltaRole: 'thinking' });
+            thinking.push(delta.thinking);
+          }
+          break;
+        }
+
+        case 'content_block_stop': {
+          if (currentToolBlock >= 0 && currentToolBlock < content.length) {
+            const block = content[currentToolBlock];
+            if (block?.type === 'tool_use' && toolInputJson) {
+              try {
+                (block as { type: 'tool_use'; input: Record<string, unknown> }).input = JSON.parse(toolInputJson);
+              } catch (err) {
+                throw new DmossError({
+                  code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+                  message: `Anthropic provider: malformed tool call arguments for ${block.name}`,
+                  hint: 'The LLM returned invalid JSON for tool parameters. This usually indicates a model or gateway issue.',
+                  recoverable: true,
+                  cause: err,
+                  context: { toolName: block.name, arguments: toolInputJson.slice(0, 200) },
+                });
+              }
+            }
+          }
+          onEvent({ type: 'content_block_stop' });
+          currentTextBlock = -1;
+          currentToolBlock = -1;
+          toolInputJson = '';
+          break;
+        }
+
+        case 'message_delta': {
+          const delta = event.delta;
+          if (delta?.stop_reason) {
+            const sr = String(delta.stop_reason);
+            if (sr === 'tool_use') stopReason = 'tool_use';
+            else if (sr === 'max_tokens') stopReason = 'max_tokens';
+            else if (sr === 'stop_sequence') stopReason = 'stop_sequence';
+            else stopReason = 'end_turn';
+          }
+          const usage = event.usage;
+          if (usage) {
+            outputTokens = usage.output_tokens ?? 0;
+          }
+          onEvent({ type: 'message_delta', stopReason });
+          break;
+        }
+
+        case 'message_stop':
+          sawMessageStop = true;
+          onEvent({ type: 'message_stop' });
+          break;
+
+        // Match Anthropic's SDK contract: structured `event: error` frames are fatal.
+        case 'error': {
+          const errorType = event.error?.type ?? 'unknown_error';
+          const errorMessage = event.error?.message ?? 'Anthropic stream error';
+          throw new DmossError({
+            code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+            message: `Anthropic stream error ${errorType}: ${errorMessage}`,
+            hint: 'The upstream Anthropic API returned an error event during streaming.',
+            recoverable: true,
+            context: { type: errorType },
+          });
+        }
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -116,114 +249,21 @@ export class AnthropicLLMProvider implements LLMProvider {
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const jsonStr = line.slice(6).trim();
-        if (!jsonStr) continue;
-
-        let event: AnthropicSseEvent;
-        try {
-          event = JSON.parse(jsonStr);
-        } catch {
-          continue;
-        }
-
-        switch (event.type) {
-          case 'message_start': {
-            const usage = event.message?.usage as Record<string, number> | undefined;
-            if (usage) {
-              inputTokens = usage.input_tokens ?? 0;
-            }
-            break;
-          }
-
-          case 'content_block_start': {
-            const block = event.content_block;
-            if (block?.type === 'text') {
-              currentTextBlock = event.index ?? content.length;
-              content.push({ type: 'text', text: '' });
-              onEvent({ type: 'content_block_start', toolUse: undefined });
-            } else if (block?.type === 'tool_use') {
-              currentToolBlock = event.index ?? content.length;
-              content.push({
-                type: 'tool_use',
-                id: String(block.id || ''),
-                name: String(block.name || ''),
-                input: {},
-              });
-              toolInputJson = '';
-              onEvent({
-                type: 'content_block_start',
-                toolUse: { id: String(block.id || ''), name: String(block.name || '') },
-              });
-            }
-            break;
-          }
-
-          case 'content_block_delta': {
-            const delta = event.delta;
-            if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
-              const idx = event.index ?? currentTextBlock;
-              if (idx >= 0 && idx < content.length && content[idx]?.type === 'text') {
-                (content[idx] as { type: 'text'; text: string }).text += delta.text;
-                onEvent({ type: 'content_block_delta', text: delta.text, deltaRole: 'visible' });
-              }
-            } else if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
-              toolInputJson += delta.partial_json;
-              onEvent({ type: 'content_block_delta', partialJson: delta.partial_json });
-            } else if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
-              onEvent({ type: 'content_block_delta', text: delta.thinking, deltaRole: 'thinking' });
-              thinking.push(delta.thinking);
-            }
-            break;
-          }
-
-          case 'content_block_stop': {
-            if (currentToolBlock >= 0 && currentToolBlock < content.length) {
-              const block = content[currentToolBlock];
-              if (block?.type === 'tool_use' && toolInputJson) {
-                try {
-                  (block as { type: 'tool_use'; input: Record<string, unknown> }).input = JSON.parse(toolInputJson);
-                } catch (err) {
-                  throw new DmossError({
-                    code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
-                    message: `Anthropic provider: malformed tool call arguments for ${block.name}`,
-                    hint: 'The LLM returned invalid JSON for tool parameters. This usually indicates a model or gateway issue.',
-                    recoverable: true,
-                    cause: err,
-                    context: { toolName: block.name, arguments: toolInputJson.slice(0, 200) },
-                  });
-                }
-              }
-            }
-            onEvent({ type: 'content_block_stop' });
-            currentTextBlock = -1;
-            currentToolBlock = -1;
-            toolInputJson = '';
-            break;
-          }
-
-          case 'message_delta': {
-            const delta = event.delta;
-            if (delta?.stop_reason) {
-              const sr = String(delta.stop_reason);
-              if (sr === 'tool_use') stopReason = 'tool_use';
-              else if (sr === 'max_tokens') stopReason = 'max_tokens';
-              else if (sr === 'stop_sequence') stopReason = 'stop_sequence';
-              else stopReason = 'end_turn';
-            }
-            const usage = event.usage;
-            if (usage) {
-              outputTokens = usage.output_tokens ?? 0;
-            }
-            onEvent({ type: 'message_delta', stopReason });
-            break;
-          }
-
-          case 'message_stop':
-            onEvent({ type: 'message_stop' });
-            break;
-        }
+        processLine(line);
       }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      processLine(buffer);
+    }
+
+    if (!sawMessageStop) {
+      throw new DmossError({
+        code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+        message: 'Anthropic provider: stream ended without message_stop',
+        hint: 'The upstream API or gateway closed the response before completing the Anthropic message stream.',
+        recoverable: true,
+      });
     }
 
     return {

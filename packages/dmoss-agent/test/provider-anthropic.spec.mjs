@@ -13,6 +13,8 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { AnthropicLLMProvider } from '../dist/provider/anthropic.js';
+import { classifyLlmError } from '../dist/core/index.js';
+import { DmossError, ErrorCode } from '../dist/errors.js';
 
 function startMockServer(handler) {
   return new Promise((resolve) => {
@@ -32,6 +34,18 @@ function sseWrite(res, events) {
   });
   for (const [eventType, data] of events) {
     res.write(`event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+  res.end();
+}
+
+function rawSse(res, lines) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+  for (const line of lines) {
+    res.write(`${line}\n\n`);
   }
   res.end();
 }
@@ -136,4 +150,212 @@ function sseWrite(res, events) {
   console.log('[PASS] API error handling');
 }
 
-console.log('\n[pass] provider-anthropic: 4/4');
+// ── Test 5: Ping events are keepalive, not content ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    rawSse(res, [
+      'event: ping\ndata: {"type":"ping"}',
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}',
+      'event: message_stop\ndata: {"type":"message_stop"}',
+    ]);
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  const response = await provider.stream(
+    { model: 'test-model', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] },
+    () => {},
+  );
+  assert.equal(response.content[0].text, 'ok');
+
+  server.close();
+  console.log('[PASS] Ping SSE events are skipped');
+}
+
+// ── Test 6: Unknown event types are ignored gracefully ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    rawSse(res, [
+      'event: future_event\ndata: {"type":"future_event","value":1}',
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}',
+      'event: message_stop\ndata: {"type":"message_stop"}',
+    ]);
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  const response = await provider.stream(
+    { model: 'test-model', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] },
+    () => {},
+  );
+  assert.equal(response.content[0].text, 'ok');
+
+  server.close();
+  console.log('[PASS] Unknown Anthropic SSE events are ignored gracefully');
+}
+
+// ── Test 7: Malformed SSE data is an upstream error ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    rawSse(res, [
+      'data: {"type":"message_start","message":',
+      'data: {"type":"message_stop"}',
+    ]);
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  await assert.rejects(
+    () => provider.stream(
+      { model: 'test-model', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] },
+      () => {},
+    ),
+    (err) => {
+      assert.ok(err instanceof DmossError);
+      assert.equal(err.code, ErrorCode.PROVIDER_UPSTREAM_ERROR);
+      assert.match(err.message, /malformed.*sse|sse.*json/i);
+      return true;
+    },
+  );
+
+  server.close();
+  console.log('[PASS] Malformed SSE data surfaces as upstream error');
+}
+
+// ── Test 8: Transient stream error events surface as retryable upstream errors ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    rawSse(res, [
+      'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+    ]);
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  await assert.rejects(
+    () => provider.stream(
+      { model: 'test-model', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] },
+      () => {},
+    ),
+    (err) => {
+      assert.ok(err instanceof DmossError);
+      assert.equal(err.code, ErrorCode.PROVIDER_UPSTREAM_ERROR);
+      assert.match(err.message, /overloaded_error|Overloaded/);
+      const classification = classifyLlmError(err);
+      assert.equal(classification.category, 'server_error');
+      assert.equal(classification.retryable, true);
+      return true;
+    },
+  );
+
+  server.close();
+  console.log('[PASS] Anthropic overloaded stream errors are retryable upstream errors');
+}
+
+// ── Test 9: Client stream error events surface as non-retryable upstream errors ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    rawSse(res, [
+      'event: error\ndata: {"type":"error","error":{"type":"invalid_request_error","message":"Invalid request: bad tool schema"}}',
+    ]);
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  await assert.rejects(
+    () => provider.stream(
+      { model: 'test-model', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] },
+      () => {},
+    ),
+    (err) => {
+      assert.ok(err instanceof DmossError);
+      assert.equal(err.code, ErrorCode.PROVIDER_UPSTREAM_ERROR);
+      assert.match(err.message, /invalid_request_error|Invalid request/);
+      const classification = classifyLlmError(err);
+      assert.equal(classification.category, 'client_error');
+      assert.equal(classification.retryable, false);
+      return true;
+    },
+  );
+
+  server.close();
+  console.log('[PASS] Anthropic invalid_request stream errors are non-retryable upstream errors');
+}
+
+// ── Test 10: A malformed frame after valid content still fails the stream ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    rawSse(res, [
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":',
+      'event: message_stop\ndata: {"type":"message_stop"}',
+    ]);
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  await assert.rejects(
+    () => provider.stream(
+      { model: 'test-model', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] },
+      () => {},
+    ),
+    (err) => err instanceof DmossError && err.code === ErrorCode.PROVIDER_UPSTREAM_ERROR,
+  );
+
+  server.close();
+  console.log('[PASS] Malformed SSE data fails even after valid frames');
+}
+
+// ── Test 11: EOF with an incomplete SSE line fails the stream ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    res.write('data: {"type":"message_start","message":');
+    res.end();
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  await assert.rejects(
+    () => provider.stream(
+      { model: 'test-model', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] },
+      () => {},
+    ),
+    (err) => err instanceof DmossError && err.code === ErrorCode.PROVIDER_UPSTREAM_ERROR,
+  );
+
+  server.close();
+  console.log('[PASS] Incomplete Anthropic SSE line at EOF fails the stream');
+}
+
+// ── Test 12: Anthropic streams must end with message_stop ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    rawSse(res, [
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}',
+    ]);
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  await assert.rejects(
+    () => provider.stream(
+      { model: 'test-model', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] },
+      () => {},
+    ),
+    (err) => {
+      assert.ok(err instanceof DmossError);
+      assert.equal(err.code, ErrorCode.PROVIDER_UPSTREAM_ERROR);
+      assert.match(err.message, /message_stop|ended.*without/i);
+      return true;
+    },
+  );
+
+  server.close();
+  console.log('[PASS] Anthropic stream EOF without message_stop fails the stream');
+}
+
+console.log('\n[pass] provider-anthropic: 12/12');

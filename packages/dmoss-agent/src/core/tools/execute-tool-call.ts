@@ -317,7 +317,10 @@ export async function executeOneToolCall(
       }
     } catch (err) {
       const rawMessage = err instanceof Error ? err.message : String(err);
-      if (deps.abortSignal.aborted || (perToolAbortSignal?.aborted && !deps.abortSignal.aborted)) {
+      if (timeoutAbortCtrl.signal.aborted && !deps.abortSignal.aborted && !perToolAbortSignal?.aborted) {
+        attemptTimeout = true;
+        attemptText = `Execution error: Tool ${call.name} timed out (${deps.toolTimeoutMs / 1000}s)`;
+      } else if (deps.abortSignal.aborted || (perToolAbortSignal?.aborted && !deps.abortSignal.aborted)) {
         aborted = { by: 'user' };
         attemptText = 'Execution error: aborted_by_user: cancelled during execution';
       } else if (/timed out/i.test(rawMessage)) {

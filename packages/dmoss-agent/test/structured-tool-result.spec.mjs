@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { outcomeToResult } from '../dist/core/tools/execute-tool-call.js';
+import { executeOneToolCall, outcomeToResult } from '../dist/core/tools/execute-tool-call.js';
 
 describe('Structured Tool Content Blocks', () => {
   it('outcomeToResult propagates structuredContent from completed outcome', () => {
@@ -71,5 +71,41 @@ describe('Structured Tool Content Blocks', () => {
     const result = outcomeToResult(outcome);
     assert.equal(result.isError, true);
     assert.deepEqual(result.structuredContent, [{ type: 'text', text: 'error occurred' }]);
+  });
+});
+
+describe('Tool Timeout Classification', () => {
+  it('classifies the internal watchdog timeout as timeout, not user abort', async () => {
+    const events = [];
+    const runAbort = new AbortController();
+    const tool = {
+      name: 'slow_probe',
+      description: 'Never resolves',
+      inputSchema: { type: 'object', properties: {} },
+      async execute() {
+        return new Promise(() => {});
+      },
+    };
+
+    const outcome = await executeOneToolCall(
+      { id: 'call-timeout', name: 'slow_probe', input: {} },
+      {
+        toolsForRun: [tool],
+        toolCtx: { workspaceDir: process.cwd(), sessionKey: 'timeout-session' },
+        sessionKey: 'timeout-session',
+        abortSignal: runAbort.signal,
+        toolTimeoutMs: 20,
+        enableHeartbeat: false,
+        heartbeatIntervalMs: 1_000,
+        skipHeartbeatToolNames: new Set(),
+        push: (event) => events.push(event),
+      },
+    );
+
+    assert.equal(outcome.kind, 'completed');
+    assert.equal(outcome.isError, true);
+    assert.deepEqual(outcome.aborted, { by: 'timeout' });
+    assert.match(outcome.text, /timed out/i);
+    assert.equal(events.filter((event) => event.type === 'tool_execution_start').length, 1);
   });
 });

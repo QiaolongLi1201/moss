@@ -1,6 +1,7 @@
 export {
   PlatformExtensionRegistry,
   getDefaultExtensionsRegistry,
+  createAgentExtensionRegistryFromDefaults,
   resetExtensionsWireCountForTests,
   applyPlatformExtension,
   applyPlatformExtensionForce,

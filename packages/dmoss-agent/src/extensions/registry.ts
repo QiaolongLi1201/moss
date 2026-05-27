@@ -11,7 +11,11 @@
 
 import type { DmossVendorPlugin } from '@dmoss/core';
 import type { DmossPlatformExtension } from '@dmoss/core';
-import { KnowledgeRegistry } from '../knowledge/registry.js';
+import type { KnowledgeRegistry } from '../knowledge/registry.js';
+import {
+  bridgeGlobalKnowledgeModuleForExtension,
+  unbridgeGlobalKnowledgeModuleForExtension,
+} from '../knowledge/registry.js';
 import { getRootLogger } from '../logger.js';
 
 const log = getRootLogger().child('extensions');
@@ -82,10 +86,15 @@ export class PlatformExtensionRegistry {
     }
     this.setExtensionsSnapshot(instances);
   }
+
+  /** @internal Copy compatibility-only state from the deprecated singleton. */
+  copyCompatibilityStateFrom(source: PlatformExtensionRegistry): void {
+    this.vendorCallbacks = source.vendorCallbacks;
+    this.cachedExtensions = [...source.cachedExtensions];
+  }
 }
 
 let _defaultRegistry: PlatformExtensionRegistry | null = null;
-let _agentWireCount = 0;
 
 function getDefault(): PlatformExtensionRegistry {
   if (!_defaultRegistry) {
@@ -95,32 +104,26 @@ function getDefault(): PlatformExtensionRegistry {
 }
 
 /**
- * Returns the shared default PlatformExtensionRegistry instance.
+ * Returns the process-scoped PlatformExtensionRegistry that backs deprecated
+ * free-function wrappers such as `applyPlatformExtension()`.
  *
- * **Single-instance bridge.** All DmossAgent instances in the same process
- * share this registry. Hosts that run multiple DmossAgent instances in one
- * process MUST migrate to `agent.extensions.*` for true isolation — the
- * last agent to call `setKnowledgeRegistry()` overwrites the previous one's
- * knowledge binding for all extension apply/force operations.
- *
- * A one-time warning is logged when a second agent wires to this singleton,
- * making the migration pressure visible.
+ * DmossAgent instances own private PlatformExtensionRegistry instances. This
+ * singleton remains available only for legacy hosts that still use the
+ * deprecated wrapper API during migration.
  */
 export function getDefaultExtensionsRegistry(): PlatformExtensionRegistry {
-  _agentWireCount++;
-  if (_agentWireCount >= 2) {
-    log.warn(
-      'Multiple DmossAgent instances sharing PlatformExtensionRegistry singleton. ' +
-      'Extension knowledge bindings are NOT isolated — last agent wins. ' +
-      'Migrate to agent.extensions.* for per-agent isolation.',
-    );
-  }
   return getDefault();
 }
 
-/** @internal Reset wire counter — tests only. */
+/** @internal Create a per-agent extension registry seeded from legacy defaults. */
+export function createAgentExtensionRegistryFromDefaults(): PlatformExtensionRegistry {
+  const registry = new PlatformExtensionRegistry();
+  registry.copyCompatibilityStateFrom(getDefault());
+  return registry;
+}
+
+/** @internal Reset deprecated-wrapper warning state — tests only. */
 export function resetExtensionsWireCountForTests(): void {
-  _agentWireCount = 0;
   _deprecatedWarnedFunctions.clear();
 }
 
@@ -134,6 +137,14 @@ function warnDeprecated(name: string): void {
     'Migrate to agent.extensions.* for per-agent isolation. ' +
     'See ARCHITECTURE_ASSESSMENT.md P0-1.',
   );
+}
+
+function bridgeDefaultExtensionKnowledge(ext: DmossPlatformExtension): void {
+  if (ext.isEnabled()) {
+    bridgeGlobalKnowledgeModuleForExtension(ext.getKnowledgeModule());
+  } else {
+    unbridgeGlobalKnowledgeModuleForExtension(ext.knowledgeModuleId);
+  }
 }
 
 /** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.setVendorPluginCallbacks()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
@@ -152,12 +163,14 @@ export function setKnowledgeRegistryForExtensions(registry: KnowledgeRegistry): 
 export function applyPlatformExtension(ext: DmossPlatformExtension): void {
   warnDeprecated('applyPlatformExtension');
   getDefault().apply(ext);
+  bridgeDefaultExtensionKnowledge(ext);
 }
 
 /** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.applyForce()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function applyPlatformExtensionForce(ext: DmossPlatformExtension): void {
   warnDeprecated('applyPlatformExtensionForce');
   getDefault().applyForce(ext);
+  bridgeDefaultExtensionKnowledge(ext);
 }
 
 /** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.reset()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
@@ -187,5 +200,12 @@ export function syncPlatformExtensionsAtStartup(
   factories: Array<() => DmossPlatformExtension>,
 ): void {
   warnDeprecated('syncPlatformExtensionsAtStartup');
-  getDefault().syncAtStartup(factories);
+  const instances: DmossPlatformExtension[] = [];
+  for (const factory of factories) {
+    const ext = factory();
+    instances.push(ext);
+    getDefault().apply(ext);
+    bridgeDefaultExtensionKnowledge(ext);
+  }
+  getDefault().setExtensionsSnapshot(instances);
 }

@@ -208,18 +208,50 @@ const defaultRegistry = new KnowledgeRegistry();
 // H2: Track modules registered via deprecated global function so new DmossAgent
 // instances can pick them up. Prevents the silent footgun where global
 // registration goes to a different registry than the agent's instance.
-const pendingGlobalModules: KnowledgeModule[] = [];
+const pendingGlobalModules = new Map<string, KnowledgeModule>();
+const extensionBridgedModules = new Map<string, KnowledgeModule>();
 let deprecationWarningEmitted = false;
 
 /**
- * H2: Drain pending global modules into a target registry.
+ * H2: Copy active global modules into a target registry.
  * Called by DmossAgent constructor to bridge deprecated global registrations.
- * Modules are drained (not copied) so multiple agents each get their own copy.
+ * Modules are copied so each new agent sees the current deprecated global
+ * registry state, while later unregister calls stop future agents seeing them.
  */
 export function drainPendingGlobalModules(target: KnowledgeRegistry): void {
-  for (const mod of pendingGlobalModules) {
+  for (const mod of pendingGlobalModules.values()) {
     target.register(mod);
   }
+}
+
+/**
+ * @internal Bridge knowledge registered through deprecated platform-extension
+ * wrappers into the process-scoped knowledge registry so future DmossAgent
+ * instances can copy the current legacy state.
+ */
+export function bridgeGlobalKnowledgeModuleForExtension(mod: KnowledgeModule): void {
+  extensionBridgedModules.set(mod.id, mod);
+  defaultRegistry.register(mod);
+  pendingGlobalModules.set(mod.id, mod);
+}
+
+/** @internal Remove a module previously bridged by deprecated extension wrappers. */
+export function unbridgeGlobalKnowledgeModuleForExtension(id: string): boolean {
+  const bridged = extensionBridgedModules.get(id);
+  if (!bridged) return false;
+  extensionBridgedModules.delete(id);
+
+  let removedFromDefault = false;
+  if (defaultRegistry.get(id) === bridged) {
+    removedFromDefault = defaultRegistry.unregister(id);
+  }
+
+  let removedFromBridge = false;
+  if (pendingGlobalModules.get(id) === bridged) {
+    removedFromBridge = pendingGlobalModules.delete(id);
+  }
+
+  return removedFromDefault || removedFromBridge;
 }
 
 /**
@@ -234,8 +266,9 @@ export function registerKnowledgeModule(mod: KnowledgeModule): void {
     );
     deprecationWarningEmitted = true;
   }
+  extensionBridgedModules.delete(mod.id);
   defaultRegistry.register(mod);
-  pendingGlobalModules.push(mod);
+  pendingGlobalModules.set(mod.id, mod);
 }
 
 /**
@@ -243,7 +276,10 @@ export function registerKnowledgeModule(mod: KnowledgeModule): void {
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function unregisterKnowledgeModule(id: string): boolean {
-  return defaultRegistry.unregister(id);
+  extensionBridgedModules.delete(id);
+  const removedFromDefault = defaultRegistry.unregister(id);
+  const removedFromBridge = pendingGlobalModules.delete(id);
+  return removedFromDefault || removedFromBridge;
 }
 
 /**

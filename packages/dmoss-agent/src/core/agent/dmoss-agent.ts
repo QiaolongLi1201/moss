@@ -29,7 +29,7 @@ import {
 } from '../../context/compaction.js';
 import { createRemoteCompactProviderFromEnv } from '../../context/remote-compaction.js';
 import { setTraceRedactor } from '../../observability/tracing.js';
-import { PlatformExtensionRegistry, getDefaultExtensionsRegistry } from '../../extensions/registry.js';
+import { PlatformExtensionRegistry, createAgentExtensionRegistryFromDefaults } from '../../extensions/registry.js';
 import { resolveContextCharsPerTokenUnit } from '../../context/tokens.js';
 import { getEffectiveContextWindowTokens } from '../../context/window-economics.js';
 import { resolveDmossMaxAgentTurns } from '../../utils/max-agent-turns.js';
@@ -168,7 +168,7 @@ export class DmossAgent {
   constructor(config: DmossAgentConfig) {
     this.config = config;
     this.tools = new ToolRegistry();
-    this.extensions = getDefaultExtensionsRegistry();
+    this.extensions = createAgentExtensionRegistryFromDefaults();
     this.commandQueues = new CommandQueueRegistry();
     this.toolHooks = new ToolHookRegistry();
     this.toolHooks.registerPost(createSecretSanitizerHook(sanitizeSecrets));

@@ -1,0 +1,157 @@
+# Moss Project Agent Instructions
+
+## CodeGraph
+
+This project has a CodeGraph MCP server (`codegraph_*` tools) configured. CodeGraph is a tree-sitter-parsed knowledge graph of every symbol, edge, and file. Reads are sub-millisecond and return structural information grep cannot.
+
+### When to prefer CodeGraph over native search
+
+Use CodeGraph for **structural** questions — what calls what, what would break, where is X defined, what is X's signature. Use native grep/read only for **literal text** queries (string contents, comments, log messages) or after you already have a specific file open.
+
+| Question | Tool |
+|---|---|
+| "Where is X defined?" / "Find symbol named X" | `codegraph_search` |
+| "What calls function Y?" | `codegraph_callers` |
+| "What does Y call?" | `codegraph_callees` |
+| "How does X reach/become Y? / trace the flow from X to Y" | `codegraph_trace` (one call = the whole path, incl. callback/React/JSX dynamic hops) |
+| "What would break if I changed Z?" | `codegraph_impact` |
+| "Show me Y's signature / source / docstring" | `codegraph_node` |
+| "Give me focused context for a task/area" | `codegraph_context` |
+| "See several related symbols' source at once" | `codegraph_explore` |
+| "What files exist under path/" | `codegraph_files` |
+| "Is the index healthy?" | `codegraph_status` |
+
+### Rules of thumb
+
+- **Answer directly — don't delegate exploration.** For "how does X work" / architecture questions, answer with 2-3 CodeGraph calls: `codegraph_context` first, then ONE `codegraph_explore` for the source of the symbols it surfaces. For a specific **flow** ("how does X reach Y") start with `codegraph_trace` from→to — one call returns the whole path with dynamic hops bridged — then ONE `codegraph_explore` for the bodies; don't rebuild the path with `codegraph_search` + `codegraph_callers`. Codegraph IS the pre-built index, so spawning a separate file-reading sub-task/agent — or running a grep + read loop — repeats work CodeGraph already did and costs more for the same answer.
+- **Trust CodeGraph results.** They come from a full AST parse. Do NOT re-verify them with grep — that's slower, less accurate, and wastes context.
+- **Don't grep first** when looking up a symbol by name. `codegraph_search` is faster and returns kind + location + signature in one call.
+- **Don't chain `codegraph_search` + `codegraph_node`** when you just want context — `codegraph_context` is one call.
+- **Don't loop `codegraph_node` over many symbols** — one `codegraph_explore` call returns several symbols' source grouped in a single capped call, while each separate node/Read call re-reads the whole context and costs far more.
+- **Index lag**: the file watcher debounces ~500ms behind writes; don't re-query immediately after editing a file in the same turn.
+
+### If `.codegraph/` doesn't exist
+
+The MCP server returns "not initialized." Ask the user: *"I notice this project doesn't have CodeGraph initialized. Want me to run `codegraph init -i` to build the index?"*
+
+## Architecture Evaluation Principles
+
+When evaluating moss's architecture, suggesting improvements, or comparing with other frameworks, follow these rules:
+
+### 1. No Feature Checklist Thinking
+
+Do not compare moss against mainstream frameworks (LangChain, LangGraph, CrewAI, AutoGen, etc.) by listing features they have that moss doesn't. This produces misleading "gaps" that may not be real problems.
+
+**Why**: mainstream frameworks advertise capabilities that often don't deliver in practice, and moss may already solve the same problem differently. A DAG engine, multi-provider abstraction, or vector store layer only matters if moss has a concrete scenario that demands it.
+
+**Instead**: start from moss's actual code and find real bugs, real friction, real missing evidence. Work outward from problems, not inward from feature lists.
+
+### 2. Evidence Before Claims
+
+Every architectural finding must cite source code (file:line). Do not claim something is a problem based on file names, directory structure, or assumptions about what code "probably" does.
+
+- Read the actual implementation before calling it a gap.
+- Check callers before calling something dead code.
+- Check the control flow before calling something a bug.
+- If you can't cite the evidence, it's a hypothesis, not a conclusion.
+
+### 3. Question Your Own Assumptions
+
+When you identify a potential problem or gap, actively try to falsify it before reporting:
+
+- Could moss already handle this in a way you missed?
+- Is the "mainstream" solution actually better, or just more abstract?
+- Would adding this abstraction create more complexity than it removes?
+- Is the problem real for moss's actual use cases (robotics agent, device management), or only theoretical?
+
+If you can't falsify it, state it as a hypothesis with the evidence for and against, not as a finding.
+
+### 4. Fix Real Bugs Before Adding Features
+
+Priority order:
+1. **Silent bugs** that produce wrong behavior under specific conditions (concurrency, edge cases, contract violations)
+2. **Contract violations** where a module doesn't do what its interface promises
+3. **Dead code and confusion** that increases cognitive load for humans and AI
+4. **Missing capabilities** only when there is a concrete scenario that demands them
+
+Never suggest adding a framework, abstraction, or module just because it's common elsewhere.
+
+### 5. Architecture Assessment Methodology
+
+For non-trivial evaluations, use the three-phase approach (see `ARCHITECTURE_ASSESSMENT.md` for an example):
+
+1. **Hypothesis generation**: initial scan, produce a list of suspected issues. Label them as hypotheses.
+2. **Adversarial verification**: try to falsify each hypothesis by reading source, checking callers, tracing flows. Expect 2-3 out of every 8 initial findings to be wrong.
+3. **Evidence-based conclusion**: only report findings backed by source citations. Explicitly list what was rejected and why.
+
+### 6. "Don't Touch" Is a Valid Finding
+
+When reviewing architecture, explicitly identify things that are well-designed and should not be changed. This prevents future sessions from re-proposing the same bad ideas. See `ARCHITECTURE_ASSESSMENT.md` §4 for the current "don't touch" list.
+
+## Bug Fix Discipline: Declare + Enforce + Test
+
+When fixing a bug, especially one involving contracts, interfaces, or architectural invariants, the fix is not complete until all three steps are done:
+
+1. **Declare**: change the structure (add a field, extract a class, add a type).
+2. **Enforce**: make the runtime actually read and act on the declaration.
+3. **Test**: write a test that would have failed before the fix and passes after.
+
+Skipping enforce or test means the bug is still present at runtime, even if the code "looks fixed."
+
+### Common failure modes
+
+- **Refactoring disguised as bug fix**: restructuring code (e.g., wrapping globals in a class) without verifying the runtime behavior changed. The bug was about behavior, not structure.
+- **Wiring only half the path**: when converting free functions to instance methods, trace every call site. If you wire knowledge but forget vendor callbacks, the fix is incomplete.
+- **Declaring a capability nobody reads**: adding `capabilities: { streaming: false }` to an interface is useless if the caller never checks it. The adapter must branch on the capability.
+- **Running existing tests as verification**: existing tests prove you didn't break things. They don't prove you fixed the bug. Write a test that exercises the specific broken behavior.
+
+### Before claiming a fix is complete
+
+Ask:
+- Did I write a test that would have caught the original bug?
+- Does the runtime actually behave differently now, or does it just look different in the source?
+- Did I trace the full data flow (input → processing → output), or just the part I changed?
+- Are there deprecated callers that still bypass the new path? If so, is that documented and observable (e.g., a one-time warn log)?
+
+### Instance-scoped refactoring checklist
+
+When converting module-level state to instance state:
+1. List every free function that touches the state.
+2. List every caller of each free function (use CodeGraph + cross-repo grep).
+3. Decide: shared singleton (backward compat) or per-instance isolation?
+4. If shared singleton: add telemetry (warn on Nth instance) so migration pressure is visible.
+5. If per-instance: migrate all callers, or document which ones still use the old path.
+6. Write a test with 2+ instances to prove isolation (or document the shared-singleton limitation).
+
+### Self-Review Checklist (before submitting any fix)
+
+These are mechanical steps that don't require experience — just discipline. Run them every time before claiming a fix is done.
+
+1. **Declaration → reader grep**: for every new field, type, or interface added, immediately `rg` for who reads it. If nobody reads it, the fix is documentation, not behavior.
+   ```
+   rg "capabilities\.streaming" --type ts
+   ```
+
+2. **Changed A → scan siblings**: when refactoring one part of a struct/class, list all sibling fields and check each one is wired. Use `rg` on the original free function names to build a migration checklist.
+   ```
+   rg "setVendorPluginCallbacks|setKnowledgeRegistryForExtensions" --type ts -l
+   ```
+
+3. **Red before green**: write the test that asserts the expected behavior FIRST, run it (must fail), then implement. If you write the test after the code, it tests what you wrote, not what should be. Red is signal, not failure.
+
+4. **Deprecated needs observability + deadline**: a `@deprecated` tag without telemetry (warn log, counter) and a target removal version is a permanent API. Add:
+   - One-time `log.warn` on first call (with stack trace when feasible)
+   - Counter for total calls (so migration progress is measurable)
+   - Target version in the JSDoc (e.g., "removed in 0.5.0")
+
+5. **Tool boundary awareness**: when a tool says "no callers found," that means "no callers found within the tool's search scope." Cross-repo callers, downstream consumers, and external scripts are invisible to CodeGraph/monorepo grep. Always `rg` the full workspace (e.g., `~/Desktop/RDK_Studio/`) before declaring something dead code.
+
+6. **Spec as checklist**: when working from a spec or assessment document, treat each action item as a checkbox. For each item: grep for the implementation, grep for the reader, grep for the test. Three greps per item, zero reliance on memory.
+
+## CodeGraph Conservative Usage Overlay
+
+- Prefer CodeGraph for structural code questions: definitions, signatures, callers, callees, traces, impact radius, and high-level task context.
+- Keep using `rg`, direct file reads, and existing local tools for exact text, comments, log messages, configuration, generated files, docs, or when a specific file is already known.
+- Before editing code, read the relevant source files directly even if CodeGraph found the symbols; use the graph as a map, not as the final authority for patches.
+- If CodeGraph results look incomplete, stale, or surprising, check `codegraph_status`, allow for watcher lag after recent edits, and verify with the narrowest useful source inspection.
+- Do not initialize indexes automatically in every scratch directory. Initialize with `codegraph init -i` only for repositories where structural navigation will be useful.

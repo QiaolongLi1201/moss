@@ -341,6 +341,7 @@ interface OpenAIResponse {
 const cliProvider: LLMProvider = {
   id: 'cli-provider',
   displayName: 'CLI LLM Provider',
+  capabilities: { streaming: false },
 
   async complete(opts: LLMRequestOptions): Promise<LLMResponse> {
     return this.stream(opts, () => {});

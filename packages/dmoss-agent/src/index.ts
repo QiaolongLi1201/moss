@@ -36,6 +36,8 @@ export {
 
 // --- Platform Extension System ---
 export {
+  PlatformExtensionRegistry,
+  getDefaultExtensionsRegistry,
   syncPlatformExtensionsAtStartup,
   setVendorPluginCallbacks,
   applyPlatformExtension,
@@ -104,6 +106,7 @@ export type { ToolContext, Tool, ToolCall, ToolResult, ToolContentBlock, Structu
 export { canHostInjectToolWithEmptyInput } from './core/index.js';
 export type {
   LLMProvider,
+  LLMProviderCapabilities,
   LLMMessage,
   LLMContentBlock,
   LLMStreamEvent,

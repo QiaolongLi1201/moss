@@ -29,7 +29,7 @@ import {
 } from '../../context/compaction.js';
 import { createRemoteCompactProviderFromEnv } from '../../context/remote-compaction.js';
 import { setTraceRedactor } from '../../observability/tracing.js';
-import { setKnowledgeRegistryForExtensions } from '../../extensions/registry.js';
+import { PlatformExtensionRegistry, getDefaultExtensionsRegistry } from '../../extensions/registry.js';
 import { resolveContextCharsPerTokenUnit } from '../../context/tokens.js';
 import { getEffectiveContextWindowTokens } from '../../context/window-economics.js';
 import { resolveDmossMaxAgentTurns } from '../../utils/max-agent-turns.js';
@@ -121,6 +121,7 @@ interface AgentLoopRun {
 export class DmossAgent {
   readonly tools: ToolRegistry;
   readonly config: DmossAgentConfig;
+  readonly extensions: PlatformExtensionRegistry;
 
   /** Instance-scoped knowledge registry — isolates modules per agent. */
   private readonly knowledge = new KnowledgeRegistry();
@@ -136,6 +137,7 @@ export class DmossAgent {
   constructor(config: DmossAgentConfig) {
     this.config = config;
     this.tools = new ToolRegistry();
+    this.extensions = getDefaultExtensionsRegistry();
     this.toolHooks = new ToolHookRegistry();
     this.toolHooks.registerPost(createSecretSanitizerHook(sanitizeSecrets));
     setTraceRedactor(sanitizeSecrets);
@@ -147,8 +149,7 @@ export class DmossAgent {
       this.steeringEngine = new SteeringEngine(rules);
     }
 
-    // Wire extensions to this instance's KnowledgeRegistry (avoids deprecated global path).
-    setKnowledgeRegistryForExtensions(this.knowledge);
+    this.extensions.setKnowledgeRegistry(this.knowledge);
     // H2: Bridge deprecated global knowledge registrations into this instance.
     drainPendingGlobalModules(this.knowledge);
   }

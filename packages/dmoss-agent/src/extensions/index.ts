@@ -1,4 +1,7 @@
 export {
+  PlatformExtensionRegistry,
+  getDefaultExtensionsRegistry,
+  resetExtensionsWireCountForTests,
   applyPlatformExtension,
   applyPlatformExtensionForce,
   syncPlatformExtensionsAtStartup,

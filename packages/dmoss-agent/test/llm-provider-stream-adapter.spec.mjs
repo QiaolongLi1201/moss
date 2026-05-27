@@ -171,3 +171,51 @@ assert.equal(result.usage.output, 5);
 }
 
 console.log('[PASS] LLMProvider stream adapter bridges provider events to pi-ai stream events');
+
+// ── Non-streaming provider: capabilities.streaming === false ──
+{
+  let completeCalled = false;
+  let streamCalled = false;
+  const nonStreamingProvider = {
+    id: 'non-streaming',
+    displayName: 'Non-Streaming Provider',
+    capabilities: { streaming: false },
+    async complete(options) {
+      completeCalled = true;
+      return {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: 'complete response' }],
+        usage: { inputTokens: 2, outputTokens: 3 },
+      };
+    },
+    async stream(_options, _onEvent) {
+      streamCalled = true;
+      throw new Error('stream() should not be called for non-streaming provider');
+    },
+  };
+  const nsStream = createStreamFunctionFromLlmProvider({ provider: nonStreamingProvider })(
+    {
+      id: 'ns-model',
+      name: 'NS Model',
+      api: 'openai-completions',
+      provider: 'non-streaming',
+      baseUrl: 'http://ns',
+      reasoning: false,
+      input: ['text'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    },
+    { systemPrompt: '', messages: [{ role: 'user', content: 'hi', timestamp: 1 }], tools: [] },
+  );
+  const nsEvents = [];
+  for await (const event of nsStream) nsEvents.push(event);
+  const nsResult = await nsStream.result();
+
+  assert.equal(completeCalled, true, 'complete() must be called for non-streaming provider');
+  assert.equal(streamCalled, false, 'stream() must NOT be called for non-streaming provider');
+  assert(nsEvents.some((e) => e.type === 'text_end' && e.content === 'complete response'));
+  assert(nsEvents.some((e) => e.type === 'done'));
+  assert.equal(nsResult.stopReason, 'stop');
+  assert.equal(nsResult.usage.input, 2);
+  assert.equal(nsResult.usage.output, 3);
+  console.log('[PASS] Non-streaming provider uses complete() and emits synthetic events');
+}

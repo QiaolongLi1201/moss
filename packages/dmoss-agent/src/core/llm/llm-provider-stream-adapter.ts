@@ -320,10 +320,13 @@ export function createStreamFunctionFromLlmProvider(
           reasoning: streamOptions?.reasoning ?? undefined,
         };
         await options.onRequest?.(request);
-        const response = await options.provider.stream(request, (event) => {
-          options.onProviderEvent?.(event);
-          forwardProviderEvent(stream, event, forwardState);
-        });
+        const supportsStreaming = options.provider.capabilities?.streaming !== false;
+        const response = supportsStreaming
+          ? await options.provider.stream(request, (event) => {
+              options.onProviderEvent?.(event);
+              forwardProviderEvent(stream, event, forwardState);
+            })
+          : await options.provider.complete(request);
         await options.onResponse?.(response);
         flushForwardState(stream, forwardState);
         const normalizedResponse = normalizeInlineThinkingInResponse(response);

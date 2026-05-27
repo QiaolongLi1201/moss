@@ -1,5 +1,6 @@
 export type {
   LLMProvider,
+  LLMProviderCapabilities,
   LLMMessage,
   LLMContentBlock,
   LLMStreamEvent,

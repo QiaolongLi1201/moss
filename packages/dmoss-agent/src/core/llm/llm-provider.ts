@@ -98,6 +98,16 @@ export interface LLMResponse {
 }
 
 /**
+ * Provider capability declarations. Hosts check this before relying on
+ * streaming behavior. Providers that don't declare capabilities are assumed
+ * to support streaming (backward compat).
+ */
+export interface LLMProviderCapabilities {
+  /** Whether `stream()` emits incremental events or replays a complete response. Default: true. */
+  streaming?: boolean;
+}
+
+/**
  * Abstract LLM provider interface.
  *
  * Implementations:
@@ -108,6 +118,9 @@ export interface LLMResponse {
 export interface LLMProvider {
   readonly id: string;
   readonly displayName: string;
+
+  /** Provider capability declarations. Undefined means all capabilities assumed. */
+  readonly capabilities?: LLMProviderCapabilities;
 
   /** Non-streaming completion */
   complete(options: LLMRequestOptions): Promise<LLMResponse>;

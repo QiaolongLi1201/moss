@@ -10,6 +10,8 @@
  * 3. Provide the minimal session-scope shape for the mini project
  */
 
+import { DmossError, ErrorCode } from "../../errors.js";
+
 export const DEFAULT_AGENT_ID = "main";
 export const DEFAULT_MAIN_KEY = "main";
 
@@ -68,7 +70,7 @@ export function buildAgentMainSessionKey(params: {
   const mainKey = normalizeMainKey(params.mainKey);
   const key = `agent:${agentId}:${mainKey}`;
   if (key.length > MAX_SESSION_KEY_LENGTH) {
-    throw new Error(`Session key exceeds maximum length (${MAX_SESSION_KEY_LENGTH}): got ${key.length}`);
+    throw new DmossError({ code: ErrorCode.USER_INPUT_INVALID, message: `Session key exceeds maximum length (${MAX_SESSION_KEY_LENGTH}): got ${key.length}` });
   }
   return key;
 }

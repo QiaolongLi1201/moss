@@ -241,6 +241,7 @@ export function runAgentLoop(
       const maxOut = maxOutputTokensParam ?? modelDef.maxTokens ?? 8192;
       const effCtx = getEffectiveContextWindowTokens(contextTokens, maxOut);
       const steerCtx: SteeringContext = {
+        // Type bridge: Message[] and LLMMessage[] share runtime structure
         messages: currentMessages as unknown as import('../llm/llm-provider.js').LLMMessage[],
         turn: state.turns,
         consecutiveToolErrors: state.toolExecutionMetrics.consecutiveToolErrors,

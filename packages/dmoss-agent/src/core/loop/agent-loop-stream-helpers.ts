@@ -22,6 +22,7 @@ import {
   retryDelayForLlmError,
 } from '../llm/llm-error-classifier.js';
 import { parseEnvBoundedInt } from '../../utils/env-compat.js';
+import { DmossError, ErrorCode } from '../../errors.js';
 
 /** Extended event shape for pi-ai stream events with optional delta/error/reason fields. */
 interface PiStreamEventExt {
@@ -355,13 +356,14 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
               }
 
               case 'error': {
+                // Type bridge: extending stream event with additional fields
                 const ext = event as unknown as PiStreamEventExt;
                 const errObj = ext.error;
                 const errMsg =
                   errObj?.errorMessage ??
                   (errObj instanceof Error ? errObj.message : null) ??
                   'unknown stream error';
-                throw new Error(`LLM stream error: ${errMsg}`);
+                throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: `LLM stream error: ${errMsg}` });
               }
             }
           }

@@ -22,6 +22,7 @@ import {
 } from './compaction.js';
 import { getRootLogger } from '../logger.js';
 import { sanitizeSecrets } from '../safety/secret-sanitizer.js';
+import { DmossError, ErrorCode } from '../errors.js';
 
 const log = getRootLogger().child('agent:remote-compact');
 
@@ -120,18 +121,20 @@ export class HttpRemoteCompactProvider implements RemoteCompactProvider {
     // C3: Enforce HTTPS for non-localhost endpoints
     const isLocalhost = /^https?:\/\/(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(this.compactUrl);
     if (!isLocalhost && !this.compactUrl.startsWith('https://')) {
-      throw new Error(
-        'Remote compaction endpoint must use HTTPS for non-localhost URLs. ' +
-        'Set DMOSS_REMOTE_COMPACT_ENDPOINT to an https:// URL, or use localhost for development.',
-      );
+      throw new DmossError({
+        code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+        message: 'Remote compaction endpoint must use HTTPS for non-localhost URLs. ' +
+          'Set DMOSS_REMOTE_COMPACT_ENDPOINT to an https:// URL, or use localhost for development.',
+      });
     }
 
     // C3: Require auth for non-localhost endpoints
     if (!isLocalhost && !this.apiKey) {
-      throw new Error(
-        'Remote compaction endpoint requires an API key for non-localhost URLs. ' +
-        'Set DMOSS_REMOTE_COMPACT_API_KEY.',
-      );
+      throw new DmossError({
+        code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+        message: 'Remote compaction endpoint requires an API key for non-localhost URLs. ' +
+          'Set DMOSS_REMOTE_COMPACT_API_KEY.',
+      });
     }
   }
 
@@ -177,14 +180,14 @@ export class HttpRemoteCompactProvider implements RemoteCompactProvider {
       });
 
       if (!res.ok) {
-        throw new Error(`Remote compact failed: ${res.status} ${res.statusText}`);
+        throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: `Remote compact failed: ${res.status} ${res.statusText}` });
       }
 
       // Bound response body size — streaming read to handle chunked transfer
       const MAX_BODY_BYTES = 10 * 1024 * 1024;
       const contentLength = res.headers.get('content-length');
       if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
-        throw new Error('Remote compact response too large');
+        throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: 'Remote compact response too large' });
       }
 
       let bodyText: string;
@@ -198,7 +201,7 @@ export class HttpRemoteCompactProvider implements RemoteCompactProvider {
           totalBytes += value.byteLength;
           if (totalBytes > MAX_BODY_BYTES) {
             reader.cancel();
-            throw new Error('Remote compact response too large');
+            throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: 'Remote compact response too large' });
           }
           chunks.push(value);
         }
@@ -219,7 +222,7 @@ export class HttpRemoteCompactProvider implements RemoteCompactProvider {
       // Validate remote response
       const summary = typeof data.summary === 'string' ? data.summary.trim() : '';
       if (!summary) {
-        throw new Error('Remote compact returned empty summary');
+        throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: 'Remote compact returned empty summary' });
       }
 
       const tokensSaved = typeof data.tokens_saved === 'number' && data.tokens_saved >= 0

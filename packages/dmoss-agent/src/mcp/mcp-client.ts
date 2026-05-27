@@ -17,6 +17,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import type { Tool, ToolContext } from '../core/tools/tool-types.js';
+import { DmossError, ErrorCode } from '../errors.js';
 
 export interface McpServerConfig {
   command: string;
@@ -112,7 +113,7 @@ class McpServerConnection {
       this.closed = true;
       for (const [, pending] of this.pending) {
         clearTimeout(pending.timer);
-        pending.reject(new Error(`MCP server ${serverName} exited`));
+        pending.reject(new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP server ${serverName} exited` }));
       }
       this.pending.clear();
     });
@@ -132,7 +133,7 @@ class McpServerConnection {
             this.pending.delete(msg.id);
             clearTimeout(pending.timer);
             if (msg.error) {
-              pending.reject(new Error(msg.error.message));
+              pending.reject(new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: msg.error.message }));
             } else {
               pending.resolve(msg.result);
             }
@@ -145,8 +146,8 @@ class McpServerConnection {
   }
 
   async request(method: string, params?: unknown, signal?: AbortSignal): Promise<unknown> {
-    if (this.closed) throw new Error(`MCP server ${this.serverName} is closed`);
-    if (signal?.aborted) throw new Error(`MCP request aborted: ${signal.reason ?? 'aborted'}`);
+    if (this.closed) throw new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP server ${this.serverName} is closed` });
+    if (signal?.aborted) throw new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP request aborted: ${signal.reason ?? 'aborted'}` });
     const id = this.nextId++;
     const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
     return new Promise((resolve, reject) => {
@@ -155,7 +156,7 @@ class McpServerConnection {
         if (pending) {
           clearTimeout(pending.timer);
           this.pending.delete(id);
-          pending.reject(new Error(`MCP request aborted: ${signal!.reason ?? 'aborted'}`));
+          pending.reject(new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP request aborted: ${signal!.reason ?? 'aborted'}` }));
         }
       };
       signal?.addEventListener('abort', onAbort, { once: true });
@@ -165,7 +166,7 @@ class McpServerConnection {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         cleanup();
-        reject(new Error(`MCP server ${this.serverName} request timeout after ${this.requestTimeoutMs}ms`));
+        reject(new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP server ${this.serverName} request timeout after ${this.requestTimeoutMs}ms` }));
       }, this.requestTimeoutMs);
       this.pending.set(id, {
         resolve: (v) => { cleanup(); resolve(v); },
@@ -254,7 +255,7 @@ function mcpToolToTool(
             ?.filter((c) => c.type === 'text')
             .map((c) => c.text ?? '')
             .join('\n') || 'MCP tool returned error';
-        throw new Error(errMsg);
+        throw new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: errMsg });
       }
       const texts =
         callResult.content
@@ -281,9 +282,10 @@ export async function connectMcpServers(config: McpConfig): Promise<McpConnectio
       });
     } catch (err) {
       await conn.close();
-      throw new Error(
-        `Failed to connect to MCP server "${serverName}": ${err instanceof Error ? err.message : String(err)}`,
-      );
+      throw new DmossError({
+        code: ErrorCode.MCP_CONNECTION_FAILED,
+        message: `Failed to connect to MCP server "${serverName}": ${err instanceof Error ? err.message : String(err)}`,
+      });
     }
   }
 

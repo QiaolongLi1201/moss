@@ -11,15 +11,7 @@ import type { DeviceSshConfig } from './device-ssh.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
 import { runProcess, ProcessError } from '../utils/run-process.js';
 import { wrapAsDmoss, ErrorCode } from '../errors.js';
-
-function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string[] {
-  const user = config.user || 'root';
-  const port = config.port || 22;
-  const parts = ['-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=5'];
-  if (config.keyPath) parts.push('-i', config.keyPath);
-  parts.push('-p', String(port), `${user}@${config.host}`, `'${remoteCmd.replace(/'/g, "'\\''")}'`);
-  return parts;
-}
+import { buildSshCommand } from './ssh-utils.js';
 
 async function sshExec(
   config: DeviceSshConfig,
@@ -27,7 +19,7 @@ async function sshExec(
   timeout = 10_000,
   ctx?: ToolContext,
 ): Promise<string> {
-  const sshArgs = buildSshCommand(config, cmd);
+  const sshArgs = buildSshCommand(config, cmd, 5);
 
   try {
     const sshBin = config.password ? 'sshpass' : 'ssh';

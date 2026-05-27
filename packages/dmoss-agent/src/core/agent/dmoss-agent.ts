@@ -71,6 +71,7 @@ import { createStreamFunctionFromLlmProvider } from '../llm/llm-provider-stream-
 import { ToolHookRegistry, createSecretSanitizerHook } from '../tools/tool-hooks.js';
 import { CommandQueueRegistry } from './command-queue.js';
 import { sanitizeSecrets } from '../../safety/secret-sanitizer.js';
+import { DmossError, ErrorCode } from '../../errors.js';
 import type {
   DmossAgentConfig as SharedDmossAgentConfig,
   ChatOptions as SharedChatOptions,
@@ -255,7 +256,7 @@ export class DmossAgent {
       }
     }
     if (finalResult) return finalResult;
-    if (lastError) throw new Error(lastError);
+    if (lastError) throw new DmossError({ code: ErrorCode.INTERNAL_INVARIANT_VIOLATED, message: lastError });
     return {
       response: '',
       toolCalls: [],
@@ -354,6 +355,7 @@ export class DmossAgent {
     const abortSignal = options?.abortSignal ?? new AbortController().signal;
 
     // ── Session & task-frame loading ──
+    // Type bridge: InternalMessage and LLMMessage have compatible runtime shapes but different type definitions due to module boundaries
     const loadedMessages = (await store.loadMessages(sessionKey)) as unknown as InternalMessage[];
     const goalLoad = splitGoalCheckpointMessages(loadedMessages as unknown as LLMMessage[]);
     const taskFrameLoad = splitTaskFrameCheckpointMessages(
@@ -369,6 +371,7 @@ export class DmossAgent {
     const messages = fromSessionMessages(taskFrameLoad.messages);
     const userMsg: InternalMessage = { role: 'user', content: userMessage, timestamp: Date.now() };
     messages.push(userMsg);
+    // Type bridge: InternalMessage and LLMMessage have compatible runtime shapes but different type definitions due to module boundaries
     await store.appendMessage(sessionKey, userMsg as unknown as LLMMessage);
 
     // ── System prompt & tools ──
@@ -496,9 +499,11 @@ export class DmossAgent {
       contextTokens,
       steeringEngine: this.steeringEngine ?? undefined,
       appendMessage: async (key, msg) => {
+        // Type bridge: InternalMessage and LLMMessage have compatible runtime shapes but different type definitions due to module boundaries
         await store.appendMessage(key, msg as unknown as LLMMessage);
       },
       replaceMessages: async (key, nextMessages) => {
+        // Type bridge: InternalMessage and LLMMessage have compatible runtime shapes but different type definitions due to module boundaries
         await store.replaceMessages(key, nextMessages as unknown as LLMMessage[]);
       },
       prepareCompaction: async ({ messages: compactMessages, forceCompaction }) => {
@@ -732,6 +737,7 @@ export class DmossAgent {
     let sessionMessages: LLMMessage[] | undefined;
     if (needsSessionMessages) {
       try {
+        // Type bridge: InternalMessage and LLMMessage have compatible runtime shapes but different type definitions due to module boundaries
         sessionMessages = (await this.config.sessionStore.loadMessages(
           run.sessionKey,
         )) as unknown as LLMMessage[];

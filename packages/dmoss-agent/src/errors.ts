@@ -49,6 +49,8 @@ export enum ErrorCode {
   MESH_PEER_UNREACHABLE = 'MESH_PEER_UNREACHABLE',
   /** Mesh peer rejected the query */
   MESH_QUERY_REJECTED = 'MESH_QUERY_REJECTED',
+  /** MCP server connection or protocol error */
+  MCP_CONNECTION_FAILED = 'MCP_CONNECTION_FAILED',
   /** Device SSH connection/authentication failed */
   DEVICE_SSH_FAILED = 'DEVICE_SSH_FAILED',
   /** User cancelled (AbortSignal triggered) */

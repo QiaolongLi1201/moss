@@ -103,7 +103,9 @@ function mapPiToolsToLlm(tools: PiContext['tools'] | undefined): LLMToolDeclarat
   return tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
-    input_schema: tool.parameters as unknown as LLMToolDeclaration['input_schema'],
+    input_schema: (tool.parameters && typeof tool.parameters === 'object'
+      ? tool.parameters
+      : {}) as unknown as LLMToolDeclaration['input_schema'],
   }));
 }
 

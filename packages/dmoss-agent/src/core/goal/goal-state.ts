@@ -1,5 +1,6 @@
 import type { LLMMessage } from '../llm/llm-provider.js';
 import type { Message } from '../session/session-jsonl.js';
+import { DmossError, ErrorCode } from '../../errors.js';
 
 export type GoalStatus = 'active' | 'paused' | 'completed' | 'blocked';
 
@@ -33,10 +34,10 @@ function cleanText(value: unknown, max: number): string {
 function normalizeObjective(value: unknown): string {
   const objective = String(value ?? '').trim();
   if (!objective) {
-    throw new Error('Goal objective must not be empty.');
+    throw new DmossError({ code: ErrorCode.USER_INPUT_INVALID, message: 'Goal objective must not be empty.' });
   }
   if (objective.length > MAX_OBJECTIVE_CHARS) {
-    throw new Error(`Goal objective must be ${MAX_OBJECTIVE_CHARS} characters or less.`);
+    throw new DmossError({ code: ErrorCode.USER_INPUT_INVALID, message: `Goal objective must be ${MAX_OBJECTIVE_CHARS} characters or less.` });
   }
   return objective;
 }

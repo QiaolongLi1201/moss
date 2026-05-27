@@ -36,6 +36,7 @@ export function guardMiniAgentStreamPush(
   runEpoch: number,
 ): void {
   const protoPush = stream.push.bind(stream) as (e: MiniAgentEvent) => void;
+  // Monkey-patch: extending stream object with push method (pi-ai EventStream lacks this in type definitions)
   (stream as unknown as { push: (e: MiniAgentEvent) => void }).push = (
     e: MiniAgentEvent,
   ) => {

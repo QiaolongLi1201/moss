@@ -11,21 +11,9 @@ import type { DeviceSshConfig } from './device-ssh.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
 import { runProcess, ProcessError } from '../utils/run-process.js';
 import { wrapAsDmoss, ErrorCode } from '../errors.js';
-
-function shellEscape(arg: string): string {
-  return `'${arg.replace(/'/g, "'\\''")}'`;
-}
+import { buildSshCommand, shellEscape } from './ssh-utils.js';
 
 const ROS_SETUP = 'source /opt/tros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash 2>/dev/null || true';
-
-function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string[] {
-  const user = config.user || 'root';
-  const port = config.port || 22;
-  const parts = ['-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=5'];
-  if (config.keyPath) parts.push('-i', config.keyPath);
-  parts.push('-p', String(port), `${user}@${config.host}`, shellEscape(remoteCmd));
-  return parts;
-}
 
 async function sshExec(
   config: DeviceSshConfig,
@@ -34,7 +22,7 @@ async function sshExec(
   ctx?: ToolContext,
 ): Promise<string> {
   const remoteCmd = `${ROS_SETUP} && ${cmd}`;
-  const sshArgs = buildSshCommand(config, remoteCmd);
+  const sshArgs = buildSshCommand(config, remoteCmd, 5);
 
   try {
     const sshBin = config.password ? 'sshpass' : 'ssh';

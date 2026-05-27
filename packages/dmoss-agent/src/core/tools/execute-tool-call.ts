@@ -28,6 +28,7 @@ import { abortable, combineAbortSignals } from '../agent/abort.js';
 import { describeError, isTimeoutError, isTransientError } from '../../provider/errors.js';
 import { getRootLogger } from '../../logger.js';
 import { runPreToolHookChain, validateToolInputObject } from './tool-pipeline.js';
+import { DmossError, ErrorCode } from '../../errors.js';
 
 const logger = getRootLogger();
 
@@ -241,7 +242,7 @@ export async function executeOneToolCall(
             () => {
               try { timeoutAbortCtrl.abort(); } catch { /* noop */ }
               reject(
-                new Error(`Tool ${call.name} timed out (${deps.toolTimeoutMs / 1000}s)`),
+                new DmossError({ code: ErrorCode.TOOL_EXECUTION_TIMEOUT, message: `Tool ${call.name} timed out (${deps.toolTimeoutMs / 1000}s)` }),
               );
             },
             deps.toolTimeoutMs,

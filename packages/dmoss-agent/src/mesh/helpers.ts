@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import dns from 'node:dns/promises';
 import type { HostAddressResolver } from './types.js';
 import { DNS_CHECK_TIMEOUT_MS } from './types.js';
+import { DmossError, ErrorCode } from '../errors.js';
 
 export function isLoopbackHost(host: string): boolean {
   return /^(localhost|127(?:\.\d{1,3}){3}|::1|\[::1\])$/i.test(host.trim());
@@ -26,7 +27,7 @@ export async function resolveHostAddressesWithTimeout(
     return await Promise.race([
       resolver(hostname),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('mesh discovery DNS timeout')), DNS_CHECK_TIMEOUT_MS);
+        timer = setTimeout(() => reject(new DmossError({ code: ErrorCode.MESH_PEER_UNREACHABLE, message: 'mesh discovery DNS timeout' })), DNS_CHECK_TIMEOUT_MS);
         timer.unref?.();
       }),
     ]);

@@ -92,6 +92,7 @@ export async function executeAgentLoopToolCalls(
 
   const toolResults: ContentBlock[] = [];
   let steeringMessages: Message[] | null = null;
+  // Type bridge: slice preserves Message type compatibility
   const historyBeforeAssistant = currentMessages.slice(0, -1) as unknown as LLMMessage[];
 
   const preflightToolCall = (

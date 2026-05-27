@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DmossError, ErrorCode } from "../../errors.js";
 
 type LockPayload = {
   pid: number;
@@ -198,7 +199,8 @@ export async function acquireSessionWriteLock(params: {
   const pid = finalPayload?.pid ?? "unknown";
   const age = finalAge !== null ? `${Math.round(finalAge / 1000)}s` : "unknown";
   const nonce = finalPayload?.nonce ?? "unknown";
-  throw new Error(
-    `获取会话写锁超时: ${sessionFile} (PID ${pid}, age ${age}, nonce ${nonce})`,
-  );
+  throw new DmossError({
+    code: ErrorCode.SESSION_PERSIST_FAILED,
+    message: `获取会话写锁超时: ${sessionFile} (PID ${pid}, age ${age}, nonce ${nonce})`,
+  });
 }

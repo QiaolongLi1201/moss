@@ -229,6 +229,7 @@ export function createStudioTeachingHooks(p: StudioTeachingLayerParams): {
     const meta: StudioTeachingMetaV1 = {
       v: 1,
       phase: "dry_run_summary",
+      // Type bridge: summary is a structured object compatible with Record<string, unknown> at runtime
       patch: summary as unknown as Record<string, unknown>,
       confirmToken: blockingConfirm ? token : undefined,
       awaitingConfirm: blockingConfirm,

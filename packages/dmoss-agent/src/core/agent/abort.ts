@@ -3,6 +3,7 @@
  */
 
 import type { Tool, ToolContext } from '../tools/tool-types.js';
+import { DmossError, ErrorCode } from '../../errors.js';
 
 export function combineAbortSignals(a?: AbortSignal, b?: AbortSignal): AbortSignal | undefined {
   if (!a && !b) return undefined;
@@ -30,7 +31,7 @@ export function wrapToolWithAbortSignal<T>(tool: Tool<T>, runSignal: AbortSignal
     async execute(input: T, ctx: ToolContext): Promise<string> {
       const combined = combineAbortSignals(ctx.abortSignal, runSignal);
       if (combined?.aborted) {
-        throw new Error('Operation aborted');
+        throw new DmossError({ code: ErrorCode.USER_ABORTED, message: 'Operation aborted' });
       }
       return original(input, { ...ctx, abortSignal: combined });
     },
@@ -39,11 +40,11 @@ export function wrapToolWithAbortSignal<T>(tool: Tool<T>, runSignal: AbortSignal
 
 export function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(new Error('Operation aborted'));
+  if (signal.aborted) return Promise.reject(new DmossError({ code: ErrorCode.USER_ABORTED, message: 'Operation aborted' }));
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => {
       signal.removeEventListener('abort', onAbort);
-      reject(new Error('Operation aborted'));
+      reject(new DmossError({ code: ErrorCode.USER_ABORTED, message: 'Operation aborted' }));
     };
     signal.addEventListener('abort', onAbort, { once: true });
     promise.then(

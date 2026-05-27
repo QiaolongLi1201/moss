@@ -15,6 +15,7 @@ import type {
   LLMStreamEvent,
   LLMContentBlock,
 } from '../core/llm/llm-provider.js';
+import { DmossError, ErrorCode } from '../errors.js';
 
 export interface AnthropicLLMProviderConfig {
   apiKey: string;
@@ -84,11 +85,11 @@ export class AnthropicLLMProvider implements LLMProvider {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Anthropic API error ${res.status}: ${text}`);
+      throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: `Anthropic API error ${res.status}: ${text}` });
     }
 
     if (!res.body) {
-      throw new Error('Anthropic API returned no body');
+      throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: 'Anthropic API returned no body' });
     }
 
     const content: LLMContentBlock[] = [];

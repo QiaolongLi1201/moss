@@ -3,6 +3,7 @@ import type { MeshConfig, MeshMessage } from './types.js';
 import { MESH_SECRET_HEADER, MAX_CLIENT_RESPONSE_BYTES } from './types.js';
 import { isLoopbackHost, isPrivateOrLoopbackTarget, secureEquals } from './helpers.js';
 import { getRootLogger } from '../logger.js';
+import { DmossError, ErrorCode } from '../errors.js';
 
 const log = getRootLogger().child('mesh:transport');
 
@@ -24,7 +25,7 @@ export class MeshTransport {
     onStarted: () => void,
   ): Promise<void> {
     if (!isLoopbackHost(host) && !this.sharedSecret) {
-      throw new Error('DMOSS mesh requires sharedSecret when listening beyond loopback');
+      throw new DmossError({ code: ErrorCode.MESH_PEER_UNREACHABLE, message: 'DMOSS mesh requires sharedSecret when listening beyond loopback' });
     }
 
     this.server = http.createServer(async (req, res) => {
@@ -118,7 +119,7 @@ export class MeshTransport {
   ): Promise<Record<string, unknown>> {
     const privateOrLoopback = await isPrivateOrLoopbackTarget(host);
     if (privateOrLoopback && !this.sharedSecret) {
-      throw new Error(`Refusing to send to private/loopback address without sharedSecret: ${host}`);
+      throw new DmossError({ code: ErrorCode.MESH_PEER_UNREACHABLE, message: `Refusing to send to private/loopback address without sharedSecret: ${host}` });
     }
     const res = await fetch(`http://${host}:${port}`, {
       method: 'POST',
@@ -126,12 +127,12 @@ export class MeshTransport {
       body: JSON.stringify(msg),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) throw new Error(`mesh peer rejected request: HTTP ${res.status}`);
+    if (!res.ok) throw new DmossError({ code: ErrorCode.MESH_PEER_UNREACHABLE, message: `mesh peer rejected request: HTTP ${res.status}` });
 
     const contentLength = res.headers.get('content-length');
     if (contentLength && Number(contentLength) > MAX_CLIENT_RESPONSE_BYTES) {
       res.body?.cancel().catch(() => {});
-      throw new Error('peer response too large (Content-Length exceeds limit)');
+      throw new DmossError({ code: ErrorCode.MESH_PEER_UNREACHABLE, message: 'peer response too large (Content-Length exceeds limit)' });
     }
 
     if (!res.body) {
@@ -147,7 +148,7 @@ export class MeshTransport {
         totalLen += value.byteLength;
         if (totalLen > MAX_CLIENT_RESPONSE_BYTES) {
           await reader.cancel().catch(() => {});
-          throw new Error('peer response exceeded maximum size during read');
+          throw new DmossError({ code: ErrorCode.MESH_PEER_UNREACHABLE, message: 'peer response exceeded maximum size during read' });
         }
         chunks.push(value);
       }

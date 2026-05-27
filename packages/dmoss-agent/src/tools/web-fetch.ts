@@ -75,7 +75,7 @@ async function resolveHostAddressesWithTimeout(hostname: string, resolver: HostA
   return Promise.race([
     resolver(hostname),
     new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('dns timeout')), DNS_CHECK_TIMEOUT_MS),
+      setTimeout(() => reject(new DmossError({ code: ErrorCode.TOOL_EXECUTION_TIMEOUT, message: 'dns timeout' })), DNS_CHECK_TIMEOUT_MS),
     ),
   ]);
 }

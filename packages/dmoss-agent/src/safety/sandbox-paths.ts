@@ -8,6 +8,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DmossError, ErrorCode } from '../errors.js';
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 
@@ -52,7 +53,7 @@ async function assertNoSymlink(relative: string, root: string): Promise<void> {
     try {
       const stat = await fs.lstat(current);
       if (stat.isSymbolicLink()) {
-        throw new Error(`Path contains symlink: ${current}`);
+        throw new DmossError({ code: ErrorCode.TOOL_NOT_ALLOWED, message: `Path contains symlink: ${current}` });
       }
     } catch (err) {
       const anyErr = err as { code?: string };
@@ -95,7 +96,7 @@ export function resolveSandboxPath(params: {
       }
     }
   }
-  throw new Error(`Path escapes workspace (${shortPath(path.resolve(params.root))}): ${params.filePath}`);
+  throw new DmossError({ code: ErrorCode.TOOL_NOT_ALLOWED, message: `Path escapes workspace (${shortPath(path.resolve(params.root))}): ${params.filePath}` });
 }
 
 export async function assertSandboxPath(params: {
@@ -117,7 +118,7 @@ export async function assertSandboxPath(params: {
       !realResolved.startsWith(realRoot + path.sep) &&
       realResolved !== realRoot
     ) {
-      throw new Error(`path escapes sandbox after realpath resolution: ${params.filePath}`);
+      throw new DmossError({ code: ErrorCode.TOOL_NOT_ALLOWED, message: `path escapes sandbox after realpath resolution: ${params.filePath}` });
     }
   } catch (err) {
     const anyErr = err as { code?: string };

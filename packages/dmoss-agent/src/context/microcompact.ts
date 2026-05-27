@@ -76,6 +76,7 @@ export function microcompact(
           allToolResults.push({ msgIdx: mi, blockIdx: bi, content: block.content });
         }
       } else if (Array.isArray(block.content as unknown)) {
+        // Runtime guard: Array.isArray above confirms block.content is an array
         const arr = block.content as unknown as Array<{ type?: string; text?: string }>;
         const combined = arr
           .filter((b) => b.type === 'text' && typeof b.text === 'string')
@@ -123,6 +124,7 @@ export function microcompact(
         if (typeof block.content === 'string') {
           originalText = block.content;
         } else if (Array.isArray(block.content as unknown)) {
+          // Runtime guard: Array.isArray above confirms block.content is an array
           const arr = block.content as unknown as Array<{ type?: string; text?: string }>;
           originalText = (arr as Array<{ type?: string; text?: string }>)
             .filter((b) => b.type === 'text' && typeof b.text === 'string')

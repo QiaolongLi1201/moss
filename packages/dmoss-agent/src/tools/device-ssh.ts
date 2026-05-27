@@ -17,6 +17,7 @@ import { safeChildEnv } from '../utils/safe-child-env.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
 import { runProcess, ProcessError } from '../utils/run-process.js';
 import { wrapAsDmoss, ErrorCode } from '../errors.js';
+import { buildSshCommand, shellEscape } from './ssh-utils.js';
 
 export interface DeviceSshConfig {
   host: string;
@@ -24,23 +25,6 @@ export interface DeviceSshConfig {
   password?: string;
   port?: number;
   keyPath?: string;
-}
-
-function shellEscape(arg: string): string {
-  return `'${arg.replace(/'/g, "'\\''")}'`;
-}
-
-function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string[] {
-  const user = config.user || 'root';
-  const port = config.port || 22;
-  const parts = ['-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=10'];
-
-  if (config.keyPath) {
-    parts.push('-i', config.keyPath);
-  }
-
-  parts.push('-p', String(port), `${user}@${config.host}`, shellEscape(remoteCmd));
-  return parts;
 }
 
 async function sshRun(

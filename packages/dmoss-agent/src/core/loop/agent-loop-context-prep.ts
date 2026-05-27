@@ -52,7 +52,9 @@ export function buildProviderToolDeclarations(toolsForRun: Tool[]): ProviderTool
   return [...toolsForRun].sort(compareToolName).map((tool) => ({
     name: tool.name,
     description: tool.description,
-    parameters: tool.inputSchema as unknown as Record<string, unknown>,
+    parameters: (tool.inputSchema && typeof tool.inputSchema === 'object'
+      ? tool.inputSchema
+      : {}) as unknown as Record<string, unknown>,
   }));
 }
 

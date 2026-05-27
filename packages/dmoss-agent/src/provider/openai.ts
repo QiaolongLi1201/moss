@@ -21,6 +21,7 @@ import type {
   LLMContentBlock,
   LLMMessage,
 } from '../core/llm/llm-provider.js';
+import { DmossError, ErrorCode } from '../errors.js';
 
 export interface OpenAILLMProviderConfig {
   apiKey: string;
@@ -98,11 +99,11 @@ export class OpenAILLMProvider implements LLMProvider {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`OpenAI API error ${res.status}: ${text}`);
+      throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: `OpenAI API error ${res.status}: ${text}` });
     }
 
     if (!res.body) {
-      throw new Error('OpenAI API returned no body');
+      throw new DmossError({ code: ErrorCode.PROVIDER_UPSTREAM_ERROR, message: 'OpenAI API returned no body' });
     }
 
     const content: LLMContentBlock[] = [];

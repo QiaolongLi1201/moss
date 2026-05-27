@@ -122,6 +122,7 @@ export function createMiniAgentStream(): EventStream<MiniAgentEvent, MiniAgentRe
     () => ({ finalText: '', turns: 0, totalToolCalls: 0, messages: [] }),
   );
   const push = stream.push.bind(stream) as (event: MiniAgentEvent) => void;
+  // Monkey-patch: extending stream object with push method (pi-ai EventStream lacks this in type definitions)
   (stream as unknown as { push: (event: MiniAgentEvent) => void }).push = (event) => {
     push({ ...event, version: event.version ?? MINI_AGENT_EVENT_VERSION });
   };

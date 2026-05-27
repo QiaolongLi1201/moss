@@ -468,7 +468,12 @@ export function runAgentLoop(
               turn: state.turns,
               sessionKey,
             });
-            stream.push({ type: 'turn_end', turn: state.turns, totalToolCalls: state.toolExecutionMetrics.totalToolCalls });
+            stream.push({
+              type: 'turn_end',
+              turn: state.turns,
+              stopReason: 'error',
+              totalToolCalls: state.toolExecutionMetrics.totalToolCalls,
+            });
             state.lastTurnEndMs = Date.now();
 
             // M2: Detect partially-executed tool calls and inject synthetic error results

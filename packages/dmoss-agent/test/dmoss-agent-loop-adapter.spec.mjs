@@ -97,6 +97,23 @@ import {
     }),
     [{ type: 'microcompact', compressedCount: 2, savedChars: 120, savedTokens: 30 }],
   );
+  assert.deepEqual(
+    adapter.onMiniEvent({
+      type: 'llm_usage',
+      inputTokens: 7,
+      outputTokens: 11,
+    }),
+    [],
+  );
+  assert.deepEqual(
+    adapter.onMiniEvent({
+      type: 'turn_end',
+      turn: 1,
+      stopReason: 'length',
+      totalToolCalls: 1,
+    }),
+    [{ type: 'turn_end', turn: 1, stopReason: 'max_tokens', totalToolCalls: 1 }],
+  );
 
   const done = adapter.getDoneEvent({
     finalText: 'fallback',
@@ -106,9 +123,20 @@ import {
   });
   assert.equal(done.type, 'done');
   assert.equal(done.result.response, 'hello');
+  assert.equal(done.result.stopReason, 'max_tokens');
   assert.deepEqual(done.result.toolCalls, [{ id: 'call-1', name: 'probe', input: { value: 1 } }]);
   assert.deepEqual(done.result.toolResults, [{ toolUseId: 'call-1', content: 'ok', isError: false }]);
+  assert.deepEqual(done.result.usage, { inputTokens: 7, outputTokens: 11 });
   assert.deepEqual(done.result.thinking, ['plan']);
+}
+
+{
+  const adapter = createDmossAgentLoopEventAdapter();
+  adapter.onMiniEvent({ type: 'message_delta', delta: 'legacy text' });
+  assert.deepEqual(
+    adapter.onMiniEvent({ type: 'turn_end', turn: 1, totalToolCalls: 0 }),
+    [{ type: 'turn_end', turn: 1, stopReason: 'end_turn', totalToolCalls: 0 }],
+  );
 }
 
 {

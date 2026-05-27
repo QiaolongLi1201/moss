@@ -124,6 +124,14 @@ export async function processLlmResponse(
     push,
     buildCorrectionMessage,
   } = params;
+  const pushTurnEnd = (stopReason: StopReason | undefined = streamStopReason) => {
+    push({
+      type: 'turn_end',
+      turn: state.turns,
+      ...(stopReason ? { stopReason } : {}),
+      totalToolCalls: state.toolExecutionMetrics.totalToolCalls,
+    });
+  };
 
   // ===== Inject tool calls from plan text =====
   const toolsForAssistantTurn = resolveToolsForRun();
@@ -177,7 +185,7 @@ export async function processLlmResponse(
       'Read the latest tool results and produce a concise visible user-facing summary now. ' +
       'Do not call more tools unless absolutely necessary.',
     )];
-    push({ type: 'turn_end', turn: state.turns, totalToolCalls: state.toolExecutionMetrics.totalToolCalls });
+    pushTurnEnd();
     state.lastTurnEndMs = Date.now();
     return { control: 'continue' };
   }
@@ -256,7 +264,7 @@ export async function processLlmResponse(
       break;
 
     case 'thinking_only_hint':
-      push({ type: 'turn_end', turn: state.turns, totalToolCalls: state.toolExecutionMetrics.totalToolCalls });
+      pushTurnEnd();
       state.lastTurnEndMs = Date.now();
       state.pendingMessages = cachedSteering;
       return { control: 'continue' };
@@ -269,7 +277,7 @@ export async function processLlmResponse(
         maxAttempts: maxOutputContinuations,
       });
       state.pendingMessages = [buildCorrectionMessage(postLlmAction.systemText)];
-      push({ type: 'turn_end', turn: state.turns, totalToolCalls: state.toolExecutionMetrics.totalToolCalls });
+      pushTurnEnd();
       state.lastTurnEndMs = Date.now();
       return { control: 'continue' };
 
@@ -277,7 +285,7 @@ export async function processLlmResponse(
       state.planToolNudgeAttempts += 1;
       push({ type: 'message_delta', delta: postLlmAction.deltaText });
       state.pendingMessages = [buildCorrectionMessage(postLlmAction.systemText)];
-      push({ type: 'turn_end', turn: state.turns, totalToolCalls: state.toolExecutionMetrics.totalToolCalls });
+      pushTurnEnd();
       state.lastTurnEndMs = Date.now();
       return { control: 'continue' };
 
@@ -287,12 +295,12 @@ export async function processLlmResponse(
         : [buildCorrectionMessage(
             "[System] Your previous response was empty. Please answer the user's question again.",
           )];
-      push({ type: 'turn_end', turn: state.turns, totalToolCalls: state.toolExecutionMetrics.totalToolCalls });
+      pushTurnEnd();
       state.lastTurnEndMs = Date.now();
       return { control: 'continue' };
 
     case 'steering_or_complete':
-      push({ type: 'turn_end', turn: state.turns, totalToolCalls: state.toolExecutionMetrics.totalToolCalls });
+      pushTurnEnd();
       state.lastTurnEndMs = Date.now();
       state.pendingMessages = cachedSteering;
       return { control: 'continue' };
@@ -337,7 +345,7 @@ export async function processLlmResponse(
     push,
   });
 
-  push({ type: 'turn_end', turn: state.turns, totalToolCalls: state.toolExecutionMetrics.totalToolCalls });
+  pushTurnEnd();
   state.lastTurnEndMs = Date.now();
   state.pendingMessages = toolExecution.pendingMessages;
 

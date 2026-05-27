@@ -20,6 +20,13 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function normalizePublicStopReason(reason: string): string {
+  if (reason === 'stop') return 'end_turn';
+  if (reason === 'length') return 'max_tokens';
+  if (reason === 'toolUse' || reason === 'toolCall') return 'tool_use';
+  return reason;
+}
+
 export function createModelDefFromDmossConfig(config: ModelBridgeConfig): Model<any> {
   const modelId = String(config.model || 'dmoss-default-model');
   const roundTripsThinkingHistory =
@@ -55,6 +62,7 @@ export function createDmossAgentLoopEventAdapter(
   const thinking: string[] = [];
   const toolCalls: ToolCall[] = [];
   const toolResults: ToolResult[] = [];
+  let usage: { inputTokens: number; outputTokens: number } | undefined;
   let compactions = 0;
   let stopReason = 'unknown';
 
@@ -62,6 +70,7 @@ export function createDmossAgentLoopEventAdapter(
     response: response || result.finalText,
     toolCalls,
     toolResults,
+    ...(usage ? { usage } : {}),
     ...(thinking.length > 0 ? { thinking } : {}),
     ...(compactions > 0 ? { compactions } : {}),
     stopReason:
@@ -115,15 +124,31 @@ export function createDmossAgentLoopEventAdapter(
         }
         case 'turn_start':
           return [{ type: 'turn_start', turn: event.turn }];
-        case 'turn_end':
+        case 'turn_end': {
+          const incomingStopReason = event.stopReason
+            ? normalizePublicStopReason(event.stopReason)
+            : undefined;
+          const resolvedStopReason =
+            incomingStopReason ??
+            (stopReason === 'unknown' && response
+              ? 'end_turn'
+              : stopReason);
+          stopReason = resolvedStopReason;
           return [{
             type: 'turn_end',
             turn: event.turn,
-            stopReason,
+            stopReason: resolvedStopReason,
             ...(event.totalToolCalls !== undefined ? { totalToolCalls: event.totalToolCalls } : {}),
           }];
+        }
         case 'turn_transition':
-          stopReason = event.reason;
+          stopReason = normalizePublicStopReason(event.reason);
+          return [];
+        case 'llm_usage':
+          usage = {
+            inputTokens: (usage?.inputTokens ?? 0) + event.inputTokens,
+            outputTokens: (usage?.outputTokens ?? 0) + event.outputTokens,
+          };
           return [];
         case 'compaction':
           compactions += 1;

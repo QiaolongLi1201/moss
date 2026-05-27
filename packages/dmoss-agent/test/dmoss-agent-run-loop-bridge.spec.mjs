@@ -130,7 +130,15 @@ function createModelEventProvider(handler) {
 
     // Per-turn error recovery: the agent catches the error internally and
     // retries until maxTurns is exhausted. The error does not propagate.
-    const result = await agent.chat('bridge-observability-redaction', 'trigger redacted failure');
+    const events = [];
+    for await (const event of agent.streamChat('bridge-observability-redaction', 'trigger redacted failure')) {
+      events.push(event);
+    }
+    const errorTurnEnd = events.find((event) => event.type === 'turn_end' && event.stopReason === 'error');
+    assert(errorTurnEnd, 'expected recoverable provider failure turn_end to surface stopReason=error');
+    const done = events.find((event) => event.type === 'done');
+    assert(done, 'expected done event after recoverable provider failure exhausts max turns');
+    const result = done.result;
     // Agent completes with empty response after exhausting retries
     assert.equal(result.response, '');
 
@@ -191,7 +199,9 @@ function createModelEventProvider(handler) {
       events.push(event);
     }
 
-    assert(events.some((event) => event.type === 'done'), 'expected done event');
+    const done = events.find((event) => event.type === 'done');
+    assert(done, 'expected done event');
+    assert.deepEqual(done.result.usage, { inputTokens: 7, outputTokens: 11 });
 
     const raw = await readFile(path.join(usageDir, 'llm-usage.jsonl'), 'utf8');
     const records = raw
@@ -353,6 +363,9 @@ function createModelEventProvider(handler) {
 
   assert(events.some((event) => event.type === 'tool_start' && event.toolName === 'probe'));
   assert(events.some((event) => event.type === 'tool_end' && event.result.includes('ok:7')));
+  const turnEnds = events.filter((event) => event.type === 'turn_end');
+  assert.equal(turnEnds[0]?.stopReason, 'tool_use');
+  assert.equal(turnEnds.at(-1)?.stopReason, 'end_turn');
   const done = events.find((event) => event.type === 'done');
   assert(done, 'expected done event');
   assert.equal(done.result.response, 'tool says ok');
@@ -382,6 +395,36 @@ function createModelEventProvider(handler) {
   const result = await agent.chat('bridge-chat', 'hi');
   assert.equal(result.response, 'collected chat result');
   assert.equal(result.stopReason, 'end_turn');
+}
+
+{
+  const store = new InMemorySessionStore();
+  const { provider } = createModelEventProvider(() => ({
+    stopReason: 'max_tokens',
+    content: [{ type: 'text', text: 'truncated but visible' }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+  }));
+  const agent = new DmossAgent({
+    llmProvider: provider,
+    sessionStore: store,
+    model: 'fake-model',
+    domainPrompt: false,
+    includeRegisteredKnowledgePrompts: false,
+    maxAgentTurns: 1,
+  });
+
+  const events = [];
+  for await (const event of agent.streamChat('bridge-stop-reason', 'hi')) {
+    events.push(event);
+  }
+
+  const turnEnd = events.find((event) => event.type === 'turn_end');
+  assert(turnEnd, 'expected turn_end event');
+  assert.equal(turnEnd.stopReason, 'max_tokens');
+  const done = events.find((event) => event.type === 'done');
+  assert(done, 'expected done event');
+  assert.equal(done.result.response, 'truncated but visible');
+  assert.equal(done.result.stopReason, 'max_turns_reached');
 }
 
 {

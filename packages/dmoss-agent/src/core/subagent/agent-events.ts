@@ -32,7 +32,7 @@ type MiniAgentEventPayload =
   | { type: 'agent_error'; runId: string; error: string }
 
   | { type: 'turn_start'; turn: number }
-  | { type: 'turn_end'; turn: number; totalToolCalls?: number }
+  | { type: 'turn_end'; turn: number; stopReason?: string; totalToolCalls?: number }
 
   | { type: 'message_start'; message: Message }
   | { type: 'message_delta'; delta: string }
@@ -59,6 +59,7 @@ type MiniAgentEventPayload =
   | { type: 'context_overflow_compact'; error: string; recoveryLevel?: number }
   | { type: 'retry'; attempt: number; delay: number; error: string; category?: LlmErrorCategory }
   | { type: 'turn_transition'; turn: number; reason: string }
+  | { type: 'llm_usage'; inputTokens: number; outputTokens: number }
 
   | { type: 'output_continuation'; attempt: number; maxAttempts: number }
   | {

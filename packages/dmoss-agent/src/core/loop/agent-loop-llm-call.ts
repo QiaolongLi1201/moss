@@ -179,6 +179,11 @@ export async function executeLlmTurn(
 
     state.firstTokenMs = llmTurn.firstTokenMs;
     if (llmTurn.usage) {
+      push({
+        type: 'llm_usage',
+        inputTokens: llmTurn.usage.inputTokens,
+        outputTokens: llmTurn.usage.outputTokens,
+      });
       await recordLlmUsage({
         runId,
         providerId: String(modelDef.provider),

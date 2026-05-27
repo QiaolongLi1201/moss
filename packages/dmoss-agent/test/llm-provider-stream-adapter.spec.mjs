@@ -220,6 +220,57 @@ console.log('[PASS] LLMProvider stream adapter bridges provider events to pi-ai 
   console.log('[PASS] Non-streaming provider uses complete() and emits synthetic events');
 }
 
+// ── Hook ordering snapshot: provider terminal event precedes onResponse ──
+{
+  const hookOrder = [];
+  const terminalProvider = {
+    id: 'terminal',
+    displayName: 'Terminal Provider',
+    async complete() {
+      throw new Error('unused');
+    },
+    async stream(_options, onEvent) {
+      onEvent({ type: 'message_start' });
+      onEvent({ type: 'content_block_delta', text: 'done', deltaRole: 'visible' });
+      onEvent({ type: 'message_stop' });
+      return {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: 'done' }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    },
+  };
+  const terminalStream = createStreamFunctionFromLlmProvider({
+    provider: terminalProvider,
+    onProviderEvent: (event) => hookOrder.push(`provider:${event.type}`),
+    onResponse: () => hookOrder.push('onResponse'),
+    onError: () => hookOrder.push('onError'),
+  })(
+    {
+      id: 'terminal-model',
+      name: 'Terminal Model',
+      api: 'openai-completions',
+      provider: 'terminal',
+      baseUrl: 'http://terminal',
+      reasoning: false,
+      input: ['text'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    },
+    { systemPrompt: '', messages: [{ role: 'user', content: 'hi', timestamp: 1 }], tools: [] },
+  );
+  const terminalEvents = [];
+  for await (const event of terminalStream) terminalEvents.push(event);
+
+  assert.deepEqual(hookOrder, [
+    'provider:message_start',
+    'provider:content_block_delta',
+    'provider:message_stop',
+    'onResponse',
+  ]);
+  assert.equal(terminalEvents.filter((event) => event.type === 'done').length, 1);
+  console.log('[PASS] onResponse runs once after provider terminal events');
+}
+
 // ── Incomplete provider responses are failures, not completed responses ──
 {
   const responses = [];

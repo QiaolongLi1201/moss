@@ -109,3 +109,57 @@ describe('Tool Timeout Classification', () => {
     assert.equal(events.filter((event) => event.type === 'tool_execution_start').length, 1);
   });
 });
+
+describe('Tool Abort Classification Snapshot', () => {
+  it('keeps the public aborted.by domain stable', async () => {
+    const events = [];
+    const slowTool = {
+      name: 'slow_probe',
+      description: 'Never resolves',
+      inputSchema: { type: 'object', properties: {} },
+      async execute() {
+        return new Promise(() => {});
+      },
+    };
+
+    const timeoutOutcome = await executeOneToolCall(
+      { id: 'call-timeout-snapshot', name: 'slow_probe', input: {} },
+      {
+        toolsForRun: [slowTool],
+        toolCtx: { workspaceDir: process.cwd(), sessionKey: 'timeout-snapshot' },
+        sessionKey: 'timeout-snapshot',
+        abortSignal: new AbortController().signal,
+        toolTimeoutMs: 20,
+        enableHeartbeat: false,
+        heartbeatIntervalMs: 1_000,
+        skipHeartbeatToolNames: new Set(),
+        push: (event) => events.push(event),
+      },
+    );
+
+    const abortController = new AbortController();
+    setTimeout(() => abortController.abort('user cancelled'), 5);
+    const userAbortOutcome = await executeOneToolCall(
+      { id: 'call-user-abort-snapshot', name: 'slow_probe', input: {} },
+      {
+        toolsForRun: [slowTool],
+        toolCtx: { workspaceDir: process.cwd(), sessionKey: 'user-abort-snapshot' },
+        sessionKey: 'user-abort-snapshot',
+        abortSignal: abortController.signal,
+        toolTimeoutMs: 1_000,
+        enableHeartbeat: false,
+        heartbeatIntervalMs: 1_000,
+        skipHeartbeatToolNames: new Set(),
+        push: (event) => events.push(event),
+      },
+    );
+
+    assert.deepEqual(
+      [
+        timeoutOutcome.kind === 'completed' ? timeoutOutcome.aborted?.by : undefined,
+        userAbortOutcome.kind === 'completed' ? userAbortOutcome.aborted?.by : undefined,
+      ],
+      ['timeout', 'user'],
+    );
+  });
+});

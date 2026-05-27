@@ -17,7 +17,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { createOverflowRecoveryState, runOverflowRecovery } from '../dist/core/overflow-recovery.js';
+import { createOverflowRecoveryState, runOverflowRecovery } from '../dist/core/loop/overflow-recovery.js';
 
 function makeMessages(count) {
   const msgs = [];

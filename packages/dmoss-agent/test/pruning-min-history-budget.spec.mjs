@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 
 import { pruneContextMessages } from '../dist/context/pruning.js';
-import { createCompactionSummaryMessage } from '../dist/core/session-jsonl.js';
+import { createCompactionSummaryMessage } from '../dist/core/session/session-jsonl.js';
 
 /** @param {'user'|'assistant'} role */
 const msg = (role, n) => ({ role, content: 'あ'.repeat(n) });

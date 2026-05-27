@@ -95,6 +95,9 @@ const CONNECTION_PATTERNS = [
   "fetch failed",
   "enotfound",
   "epipe",
+  "ehostunreach",
+  "enetunreach",
+  "unreachable",
 ];
 
 const AUTH_PATTERNS = [
@@ -190,6 +193,28 @@ export function isContextOverflowError(message?: string): boolean {
 
 export function isRateLimitError(message?: string): boolean {
   return !!message && matchesAny(message, RATE_LIMIT_PATTERNS);
+}
+
+/**
+ * Quota/billing exhaustion — NOT retryable (unlike transient rate limits).
+ * Matches 402 Payment Required, credit balance, and quota-plan errors.
+ */
+const QUOTA_EXHAUSTED_PATTERNS = [
+  "402",
+  "payment required",
+  "insufficient credits",
+  "credit balance",
+  "insufficient_quota",
+  "out of credits",
+  "plan quota",
+  "plan limit",
+];
+
+export function isQuotaExceededError(message?: string): boolean {
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  if (matchesAny(lower, QUOTA_EXHAUSTED_PATTERNS)) return true;
+  return /exceeded (?:the |your )?(?:monthly |daily |current )?(?:usage )?quota|monthly usage (?:quota|limit)|usage limit (?:exceeded|reached)/.test(lower);
 }
 
 export function isTimeoutError(message?: string): boolean {

@@ -28,7 +28,7 @@ export type {
   LLMMessage,
   LLMContentBlock,
   LLMToolDeclaration,
-} from '../core/llm-provider.js';
+} from '../core/llm/llm-provider.js';
 
 // pi-ai adapter
 export { PiAiLLMProvider } from './pi-ai-adapter.js';

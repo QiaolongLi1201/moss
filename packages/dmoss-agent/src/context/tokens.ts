@@ -1,4 +1,4 @@
-import type { ContentBlock, Message } from "../core/session-jsonl.js";
+import type { ContentBlock, Message } from "../core/session/session-jsonl.js";
 
 export const CHARS_PER_TOKEN_ESTIMATE = 4;
 
@@ -124,7 +124,10 @@ export function estimatePromptUnitsForContextWindow(params: {
   const fromChars = rawChars / unit;
   let score = Math.max(estTokens, fromChars);
   const cap = params.effectiveContextWindowTokens;
-  if (cap !== undefined && cap > 0 && rawChars / cap >= 0.85) {
+  // Only apply the raw-chars safeguard when charsPerTokenUnit ≈ 1
+  // (character-counting mode). For token-counting gateways (unit=4),
+  // rawChars is 3-4× larger than cap and would fire prematurely.
+  if (unit <= 1.5 && cap !== undefined && cap > 0 && rawChars / cap >= 0.85) {
     score = Math.max(score, rawChars);
   }
   return score;

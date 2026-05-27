@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const distJs = path.join(dir, '..', 'dist', 'core', 'memory.js');
+const distJs = path.join(dir, '..', 'dist', 'core', 'memory', 'memory.js');
 const { MemoryManager } = await import(pathToFileURL(distJs).href);
 
 async function rmrf(p) {

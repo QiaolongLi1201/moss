@@ -6,8 +6,9 @@
  * Commands are executed via SSH on the target device.
  */
 
-import type { Tool } from '../core/tool-types.js';
+import type { Tool } from '../core/tools/tool-types.js';
 import type { DeviceSshConfig } from './device-ssh.js';
+import { safeChildEnv } from '../utils/safe-child-env.js';
 import { execFileSync } from 'node:child_process';
 
 /** Escape a single shell argument for POSIX sh. */
@@ -37,7 +38,7 @@ function sshExec(config: DeviceSshConfig, cmd: string, timeout = 15_000): string
       timeout,
       encoding: 'utf-8',
       maxBuffer: 5 * 1024 * 1024,
-      env: { ...process.env, SSHPASS: config.password || '' },
+      env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
     }).trim();
   } catch (err: any) {
     const output = [err.stdout, err.stderr].filter(Boolean).map(String).join('\n').trim();

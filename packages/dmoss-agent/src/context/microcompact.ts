@@ -20,7 +20,7 @@
  * - 已经是占位符的不重复压缩
  */
 
-import type { Message, ContentBlock } from '../core/session-jsonl.js';
+import type { Message, ContentBlock } from '../core/session/session-jsonl.js';
 import { estimateTokensForText } from './tokens.js';
 
 export interface MicroCompactConfig {

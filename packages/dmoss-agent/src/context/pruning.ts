@@ -21,7 +21,7 @@ import {
   COMPACTION_SUMMARY_PREFIX,
   type ContentBlock,
   type Message,
-} from "../core/session-jsonl.js";
+} from "../core/session/session-jsonl.js";
 import {
   CHARS_PER_TOKEN_ESTIMATE,
   estimateMessageChars,

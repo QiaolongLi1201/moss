@@ -1,4 +1,5 @@
 export {
+  KnowledgeRegistry,
   registerKnowledgeModule,
   unregisterKnowledgeModule,
   getKnowledgeModule,
@@ -20,8 +21,8 @@ export type {
   PromptFragment,
   CommandPattern,
   FailureHint,
-} from '@dmoss/core/contracts/knowledge-module';
-export type { DeviceFamily } from '@dmoss/core/contracts/device-family';
+} from '@dmoss/core';
+export type { DeviceFamily } from '@dmoss/core';
 
 // Robot Hub (user-defined knowledge modules)
 export {

@@ -6,8 +6,8 @@
  * when disabled, they are unregistered.
  */
 
-import type { DmossVendorPlugin } from '@dmoss/core/contracts/vendor-plugin';
-import type { DmossPlatformExtension } from '@dmoss/core/contracts/platform-extension';
+import type { DmossVendorPlugin } from '@dmoss/core';
+import type { DmossPlatformExtension } from '@dmoss/core';
 import { registerKnowledgeModule, unregisterKnowledgeModule } from '../knowledge/registry.js';
 
 export interface VendorPluginCallbacks<THostTool = unknown> {

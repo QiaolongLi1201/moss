@@ -112,7 +112,9 @@ export class MeshEventBus implements MeshEventSink {
   private listeners: Array<(event: MeshEvent) => void> = [];
 
   emit(event: MeshEvent): void {
-    for (const listener of this.listeners) {
+    // Snapshot listeners to prevent mutation-during-iteration when a listener unsubscribes
+    const snapshot = [...this.listeners];
+    for (const listener of snapshot) {
       try { listener(event); } catch { /* don't let one listener break others */ }
     }
   }

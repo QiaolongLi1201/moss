@@ -1,4 +1,15 @@
 export {
+  SkillLearner,
+  type LearnedSkill,
+  type SkillLearnerConfig,
+} from "./skill-learner.js";
+
+export type {
+  LLMContentBlock,
+  LLMMessage,
+} from "./llm-message.js";
+
+export {
   writeSkillCandidate,
   listCandidates,
   removeCandidate,

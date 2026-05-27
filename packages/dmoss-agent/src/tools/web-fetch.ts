@@ -14,7 +14,7 @@
  */
 
 import dns from 'node:dns/promises';
-import type { Tool, ToolContext } from '../core/tool-types.js';
+import type { Tool, ToolContext } from '../core/tools/tool-types.js';
 import { getRootLogger } from '../logger.js';
 import { DmossError, ErrorCode } from '../errors.js';
 

@@ -10,7 +10,7 @@
  * 与 `follow-up-guard.ts` 历史注释一致；.{0,20} 与 `extract-tool-invocation.ts` 对齐。
  */
 export const CHINESE_PLAN_TOOL_INVOCATION_RE =
-  /(?:我(?:来|要|去|将|先)|让我|然后|接下来|紧接(?:下来|着)|最后|下一步|下面|首先|随后).{0,20}调用(?:这个|一下|该)?(?:工具)?\s*\b([a-z][a-z0-9_]{2,64})\b/gi;
+  /(?:我(?:来|要|去|将|先)|让我|然后|接下来|紧接(?:下来|着)|最后|下一步|下面|首先|随后).{0,20}?调用(?:这个|一下|该)?(?:工具)?\s*\b([a-z][a-z0-9_]{2,64})\b/gi;
 
 /** 从规划中误抓的常见噪声 token（小写） */
 export const NOISE_PLANNED_TOOL_NAMES = new Set(
@@ -48,6 +48,17 @@ export const NOISE_PLANNED_TOOL_NAMES = new Set(
     'using',
   ].map((s) => s.toLowerCase()),
 );
+
+/**
+ * English planning phrases → tool names, counterpart to CHINESE_PLAN_TOOL_INVOCATION_RE.
+ * Matches patterns like "let me call web_fetch", "I'll use open_url", "I will now invoke ...".
+ */
+export const ENGLISH_PLAN_TOOL_INVOCATION_RE =
+  /(?:let me|I(?:'ll| will| would)?(?: now| just| first)?)\s+(?:call|use|invoke|run|try|execute)\s+(?:the\s+)?`?([a-z][a-z0-9_]{2,64})`?/gi;
+
+/** English negation before a plan match (avoid "don't call foo" false positives). */
+export const ENGLISH_PLAN_NEGATION_BEFORE_RE =
+  /(?:no|not|don't|won't|skip|avoid|without|no need|unnecessary)\s*$/i;
 
 /** 匹配位置前若干字是否为否定/无法执行（避免「不要调用 foo」误触发） */
 export const CHINESE_PLAN_NEGATION_BEFORE_RE =

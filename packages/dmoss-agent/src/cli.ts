@@ -55,12 +55,12 @@ import type {
   LLMResponse,
   LLMStreamEvent,
   LLMContentBlock,
-} from './core/llm-provider.js';
-import type { Tool } from './core/tool-types.js';
+} from './core/llm/llm-provider.js';
+import type { Tool } from './core/tools/tool-types.js';
 import { registerBuiltinTools } from './tools/builtin.js';
-import { validateMemoryWriteContent } from './core/memory.js';
-import { SkillLearner } from './core/skill-learner.js';
-import { WorkspaceMemory } from './core/workspace-memory.js';
+import { validateMemoryWriteContent } from './core/memory/memory.js';
+import { SkillLearner } from './core/memory/skill-learner.js';
+import { WorkspaceMemory } from './core/memory/workspace-memory.js';
 import { createDockerExecTool } from './tools/docker-exec.js';
 import { createDeviceSshTools, getDeviceConfigFromEnv } from './tools/device-ssh.js';
 import { createDeviceDiagnosticsTools } from './tools/device-diagnostics.js';
@@ -417,16 +417,65 @@ async function callOpenAI(
   opts: LLMRequestOptions,
   _onEvent: (e: LLMStreamEvent) => void,
 ): Promise<LLMResponse> {
+  // Convert messages to OpenAI format
+  const openaiMessages: Array<Record<string, unknown>> = [];
+
+  if (opts.systemPrompt) {
+    openaiMessages.push({ role: 'system', content: opts.systemPrompt });
+  }
+
+  for (const m of opts.messages) {
+    if (typeof m.content === 'string') {
+      // Plain text message
+      openaiMessages.push({ role: m.role, content: m.content });
+    } else if (Array.isArray(m.content)) {
+      // Content blocks — convert to OpenAI format
+      const textParts: string[] = [];
+      const toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
+
+      for (const block of m.content) {
+        if (block.type === 'text') {
+          textParts.push(block.text);
+        } else if (block.type === 'tool_use') {
+          // Assistant tool calls go in tool_calls array
+          toolCalls.push({
+            id: block.id,
+            type: 'function',
+            function: {
+              name: block.name,
+              arguments: JSON.stringify(block.input),
+            },
+          });
+        } else if (block.type === 'tool_result') {
+          // Tool results become separate 'tool' role messages
+          openaiMessages.push({
+            role: 'tool',
+            tool_call_id: block.tool_use_id,
+            content: block.content,
+          });
+        }
+      }
+
+      // If there's text or tool_calls, add an assistant/user message
+      if (textParts.length > 0 || toolCalls.length > 0) {
+        const msg: Record<string, unknown> = { role: m.role };
+        if (textParts.length > 0) {
+          msg.content = textParts.join('\n');
+        } else {
+          msg.content = '';
+        }
+        if (toolCalls.length > 0) {
+          msg.tool_calls = toolCalls;
+        }
+        openaiMessages.push(msg);
+      }
+    }
+  }
+
   const body: Record<string, unknown> = {
     model: opts.model || MODEL,
     max_tokens: opts.maxTokens || 4096,
-    messages: [
-      ...(opts.systemPrompt ? [{ role: 'system', content: opts.systemPrompt }] : []),
-      ...opts.messages.map((m) => ({
-        role: m.role,
-        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-      })),
-    ],
+    messages: openaiMessages,
   };
 
   if (opts.tools?.length) {

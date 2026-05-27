@@ -13,7 +13,7 @@
 
 import assert from 'node:assert/strict';
 import { compactHistoryIfNeeded } from '../dist/context/index.js';
-import { createCompactionSummaryMessage } from '../dist/core/session-jsonl.js';
+import { createCompactionSummaryMessage } from '../dist/core/session/session-jsonl.js';
 import { mergePriorCompactionSummaries, extractCompactionSummaryText } from '../dist/context/summary-checkpoint-merge.js';
 import { buildDeterministicCompactionSummary } from '../dist/context/deterministic-summary.js';
 

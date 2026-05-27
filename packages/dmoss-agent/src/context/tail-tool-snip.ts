@@ -5,7 +5,7 @@
  * 在「软压力」下对**紧靠硬保留区之前**的一小批结果做超阈值单行截断，给长任务挤出窗口。
  */
 
-import type { Message, ContentBlock } from "../core/session-jsonl.js";
+import type { Message, ContentBlock } from "../core/session/session-jsonl.js";
 import { estimateTokensForText } from "./tokens.js";
 
 export interface TailToolSnipConfig {

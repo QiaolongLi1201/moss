@@ -13,8 +13,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import type { Tool } from '../core/tool-types.js';
+import type { Tool } from '../core/tools/tool-types.js';
 import { assertSandboxPath } from '../safety/sandbox-paths.js';
+import { createSubagentTool } from './create-subagent.js';
 
 const IS_WIN = process.platform === 'win32';
 
@@ -367,6 +368,7 @@ export const builtinTools: Tool[] = [
   execTool,
   searchFilesTool,
   searchCodeTool,
+  createSubagentTool,
 ];
 
 /**

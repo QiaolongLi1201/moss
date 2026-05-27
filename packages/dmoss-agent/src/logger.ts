@@ -107,8 +107,13 @@ export function redactSensitive(
   data: Record<string, unknown> | undefined,
   sensitiveKeys: readonly string[] = DEFAULT_SENSITIVE_KEYS,
   depth = 0,
-): Record<string, unknown> | undefined {
-  if (!data || typeof data !== 'object' || depth > 4) return data;
+  seen?: WeakSet<object>,
+): Record<string, unknown> | string | undefined {
+  if (!data || typeof data !== 'object') return data;
+  if (depth > 4) return '[REDACTED:depth]';
+  if (!seen) seen = new WeakSet<object>();
+  if (seen.has(data)) return '[Circular]';
+  seen.add(data);
   const lowerKeys = new Set(sensitiveKeys.map((k) => k.toLowerCase()));
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
@@ -117,8 +122,17 @@ export function redactSensitive(
       out[k] = maskValue(v);
       continue;
     }
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      out[k] = redactSensitive(v as Record<string, unknown>, sensitiveKeys, depth + 1);
+    if (v && typeof v === 'object') {
+      if (Array.isArray(v)) {
+        out[k] = v.map((item) => {
+          if (item && typeof item === 'object' && !Array.isArray(item)) {
+            return redactSensitive(item as Record<string, unknown>, sensitiveKeys, depth + 1, seen);
+          }
+          return item;
+        });
+      } else {
+        out[k] = redactSensitive(v as Record<string, unknown>, sensitiveKeys, depth + 1, seen);
+      }
     } else {
       out[k] = v;
     }
@@ -212,7 +226,7 @@ export function createLogger(opts: LoggerOptions = {}): Logger {
       (data && Object.keys(data).length > 0) || Object.keys(baseContext).length > 0
         ? { ...baseContext, ...(data ?? {}) }
         : undefined;
-    const safe = redactSensitive(merged, sensitiveKeys);
+    const safe = redactSensitive(merged, sensitiveKeys) as Record<string, unknown> | undefined;
     sink({
       ts: nowIso(),
       level,

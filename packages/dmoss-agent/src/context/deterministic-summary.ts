@@ -1,4 +1,4 @@
-import type { Message } from "../core/session-jsonl.js";
+import type { Message } from "../core/session/session-jsonl.js";
 
 const DEFAULT_SUMMARY_FALLBACK = "No prior history.";
 const DETERMINISTIC_SUMMARY_MAX_CHARS = 12_000;

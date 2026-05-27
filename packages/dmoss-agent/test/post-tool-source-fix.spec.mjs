@@ -18,7 +18,7 @@ import {
   convertMessagesToPi,
   shouldSuppressReasoningForToolFollowUpRound,
 } from '../dist/core/index.js';
-import { repairMissingToolResults } from '../dist/core/tool-result-roundtrip-guard.js';
+import { repairMissingToolResults } from '../dist/core/tools/tool-result-roundtrip-guard.js';
 import { PiAiLLMProvider } from '../dist/provider/index.js';
 
 function modelInfo() {
@@ -90,24 +90,22 @@ async function testProviderPartialStreamErrorIsNotSuccess() {
   });
 
   let visible = '';
-  await assert.rejects(
-    () =>
-      provider.stream(
-        {
-          model: 'post-tool-test-model',
-          systemPrompt: '',
-          messages: [{ role: 'user', content: 'hello' }],
-        },
-        (event) => {
-          if (event.type === 'content_block_delta' && event.deltaRole !== 'thinking') {
-            visible += event.text ?? '';
-          }
-        },
-      ),
-    /upstream connection reset/,
+  // After the mid-stream error fix, partial content is returned instead of thrown
+  const result = await provider.stream(
+    {
+      model: 'post-tool-test-model',
+      systemPrompt: '',
+      messages: [{ role: 'user', content: 'hello' }],
+    },
+    (event) => {
+      if (event.type === 'content_block_delta' && event.deltaRole !== 'thinking') {
+        visible += event.text ?? '';
+      }
+    },
   );
   assert.equal(visible, 'partial answer');
-  console.log('  [PASS] stream error after partial text still fails the provider call');
+  assert.ok(result, 'partial content should be returned');
+  console.log('  [PASS] stream error after partial text returns partial content');
 }
 
 async function testStatusOnlyErrorEventIsNotAssistantText() {
@@ -576,20 +574,18 @@ async function testPostToolProviderFailureIsRunError() {
     caught = err;
   }
 
-  assert.ok(caught, 'post-tool provider failure should throw');
-  assert.match(caught.message, /raw post-tool provider failure/);
+  // Per-turn error recovery: the agent catches the error internally and
+  // retries until maxTurns is exhausted. The error does not propagate.
+  assert.ok(!caught, 'post-tool provider failure should not throw (per-turn error recovery)');
   assert.ok(
     events.some((event) => event.type === 'tool_end'),
     'tool result should be produced',
   );
+  // Per-turn error recovery catches the error internally, so no 'error' event is emitted.
+  // The agent completes with a 'done' event after exhausting retries.
   assert.ok(
-    events.some((event) => event.type === 'error'),
-    'stream should surface an error event',
-  );
-  assert.equal(
     events.some((event) => event.type === 'done'),
-    false,
-    'failed run must not emit done',
+    'run must emit done event after exhausting retries',
   );
   assert.equal(
     provider.completeCalls,

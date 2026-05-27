@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { runFanOut, runPipeline } from '../dist/core/subagent-orchestrator.js';
+import { runFanOut, runPipeline } from '../dist/core/subagent/subagent-orchestrator.js';
 import { MeshEventBus } from '../dist/mesh/mesh-events.js';
 
 // ── Mock runner: returns deterministic results ───────────────────
@@ -155,11 +155,12 @@ function makeConfigs(n, parentRunId) {
   await runFanOut(configs, runner, bus);
 
   assert.ok(events.includes('child_run_started'), 'events: should include child_run_started');
-  assert.ok(events.includes('child_run_progress'), 'events: should include child_run_progress');
   assert.ok(events.includes('child_run_completed'), 'events: should include child_run_completed');
   assert.equal(events.filter((e) => e === 'child_run_started').length, 2, 'events: 2 started events');
-  assert.equal(events.filter((e) => e === 'child_run_progress').length, 2, 'events: 2 progress events');
   assert.equal(events.filter((e) => e === 'child_run_completed').length, 2, 'events: 2 completed events');
+  // child_run_progress is no longer emitted by the orchestrator (was fake data);
+  // real progress should come from the runner itself.
+  assert.ok(!events.includes('child_run_progress'), 'events: should NOT include fake child_run_progress');
   console.log('  [PASS] fan-out emits structured events');
 }
 
@@ -176,11 +177,12 @@ function makeConfigs(n, parentRunId) {
   await runFanOut(configs, runner, bus);
 
   assert.ok(events.includes('child_run_failed'), 'events: should include child_run_failed');
-  assert.ok(events.includes('child_run_progress'), 'events: should include child_run_progress');
+  // child_run_progress is no longer emitted by the orchestrator (was fake data).
+  assert.ok(!events.includes('child_run_progress'), 'events: should NOT include fake child_run_progress');
   console.log('  [PASS] fan-out emits child_run_failed for failures');
 }
 
-// Test 9: pipeline emits child_run_progress events
+// Test 9: pipeline emits child_run_started/completed events
 {
   const bus = new MeshEventBus();
   const events = [];
@@ -193,9 +195,13 @@ function makeConfigs(n, parentRunId) {
   ]);
   await runPipeline(configs, runner, bus);
 
-  assert.ok(events.includes('child_run_progress'), 'events: should include child_run_progress');
-  assert.equal(events.filter((e) => e === 'child_run_progress').length, 2, 'events: 2 progress events');
-  console.log('  [PASS] pipeline emits child_run_progress');
+  assert.ok(events.includes('child_run_started'), 'events: should include child_run_started');
+  assert.ok(events.includes('child_run_completed'), 'events: should include child_run_completed');
+  // child_run_progress is no longer emitted by the orchestrator (was fake data).
+  assert.ok(!events.includes('child_run_progress'), 'events: should NOT include fake child_run_progress');
+  assert.equal(events.filter((e) => e === 'child_run_started').length, 2, 'events: 2 started events');
+  assert.equal(events.filter((e) => e === 'child_run_completed').length, 2, 'events: 2 completed events');
+  console.log('  [PASS] pipeline emits child_run_started/completed');
 }
 
 // Test 10: empty fan-out returns immediately

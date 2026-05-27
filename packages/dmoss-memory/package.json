@@ -27,7 +27,7 @@
     "url": "https://github.com/D-Moss/dmoss-memory.git"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
     "prepublishOnly": "npm run clean && npm run build",
@@ -35,14 +35,6 @@
   },
   "dependencies": {
     "@dmoss/core": "^0.3.1"
-  },
-  "peerDependencies": {
-    "@dmoss/agent": "^0.3.1"
-  },
-  "peerDependenciesMeta": {
-    "@dmoss/agent": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "typescript": "^5.7.3"

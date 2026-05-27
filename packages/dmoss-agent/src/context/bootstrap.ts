@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { isSubagentSessionKey } from "../core/session-key.js";
+import { isSubagentSessionKey } from "../core/session/session-key.js";
 
 export type MemoryPolicy = {
   dailyMemoryDays?: number;

@@ -11,7 +11,7 @@
  */
 
 import { execFileSync, execSync } from 'node:child_process';
-import type { Tool } from '../core/tool-types.js';
+import type { Tool } from '../core/tools/tool-types.js';
 
 const IS_WIN = process.platform === 'win32';
 

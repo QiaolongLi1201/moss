@@ -26,6 +26,14 @@ const SECRET_RULES: SecretRule[] = [
     label: 'credential value',
     groupIdx: 1,
   },
+  { source: 'sig=[A-Za-z0-9+/=%]{10,}', flags: 'gi', label: 'Azure SAS token' },
+  { source: '(?:AccountKey|SharedAccessKey|Password)=\\S{8,}', flags: 'gi', label: 'Azure connection string' },
+  { source: '"private_key"\\s*:\\s*"-----BEGIN (?:RSA )?PRIVATE KEY-----[^"]{20,}', flags: 'gi', label: 'GCP service account' },
+  { source: '\\bnpm_[A-Za-z0-9]{36}\\b', flags: 'g', label: 'npm token' },
+  { source: 'pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}', flags: 'g', label: 'PyPI token' },
+  { source: 'dckr_pat_[A-Za-z0-9_-]{27,}', flags: 'g', label: 'Docker registry token' },
+  { source: 'CLOUDFLARE_(?:API_TOKEN|API_KEY)[\\s=:]+[A-Za-z0-9_-]{20,}', flags: 'gi', label: 'Cloudflare API token' },
+  { source: 'vercel_(?:token|secret)_[A-Za-z0-9]{24,}', flags: 'gi', label: 'Vercel token' },
 ];
 
 function buildPattern(rule: SecretRule): RegExp {

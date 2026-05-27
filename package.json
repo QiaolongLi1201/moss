@@ -7,14 +7,15 @@
   "description": "Moss open-source workspace: runtime, agent, memory, skills, teaching, and scaffolding packages.",
   "workspaces": [
     "packages/dmoss",
-    "packages/dmoss-agent",
     "packages/dmoss-memory",
     "packages/dmoss-skills",
+    "packages/dmoss-agent",
     "packages/dmoss-teaching",
     "packages/create-dmoss-app"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present",
+    "build": "npm run clean && npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "check:boundaries": "node scripts/check-oss-boundaries.mjs",

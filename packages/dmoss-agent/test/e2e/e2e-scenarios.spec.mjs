@@ -21,8 +21,8 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { DmossAgent } from '../../dist/core/dmoss-agent.js';
-import { InMemorySessionStore } from '../../dist/core/session.js';
+import { DmossAgent } from '../../dist/core/agent/dmoss-agent.js';
+import { InMemorySessionStore } from '../../dist/core/session/session.js';
 import { createMockTranscriptProvider } from './mock-transcript-provider.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -103,7 +103,7 @@ async function loadTranscript(name) {
   const mockLLM = createMockTranscriptProvider('mock', 'Mock LLM', transcript);
   const store = new InMemorySessionStore();
 
-  /** @type {import('../../dist/core/tool-types.js').Tool} */
+  /** @type {import('../../dist/core/tools/tool-types.js').Tool} */
   const mockMeshDiscover = {
     name: 'mesh_discover',
     description: 'Discover a D-Moss peer agent at a specific address.',

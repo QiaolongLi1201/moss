@@ -1,4 +1,4 @@
-import type { MemoryScope } from "@dmoss/agent/core";
+import type { MemoryScope } from "./memory-manager.js";
 
 export interface SelfLearningMemoryDraft {
   content: string;

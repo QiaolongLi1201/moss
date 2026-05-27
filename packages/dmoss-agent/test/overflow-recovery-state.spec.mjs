@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import {
   createOverflowRecoveryState,
   runOverflowRecovery,
-} from '../dist/core/overflow-recovery.js';
+} from '../dist/core/loop/overflow-recovery.js';
 
 const message = (content, timestamp = Date.now()) => ({
   role: 'user',

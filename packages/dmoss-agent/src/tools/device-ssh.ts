@@ -13,7 +13,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import type { Tool } from '../core/tool-types.js';
+import type { Tool } from '../core/tools/tool-types.js';
+import { safeChildEnv } from '../utils/safe-child-env.js';
 
 export interface DeviceSshConfig {
   host: string;
@@ -67,7 +68,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
           timeout,
           maxBuffer: 10 * 1024 * 1024,
           encoding: 'utf-8',
-          env: { ...process.env, SSHPASS: config.password || '' },
+          env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
         });
         return String(result).trim() || '(no output)';
       } catch (err: any) {

@@ -12,8 +12,8 @@
 
 import assert from 'node:assert/strict';
 
-import { DmossAgent } from '../dist/core/dmoss-agent.js';
-import { InMemorySessionStore } from '../dist/core/session.js';
+import { DmossAgent } from '../dist/core/agent/dmoss-agent.js';
+import { InMemorySessionStore } from '../dist/core/session/session.js';
 import {
   MOSS_HOST_ADAPTER_CONTRACT_VERSION,
   evaluateMossHostCompatibility,

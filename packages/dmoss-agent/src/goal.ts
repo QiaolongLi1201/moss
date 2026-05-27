@@ -11,5 +11,5 @@ export {
   type GoalCommandResult,
   type HandleGoalCommandParams,
   type ParsedGoalCommand,
-} from './core/goal-command.js';
-export type { GoalState, GoalStatus } from './core/goal-state.js';
+} from './core/goal/goal-command.js';
+export type { GoalState, GoalStatus } from './core/goal/goal-state.js';

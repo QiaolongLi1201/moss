@@ -209,11 +209,10 @@ async function testFailedProviderTurnDoesNotPoisonLaterConversation() {
   });
 
   await collect(agent, 'failure-recovery', '第一轮');
-  await assert.rejects(
-    () => collect(agent, 'failure-recovery', '触发一次失败'),
-    /reasoning_content/,
-  );
-  const { done } = await collect(agent, 'failure-recovery', '失败后继续');
+  // Per-turn error recovery: the agent catches the error internally,
+  // injects a correction message, and re-calls the LLM — self-healing
+  // without propagating the error to the caller.
+  const { done } = await collect(agent, 'failure-recovery', '触发一次失败');
 
   assert.equal(done.result.response, '恢复成功。');
   assert.equal(calls.length, 3);

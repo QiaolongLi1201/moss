@@ -9,11 +9,11 @@
 
 import assert from 'node:assert/strict';
 import { planContextBudgetActions } from '../dist/core/index.js';
-import { runPerTurnContextManagement } from '../dist/core/per-turn-context-management.js';
+import { runPerTurnContextManagement } from '../dist/core/loop/per-turn-context-management.js';
 import {
   checkPromptPrefixStable,
   snapshotMessagesForPrefixCheck,
-} from '../dist/core/prompt-prefix-cache.js';
+} from '../dist/core/llm/prompt-prefix-cache.js';
 
 {
   const plan = planContextBudgetActions({

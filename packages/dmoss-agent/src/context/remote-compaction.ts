@@ -12,8 +12,8 @@
  * - Token budget awareness: remote endpoint receives budget constraints
  */
 
-import type { Message } from '../core/session-jsonl.js';
-import { createCompactionSummaryMessage } from '../core/session-jsonl.js';
+import type { Message } from '../core/session/session-jsonl.js';
+import { createCompactionSummaryMessage } from '../core/session/session-jsonl.js';
 import { estimateMessagesTokens } from './tokens.js';
 import {
   buildCompactionSummary,
@@ -21,6 +21,7 @@ import {
   DEFAULT_COMPACTION_SETTINGS,
 } from './compaction.js';
 import { getRootLogger } from '../logger.js';
+import { sanitizeSecrets } from '../safety/secret-sanitizer.js';
 
 const log = getRootLogger().child('agent:remote-compact');
 
@@ -66,6 +67,33 @@ export interface HybridCompactionConfig {
   customInstructions?: string;
 }
 
+function redactSecretsInText(text: string): string {
+  return sanitizeSecrets(text);
+}
+
+function sanitizePayloadForRemote(messages: Message[]): Message[] {
+  return messages.map((msg) => {
+    if (typeof msg.content === 'string') {
+      return { ...msg, content: redactSecretsInText(msg.content) };
+    }
+    if (Array.isArray(msg.content)) {
+      return {
+        ...msg,
+        content: msg.content.map((block) => {
+          if (block.type === 'text' && block.text) {
+            return { ...block, text: redactSecretsInText(block.text) };
+          }
+          if (block.type === 'tool_result' && typeof block.content === 'string') {
+            return { ...block, content: redactSecretsInText(block.content) };
+          }
+          return block;
+        }),
+      };
+    }
+    return msg;
+  });
+}
+
 /**
  * HTTP-based remote compaction provider.
  * Sends conversation to a server endpoint for efficient server-side compression.
@@ -86,20 +114,38 @@ export class HttpRemoteCompactProvider implements RemoteCompactProvider {
     this.healthUrl = urls.healthUrl;
     this.apiKey = params.apiKey;
     this.timeoutMs = params.timeoutMs ?? 60_000;
+
+    // C3: Enforce HTTPS for non-localhost endpoints
+    const isLocalhost = /^https?:\/\/(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(this.compactUrl);
+    if (!isLocalhost && !this.compactUrl.startsWith('https://')) {
+      throw new Error(
+        'Remote compaction endpoint must use HTTPS for non-localhost URLs. ' +
+        'Set DMOSS_REMOTE_COMPACT_ENDPOINT to an https:// URL, or use localhost for development.',
+      );
+    }
+
+    // C3: Require auth for non-localhost endpoints
+    if (!isLocalhost && !this.apiKey) {
+      throw new Error(
+        'Remote compaction endpoint requires an API key for non-localhost URLs. ' +
+        'Set DMOSS_REMOTE_COMPACT_API_KEY.',
+      );
+    }
   }
 
   async isAvailable(): Promise<boolean> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
       const res = await fetch(this.healthUrl, {
         signal: controller.signal,
         headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {},
       });
-      clearTimeout(timer);
       return res.ok;
     } catch {
       return false;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -116,7 +162,7 @@ export class HttpRemoteCompactProvider implements RemoteCompactProvider {
           ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
         },
         body: JSON.stringify({
-          messages: request.messages,
+          messages: sanitizePayloadForRemote(request.messages),
           system_prompt: request.systemPrompt,
           max_output_tokens: request.maxOutputTokens,
           context_window_tokens: request.contextWindowTokens,
@@ -129,16 +175,67 @@ export class HttpRemoteCompactProvider implements RemoteCompactProvider {
         throw new Error(`Remote compact failed: ${res.status} ${res.statusText}`);
       }
 
-      const data = (await res.json()) as {
+      // Bound response body size — streaming read to handle chunked transfer
+      const MAX_BODY_BYTES = 10 * 1024 * 1024;
+      const contentLength = res.headers.get('content-length');
+      if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
+        throw new Error('Remote compact response too large');
+      }
+
+      let bodyText: string;
+      if (res.body) {
+        const reader = res.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let totalBytes = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          totalBytes += value.byteLength;
+          if (totalBytes > MAX_BODY_BYTES) {
+            reader.cancel();
+            throw new Error('Remote compact response too large');
+          }
+          chunks.push(value);
+        }
+        const body = new Uint8Array(totalBytes);
+        let offset = 0;
+        for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+        bodyText = new TextDecoder().decode(body);
+      } else {
+        bodyText = await res.text();
+      }
+
+      const data = JSON.parse(bodyText) as {
         summary?: string;
         compacted_messages?: Message[];
         tokens_saved?: number;
       };
 
+      // Validate remote response
+      const summary = typeof data.summary === 'string' ? data.summary.trim() : '';
+      if (!summary) {
+        throw new Error('Remote compact returned empty summary');
+      }
+
+      const tokensSaved = typeof data.tokens_saved === 'number' && data.tokens_saved >= 0
+        ? data.tokens_saved
+        : 0;
+
+      let compactedMessages: Message[] | undefined;
+      if (data.compacted_messages !== undefined) {
+        if (!Array.isArray(data.compacted_messages)) {
+          log.warn('remote compact returned non-array compacted_messages; ignoring', {
+            type: typeof data.compacted_messages,
+          });
+        } else {
+          compactedMessages = data.compacted_messages as Message[];
+        }
+      }
+
       return {
-        summary: data.summary ?? '',
-        compactedMessages: data.compacted_messages,
-        tokensSaved: data.tokens_saved ?? 0,
+        summary,
+        compactedMessages,
+        tokensSaved,
         method: 'remote',
       };
     } finally {

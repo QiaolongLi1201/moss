@@ -10,6 +10,8 @@
  * - Kiro CLI：溢出时自动 compact、`/context show` 可观测、大上下文用 Knowledge Base 按需检索而非整段塞窗
  */
 
+import { parseEnvBoundedFloat, parseEnvBoundedInt } from '../utils/env-compat.js';
+
 /** 摘要/compact 调用预留输出上限（order-of-magnitude reserve for summary output） */
 export const SUMMARY_OUTPUT_CAP_TOKENS = 20_000;
 
@@ -20,11 +22,7 @@ export const SUMMARY_OUTPUT_CAP_TOKENS = 20_000;
  * - 通过 `DMOSS_AUTOCOMPACT_BUFFER_TOKENS` 覆盖（仅取 1_000 ~ 80_000）。
  */
 function resolveAutoCompactBuffer(): number {
-  const raw = Number(process.env.DMOSS_AUTOCOMPACT_BUFFER_TOKENS);
-  if (Number.isFinite(raw) && raw >= 1_000 && raw <= 80_000) {
-    return Math.floor(raw);
-  }
-  return 13_000;
+  return parseEnvBoundedInt('DMOSS_AUTOCOMPACT_BUFFER_TOKENS', 13_000, 1_000, 80_000);
 }
 
 export const AUTOCOMPACT_BUFFER_TOKENS = resolveAutoCompactBuffer();
@@ -44,11 +42,7 @@ const MIN_EFFECTIVE_WINDOW = 4_000;
  * - 可通过 `DMOSS_AUTOCOMPACT_BUFFER_RATIO` 覆盖（仅取 0.05~0.5）
  */
 function resolveAutoCompactBufferRatio(): number {
-  const raw = Number(process.env.DMOSS_AUTOCOMPACT_BUFFER_RATIO);
-  if (Number.isFinite(raw) && raw >= 0.05 && raw <= 0.5) {
-    return raw;
-  }
-  return 0.18;
+  return parseEnvBoundedFloat('DMOSS_AUTOCOMPACT_BUFFER_RATIO', 0.18, 0.05, 0.5);
 }
 
 const AUTOCOMPACT_BUFFER_RATIO = resolveAutoCompactBufferRatio();

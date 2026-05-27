@@ -19,10 +19,9 @@ export interface RedactOptions {
 const REDACTED = '[REDACTED]';
 const CIRCULAR = '[CIRCULAR]';
 
-/** Field-name patterns considered sensitive (case-insensitive match). */
-const SENSITIVE_FIELD_PATTERNS: RegExp[] = [
-  /^(token|api_key|apikey|api-key|secret|password|credential)$/i,
-];
+/** Field-name pattern considered sensitive (matches at field-name word boundaries: start/end/_ or -). */
+const SENSITIVE_FIELD_PATTERN =
+  /(?:^|[_-])(token|api[_-]?key|secret|password|credential|auth|private[_-]?key|access[_-]?key|connection[_-]?string|dsn|jwt|ssh[_-]?key|signing[_-]?key|encryption[_-]?key|client[_-]?secret)(?:$|[_-])/i;
 
 /** Sensitive field names that contain the word "prompt". */
 const PROMPT_FIELD_PATTERN = /prompt/i;
@@ -43,7 +42,7 @@ const IPV6_PATTERN =
 const IPV6_PATTERN_GLOBAL = new RegExp(IPV6_PATTERN.source, 'g');
 
 /** URL with embedded credentials: protocol://user:pass@host */
-const URL_WITH_CREDENTIALS_PATTERN = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\/[^:]+:[^@]+@/;
+const URL_WITH_CREDENTIALS_PATTERN = /[a-zA-Z][a-zA-Z\d+.-]*:\/\/[^:]+:[^@]+@/;
 
 /** Threshold: strings longer than this are checked for file-content patterns. */
 const FILE_CONTENT_LENGTH_THRESHOLD = 200;
@@ -60,9 +59,7 @@ const FILE_CONTENT_HEURISTICS: RegExp[] = [
 function isSensitiveField(field: string, allowSet: Set<string>): boolean {
   if (allowSet.has(field)) return false;
   if (PROMPT_FIELD_PATTERN.test(field)) return true;
-  for (const pattern of SENSITIVE_FIELD_PATTERNS) {
-    if (pattern.test(field)) return true;
-  }
+  if (SENSITIVE_FIELD_PATTERN.test(field)) return true;
   return false;
 }
 
@@ -127,6 +124,24 @@ function walk(
   if (Array.isArray(value)) {
     return value.map((item) => walk(item, allowSet, extraPatterns, seen));
   }
+
+  // Built-in types — walk Map/Set entries so sensitive fields inside them are still redacted
+  if (value instanceof Map) {
+    const obj: Record<string, unknown> = {};
+    for (const [k, v] of value.entries()) {
+      const key = String(k);
+      if (isSensitiveField(key, allowSet)) {
+        obj[key] = REDACTED;
+      } else {
+        obj[key] = walk(v, allowSet, extraPatterns, seen);
+      }
+    }
+    return obj;
+  }
+  if (value instanceof Set) {
+    return [...value].map((item) => walk(item, allowSet, extraPatterns, seen));
+  }
+  if (value instanceof Date) return value.toISOString();
 
   // Plain objects — redact sensitive fields, recurse on the rest
   const result: Record<string, unknown> = {};

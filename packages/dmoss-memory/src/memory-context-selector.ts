@@ -10,7 +10,7 @@
  *
  * 测试（DoD-5 验收）: packages/dmoss-agent 本体 E2E + server 侧单测均可独立断言；本函数纯函数可组合。
  */
-import type { MemoryEntry, MemoryManager, MemoryScope } from '@dmoss/agent/core';
+import type { MemoryEntry, MemoryManager, MemoryScope } from './memory-manager.js';
 
 export interface SelectMemoryForContextParams {
   memoryManager: MemoryManager;

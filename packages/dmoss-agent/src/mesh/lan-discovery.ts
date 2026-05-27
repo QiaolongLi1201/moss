@@ -11,6 +11,9 @@
 import dgram from 'node:dgram';
 import os from 'node:os';
 import type { AgentMesh, MeshPeer } from './agent-mesh.js';
+import { getRootLogger } from '../logger.js';
+
+const log = getRootLogger().child('mesh:lan-discovery');
 
 const BROADCAST_PORT = parseInt(process.env.DMOSS_MESH_DISCOVERY_PORT || '9091', 10) || 9091;
 const BROADCAST_INTERVAL_MS = 10_000;
@@ -20,6 +23,8 @@ export interface LanDiscoveryConfig {
   meshPort: number;
   agentId: string;
   agentName: string;
+  /** Capabilities to advertise in broadcast announcements. */
+  capabilities?: string[];
 }
 
 interface BroadcastMessage {
@@ -34,12 +39,15 @@ interface BroadcastMessage {
 export class LanDiscovery {
   private socket: dgram.Socket | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private expiryTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly peerTtlMs: number;
   private readonly config: LanDiscoveryConfig;
   private running = false;
   private onPeerDiscovered: ((peer: MeshPeer) => void) | null = null;
 
   constructor(config: LanDiscoveryConfig) {
     this.config = config;
+    this.peerTtlMs = Number(process.env.DMOSS_MESH_PEER_TTL_MS) || 5 * 60 * 1000;
   }
 
   onNewPeer(handler: (peer: MeshPeer) => void): void {
@@ -55,6 +63,8 @@ export class LanDiscovery {
       try {
         const msg: BroadcastMessage = JSON.parse(data.toString());
         if (msg.type !== 'dmoss-announce') return;
+        if (!msg.id || typeof msg.id !== 'string') return;
+        if (typeof msg.name !== 'string') msg.name = msg.id;
         if (msg.id === this.config.agentId) return;
 
         // L1: Validate meshPort
@@ -71,7 +81,7 @@ export class LanDiscovery {
             .then((discovered) => {
               if (discovered && this.onPeerDiscovered) this.onPeerDiscovered(discovered);
             })
-            .catch((err) => console.warn('[lan-discovery] peer discovery failed:', err?.message ?? err));
+            .catch((err) => log.warn('peer discovery failed', { error: err?.message ?? String(err) }));
         }
       } catch { /* ignore invalid messages */ }
     });
@@ -83,11 +93,20 @@ export class LanDiscovery {
 
         this.broadcast();
         this.timer = setInterval(() => this.broadcast(), BROADCAST_INTERVAL_MS);
+        this.timer.unref?.();
+
+        // Periodic stale peer eviction (synced with mesh peer list)
+        this.expiryTimer = setInterval(() => this.evictStalePeers(), 60_000);
+        this.expiryTimer.unref?.();
 
         resolve();
       });
       this.socket!.on('error', (err) => {
-        if (!this.running) reject(err);
+        if (!this.running) {
+          reject(err);
+        } else {
+          log.error('socket error after startup', { error: err?.message ?? String(err) });
+        }
       });
     });
   }
@@ -97,6 +116,10 @@ export class LanDiscovery {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+    if (this.expiryTimer) {
+      clearInterval(this.expiryTimer);
+      this.expiryTimer = null;
     }
     if (this.socket) {
       this.socket.close();
@@ -112,19 +135,24 @@ export class LanDiscovery {
       id: this.config.agentId,
       name: this.config.agentName,
       meshPort: this.config.meshPort,
-      capabilities: [],
+      capabilities: this.config.capabilities ?? [],
     };
 
     const buf = Buffer.from(JSON.stringify(msg));
-    const broadcastAddr = this.getBroadcastAddress();
+    const addresses = this.getAllBroadcastAddresses();
 
-    try {
-      this.socket.send(buf, 0, buf.length, BROADCAST_PORT, broadcastAddr);
-    } catch { /* broadcast might fail on some networks */ }
+    for (const addr of addresses) {
+      try {
+        this.socket.send(buf, 0, buf.length, BROADCAST_PORT, addr);
+      } catch {
+        /* broadcast might fail on some networks */
+      }
+    }
   }
 
-  private getBroadcastAddress(): string {
+  private getAllBroadcastAddresses(): string[] {
     const interfaces = os.networkInterfaces();
+    const addresses: string[] = [];
     for (const iface of Object.values(interfaces)) {
       if (!iface) continue;
       for (const info of iface) {
@@ -134,10 +162,23 @@ export class LanDiscovery {
           const broadcast = parts.map((p, i) =>
             (parseInt(p) | (~parseInt(maskParts[i]) & 255)).toString()
           ).join('.');
-          return broadcast;
+          addresses.push(broadcast);
         }
       }
     }
-    return '255.255.255.255';
+    if (addresses.length === 0) {
+      addresses.push('255.255.255.255');
+    }
+    return addresses;
+  }
+
+  private evictStalePeers(): void {
+    const cutoff = Date.now() - this.peerTtlMs;
+    const peers = this.config.mesh.getPeers();
+    for (const peer of peers) {
+      if (peer.lastSeen < cutoff) {
+        this.config.mesh.removePeer(peer.id, 'discovery_ttl_expired');
+      }
+    }
   }
 }

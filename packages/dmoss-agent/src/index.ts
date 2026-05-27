@@ -14,6 +14,7 @@
 
 // --- Knowledge Module System ---
 export {
+  KnowledgeRegistry,
   registerKnowledgeModule,
   unregisterKnowledgeModule,
   getKnowledgeModule,
@@ -66,6 +67,8 @@ export {
 export { DmossAgent } from './core/index.js';
 export type { DmossAgentConfig, ChatOptions, ChatResult, DmossAgentEvent } from './core/index.js';
 export type { AgentHooks, ToolApprovalRequest, ToolApprovalDecision } from './core/index.js';
+export type { AgentLoopHardCaps } from './core/index.js';
+export { resolveEffectiveCaps } from './core/index.js';
 export {
   executeGoalCommand,
   formatGoalCommandResult,
@@ -88,7 +91,7 @@ export { createInlineThinkingRouter, splitThinkingTagsFromAssistantText } from '
 export type { InlineThinkingRouter } from './core/index.js';
 export { ToolRegistry } from './core/index.js';
 export type { ToolGroup, ToolRegistryOptions } from './core/index.js';
-export type { ToolContext, Tool, ToolCall, ToolResult } from './core/index.js';
+export type { ToolContext, Tool, ToolCall, ToolResult, ToolContentBlock, StructuredToolResult } from './core/index.js';
 export { canHostInjectToolWithEmptyInput } from './core/index.js';
 export type {
   LLMProvider,

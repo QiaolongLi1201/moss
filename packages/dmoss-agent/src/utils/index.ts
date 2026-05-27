@@ -1,3 +1,4 @@
+export { atomicWriteFile } from './atomic-write.js';
 export { TextDeltaSmoother } from './text-delta-smoother.js';
 export { dmossRunTrace } from './run-trace-log.js';
 export { parseAtRefs, hasAtRefs } from './at-ref-parser.js';

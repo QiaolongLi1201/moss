@@ -12,7 +12,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { JsonlSessionStore } from '../dist/core/jsonl-session-store.js';
+import { JsonlSessionStore } from '../dist/core/session/jsonl-session-store.js';
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmoss-jsonl-session-'));
 const store = new JsonlSessionStore({ dir });

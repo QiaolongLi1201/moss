@@ -13,19 +13,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const distJs = path.join(dir, '..', 'dist', 'index.js');
-const { selectMemoriesForContext, renderMemoryPicksForSystemPrompt } = await import(pathToFileURL(distJs).href);
-
-// Resolve @dmoss/agent via Node module resolution (works in both monorepo and submodule setups)
-let MemoryManager;
-try {
-  const agentEntry = import.meta.resolve('@dmoss/agent');
-  const agentDistDir = path.dirname(fileURLToPath(agentEntry));
-  const agentMemoryPath = path.join(agentDistDir, 'core', 'memory.js');
-  ({ MemoryManager } = await import(pathToFileURL(agentMemoryPath).href));
-} catch {
-  console.log('[SKIP] @dmoss/agent not available (optional peer dep)');
-  process.exit(0);
-}
+const {
+  MemoryManager,
+  selectMemoriesForContext,
+  renderMemoryPicksForSystemPrompt,
+} = await import(pathToFileURL(distJs).href);
 
 async function rmrf(p) {
   await fs.rm(p, { recursive: true, force: true });

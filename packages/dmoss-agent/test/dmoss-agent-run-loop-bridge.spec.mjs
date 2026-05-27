@@ -128,10 +128,11 @@ function createModelEventProvider(handler) {
       maxAgentTurns: 1,
     });
 
-    await assert.rejects(
-      () => agent.chat('bridge-observability-redaction', 'trigger redacted failure'),
-      /device unreachable|provider_error|llm/i,
-    );
+    // Per-turn error recovery: the agent catches the error internally and
+    // retries until maxTurns is exhausted. The error does not propagate.
+    const result = await agent.chat('bridge-observability-redaction', 'trigger redacted failure');
+    // Agent completes with empty response after exhausting retries
+    assert.equal(result.response, '');
 
     const llmTurnSpan = spans.find((span) => span.name === 'agent.llm_turn');
     assert(llmTurnSpan, 'expected real DmossAgent.chat() to start agent.llm_turn span');
@@ -145,10 +146,13 @@ function createModelEventProvider(handler) {
       .filter(Boolean)
       .map((line) => JSON.parse(line));
 
-    assert.equal(records.length, 1, 'expected one failed usage record');
-    assert.equal(records[0].success, false);
-    assert.equal(records[0].error, 'LLM stream error: device unreachable at [IP_REDACTED]');
-    assert.doesNotMatch(JSON.stringify(records[0]), /192\.168\.1\.42/);
+    // Per-turn error recovery causes multiple failed LLM calls (retries until maxTurns exhausted)
+    assert(records.length >= 1, 'expected at least one failed usage record');
+    for (const record of records) {
+      assert.equal(record.success, false);
+      assert.equal(record.error, 'LLM stream error: device unreachable at [IP_REDACTED]');
+      assert.doesNotMatch(JSON.stringify(record), /192\.168\.1\.42/);
+    }
   } finally {
     setTracer(noopTracer);
     if (origUsageLog) {

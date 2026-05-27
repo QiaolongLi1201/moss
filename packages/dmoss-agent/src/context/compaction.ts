@@ -1,7 +1,8 @@
+import path from "node:path";
 import {
   createCompactionSummaryMessage,
   type Message,
-} from "../core/session-jsonl.js";
+} from "../core/session/session-jsonl.js";
 import {
   estimateMessageTokens,
   estimateMessagesTokens,
@@ -84,16 +85,26 @@ function extractFileOpsFromMessage(message: Message, fileOps: FileOps): void {
     if (!args || typeof args !== "object") {
       continue;
     }
-    const path = typeof args.path === "string" ? args.path : undefined;
+    const path =
+      typeof args.path === "string" ? args.path :
+      typeof args.file_path === "string" ? args.file_path :
+      undefined;
     if (!path) {
       continue;
     }
     switch (block.name) {
+      case "read":
       case "read_file":
         fileOps.read.add(path);
         break;
+      case "write":
       case "write_file":
         fileOps.written.add(path);
+        break;
+      case "edit":
+      case "multi_edit":
+      case "notebook_edit":
+        fileOps.edited.add(path);
         break;
     }
   }
@@ -542,10 +553,14 @@ export async function compactHistoryIfNeeded(params: {
   skipLlmCompaction?: boolean;
   forceCompaction?: boolean;
   remoteCompactProvider?: RemoteCompactProvider;
+  customInstructions?: string;
+  /** M3: Optional workspace directory for file ops scope isolation. */
+  workspaceDir?: string;
 }): Promise<{
   summary?: string;
   summaryMessage?: Message;
   pruneResult: PruneResult;
+  degraded?: boolean;
 }> {
   const charsPerUnitBase = Math.max(1, params.charsPerTokenUnit ?? CHARS_PER_TOKEN_ESTIMATE);
   const rawTotalChars = estimateMessagesChars(params.messages) + (params.systemPrompt?.length ?? 0);
@@ -632,11 +647,13 @@ export async function compactHistoryIfNeeded(params: {
       summary,
       summaryMessage: createCompactionSummaryMessage(summary, Date.now()),
       pruneResult,
+      degraded: true,
     };
   }
 
   const resolvedSettings = { ...DEFAULT_COMPACTION_SETTINGS, ...params.compactionSettings };
   let summary: string;
+  let degraded = false;
 
   try {
     if (params.remoteCompactProvider) {
@@ -647,6 +664,7 @@ export async function compactHistoryIfNeeded(params: {
           localSummarize: params.summarize,
           contextWindowTokens: params.contextWindowTokens,
           reserveTokens: resolvedSettings.reserveTokens,
+          customInstructions: params.customInstructions,
         },
         pruneResult.droppedMessages,
         params.systemPrompt,
@@ -670,6 +688,7 @@ export async function compactHistoryIfNeeded(params: {
       pruneResult.droppedMessages,
       "LLM 摘要失败，使用本地规则摘要兜底",
     );
+    degraded = true;
   }
   if (
     !summary ||
@@ -680,11 +699,20 @@ export async function compactHistoryIfNeeded(params: {
       pruneResult.droppedMessages,
       "LLM 摘要为空或不可用，使用本地规则摘要兜底",
     );
+    degraded = true;
   }
   summary = mergePriorCompactionSummaries(summary, priorCompactionSummaries);
   const fileOps = createFileOps();
   for (const message of pruneResult.droppedMessages) {
     extractFileOpsFromMessage(message, fileOps);
+  }
+  // M3: scope isolation — filter file paths to workspace when configured.
+  if (params.workspaceDir) {
+    const ws = params.workspaceDir.replace(/[/\\]+$/, '');
+    const inScope = (p: string) => p === ws || p.startsWith(ws + '/') || p.startsWith(ws + '\\') || !path.isAbsolute(p);
+    fileOps.read = new Set([...fileOps.read].filter(inScope));
+    fileOps.written = new Set([...fileOps.written].filter(inScope));
+    fileOps.edited = new Set([...fileOps.edited].filter(inScope));
   }
   const { readFiles, modifiedFiles } = computeFileLists(fileOps);
   summary += formatFileOperations(readFiles, modifiedFiles);
@@ -695,6 +723,7 @@ export async function compactHistoryIfNeeded(params: {
     summary,
     summaryMessage,
     pruneResult,
+    degraded: degraded || undefined,
   };
 }
 

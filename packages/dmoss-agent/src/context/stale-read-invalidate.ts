@@ -6,7 +6,7 @@
  * read / device_file_read 的 tool_result 内容已不可靠，替换为短占位以回收 token。
  */
 
-import type { Message } from '../core/session-jsonl.js';
+import type { Message } from '../core/session/session-jsonl.js';
 import { estimateTokensForText } from './tokens.js';
 
 const READ_RESULT_TOOLS = new Set(['read', 'device_file_read']);

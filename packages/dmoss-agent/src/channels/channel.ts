@@ -5,7 +5,7 @@
  * Each channel adapter implements this interface to bridge a specific
  * platform (WeChat, Telegram, Discord, etc.) with DmossAgent.
  */
-import type { DmossAgent } from '../core/dmoss-agent.js';
+import type { DmossAgent } from '../core/agent/dmoss-agent.js';
 
 export interface ChannelMessage {
   id: string;

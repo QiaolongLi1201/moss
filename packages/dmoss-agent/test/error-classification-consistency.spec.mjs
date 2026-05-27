@@ -93,7 +93,7 @@ const TEST_CASES = [
     label: 'quota_exceeded',
     message: '429 You have exceeded the monthly usage quota',
     status: 429,
-    expectLlmRetryable: true, // 429 matches rate_limit pattern in llm classifier
+    expectLlmRetryable: false, // quota exhaustion is NOT retryable (fixed: previously misclassified as rate_limit)
     expectProviderRetryable: false, // quota_exceeded is NOT retryable
     expectDmossRecoverable: true,
     expectFailover: true, // "quota" matches rate_limit in failover classifier

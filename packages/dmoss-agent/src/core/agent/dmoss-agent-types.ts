@@ -213,7 +213,16 @@ export type DmossAgentEvent =
 
 export type InternalContentBlock = Pick<
   ContentBlock,
-  'type' | 'text' | 'id' | 'name' | 'input' | 'tool_use_id' | 'content' | 'is_error'
+  | 'type'
+  | 'text'
+  | 'id'
+  | 'name'
+  | 'input'
+  | 'tool_use_id'
+  | 'content'
+  | 'is_error'
+  | '_synthetic'
+  | 'structuredContent'
 >;
 
 export type InternalMessage = {
@@ -247,6 +256,8 @@ export function fromSessionMessages(msgs: Message[]): InternalMessage[] {
             ...(b.tool_use_id !== undefined ? { tool_use_id: b.tool_use_id } : {}),
             ...(b.content !== undefined ? { content: b.content } : {}),
             ...(b.is_error !== undefined ? { is_error: b.is_error } : {}),
+            ...(b._synthetic !== undefined ? { _synthetic: b._synthetic } : {}),
+            ...(b.structuredContent !== undefined ? { structuredContent: b.structuredContent } : {}),
           })),
     timestamp: m.timestamp,
     ...(m.thinking ? { thinking: m.thinking } : {}),
@@ -268,9 +279,9 @@ export function toLLMMessages(msgs: InternalMessage[]): LLMMessage[] {
               tool_use_id: b.tool_use_id ?? '',
               content: b.content ?? '',
               ...(b.is_error !== undefined ? { is_error: b.is_error } : {}),
+              ...(b.structuredContent !== undefined ? { structuredContent: b.structuredContent } : {}),
             };
           }),
     ...(m.thinking ? { thinking: m.thinking } : {}),
   }));
 }
-

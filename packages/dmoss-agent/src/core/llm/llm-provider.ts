@@ -5,6 +5,8 @@
  * Host applications implement this interface to wire in their preferred LLM provider.
  */
 
+import type { ToolContentBlock } from '../tools/tool-types.js';
+
 export interface LLMMessage {
   role: 'user' | 'assistant' | 'system';
   content: string | LLMContentBlock[];
@@ -19,7 +21,13 @@ export interface LLMMessage {
 export type LLMContentBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+  | {
+      type: 'tool_result';
+      tool_use_id: string;
+      content: string;
+      is_error?: boolean;
+      structuredContent?: ToolContentBlock[];
+    };
 
 export interface LLMToolDeclaration {
   name: string;

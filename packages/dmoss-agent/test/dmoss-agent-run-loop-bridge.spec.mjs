@@ -601,4 +601,84 @@ function createModelEventProvider(handler) {
   }
 }
 
+{
+  const store = new InMemorySessionStore();
+  const requests = [];
+  const { provider } = createModelEventProvider((options) => {
+    requests.push(options);
+    const hasToolResult = options.messages.some((message) =>
+      Array.isArray(message.content) &&
+      message.content.some((block) => block.type === 'tool_result'),
+    );
+    if (!hasToolResult) {
+      return {
+        stopReason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'resource-call-1', name: 'resource_probe', input: {} }],
+        usage: { inputTokens: 2, outputTokens: 3 },
+      };
+    }
+    return {
+      stopReason: 'end_turn',
+      content: [{ type: 'text', text: 'resource consumed' }],
+      usage: { inputTokens: 4, outputTokens: 5 },
+    };
+  });
+  const agent = new DmossAgent({
+    llmProvider: provider,
+    sessionStore: store,
+    model: 'fake-model',
+    domainPrompt: false,
+    includeRegisteredKnowledgePrompts: false,
+    maxAgentTurns: 4,
+  });
+  agent.tools.register({
+    name: 'resource_probe',
+    description: 'Resource-only structured result',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    async execute() {
+      return 'fallback should not be used';
+    },
+    async executeStructured() {
+      return {
+        content: [
+          {
+            type: 'resource',
+            uri: 'file:///tmp/resource.txt',
+            name: 'resource.txt',
+            mimeType: 'text/plain',
+            text: 'resource text for model',
+          },
+        ],
+      };
+    },
+  });
+
+  const events = [];
+  for await (const event of agent.streamChat('resource-structured-tool', 'run resource tool')) {
+    events.push(event);
+  }
+
+  const toolEnd = events.find((event) => event.type === 'tool_end' && event.toolName === 'resource_probe');
+  assert(toolEnd, 'expected resource tool_end event');
+  assert.equal(toolEnd.result, 'resource text for model');
+
+  const toolFollowRequest = requests.find((request) =>
+    request.messages.some((message) =>
+      Array.isArray(message.content) &&
+      message.content.some((block) => block.type === 'tool_result'),
+    ),
+  );
+  assert(toolFollowRequest, 'expected follow-up request with tool_result');
+  assert(
+    JSON.stringify(toolFollowRequest.messages).includes('resource text for model'),
+    'resource text should be included in tool_result content for the follow-up LLM call',
+  );
+
+  const stored = await store.loadMessages('resource-structured-tool');
+  assert(
+    JSON.stringify(stored).includes('resource text for model'),
+    'resource text should be persisted as the tool_result content',
+  );
+}
+
 console.log('[PASS] DmossAgent runAgentLoop bridge streams text and tools');

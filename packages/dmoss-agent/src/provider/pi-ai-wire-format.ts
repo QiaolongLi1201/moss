@@ -374,6 +374,22 @@ export function hasAssistantThinkingHistory(messages: LLMMessage[] | undefined):
   );
 }
 
+function appendStructuredTextContent(block: { structuredContent?: unknown }, textContent: string): string {
+  const structured = block.structuredContent;
+  if (!Array.isArray(structured) || structured.length === 0) return textContent;
+  const extraText = structured
+    .filter((item): item is { type: 'text'; text: string } =>
+      item !== null &&
+      typeof item === 'object' &&
+      (item as { type?: unknown }).type === 'text' &&
+      typeof (item as { text?: unknown }).text === 'string',
+    )
+    .map((item) => item.text)
+    .join('\n');
+  if (!extraText) return textContent;
+  return textContent ? `${textContent}\n${extraText}` : extraText;
+}
+
 // ============== Message conversion ==============
 
 /**
@@ -401,11 +417,12 @@ export function convertMessages(
           if (block.type === 'text') {
             result.push({ role: 'user', content: [{ type: 'text', text: block.text }] });
           } else if (block.type === 'tool_result') {
+            const textContent = appendStructuredTextContent(block, block.content);
             result.push({
               role: 'toolResult',
               toolCallId: block.tool_use_id,
               toolName: '',
-              content: [{ type: 'text', text: block.content }],
+              content: [{ type: 'text', text: textContent }],
               isError: block.is_error ?? false,
             });
           }

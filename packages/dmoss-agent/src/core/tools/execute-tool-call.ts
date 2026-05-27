@@ -37,6 +37,22 @@ const TRANSIENT_RETRY_TOOLS = new Set(['read_file', 'search_code', 'search_files
 /** Max additional attempts after the initial failure (3 total including initial call). */
 const MAX_RETRY_ATTEMPTS = 2;
 
+function textFromStructuredContent(content: ToolContentBlock[]): string {
+  const text = content
+    .map((block) => {
+      if (block.type === 'text') return block.text;
+      if (block.type === 'resource' && typeof block.text === 'string') return block.text;
+      return '';
+    })
+    .filter((part) => part.length > 0)
+    .join('\n');
+  if (text) return text;
+  if (content.length > 0) {
+    return `[${content.length} content block(s): ${content.map((block) => block.type).join(', ')}]`;
+  }
+  return '';
+}
+
 export interface ExecuteToolCallDeps {
   toolsForRun: Tool[];
   toolCtx: ToolContext;
@@ -286,13 +302,7 @@ export async function executeOneToolCall(
           toolTimeoutPromise,
         ]);
         structuredBlocks = structured.content;
-        attemptText = structured.content
-          .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-          .map(b => b.text)
-          .join('\n');
-        if (!attemptText && structured.content.length > 0) {
-          attemptText = `[${structured.content.length} content block(s): ${structured.content.map(b => b.type).join(', ')}]`;
-        }
+        attemptText = textFromStructuredContent(structured.content);
         if (structured.isError) {
           attemptErrFlag = true;
         }

@@ -238,4 +238,39 @@ import {
   console.log('[PASS] Multi-turn conversation');
 }
 
-console.log('\n[pass] message-conversion-roundtrip: 7/7');
+// ── Test 8: Structured tool result content survives session reload ──
+{
+  const structuredContent = [
+    { type: 'text', text: 'structured detail for model follow-up' },
+    { type: 'image', data: 'ZmFrZQ==', mimeType: 'image/png', alt: 'fake image' },
+    { type: 'resource', uri: 'file:///tmp/result.txt', name: 'result.txt', mimeType: 'text/plain' },
+  ];
+  const internal = [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'call-rich',
+          content: 'plain fallback',
+          is_error: false,
+          structuredContent,
+        },
+      ],
+      timestamp: 1000,
+    },
+  ];
+
+  const session = toSessionMessages(internal);
+  assert.deepEqual(session[0].content[0].structuredContent, structuredContent);
+
+  const back = fromSessionMessages(session);
+  assert.deepEqual(back[0].content[0].structuredContent, structuredContent);
+
+  const llm = toLLMMessages(back);
+  assert.deepEqual(llm[0].content[0].structuredContent, structuredContent);
+
+  console.log('[PASS] Structured tool result content round-trip');
+}
+
+console.log('\n[pass] message-conversion-roundtrip: 8/8');

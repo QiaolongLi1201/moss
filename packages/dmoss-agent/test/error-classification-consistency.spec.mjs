@@ -72,6 +72,15 @@ const TEST_CASES = [
     expectFailover: false,
   },
   {
+    label: 'connection_reset',
+    message: 'LLM stream incomplete: upstream connection reset',
+    status: null,
+    expectLlmRetryable: true,
+    expectProviderRetryable: true,
+    expectDmossRecoverable: false,
+    expectFailover: false,
+  },
+  {
     label: 'context_overflow',
     message: 'context_length_exceeded: prompt is too long',
     status: null,

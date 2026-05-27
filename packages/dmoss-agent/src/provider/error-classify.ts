@@ -196,7 +196,7 @@ function matchRateLimit(msg: string, status?: number): boolean {
 
 function matchNetwork(msg: string): boolean {
   const m = msg.toLowerCase();
-  return /econnrefused|etimedout|enotfound|eai_again|network ?error|fetch failed|networkerror/i.test(
+  return /econnreset|connection reset|econnrefused|etimedout|enotfound|eai_again|network ?error|fetch failed|networkerror/i.test(
     m,
   );
 }

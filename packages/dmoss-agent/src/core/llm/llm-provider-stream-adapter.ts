@@ -329,6 +329,9 @@ export function createStreamFunctionFromLlmProvider(
               forwardProviderEvent(stream, event, forwardState);
             })
           : await options.provider.complete(request);
+        if (response.incomplete) {
+          throw new Error(`LLM stream incomplete: ${response.incomplete.reason}`);
+        }
         await options.onResponse?.(response);
         flushForwardState(stream, forwardState);
         const normalizedResponse = normalizeInlineThinkingInResponse(response);

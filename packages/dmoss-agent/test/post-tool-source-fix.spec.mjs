@@ -105,7 +105,52 @@ async function testProviderPartialStreamErrorIsNotSuccess() {
   );
   assert.equal(visible, 'partial answer');
   assert.ok(result, 'partial content should be returned');
+  assert.deepEqual(result.incomplete, { reason: 'upstream connection reset' });
   console.log('  [PASS] stream error after partial text returns partial content');
+}
+
+async function testDmossAgentRetriesPartialStreamErrorWithoutPersistingPartial() {
+  let calls = 0;
+  const provider = new PiAiLLMProvider({
+    apiKey: 'test-key',
+    model: modelInfo(),
+    reasoning: 'high',
+    streamFn: async function* () {
+      calls++;
+      if (calls === 1) {
+        yield { type: 'text_delta', text: 'partial answer' };
+        throw new Error('upstream connection reset');
+      }
+      yield { type: 'text_delta', text: 'final answer' };
+      yield { type: 'done', stopReason: 'stop' };
+    },
+  });
+  const store = new InMemorySessionStore();
+  const agent = new DmossAgent({
+    llmProvider: provider,
+    sessionStore: store,
+    domainPrompt: false,
+    includeRegisteredKnowledgePrompts: false,
+    maxAgentTurns: 3,
+  });
+
+  const events = [];
+  for await (const event of agent.streamChat('partial-stream-retry', 'hello')) {
+    events.push(event);
+  }
+
+  const done = events.find((event) => event.type === 'done');
+  assert.ok(done, 'agent should recover and emit done after retry');
+  assert.equal(done.result.response, 'final answer');
+  assert.equal(calls, 2, 'partial stream error should trigger one retry');
+
+  const messages = await store.loadMessages('partial-stream-retry');
+  const assistantMessages = messages.filter((msg) => msg.role === 'assistant');
+  assert.equal(assistantMessages.length, 1);
+  assert.match(JSON.stringify(assistantMessages[0].content), /final answer/);
+  assert.doesNotMatch(JSON.stringify(assistantMessages), /partial answer/);
+
+  console.log('  [PASS] DmossAgent retries incomplete partial stream without persisting partial answer');
 }
 
 async function testStatusOnlyErrorEventIsNotAssistantText() {
@@ -885,6 +930,7 @@ function testRoundtripGuardRepairsOrphanToolResult() {
 
 await testProviderErrorEventIsNotAssistantText();
 await testProviderPartialStreamErrorIsNotSuccess();
+await testDmossAgentRetriesPartialStreamErrorWithoutPersistingPartial();
 await testStatusOnlyErrorEventIsNotAssistantText();
 await testDoneMessageThinkingBlockIsPreserved();
 await testReasoningSuppressionOnlyForTailToolResult();

@@ -219,3 +219,54 @@ console.log('[PASS] LLMProvider stream adapter bridges provider events to pi-ai 
   assert.equal(nsResult.usage.output, 3);
   console.log('[PASS] Non-streaming provider uses complete() and emits synthetic events');
 }
+
+// ── Incomplete provider responses are failures, not completed responses ──
+{
+  const responses = [];
+  const errors = [];
+  const incompleteProvider = {
+    id: 'incomplete',
+    displayName: 'Incomplete Provider',
+    async complete() {
+      throw new Error('unused');
+    },
+    async stream(_options, onEvent) {
+      onEvent({ type: 'content_block_delta', text: 'partial', deltaRole: 'visible' });
+      return {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: 'partial' }],
+        incomplete: { reason: 'stream_error' },
+      };
+    },
+  };
+  const incompleteStream = createStreamFunctionFromLlmProvider({
+    provider: incompleteProvider,
+    onResponse: (response) => {
+      responses.push(response);
+    },
+    onError: (error) => {
+      errors.push(error);
+    },
+  })(
+    {
+      id: 'incomplete-model',
+      name: 'Incomplete Model',
+      api: 'openai-completions',
+      provider: 'incomplete',
+      baseUrl: 'http://incomplete',
+      reasoning: false,
+      input: ['text'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    },
+    { systemPrompt: '', messages: [{ role: 'user', content: 'hi', timestamp: 1 }], tools: [] },
+  );
+  const incompleteEvents = [];
+  for await (const event of incompleteStream) incompleteEvents.push(event);
+  const incompleteResult = await incompleteStream.result();
+
+  assert.equal(responses.length, 0, 'incomplete responses must not trigger onResponse');
+  assert.equal(errors.length, 1, 'incomplete responses should trigger onError');
+  assert(incompleteEvents.some((event) => event.type === 'error'));
+  assert.equal(incompleteResult.stopReason, 'error');
+  console.log('[PASS] Incomplete provider responses do not trigger completed-response hooks');
+}

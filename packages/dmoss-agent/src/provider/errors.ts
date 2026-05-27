@@ -89,6 +89,7 @@ const TIMEOUT_PATTERNS = [
 
 const CONNECTION_PATTERNS = [
   "econnreset",
+  "connection reset",
   "econnrefused",
   "socket hang up",
   "network error",

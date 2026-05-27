@@ -78,6 +78,14 @@ export interface LLMResponse {
     outputTokens: number;
   };
   /**
+   * The provider produced usable partial content, but the upstream stream ended
+   * with an error before a trustworthy terminal response. Direct provider
+   * callers may inspect the partial content; agent orchestration treats this
+   * as a failed turn so it can retry without persisting a truncated assistant
+   * message as a successful answer.
+   */
+  incomplete?: { reason: string };
+  /**
    * Provider-native reasoning channel — concatenable chunks that mirror the
    * live `LLMStreamEvent.deltaRole === 'thinking'` events.
    *

@@ -200,6 +200,7 @@ export class PiAiLLMProvider implements LLMProvider {
     const thinkingChunks: string[] = [];
     let stopReason: LLMResponse['stopReason'] = 'end_turn';
     let usage = { inputTokens: 0, outputTokens: 0 };
+    let incomplete: LLMResponse['incomplete'] | undefined;
 
     const requestThinkingMode = hasThinkingModeConfigured(
       this.model,
@@ -338,6 +339,7 @@ export class PiAiLLMProvider implements LLMProvider {
         model: this.model.id,
         contentBlocks: content.length,
       });
+      incomplete = { reason: streamError.message };
     }
 
     if (tracePiAiStream) {
@@ -361,6 +363,7 @@ export class PiAiLLMProvider implements LLMProvider {
       stopReason,
       content,
       usage,
+      ...(incomplete ? { incomplete } : {}),
       ...(thinkingChunks.length > 0 ? { thinking: thinkingChunks } : {}),
     };
   }

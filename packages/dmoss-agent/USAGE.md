@@ -243,9 +243,9 @@ const hooks: AgentHooks = {
     auditLog({ tool: call.name, input: call.input, output: result.content });
   },
 
-  // Real-time streaming to UI
+  // Raw provider stream telemetry. For product UI text, consume streamChat() events.
   onStream: (event) => {
-    websocket.emit('agent:stream', event);
+    logger.debug({ eventType: event.type }, 'provider stream');
   },
 
   // Error handling

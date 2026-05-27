@@ -142,6 +142,15 @@ async function testDmossAgentRetriesPartialStreamErrorWithoutPersistingPartial()
   const done = events.find((event) => event.type === 'done');
   assert.ok(done, 'agent should recover and emit done after retry');
   assert.equal(done.result.response, 'final answer');
+  const visibleDeltas = events
+    .filter((event) => event.type === 'text_delta')
+    .map((event) => event.delta)
+    .join('');
+  assert.equal(
+    visibleDeltas,
+    'final answer',
+    'failed retry attempt deltas must not leak to the public stream',
+  );
   assert.equal(calls, 2, 'partial stream error should trigger one retry');
 
   const messages = await store.loadMessages('partial-stream-retry');

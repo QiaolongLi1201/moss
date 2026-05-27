@@ -260,8 +260,8 @@ const hooks: AgentHooks = {
   },
   // Audit logging
   onToolResult: (call, result) => auditLog(call, result),
-  // Real-time streaming to UI
-  onStream: (event) => socket.emit('stream', event),
+  // Raw provider stream telemetry. For product UI text, consume streamChat() events.
+  onStream: (event) => console.debug('provider stream', event.type),
   // Error handling
   onError: async (err, ctx) => isRetryable(err),
   // Inject host-specific context

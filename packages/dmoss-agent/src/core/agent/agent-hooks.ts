@@ -63,7 +63,9 @@ export interface AgentHooks {
   onLLMResponseEnd?(response: LLMResponse): void;
 
   /**
-   * Called on each stream event. Hosts use this for real-time UI updates.
+   * Called on each raw provider stream event. Use this for diagnostics or
+   * provider-level telemetry; product UIs should consume `streamChat()` events
+   * so retry attempts and agent-level semantics are handled by the runtime.
    */
   onStream?(event: LLMStreamEvent): void;
 

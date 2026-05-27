@@ -14,6 +14,8 @@
  */
 
 import dns from 'node:dns/promises';
+import type { LookupAddress } from 'node:dns';
+import type { LookupFunction } from 'node:net';
 import type { Tool, ToolContext } from '../core/tools/tool-types.js';
 import { getRootLogger } from '../logger.js';
 import { DmossError, ErrorCode } from '../errors.js';
@@ -34,6 +36,7 @@ type HostAddressResolver = (hostname: string) => Promise<string[]>;
 type BodyProbeReader = {
   read(): Promise<{ done: boolean; value?: Uint8Array }>;
 };
+type ClosableDispatcher = { close?: () => Promise<void> | void };
 
 export interface WebFetchOptions {
   /** Per-tool-call upper bound on response body size in bytes (post-HTTP, pre-decode). Default 1 MB. */
@@ -78,6 +81,61 @@ async function resolveHostAddressesWithTimeout(hostname: string, resolver: HostA
       setTimeout(() => reject(new DmossError({ code: ErrorCode.TOOL_EXECUTION_TIMEOUT, message: 'dns timeout' })), DNS_CHECK_TIMEOUT_MS),
     ),
   ]);
+}
+
+function ipFamily(address: string): 4 | 6 {
+  return address.includes(':') ? 6 : 4;
+}
+
+async function createPinnedHttpsDispatcher(address: string): Promise<ClosableDispatcher> {
+  let Agent: typeof import('undici').Agent;
+  try {
+    ({ Agent } = await import('undici'));
+  } catch (err) {
+    throw new DmossError({
+      code: ErrorCode.TOOL_NOT_ALLOWED,
+      message: 'web_fetch: unable to enforce HTTPS DNS pinning because undici is unavailable',
+      hint:
+        'Install the optional undici peer dependency, or create the tool with blockPrivateNetwork: false only for trusted URLs.',
+      recoverable: false,
+      cause: err,
+    });
+  }
+
+  const family = ipFamily(address);
+  type PinnedLookupCallback = (
+    err: NodeJS.ErrnoException | null,
+    address: string | LookupAddress[],
+    family?: number,
+  ) => void;
+  const lookup = ((
+    _hostname: string,
+    optionsOrCallback: { all?: boolean } | PinnedLookupCallback,
+    callback?: PinnedLookupCallback,
+  ) => {
+    const cb = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
+    if (!cb) return;
+    if (typeof optionsOrCallback === 'function') {
+      cb(null, address, family);
+      return;
+    }
+    const wantsAll = Boolean(optionsOrCallback?.all);
+    if (wantsAll) {
+      cb(null, [{ address, family } satisfies LookupAddress]);
+      return;
+    }
+    cb(null, address, family);
+  }) as LookupFunction;
+
+  return new Agent({ connect: { lookup } });
+}
+
+async function closeDispatcher(dispatcher: ClosableDispatcher): Promise<void> {
+  try {
+    await dispatcher.close?.();
+  } catch {
+    /* best-effort cleanup */
+  }
 }
 
 export async function resolveHostIp(
@@ -330,6 +388,7 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
 
       log.debug('start', { url: url.toString(), maxBytes, timeoutMs });
       const started = Date.now();
+      const dispatchersToClose: ClosableDispatcher[] = [];
       try {
         let currentUrl = url;
         let res: Response;
@@ -340,16 +399,17 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
         for (;;) {
           const fetchUrl = new URL(currentUrl.toString());
           const originalHost = currentUrl.host;
-          // Only rewrite hostname to IP for HTTP (not HTTPS).
-          // For HTTPS, rewriting breaks TLS SNI and certificate validation.
-          // The pre-flight DNS check (resolveHostIp) provides SSRF protection
-          // with an acceptable TOCTOU window for HTTPS connections.
+          // HTTP can be rewritten directly. HTTPS keeps the original hostname
+          // for SNI/cert validation and pins DNS through a per-request dispatcher.
           const isHttps = currentUrl.protocol === 'https:';
           const shouldRewriteToIp = verifiedIp && !isHttps;
           if (shouldRewriteToIp) {
             fetchUrl.hostname = verifiedIp!;
           }
-          res = await fetch(fetchUrl.toString(), {
+          const pinnedDispatcher =
+            verifiedIp && isHttps ? await createPinnedHttpsDispatcher(verifiedIp) : undefined;
+          if (pinnedDispatcher) dispatchersToClose.push(pinnedDispatcher);
+          const fetchInit: RequestInit = {
             signal: mergedSignal,
             headers: {
               'User-Agent': userAgent,
@@ -357,7 +417,11 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
               ...(shouldRewriteToIp ? { Host: originalHost } : {}),
             },
             redirect: 'manual',
-          });
+          };
+          if (pinnedDispatcher) {
+            (fetchInit as { dispatcher?: unknown }).dispatcher = pinnedDispatcher;
+          }
+          res = await fetch(fetchUrl.toString(), fetchInit);
           if (res.status >= 300 && res.status < 400 && redirectCount < MAX_REDIRECTS) {
             const location = res.headers.get('location');
             if (!location) break;
@@ -474,6 +538,9 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
         });
       } finally {
         clearTimeout(timer);
+        for (const dispatcher of dispatchersToClose) {
+          await closeDispatcher(dispatcher);
+        }
       }
     },
   };

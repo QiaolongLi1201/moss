@@ -358,4 +358,33 @@ function rawSse(res, lines) {
   console.log('[PASS] Anthropic stream EOF without message_stop fails the stream');
 }
 
-console.log('\n[pass] provider-anthropic: 12/12');
+// ── Test 13: message_stop cannot complete an unfinished content block ──
+{
+  const { server, baseUrl } = await startMockServer((_req, res) => {
+    rawSse(res, [
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"probe","input":{}}}',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"target\\":\\"rdk\\"}"}}',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":4}}',
+      'event: message_stop\ndata: {"type":"message_stop"}',
+    ]);
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  await assert.rejects(
+    () => provider.stream(
+      { model: 'test-model', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] },
+      () => {},
+    ),
+    (err) => {
+      assert.ok(err instanceof DmossError);
+      assert.equal(err.code, ErrorCode.PROVIDER_UPSTREAM_ERROR);
+      assert.match(err.message, /content_block_stop|unfinished/i);
+      return true;
+    },
+  );
+
+  server.close();
+  console.log('[PASS] Anthropic message_stop rejects unfinished content blocks');
+}
+
+console.log('\n[pass] provider-anthropic: 13/13');

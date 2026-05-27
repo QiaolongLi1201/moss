@@ -221,6 +221,15 @@ export class AnthropicLLMProvider implements LLMProvider {
         }
 
         case 'message_stop':
+          if (currentTextBlock >= 0 || currentToolBlock >= 0) {
+            throw new DmossError({
+              code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+              message: 'Anthropic provider: message_stop received before content_block_stop',
+              hint: 'The upstream API or gateway ended the message while a content block was still unfinished.',
+              recoverable: true,
+              context: { contentBlockIndex: currentToolBlock >= 0 ? currentToolBlock : currentTextBlock },
+            });
+          }
           sawMessageStop = true;
           onEvent({ type: 'message_stop' });
           break;

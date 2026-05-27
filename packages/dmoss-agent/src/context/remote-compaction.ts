@@ -302,10 +302,21 @@ export async function hybridCompact(
         }
       }
     } catch (err) {
+      // If the abort signal was triggered, don't fall back to local compaction.
+      // The caller has cancelled the operation and we should respect that.
+      if (config.abortSignal?.aborted) {
+        log.info('remote compaction aborted, not falling back to local');
+        throw err;
+      }
       log.warn('remote compaction failed, falling back to local', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  // Check abort signal again before starting local compaction
+  if (config.abortSignal?.aborted) {
+    throw new Error('compaction aborted before local fallback');
   }
 
   const summary = await buildCompactionSummary({

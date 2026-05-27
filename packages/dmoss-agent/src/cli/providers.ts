@@ -199,11 +199,20 @@ async function callOpenAI(
   }
   if (choice?.message?.tool_calls) {
     for (const tc of choice.message.tool_calls) {
+      let input: Record<string, unknown>;
+      try {
+        input = JSON.parse(tc.function.arguments || '{}');
+      } catch (err) {
+        console.warn(
+          `[cli-provider] Failed to parse tool call arguments for ${tc.function.name}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        input = {};
+      }
       content.push({
         type: 'tool_use',
         id: tc.id,
         name: tc.function.name,
-        input: JSON.parse(tc.function.arguments || '{}'),
+        input,
       });
     }
   }

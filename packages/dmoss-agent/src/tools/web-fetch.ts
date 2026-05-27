@@ -340,15 +340,21 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
         for (;;) {
           const fetchUrl = new URL(currentUrl.toString());
           const originalHost = currentUrl.host;
-          if (verifiedIp) {
-            fetchUrl.hostname = verifiedIp;
+          // Only rewrite hostname to IP for HTTP (not HTTPS).
+          // For HTTPS, rewriting breaks TLS SNI and certificate validation.
+          // The pre-flight DNS check (resolveHostIp) provides SSRF protection
+          // with an acceptable TOCTOU window for HTTPS connections.
+          const isHttps = currentUrl.protocol === 'https:';
+          const shouldRewriteToIp = verifiedIp && !isHttps;
+          if (shouldRewriteToIp) {
+            fetchUrl.hostname = verifiedIp!;
           }
           res = await fetch(fetchUrl.toString(), {
             signal: mergedSignal,
             headers: {
               'User-Agent': userAgent,
               Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5',
-              ...(verifiedIp ? { Host: originalHost } : {}),
+              ...(shouldRewriteToIp ? { Host: originalHost } : {}),
             },
             redirect: 'manual',
           });
@@ -434,6 +440,11 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
         const header = `web_fetch_ok: ${url.toString()} · HTTP ${res.status} · ${totalBytes}B${truncated ? ' (body truncated)' : ''} · ${elapsed}ms\n`;
         return header + '\n' + out;
       } catch (err) {
+        // If it's already a DmossError (e.g., TOOL_NOT_ALLOWED for SSRF), rethrow directly
+        // to preserve the security error classification and non-recoverable status.
+        if (err instanceof DmossError) {
+          throw err;
+        }
         const msg = err instanceof Error ? err.message : String(err);
         if ((err as { name?: string })?.name === 'AbortError') {
           throw new DmossError({

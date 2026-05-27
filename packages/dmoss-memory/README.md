@@ -21,10 +21,7 @@ npm install @dmoss/memory
 ```typescript
 import { MemoryManager } from '@dmoss/memory';
 
-const memory = new MemoryManager({
-  persistDir: './.dmoss/memory',
-  embeddingProvider: optionalEmbeddingProvider,
-});
+const memory = new MemoryManager('./.dmoss/memory', optionalEmbeddingProvider);
 
 // Store a memory
 await memory.add('User prefers TypeScript over JavaScript', {

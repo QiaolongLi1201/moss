@@ -341,7 +341,15 @@ export function createStreamFunctionFromLlmProvider(
         });
         stream.end(assistant);
       } catch (err) {
-        await options.onError?.(err);
+        try {
+          await options.onError?.(err);
+        } catch (hookErr) {
+          // If the onError hook itself throws, log it but don't let it prevent
+          // the stream from reporting the original error and ending properly.
+          console.warn(
+            `[llm-provider-stream-adapter] onError hook threw: ${hookErr instanceof Error ? hookErr.message : String(hookErr)}`,
+          );
+        }
         const assistant: AssistantMessage = {
           role: 'assistant',
           content: [],

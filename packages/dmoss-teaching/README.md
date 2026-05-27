@@ -19,21 +19,26 @@ npm install @dmoss/teaching
 ## Usage
 
 ```typescript
-import { TeachingLayer } from '@dmoss/teaching';
+import { createStudioTeachingHooks } from '@dmoss/teaching';
 
-const teaching = new TeachingLayer({
-  llmProvider: provider,
+const { onBeforeToolExec, onToolResult } = createStudioTeachingHooks({
   depth: 'concise', // 'off' | 'concise' | 'detailed'
-});
-
-// Create teaching hooks for agent
-const hooks = teaching.createHooks({
+  llmProvider: provider,
+  modelId: 'claude-sonnet-4-20250514',
   deviceLabel: 'RDK X5',
-  isMutation: (toolName) => toolName.startsWith('device_exec'),
+  familyIsRdk: true,
+  runId: 'run-123',
+  sessionKey: 'session-456',
+  teachingConfirmRequested: false,
+  teachingConfirmInteractive: false,
+  emitTeachingMeta: (meta) => console.log('Teaching meta:', meta),
+  waitTeachingConfirm: async () => true,
+  classifyPlanMutation: (toolName) => toolName.startsWith('device_exec'),
 });
 
 // Register with agent
-agent.registerHooks(hooks);
+agent.registerHook('onBeforeToolExec', onBeforeToolExec);
+agent.registerHook('onToolResult', onToolResult);
 ```
 
 ## API

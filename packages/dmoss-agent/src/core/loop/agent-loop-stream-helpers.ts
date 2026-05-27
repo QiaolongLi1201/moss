@@ -162,6 +162,7 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
         toolCalls.length = 0;
         turnTextParts.length = 0;
         streamStopReason = undefined;
+        currentThinkingParts = null;
 
         const inlineThinking = createInlineThinkingRouter();
         let streamedVisibleAccum = '';

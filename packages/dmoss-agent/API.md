@@ -35,6 +35,7 @@ npm install @dmoss/agent @dmoss/core
 | `@dmoss/agent/utils` | Text smoothing, tracing, env helpers |
 | `@dmoss/agent/tools/builtin` | Built-in filesystem/shell/search tools |
 | `@dmoss/agent/mesh` | Multi-agent mesh (HTTP + LAN discovery) |
+| `@dmoss/agent/mcp` | Model Context Protocol client for external tool servers |
 
 ### Internal runtime helpers
 
@@ -439,6 +440,7 @@ Exported from `@dmoss/agent/tools/builtin`:
 - `listDirectoryTool`
 - `execTool`
 - `searchFilesTool`
+- `searchCodeTool`
 - `builtinTools`
 - `registerBuiltinTools()`
 

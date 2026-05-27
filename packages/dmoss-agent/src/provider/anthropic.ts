@@ -183,8 +183,15 @@ export class AnthropicLLMProvider implements LLMProvider {
               if (block?.type === 'tool_use' && toolInputJson) {
                 try {
                   (block as { type: 'tool_use'; input: Record<string, unknown> }).input = JSON.parse(toolInputJson);
-                } catch {
-                  /* keep empty */
+                } catch (err) {
+                  throw new DmossError({
+                    code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+                    message: `Anthropic provider: malformed tool call arguments for ${block.name}`,
+                    hint: 'The LLM returned invalid JSON for tool parameters. This usually indicates a model or gateway issue.',
+                    recoverable: true,
+                    cause: err,
+                    context: { toolName: block.name, arguments: toolInputJson.slice(0, 200) },
+                  });
                 }
               }
             }

@@ -19,25 +19,19 @@ npm install @dmoss/skills
 ## Usage
 
 ```typescript
-import { SkillPipeline, SkillScorer } from '@dmoss/skills';
+import { SkillPipeline } from '@dmoss/skills';
 
 const pipeline = new SkillPipeline({
-  skillsDir: './skills',
-  autoPromote: true,
+  workspaceDir: './skills',
+  autoPromoteHighConfidence: true,
 });
 
 // Process a session to extract skill candidates
-await pipeline.processSession(sessionId, messages);
+const result = await pipeline.processSession(sessionId, messages);
 
-// Score a skill candidate
-const score = SkillScorer.score(candidate, {
-  toolUsage: true,
-  errorRecovery: true,
-});
-
-// Promote high-confidence skills
-if (score.confidence > 0.8) {
-  await pipeline.promote(candidateId);
+// Check if a skill was promoted
+if (result?.promoted) {
+  console.log('Skill promoted:', result.promoted.skillId);
 }
 ```
 

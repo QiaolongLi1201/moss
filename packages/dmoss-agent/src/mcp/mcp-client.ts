@@ -18,6 +18,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import type { Tool, ToolContext } from '../core/tools/tool-types.js';
 import { DmossError, ErrorCode } from '../errors.js';
+import { safeChildEnv } from '../utils/safe-child-env.js';
 
 export interface McpServerConfig {
   command: string;
@@ -89,7 +90,7 @@ class McpServerConnection {
     this.requestTimeoutMs = requestTimeoutMs;
     this.process = spawn(config.command, config.args ?? [], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...config.env },
+      env: safeChildEnv(config.env),
     });
 
     this.process.stdout!.on('data', (chunk: Buffer) => {
@@ -282,6 +283,8 @@ export async function connectMcpServers(config: McpConfig): Promise<McpConnectio
       });
     } catch (err) {
       await conn.close();
+      // Close all previously successful connections before throwing
+      await Promise.allSettled(connections.map((c) => c.close()));
       throw new DmossError({
         code: ErrorCode.MCP_CONNECTION_FAILED,
         message: `Failed to connect to MCP server "${serverName}": ${err instanceof Error ? err.message : String(err)}`,

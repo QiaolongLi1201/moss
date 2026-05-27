@@ -193,11 +193,18 @@ export class OpenAILLMProvider implements LLMProvider {
       content.push({ type: 'text', text: textBuffer });
     }
     for (const [, tc] of toolCalls) {
-      let input: Record<string, unknown> = {};
+      let input: Record<string, unknown>;
       try {
         input = JSON.parse(tc.arguments);
       } catch (err) {
-        console.warn(`[openai-provider] Failed to parse tool call arguments for ${tc.name}: ${err instanceof Error ? err.message : String(err)}`);
+        throw new DmossError({
+          code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+          message: `OpenAI provider: malformed tool call arguments for ${tc.name}`,
+          hint: 'The LLM returned invalid JSON for tool parameters. This usually indicates a model or gateway issue.',
+          recoverable: true,
+          cause: err,
+          context: { toolName: tc.name, arguments: tc.arguments.slice(0, 200) },
+        });
       }
       content.push({ type: 'tool_use', id: tc.id, name: tc.name, input });
     }

@@ -34,31 +34,32 @@ export interface MessageChannel {
   onMessage(handler: (msg: ChannelMessage) => Promise<ChannelResponse>): void;
 }
 
-/** Per-session message queue to ensure sequential processing of messages. */
-const sessionQueues = new Map<string, Promise<void>>();
-
-function enqueue(sessionKey: string, fn: () => Promise<void>): void {
-  const prev = sessionQueues.get(sessionKey) ?? Promise.resolve();
-  const next = prev.then(fn, fn); // 即使前一个失败也继续
-  sessionQueues.set(sessionKey, next);
-  // 清理已完成的队列条目
-  next.then(() => {
-    if (sessionQueues.get(sessionKey) === next) {
-      sessionQueues.delete(sessionKey);
-    }
-  }).catch(() => {
-    if (sessionQueues.get(sessionKey) === next) {
-      sessionQueues.delete(sessionKey);
-    }
-  });
-}
-
 /**
  * Bridge a DmossAgent with a messaging channel.
  * Each incoming message is routed to agent.chat() with a per-sender session.
  * Messages for the same session are serialized to prevent concurrent agent calls.
+ *
+ * The per-session queue map is owned by THIS bridge invocation — multiple
+ * (agent, channel) bridges in the same process get independent queues,
+ * so a sessionKey collision across bridges cannot cause cross-talk.
  */
 export function bridgeAgentToChannel(agent: DmossAgent, channel: MessageChannel): void {
+  /** Per-session message queue scoped to this bridge instance. */
+  const sessionQueues = new Map<string, Promise<void>>();
+
+  const enqueue = (sessionKey: string, fn: () => Promise<void>): void => {
+    const prev = sessionQueues.get(sessionKey) ?? Promise.resolve();
+    const next = prev.then(fn, fn); // 即使前一个失败也继续
+    sessionQueues.set(sessionKey, next);
+    // 完成后摘除尾部条目，避免 Map 无界增长
+    const cleanup = () => {
+      if (sessionQueues.get(sessionKey) === next) {
+        sessionQueues.delete(sessionKey);
+      }
+    };
+    next.then(cleanup, cleanup);
+  };
+
   channel.onMessage((msg) => {
     const sessionKey = `${channel.id}-${msg.senderId}`;
     return new Promise<ChannelResponse>((resolve, reject) => {

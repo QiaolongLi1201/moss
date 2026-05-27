@@ -44,6 +44,7 @@ interface OpenAIChunk {
     finish_reason?: string | null;
   }>;
   usage?: { prompt_tokens: number; completion_tokens: number };
+  error?: { message?: string; type?: string; code?: string };
 }
 
 export class OpenAILLMProvider implements LLMProvider {
@@ -112,12 +113,101 @@ export class OpenAILLMProvider implements LLMProvider {
     let stopReason: LLMResponse['stopReason'] = 'end_turn';
     let inputTokens = 0;
     let outputTokens = 0;
+    let sawDone = false;
+    let sawFinishReason = false;
 
     onEvent({ type: 'message_start' });
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+
+    const processLine = (line: string): void => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) return;
+      const payload = trimmed.slice(6).trim();
+      if (!payload) return;
+      if (payload === '[DONE]') {
+        sawDone = true;
+        return;
+      }
+
+      let chunk: OpenAIChunk;
+      try {
+        chunk = JSON.parse(payload);
+      } catch (err) {
+        throw new DmossError({
+          code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+          message: 'OpenAI provider: malformed SSE JSON frame',
+          hint: 'The upstream API or gateway returned an invalid streaming payload.',
+          recoverable: true,
+          cause: err,
+          context: { payload: payload.slice(0, 200) },
+        });
+      }
+
+      if (chunk.error) {
+        const errorType = chunk.error.type ?? 'unknown_error';
+        const errorCode = chunk.error.code;
+        const errorMessage = chunk.error.message ?? 'OpenAI stream error';
+        const label = errorCode ? `${errorType}/${errorCode}` : errorType;
+        throw new DmossError({
+          code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+          message: `OpenAI stream error ${label}: ${errorMessage}`,
+          hint: 'The upstream OpenAI-compatible API returned an error event during streaming.',
+          recoverable: true,
+          context: { type: errorType, ...(errorCode ? { code: errorCode } : {}) },
+        });
+      }
+
+      if (chunk.usage) {
+        inputTokens = chunk.usage.prompt_tokens ?? 0;
+        outputTokens = chunk.usage.completion_tokens ?? 0;
+      }
+
+      const choice = chunk.choices?.[0];
+      if (!choice) return;
+
+      const delta = choice.delta;
+      if (delta?.content) {
+        textBuffer += delta.content;
+        onEvent({ type: 'content_block_delta', text: delta.content, deltaRole: 'visible' });
+      }
+
+      if (delta?.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index;
+          if (!toolCalls.has(idx)) {
+            toolCalls.set(idx, {
+              id: tc.id || '',
+              name: tc.function?.name || '',
+              arguments: '',
+            });
+            if (tc.id) {
+              onEvent({
+                type: 'content_block_start',
+                toolUse: { id: tc.id, name: tc.function?.name || '' },
+              });
+            }
+          }
+          const existing = toolCalls.get(idx)!;
+          if (tc.id) existing.id = tc.id;
+          if (tc.function?.name) existing.name = tc.function.name;
+          if (tc.function?.arguments) {
+            existing.arguments += tc.function.arguments;
+            onEvent({ type: 'content_block_delta', partialJson: tc.function.arguments });
+          }
+        }
+      }
+
+      if (choice.finish_reason) {
+        sawFinishReason = true;
+        if (choice.finish_reason === 'tool_calls') stopReason = 'tool_use';
+        else if (choice.finish_reason === 'length') stopReason = 'max_tokens';
+        else if (choice.finish_reason === 'stop') stopReason = 'end_turn';
+        onEvent({ type: 'message_delta', stopReason });
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -128,65 +218,21 @@ export class OpenAILLMProvider implements LLMProvider {
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
-        const payload = trimmed.slice(6);
-        if (payload === '[DONE]') continue;
-
-        let chunk: OpenAIChunk;
-        try {
-          chunk = JSON.parse(payload);
-        } catch {
-          continue;
-        }
-
-        if (chunk.usage) {
-          inputTokens = chunk.usage.prompt_tokens ?? 0;
-          outputTokens = chunk.usage.completion_tokens ?? 0;
-        }
-
-        const choice = chunk.choices?.[0];
-        if (!choice) continue;
-
-        const delta = choice.delta;
-        if (delta?.content) {
-          textBuffer += delta.content;
-          onEvent({ type: 'content_block_delta', text: delta.content, deltaRole: 'visible' });
-        }
-
-        if (delta?.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const idx = tc.index;
-            if (!toolCalls.has(idx)) {
-              toolCalls.set(idx, {
-                id: tc.id || '',
-                name: tc.function?.name || '',
-                arguments: '',
-              });
-              if (tc.id) {
-                onEvent({
-                  type: 'content_block_start',
-                  toolUse: { id: tc.id, name: tc.function?.name || '' },
-                });
-              }
-            }
-            const existing = toolCalls.get(idx)!;
-            if (tc.id) existing.id = tc.id;
-            if (tc.function?.name) existing.name = tc.function.name;
-            if (tc.function?.arguments) {
-              existing.arguments += tc.function.arguments;
-              onEvent({ type: 'content_block_delta', partialJson: tc.function.arguments });
-            }
-          }
-        }
-
-        if (choice.finish_reason) {
-          if (choice.finish_reason === 'tool_calls') stopReason = 'tool_use';
-          else if (choice.finish_reason === 'length') stopReason = 'max_tokens';
-          else if (choice.finish_reason === 'stop') stopReason = 'end_turn';
-          onEvent({ type: 'message_delta', stopReason });
-        }
+        processLine(line);
       }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      processLine(buffer);
+    }
+
+    if (!sawDone && !sawFinishReason) {
+      throw new DmossError({
+        code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+        message: 'OpenAI provider: stream terminated without [DONE] or finish_reason',
+        hint: 'The upstream API or gateway closed the SSE stream before a terminal marker.',
+        recoverable: true,
+      });
     }
 
     if (textBuffer) {

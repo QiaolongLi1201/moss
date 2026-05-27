@@ -157,12 +157,22 @@ export function convertMessagesToPi(
             timestamp: msg.timestamp,
           });
         } else if (block.type === 'tool_result') {
+          let textContent = typeof block.content === 'string' ? block.content : '';
+          if (block.structuredContent && block.structuredContent.length > 0) {
+            const extraText = block.structuredContent
+              .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+              .map((b) => b.text)
+              .join('\n');
+            if (extraText) {
+              textContent = textContent ? `${textContent}\n${extraText}` : extraText;
+            }
+          }
           result.push({
             role: 'toolResult',
             toolCallId: block.tool_use_id ?? '',
             toolName: block.name ?? '',
             content: [
-              { type: 'text', text: typeof block.content === 'string' ? block.content : '' },
+              { type: 'text', text: textContent },
             ],
             isError: block.is_error ?? false,
             timestamp: msg.timestamp,

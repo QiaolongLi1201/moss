@@ -111,4 +111,32 @@ describe('MemoryManager with embedding provider', () => {
     assert.equal(results.length, 0);
     await rm(dir, { recursive: true, force: true });
   });
+
+  it('update() re-embeds when content changes', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'moss-embed-'));
+    mgr = new MemoryManager(dir, mockProvider);
+    const id = await mgr.add('cat is a pet', 'memory');
+    await mgr.update(id, { content: 'car is a vehicle' });
+    const results = await mgr.search('vehicle', 3);
+    const found = results.find(r => r.entry.id === id);
+    assert.ok(found, 'updated entry should be found');
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('update() keeps old embedding when re-embed fails', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'moss-embed-'));
+    const failProvider = {
+      dimensions: 3,
+      async embed(texts) {
+        if (texts.some(t => t.includes('FAIL'))) throw new Error('embed failed');
+        return texts.map(() => [1, 0, 0]);
+      },
+    };
+    mgr = new MemoryManager(dir, failProvider);
+    const id = await mgr.add('original', 'memory');
+    await mgr.update(id, { content: 'FAIL this content' });
+    const results = await mgr.search('original', 1);
+    assert.ok(results.length > 0, 'old embedding should still be present');
+    await rm(dir, { recursive: true, force: true });
+  });
 });

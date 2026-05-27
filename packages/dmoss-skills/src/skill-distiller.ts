@@ -98,7 +98,7 @@ function titleFromText(text: string, fallback = "对话沉淀技能"): string {
   return clean.length > 42 ? `${clean.slice(0, 42)}...` : clean;
 }
 
-function formatToolStep(
+function formatToolStepForDistill(
   call: { name: string; input: Record<string, unknown> },
   index: number,
 ): string {
@@ -139,7 +139,7 @@ function buildDraftMarkdown(
   const teachingSections = buildTeachingSections(teachingMeta);
 
   const steps = toolCalls
-    .map((call, i) => formatToolStep(call, i))
+     .map((call, i) => formatToolStepForDistill(call, i))
     .join("\n");
 
   const rows = toolNames

@@ -18,3 +18,5 @@ export {
   type PatchLine,
   type ParsedPatch,
 } from './apply-patch-core.js';
+export { runProcess, ProcessError } from './run-process.js';
+export type { RunProcessOptions, RunProcessResult } from './run-process.js';

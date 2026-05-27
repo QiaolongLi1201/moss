@@ -29,14 +29,11 @@ import {
 import { redactSensitiveData } from '../../observability/redact.js';
 import {
   runAgentLoopLlmTurn,
-  type AgentLoopLlmTurnResult,
 } from './agent-loop-stream-helpers.js';
 import {
   runOverflowRecovery,
 } from './overflow-recovery.js';
 import type { LoopControlSignal } from './agent-loop-context-prep.js';
-
-const TURN_TIMEOUT_MS = 0; // no per-turn timeout; tool-level timeouts apply
 
 export interface ExecuteLlmTurnParams {
   state: AgentLoopMutableState;

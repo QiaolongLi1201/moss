@@ -541,6 +541,47 @@ export async function buildCompactionSummary(params: {
   });
 }
 
+async function runRemoteCompaction(params: {
+  remoteCompactProvider: RemoteCompactProvider;
+  localSummarize: SummarizeFn;
+  contextWindowTokens: number;
+  reserveTokens: number;
+  customInstructions?: string;
+  droppedMessages: Message[];
+  systemPrompt?: string;
+}): Promise<string> {
+  const { hybridCompact } = await import("./remote-compaction.js");
+  const hybrid = await hybridCompact(
+    {
+      remoteProvider: params.remoteCompactProvider,
+      localSummarize: params.localSummarize,
+      contextWindowTokens: params.contextWindowTokens,
+      reserveTokens: params.reserveTokens,
+      customInstructions: params.customInstructions,
+    },
+    params.droppedMessages,
+    params.systemPrompt,
+  );
+  log.info("compaction summary source", { method: hybrid.method });
+  return hybrid.summary;
+}
+
+async function runLlmCompaction(params: {
+  summarize: SummarizeFn;
+  droppedMessages: Message[];
+  contextWindowTokens: number;
+  maxTokens?: number;
+  reserveTokens: number;
+}): Promise<string> {
+  return buildCompactionSummary({
+    summarize: params.summarize,
+    messages: params.droppedMessages,
+    contextWindowTokens: params.contextWindowTokens,
+    maxTokens: params.maxTokens,
+    reserveTokens: params.reserveTokens,
+  });
+}
+
 export async function compactHistoryIfNeeded(params: {
   summarize: SummarizeFn;
   messages: Message[];
@@ -657,24 +698,19 @@ export async function compactHistoryIfNeeded(params: {
 
   try {
     if (params.remoteCompactProvider) {
-      const { hybridCompact } = await import("./remote-compaction.js");
-      const hybrid = await hybridCompact(
-        {
-          remoteProvider: params.remoteCompactProvider,
-          localSummarize: params.summarize,
-          contextWindowTokens: params.contextWindowTokens,
-          reserveTokens: resolvedSettings.reserveTokens,
-          customInstructions: params.customInstructions,
-        },
-        pruneResult.droppedMessages,
-        params.systemPrompt,
-      );
-      summary = hybrid.summary;
-      log.info("compaction summary source", { method: hybrid.method });
+      summary = await runRemoteCompaction({
+        remoteCompactProvider: params.remoteCompactProvider,
+        localSummarize: params.summarize,
+        contextWindowTokens: params.contextWindowTokens,
+        reserveTokens: resolvedSettings.reserveTokens,
+        customInstructions: params.customInstructions,
+        droppedMessages: pruneResult.droppedMessages,
+        systemPrompt: params.systemPrompt,
+      });
     } else {
-      summary = await buildCompactionSummary({
+      summary = await runLlmCompaction({
         summarize: params.summarize,
-        messages: pruneResult.droppedMessages,
+        droppedMessages: pruneResult.droppedMessages,
         contextWindowTokens: params.contextWindowTokens,
         maxTokens: params.maxTokens,
         reserveTokens: resolvedSettings.reserveTokens,

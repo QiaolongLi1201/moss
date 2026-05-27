@@ -254,7 +254,7 @@ export function findSafeTruncationPoint(messages: Message[], targetKeep: number)
   if (messages.length === 0 || targetKeep >= messages.length) return 0;
   if (targetKeep <= 0) return messages.length;
 
-  let cutPoint = messages.length - targetKeep;
+  const cutPoint = messages.length - targetKeep;
 
   // Collect all tool_use IDs in the kept suffix (messages after cutPoint)
   const keptToolUseIds = new Set<string>();

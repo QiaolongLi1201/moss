@@ -1,5 +1,15 @@
 # Moss Project Agent Instructions
 
+## Task Execution Strategy
+
+Before starting any multi-item task list, spend 30 seconds classifying:
+
+1. **Independent tasks** (no shared state, no file conflicts) → dispatch as parallel agents immediately
+2. **Dependent tasks** (one must finish before another starts) → serial, in dependency order
+3. **Small tasks you can do directly** → do these while parallel agents run
+
+Never execute 3+ independent tasks serially when they could run in parallel. The classification step is mandatory, not optional.
+
 ## CodeGraph
 
 This project has a CodeGraph MCP server (`codegraph_*` tools) configured. CodeGraph is a tree-sitter-parsed knowledge graph of every symbol, edge, and file. Reads are sub-millisecond and return structural information grep cannot.
@@ -147,6 +157,63 @@ These are mechanical steps that don't require experience — just discipline. Ru
 5. **Tool boundary awareness**: when a tool says "no callers found," that means "no callers found within the tool's search scope." Cross-repo callers, downstream consumers, and external scripts are invisible to CodeGraph/monorepo grep. Always `rg` the full workspace (e.g., `~/Desktop/RDK_Studio/`) before declaring something dead code.
 
 6. **Spec as checklist**: when working from a spec or assessment document, treat each action item as a checkbox. For each item: grep for the implementation, grep for the reader, grep for the test. Three greps per item, zero reliance on memory.
+
+### Async resource lifecycle pitfalls
+
+When wrapping OS resources (child processes, sockets, file handles) in Promise-based APIs:
+
+- **Check `signal.aborted` before starting the resource.** If you only register an `abort` event listener, a pre-aborted signal will never fire the listener and the resource will run to completion (or timeout). Always short-circuit: `if (signal?.aborted) return reject(...)`.
+- **Clean up listeners in both success and failure paths.** Use a single `cleanup()` function called from `close`, `error`, and timeout handlers to avoid listener leaks.
+- **Kill with SIGKILL, not SIGTERM.** SIGTERM can be caught/ignored by the child. SIGKILL is unconditional. For robotics tools where a hung SSH session blocks the event loop, SIGKILL is the right default.
+
+## Engineering Patterns & Anti-Patterns
+
+### 1. Discoverability is a pattern, not a task
+
+Every new user-facing subsystem (observability, ToolHookRegistry, MCP, providers, etc.) **must** be re-exported from the main barrel (`src/index.ts`). This is part of the PR, not a follow-up.
+
+**Rule**: if `package.json` exports a subpath (e.g., `./mcp`, `./observability`), the main barrel must have a corresponding `export` section or an explicit `@internal` annotation explaining why it's excluded.
+
+**Anti-pattern**: implementing a feature, writing tests, registering the subpath export — but forgetting the main barrel. Users discover capabilities through the main barrel, not by reading `package.json`.
+
+### 2. Fix one = fix the class
+
+When fixing a bug, ask: **"Does this bug shape appear elsewhere?"** Then `rg` across the codebase for same-pattern instances.
+
+**Example**: if you fix "subpath X not exported from main barrel," immediately check all other subpaths. If you fix "catch block doesn't use wrapAsDmoss," grep for all `catch` blocks in the same directory.
+
+**Anti-pattern**: "point fixing" — fixing the one instance the reviewer pointed out without scanning for siblings. This turns reviewers into permanent janitors.
+
+### 3. Cross-package config must be aligned, not per-package
+
+Use a root `tsconfig.base.json` that all packages extend. Strictness settings (`noUnusedLocals`, `noUnusedParameters`, etc.) belong in the base, not copied per-package.
+
+**Rule**: when upgrading strictness for one package, upgrade the base. All packages inherit automatically.
+
+**Anti-pattern**: manually copying compiler options into each package's `tsconfig.json`. When one package gets stricter, others drift.
+
+### 4. @deprecated without migration path = not written
+
+A `@deprecated` JSDoc tag must include:
+- `since` version and `removal target` version
+- A link to `MIGRATION.md` with a before/after code snippet
+- The before/after snippet must be copy-pasteable (5 lines max)
+
+**Minimum standard**: the downstream developer should not need to think — just copy, paste, and delete the old code.
+
+**Anti-pattern**: `@deprecated Use X instead.` — the reader still doesn't know how to change their code.
+
+### 5. `as unknown as X` = hiding type debt
+
+Every `as unknown as X` cast must satisfy one of:
+1. Followed immediately by a runtime type check (`zod`, `assert`, `instanceof`)
+2. A comment explaining **why the compiler can't see this relationship** (interface boundary, unexported type, third-party `.d.ts` bug)
+
+**Rule**: bare casts without either of the above are not allowed. They will be flagged in code review.
+
+**Anti-pattern**: using `as unknown as X` to "make TypeScript shut up" without understanding why the types don't align. This hides real architectural issues (e.g., SessionStore not being generic).
+
+**When you see 16+ casts in one file**: this is a signal that the type architecture needs an RFC, not a batch sed replacement.
 
 ## CodeGraph Conservative Usage Overlay
 

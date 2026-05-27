@@ -167,7 +167,15 @@ export async function executeAgentLoopToolCalls(
       });
     }
 
-    const { text: result, isError, structuredContent } = outcomeToResult(outcome);
+    const { text: result, isError, structuredContent: rawStructuredContent } = outcomeToResult(outcome);
+    const MAX_STRUCTURED_SIZE = 12_000;
+    let structuredContent = rawStructuredContent;
+    if (structuredContent && structuredContent.length > 0) {
+      const serialized = JSON.stringify(structuredContent);
+      if (serialized.length > MAX_STRUCTURED_SIZE) {
+        structuredContent = [{ type: 'text', text: `[structured content truncated: ${serialized.length} chars exceeded ${MAX_STRUCTURED_SIZE} limit]` }];
+      }
+    }
     metrics.totalToolCalls++;
     metrics.toolCallsByName[call.name] = (metrics.toolCallsByName[call.name] ?? 0) + 1;
     if (isError) {

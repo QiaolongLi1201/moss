@@ -6,39 +6,48 @@
  * process list, and network interfaces.
  */
 
-import type { Tool } from '../core/tools/tool-types.js';
+import type { Tool, ToolContext } from '../core/tools/tool-types.js';
 import type { DeviceSshConfig } from './device-ssh.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
-import { execFileSync } from 'node:child_process';
-
-/** Escape a single shell argument for POSIX sh. */
-function shellEscape(arg: string): string {
-  return `'${arg.replace(/'/g, "'\\''")}'`;
-}
+import { runProcess, ProcessError } from '../utils/run-process.js';
+import { wrapAsDmoss, ErrorCode } from '../errors.js';
 
 function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string[] {
   const user = config.user || 'root';
   const port = config.port || 22;
   const parts = ['-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=5'];
   if (config.keyPath) parts.push('-i', config.keyPath);
-  parts.push('-p', String(port), `${user}@${config.host}`, shellEscape(remoteCmd));
+  parts.push('-p', String(port), `${user}@${config.host}`, `'${remoteCmd.replace(/'/g, "'\\''")}'`);
   return parts;
 }
 
-function sshExec(config: DeviceSshConfig, cmd: string, timeout = 10_000): string {
+async function sshExec(
+  config: DeviceSshConfig,
+  cmd: string,
+  timeout = 10_000,
+  ctx?: ToolContext,
+): Promise<string> {
   const sshArgs = buildSshCommand(config, cmd);
 
   try {
     const sshBin = config.password ? 'sshpass' : 'ssh';
     const sshAllArgs = config.password ? ['-e', 'ssh', ...sshArgs] : sshArgs;
-    return execFileSync(sshBin, sshAllArgs, {
+    const result = await runProcess(sshBin, {
+      args: sshAllArgs,
       timeout,
-      encoding: 'utf-8',
       maxBuffer: 1024 * 1024,
+      signal: ctx?.abortSignal,
       env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
-    }).trim();
-  } catch (err: any) {
-    return `Error: ${err.message}`;
+    });
+    return result.stdout.trim();
+  } catch (err) {
+    if (err instanceof ProcessError) {
+      return `Error: ${err.message}`;
+    }
+    throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
+      hint: 'Check SSH connectivity and device power',
+      recoverable: true,
+    });
   }
 }
 
@@ -47,7 +56,7 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
     name: 'device_temperature',
     description: 'Read CPU and NPU/BPU temperature from the device.',
     inputSchema: { type: 'object', properties: {} },
-    async execute() {
+    async execute(_input, ctx) {
       const cmd = [
         'echo "=== CPU Temperature ==="',
         'cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | while read t; do echo "  $(echo "scale=1; $t/1000" | bc)°C"; done',
@@ -58,7 +67,7 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
         'echo "=== GPU Temperature ==="',
         'cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | head -5 | while read t; do echo "  $(echo "scale=1; $t/1000" | bc)°C"; done',
       ].join(' && ');
-      return sshExec(config, cmd);
+      return sshExec(config, cmd, 10_000, ctx);
     },
   };
 
@@ -66,7 +75,7 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
     name: 'device_resources',
     description: 'Get CPU, memory, and disk usage of the device.',
     inputSchema: { type: 'object', properties: {} },
-    async execute() {
+    async execute(_input, ctx) {
       const cmd = [
         'echo "=== CPU Usage ==="',
         'top -bn1 | head -5',
@@ -80,7 +89,7 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
         'echo "=== NPU/BPU Status ==="',
         'cat /sys/devices/system/bpu/bpu*/ratio 2>/dev/null && echo "(BPU load)" || echo "N/A"',
       ].join(' && ');
-      return sshExec(config, cmd);
+      return sshExec(config, cmd, 10_000, ctx);
     },
   };
 
@@ -93,10 +102,9 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
         count: { type: 'number', description: 'Number of processes to show (default: 10)' },
       },
     },
-    async execute(input) {
-      // H1: Coerce to number and clamp to safe range [1, 100]
+    async execute(input, ctx) {
       const count = Math.max(1, Math.min(Number(input.count) || 10, 100));
-      return sshExec(config, `ps aux --sort=-%cpu | head -${count + 1}`);
+      return sshExec(config, `ps aux --sort=-%cpu | head -${count + 1}`, 10_000, ctx);
     },
   };
 
@@ -104,7 +112,7 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
     name: 'device_network',
     description: 'Get network interfaces and connectivity status of the device.',
     inputSchema: { type: 'object', properties: {} },
-    async execute() {
+    async execute(_input, ctx) {
       const cmd = [
         'echo "=== IP Addresses ==="',
         'ip -4 addr show | grep -E "inet " | awk \'{print $NF, $2}\'',
@@ -118,7 +126,7 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
         'echo "=== Internet Check ==="',
         'ping -c 1 -W 2 8.8.8.8 > /dev/null 2>&1 && echo "Online" || echo "Offline"',
       ].join(' && ');
-      return sshExec(config, cmd);
+      return sshExec(config, cmd, 10_000, ctx);
     },
   };
 
@@ -126,7 +134,7 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
     name: 'device_cameras',
     description: 'Enumerate camera devices and their supported formats (V4L2).',
     inputSchema: { type: 'object', properties: {} },
-    async execute() {
+    async execute(_input, ctx) {
       const cmd = [
         'echo "=== Video Devices ==="',
         'ls -la /dev/video* 2>/dev/null || echo "No video devices"',
@@ -137,7 +145,7 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
         '  echo ""',
         'done',
       ].join(' ');
-      return sshExec(config, cmd, 15_000);
+      return sshExec(config, cmd, 15_000, ctx);
     },
   };
 

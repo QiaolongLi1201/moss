@@ -6,12 +6,12 @@
  * Commands are executed via SSH on the target device.
  */
 
-import type { Tool } from '../core/tools/tool-types.js';
+import type { Tool, ToolContext } from '../core/tools/tool-types.js';
 import type { DeviceSshConfig } from './device-ssh.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
-import { execFileSync } from 'node:child_process';
+import { runProcess, ProcessError } from '../utils/run-process.js';
+import { wrapAsDmoss, ErrorCode } from '../errors.js';
 
-/** Escape a single shell argument for POSIX sh. */
 function shellEscape(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`;
 }
@@ -27,22 +27,35 @@ function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string[] {
   return parts;
 }
 
-function sshExec(config: DeviceSshConfig, cmd: string, timeout = 15_000): string {
+async function sshExec(
+  config: DeviceSshConfig,
+  cmd: string,
+  timeout = 15_000,
+  ctx?: ToolContext,
+): Promise<string> {
   const remoteCmd = `${ROS_SETUP} && ${cmd}`;
   const sshArgs = buildSshCommand(config, remoteCmd);
 
   try {
     const sshBin = config.password ? 'sshpass' : 'ssh';
     const sshAllArgs = config.password ? ['-e', 'ssh', ...sshArgs] : sshArgs;
-    return execFileSync(sshBin, sshAllArgs, {
+    const result = await runProcess(sshBin, {
+      args: sshAllArgs,
       timeout,
-      encoding: 'utf-8',
       maxBuffer: 5 * 1024 * 1024,
+      signal: ctx?.abortSignal,
       env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
-    }).trim();
-  } catch (err: any) {
-    const output = [err.stdout, err.stderr].filter(Boolean).map(String).join('\n').trim();
-    return output || `Error: ${err.message}`;
+    });
+    return result.stdout.trim();
+  } catch (err) {
+    if (err instanceof ProcessError) {
+      const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
+      return output || `Error: ${err.message}`;
+    }
+    throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
+      hint: 'Check SSH connectivity and ROS2 installation',
+      recoverable: true,
+    });
   }
 }
 
@@ -51,8 +64,8 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
     name: 'ros2_topic_list',
     description: 'List all active ROS2 topics on the device.',
     inputSchema: { type: 'object', properties: {} },
-    async execute() {
-      return sshExec(config, 'ros2 topic list -t');
+    async execute(_input, ctx) {
+      return sshExec(config, 'ros2 topic list -t', 15_000, ctx);
     },
   };
 
@@ -66,8 +79,8 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
       },
       required: ['topic'],
     },
-    async execute(input) {
-      return sshExec(config, `timeout 5 ros2 topic echo ${shellEscape(input.topic)} --once 2>&1 || echo "(no message within 5s)"`, 10_000);
+    async execute(input, ctx) {
+      return sshExec(config, `timeout 5 ros2 topic echo ${shellEscape(input.topic)} --once 2>&1 || echo "(no message within 5s)"`, 10_000, ctx);
     },
   };
 
@@ -81,8 +94,8 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
       },
       required: ['topic'],
     },
-    async execute(input) {
-      return sshExec(config, `timeout 5 ros2 topic hz ${shellEscape(input.topic)} 2>&1 | tail -5`, 10_000);
+    async execute(input, ctx) {
+      return sshExec(config, `timeout 5 ros2 topic hz ${shellEscape(input.topic)} 2>&1 | tail -5`, 10_000, ctx);
     },
   };
 
@@ -90,8 +103,8 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
     name: 'ros2_node_list',
     description: 'List all active ROS2 nodes on the device.',
     inputSchema: { type: 'object', properties: {} },
-    async execute() {
-      return sshExec(config, 'ros2 node list');
+    async execute(_input, ctx) {
+      return sshExec(config, 'ros2 node list', 15_000, ctx);
     },
   };
 
@@ -99,8 +112,8 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
     name: 'ros2_service_list',
     description: 'List all active ROS2 services on the device.',
     inputSchema: { type: 'object', properties: {} },
-    async execute() {
-      return sshExec(config, 'ros2 service list -t');
+    async execute(_input, ctx) {
+      return sshExec(config, 'ros2 service list -t', 15_000, ctx);
     },
   };
 
@@ -116,9 +129,9 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
       },
       required: ['service', 'type'],
     },
-    async execute(input) {
+    async execute(input, ctx) {
       const args = input.args || '{}';
-      return sshExec(config, `ros2 service call ${shellEscape(input.service)} ${shellEscape(input.type)} ${shellEscape(args)}`);
+      return sshExec(config, `ros2 service call ${shellEscape(input.service)} ${shellEscape(input.type)} ${shellEscape(args)}`, 15_000, ctx);
     },
   };
 
@@ -134,10 +147,10 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
       },
       required: ['package', 'launch_file'],
     },
-    async execute(input) {
+    async execute(input, ctx) {
       const args = input.args ? ` ${shellEscape(input.args)}` : '';
       const cmd = `nohup ros2 launch ${shellEscape(input.package)} ${shellEscape(input.launch_file)}${args} > /tmp/ros2_launch_${shellEscape(input.package)}.log 2>&1 &`;
-      sshExec(config, cmd, 5_000);
+      await sshExec(config, cmd, 5_000, ctx);
       return `Launched ${input.package}/${input.launch_file} (detached). Log: /tmp/ros2_launch_${input.package}.log`;
     },
   };
@@ -151,11 +164,11 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
         filter: { type: 'string', description: 'Filter by name (grep pattern)' },
       },
     },
-    async execute(input) {
+    async execute(input, ctx) {
       const cmd = input.filter
         ? `ros2 pkg list | grep -i ${shellEscape(input.filter)}`
         : 'ros2 pkg list | head -50';
-      return sshExec(config, cmd);
+      return sshExec(config, cmd, 15_000, ctx);
     },
   };
 

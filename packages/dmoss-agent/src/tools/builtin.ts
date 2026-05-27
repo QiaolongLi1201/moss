@@ -27,7 +27,7 @@ const DANGEROUS_ENV_KEYS = new Set([
   'GROQ_API_KEY', 'AZURE_API_KEY', 'HF_TOKEN',
 ]);
 
-function childEnv(workspaceDir: string): Record<string, string> {
+function childEnv(_workspaceDir: string): Record<string, string> {
   const env: Record<string, string> = { ...process.env, LANG: process.env.LANG || 'en_US.UTF-8' };
   for (const key of DANGEROUS_ENV_KEYS) delete env[key];
   return env;
@@ -169,11 +169,15 @@ export const execTool: Tool = {
         env: childEnv(ctx.workspaceDir),
       });
       return String(result).trim() || '(no output)';
-    } catch (err: any) {
-      const stderr = err.stderr ? String(err.stderr).trim() : '';
-      const stdout = err.stdout ? String(err.stdout).trim() : '';
-      const output = [stdout, stderr].filter(Boolean).join('\n');
-      return `Command failed (exit ${err.status ?? 'unknown'}):\n${output || err.message}`;
+    } catch (err) {
+      if (err && typeof err === 'object' && 'status' in err) {
+        const execErr = err as { status: number | null; stdout?: string | Buffer; stderr?: string | Buffer; message: string };
+        const stderr = execErr.stderr ? String(execErr.stderr).trim() : '';
+        const stdout = execErr.stdout ? String(execErr.stdout).trim() : '';
+        const output = [stdout, stderr].filter(Boolean).join('\n');
+        return `Command failed (exit ${execErr.status ?? 'unknown'}):\n${output || execErr.message}`;
+      }
+      throw err;
     }
   },
 };
@@ -237,9 +241,10 @@ function globToRegex(pattern: string): RegExp {
   }
   const escaped = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, ' ')        // temp placeholder for **
+    .replace(/\*\*/g, '\x00')        // temp placeholder for **
     .replace(/\*/g, '[^/]*')            // single * matches non-slash chars only (no backtrack)
-    .replace(/ /g, '.*')           // ** matches anything
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x00/g, '.*')           // ** matches anything
     .replace(/\?/g, '[^/]');            // ? matches single non-slash char
   return new RegExp(`^${escaped}$`, 'i');
 }

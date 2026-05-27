@@ -161,7 +161,7 @@ export function applyUpdateHunk(
     contextGroups.push(currentGroup);
   }
 
-  let result = [...origLines];
+  const result = [...origLines];
   let offset = 0;
   const modifiedRanges: Array<[number, number]> = [];
 

@@ -39,6 +39,12 @@ export type {
   PiAiLLMProviderConfig,
 } from './pi-ai-adapter.js';
 
+// Built-in providers (native fetch, no SDK dependency)
+export { AnthropicLLMProvider } from './anthropic.js';
+export type { AnthropicLLMProviderConfig } from './anthropic.js';
+export { OpenAILLMProvider } from './openai.js';
+export type { OpenAILLMProviderConfig } from './openai.js';
+
 // keep-alive dispatcher (chat-tool-llm-overlap)
 export {
   ensureKeepAliveDispatcherInstalled,

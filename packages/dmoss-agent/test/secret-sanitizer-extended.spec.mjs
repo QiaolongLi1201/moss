@@ -4,11 +4,12 @@ import { sanitizeSecrets, containsSecrets } from '../dist/safety/secret-sanitize
 
 describe('Extended Secret Sanitizer Rules', () => {
   it('detects Azure SAS token', () => {
-    const text = 'https://storage.blob.core.windows.net/container?sv=2021-06-08&ss=bfqt&srt=sco&sp=rwdlacupiyx&se=2023-12-31&sig=abcdefghijklmnopqrstuvwxyz1234567890';
+    const text = 'https://storage.blob.core.windows.net/container?sv=2021-06-08&ss=bfqt&srt=sco&sp=rwdlacupiyx&se=2023-12-31&sig=abc123_def-456GHIJKLMNOP7890';
     assert.ok(containsSecrets(text));
     const sanitized = sanitizeSecrets(text);
     assert.ok(sanitized.includes('***'));
-    assert.ok(!sanitized.includes('abcdefghijklmnopqrstuvwxyz1234567890'));
+    assert.ok(!sanitized.includes('abc123_def-456GHIJKLMNOP7890'));
+    assert.ok(sanitized.includes('sig='));
   });
 
   it('detects Azure connection string', () => {
@@ -80,5 +81,21 @@ describe('Extended Secret Sanitizer Rules', () => {
     assert.ok(!containsSecrets(text));
     const sanitized = sanitizeSecrets(text);
     assert.equal(sanitized, text);
+  });
+
+  it('detects Anthropic key as Anthropic, not OpenAI', () => {
+    const text = 'Authorization: Bearer sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdef';
+    assert.ok(containsSecrets(text));
+    const sanitized = sanitizeSecrets(text);
+    assert.ok(sanitized.includes('***'));
+    assert.ok(!sanitized.includes('sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdef'));
+  });
+
+  it('detects npm tokens longer than 36 chars', () => {
+    const text = 'npm_1234567890abcdefABCDEF1234567890abcdEXTRA1234';
+    assert.ok(containsSecrets(text));
+    const sanitized = sanitizeSecrets(text);
+    assert.ok(sanitized.includes('***'));
+    assert.ok(!sanitized.includes('1234567890abcdefABCDEF1234567890abcdEXTRA1234'));
   });
 });

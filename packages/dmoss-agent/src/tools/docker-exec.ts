@@ -10,8 +10,10 @@
  * The workspace directory is mounted as /workspace inside the container.
  */
 
-import { execFileSync, execSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import type { Tool } from '../core/tools/tool-types.js';
+import { runProcess, ProcessError } from '../utils/run-process.js';
+import { wrapAsDmoss, ErrorCode } from '../errors.js';
 
 const IS_WIN = process.platform === 'win32';
 
@@ -58,27 +60,33 @@ export function createDockerExecTool(config: DockerExecConfig): Tool {
         : workDir;
 
       try {
-        // C2: Use execFileSync to avoid host shell interpretation of user command
-        const result = execFileSync('docker', [
-          'run', '--rm',
-          '-v', `${mountPath}:/workspace`,
-          '-w', '/workspace',
-          '--network', 'none',
-          '--memory', '512m',
-          '--cpus', '1',
-          image,
-          '/bin/sh', '-c', String(input.command),
-        ], {
+        const result = await runProcess('docker', {
+          args: [
+            'run', '--rm',
+            '-v', `${mountPath}:/workspace`,
+            '-w', '/workspace',
+            '--network', 'none',
+            '--memory', '512m',
+            '--cpus', '1',
+            image,
+            '/bin/sh', '-c', String(input.command),
+          ],
           timeout: timeoutMs + 10_000,
           maxBuffer: 10 * 1024 * 1024,
-          encoding: 'utf-8',
+          signal: ctx.abortSignal,
         });
-        return String(result).trim() || '(no output)';
-      } catch (err: any) {
-        const stderr = err.stderr ? String(err.stderr).trim() : '';
-        const stdout = err.stdout ? String(err.stdout).trim() : '';
-        const output = [stdout, stderr].filter(Boolean).join('\n');
-        return `Docker exec failed (exit ${err.status ?? 'unknown'}):\n${output || err.message}`;
+        return result.stdout.trim() || '(no output)';
+      } catch (err) {
+        if (err instanceof ProcessError) {
+          const stderr = err.stderr.trim();
+          const stdout = err.stdout.trim();
+          const output = [stdout, stderr].filter(Boolean).join('\n');
+          return `Docker exec failed (exit ${err.exitCode}):\n${output || err.message}`;
+        }
+        throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
+          hint: 'Check Docker daemon status and image availability',
+          recoverable: true,
+        });
       }
     },
   };

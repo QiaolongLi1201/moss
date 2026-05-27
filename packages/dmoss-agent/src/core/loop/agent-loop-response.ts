@@ -23,15 +23,12 @@ import {
   extractThinkingTextFromMessage,
   shouldNudgeMissingToolInvocation,
 } from './agent-loop-assistant-turn.js';
-import { shouldSuppressReasoningForToolFollowUpRound } from './follow-up-guard.js';
 import { buildNamedWebToolMatcher } from '../../prompts/plan-detection.js';
 import {
   decidePostLlmAction,
-  type PostLlmAction,
 } from './agent-loop-post-llm.js';
 import {
   executeAgentLoopToolCalls,
-  type AgentLoopToolExecutionMetrics,
 } from './agent-loop-tool-execution.js';
 
 export interface ProcessLlmResponseParams {

@@ -223,7 +223,7 @@ export function drainPendingGlobalModules(target: KnowledgeRegistry): void {
 }
 
 /**
- * @deprecated Use `agent.registerKnowledge(mod)` on a DmossAgent instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `agent.registerKnowledge(mod)` on a DmossAgent instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Modules registered here are bridged into new DmossAgent instances at construction time.
  */
 export function registerKnowledgeModule(mod: KnowledgeModule): void {
@@ -239,7 +239,7 @@ export function registerKnowledgeModule(mod: KnowledgeModule): void {
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function unregisterKnowledgeModule(id: string): boolean {
@@ -247,7 +247,7 @@ export function unregisterKnowledgeModule(id: string): boolean {
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function getKnowledgeModule(id: string): KnowledgeModule | undefined {
@@ -255,7 +255,7 @@ export function getKnowledgeModule(id: string): KnowledgeModule | undefined {
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function getAllKnowledgeModules(): KnowledgeModule[] {
@@ -263,7 +263,7 @@ export function getAllKnowledgeModules(): KnowledgeModule[] {
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function findModuleForPlatform(platform: string): KnowledgeModule | undefined {
@@ -271,7 +271,7 @@ export function findModuleForPlatform(platform: string): KnowledgeModule | undef
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function findModuleForFamily(family: DeviceFamily): KnowledgeModule | undefined {
@@ -279,7 +279,7 @@ export function findModuleForFamily(family: DeviceFamily): KnowledgeModule | und
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function getAllDeviceProfiles(): Record<string, DeviceProfileBase> {
@@ -287,7 +287,7 @@ export function getAllDeviceProfiles(): Record<string, DeviceProfileBase> {
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function getAllDocEntries(): DocIndexEntry[] {
@@ -295,7 +295,7 @@ export function getAllDocEntries(): DocIndexEntry[] {
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function getAllPromptFragments(
@@ -305,7 +305,7 @@ export function getAllPromptFragments(
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function getAllCommandPatterns(): CommandPattern[] {
@@ -313,7 +313,7 @@ export function getAllCommandPatterns(): CommandPattern[] {
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function getAllFailureHints(): FailureHint[] {
@@ -321,7 +321,7 @@ export function getAllFailureHints(): FailureHint[] {
 }
 
 /**
- * @deprecated Use `KnowledgeRegistry` class instance instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use `KnowledgeRegistry` class instance instead. See [MIGRATION.md](../MIGRATION.md) for code examples.
  * Kept for backward compatibility — delegates to a process-scoped default instance.
  */
 export function getAggregatedEcosystemPrompt(): string {

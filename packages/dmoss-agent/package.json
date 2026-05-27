@@ -80,6 +80,11 @@
       "types": "./dist/observability/index.d.ts",
       "import": "./dist/observability/index.js",
       "default": "./dist/observability/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js",
+      "default": "./dist/mcp/index.js"
     }
   },
   "publishConfig": {
@@ -144,6 +149,10 @@
       "./observability": {
         "types": "./dist/observability/index.d.ts",
         "import": "./dist/observability/index.js"
+      },
+      "./mcp": {
+        "types": "./dist/mcp/index.d.ts",
+        "import": "./dist/mcp/index.js"
       }
     },
     "bin": {

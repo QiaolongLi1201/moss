@@ -285,7 +285,7 @@ export async function removeCandidate(
   candidateId: string,
 ): Promise<boolean> {
   // H2: Validate candidateId to prevent path traversal
-  if (!candidateId || /[\/\\]/.test(candidateId) || candidateId.includes('..')) {
+  if (!candidateId || /[/\\]/.test(candidateId) || candidateId.includes('..')) {
     throw new Error('Invalid candidate ID');
   }
   const targetDir = path.join(candidatesRoot(workspaceDir), candidateId);

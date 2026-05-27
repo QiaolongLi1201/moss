@@ -3,46 +3,6 @@ import assert from 'node:assert/strict';
 import { outcomeToResult } from '../dist/core/tools/execute-tool-call.js';
 
 describe('Structured Tool Content Blocks', () => {
-  it('ToolContentBlock text type serializes correctly', () => {
-    const block = { type: 'text', text: 'hello world' };
-    assert.equal(block.type, 'text');
-    assert.equal(block.text, 'hello world');
-  });
-
-  it('ToolContentBlock image type has required fields', () => {
-    const block = { type: 'image', data: 'base64data', mimeType: 'image/png', alt: 'screenshot' };
-    assert.equal(block.type, 'image');
-    assert.equal(block.mimeType, 'image/png');
-  });
-
-  it('ToolContentBlock resource type has required fields', () => {
-    const block = { type: 'resource', uri: 'file:///tmp/out.log', name: 'build-log' };
-    assert.equal(block.type, 'resource');
-    assert.equal(block.uri, 'file:///tmp/out.log');
-  });
-
-  it('structured result text extraction works', () => {
-    const content = [
-      { type: 'text', text: 'line 1' },
-      { type: 'image', data: 'abc', mimeType: 'image/png' },
-      { type: 'text', text: 'line 2' },
-    ];
-    const text = content
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('\n');
-    assert.equal(text, 'line 1\nline 2');
-  });
-
-  it('structured result with no text blocks produces fallback', () => {
-    const content = [
-      { type: 'image', data: 'abc', mimeType: 'image/png' },
-    ];
-    const textParts = content.filter(b => b.type === 'text').map(b => b.text);
-    const text = textParts.length > 0 ? textParts.join('\n') : `[${content.length} content block(s): ${content.map(b => b.type).join(', ')}]`;
-    assert.equal(text, '[1 content block(s): image]');
-  });
-
   it('outcomeToResult propagates structuredContent from completed outcome', () => {
     const outcome = {
       kind: 'completed',
@@ -52,6 +12,8 @@ describe('Structured Tool Content Blocks', () => {
       structuredContent: [{ type: 'text', text: 'hello' }],
     };
     const result = outcomeToResult(outcome);
+    assert.equal(result.text, 'hello');
+    assert.equal(result.isError, false);
     assert.deepEqual(result.structuredContent, [{ type: 'text', text: 'hello' }]);
   });
 
@@ -64,5 +26,50 @@ describe('Structured Tool Content Blocks', () => {
     };
     const result = outcomeToResult(outcome);
     assert.equal(result.structuredContent, undefined);
+  });
+
+  it('outcomeToResult propagates multi-block structuredContent', () => {
+    const blocks = [
+      { type: 'text', text: 'line 1' },
+      { type: 'image', data: 'base64', mimeType: 'image/png' },
+      { type: 'text', text: 'line 2' },
+    ];
+    const outcome = {
+      kind: 'completed',
+      text: 'line 1\nline 2',
+      isError: false,
+      durationMs: 50,
+      structuredContent: blocks,
+    };
+    const result = outcomeToResult(outcome);
+    assert.equal(result.structuredContent.length, 3);
+    assert.equal(result.structuredContent[1].type, 'image');
+  });
+
+  it('outcomeToResult strips structuredContent from denied outcome', () => {
+    const outcome = { kind: 'denied', text: 'not approved' };
+    const result = outcomeToResult(outcome);
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent, undefined);
+  });
+
+  it('outcomeToResult strips structuredContent from hook-blocked outcome', () => {
+    const outcome = { kind: 'hook-blocked', text: 'blocked by hook' };
+    const result = outcomeToResult(outcome);
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent, undefined);
+  });
+
+  it('outcomeToResult preserves isError flag from completed outcome', () => {
+    const outcome = {
+      kind: 'completed',
+      text: 'error occurred',
+      isError: true,
+      durationMs: 200,
+      structuredContent: [{ type: 'text', text: 'error occurred' }],
+    };
+    const result = outcomeToResult(outcome);
+    assert.equal(result.isError, true);
+    assert.deepEqual(result.structuredContent, [{ type: 'text', text: 'error occurred' }]);
   });
 });

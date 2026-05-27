@@ -17,7 +17,7 @@ export {
   KnowledgeRegistry,
 } from './knowledge/index.js';
 /**
- * @deprecated Use KnowledgeRegistry instance methods instead.
+ * @deprecated since 0.4.0, removal target 1.0. Use KnowledgeRegistry instance methods instead.
  * Re-exported for backward compatibility — will be removed in next major version.
  */
 export {
@@ -175,6 +175,16 @@ export type {
 export { PiAiLLMProvider } from './provider/index.js';
 export type { PiAiModelInfo, PiAiStreamFunction, PiAiLLMProviderConfig } from './provider/index.js';
 
+// --- Provider: built-in Anthropic + OpenAI (native fetch, no SDK) ---
+export { AnthropicLLMProvider } from './provider/anthropic.js';
+export type { AnthropicLLMProviderConfig } from './provider/anthropic.js';
+export { OpenAILLMProvider } from './provider/openai.js';
+export type { OpenAILLMProviderConfig } from './provider/openai.js';
+
+// --- MCP (Model Context Protocol client) ---
+export { loadMcpConfig, connectMcpServers } from './mcp/index.js';
+export type { McpServerConfig, McpConfig, McpTool, McpConnection } from './mcp/index.js';
+
 // --- Provider ---
 export {
   FailoverError,
@@ -240,3 +250,38 @@ export {
   isDmossErrorRecoverable,
   type DmossErrorDetails,
 } from './errors.js';
+
+// --- Observability (tracing, redaction, LLM usage logging) ---
+export {
+  redactSensitiveData,
+  parseTelemetryAllow,
+  setTracer,
+  getTracer,
+  withSpan,
+  turnAttributes,
+  toolAttributes,
+  llmRequestAttributes,
+  logLLMUsage,
+  readUsageLog,
+  summarizeUsage,
+  formatUsageSummary,
+  estimateLLMCost,
+  registerModelPricing,
+} from './observability/index.js';
+export type {
+  RedactOptions,
+  Tracer,
+  TraceSpan,
+  LLMUsageRecord,
+  LLMUsageSummary,
+} from './observability/index.js';
+
+// --- Tool Hooks (pre/post execution pipeline) ---
+export { ToolHookRegistry } from './core/index.js';
+export type {
+  PreToolUseHook,
+  PostToolUseHook,
+  PostToolUseFailureHook,
+  PreToolUseDecision,
+} from './core/index.js';
+

@@ -92,7 +92,7 @@ export function createDmossAgentLoopEventAdapter(
             },
           ];
         }
-        case 'tool_execution_end':
+        case 'tool_execution_end': {
           const content = event.content ?? event.result;
           toolResults.push({
             toolUseId: event.toolCallId,
@@ -109,8 +109,10 @@ export function createDmossAgentLoopEventAdapter(
               result: event.result,
               isError: event.isError,
               ...(event.aborted ? { aborted: event.aborted } : {}),
+              ...(event.structuredContent ? { structuredContent: event.structuredContent } : {}),
             },
           ];
+        }
         case 'turn_start':
           return [{ type: 'turn_start', turn: event.turn }];
         case 'turn_end':

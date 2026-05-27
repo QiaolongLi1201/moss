@@ -292,7 +292,7 @@ function redactInput(value: unknown): unknown {
   return out;
 }
 
-function formatToolStep(call: LearnedToolCall): string {
+function formatToolStepForPrompt(call: LearnedToolCall): string {
   const input = JSON.stringify(redactInput(call.input));
   const compactInput = input.length > 220 ? `${input.slice(0, 220)}...` : input;
   return `\`${call.name}\`${compactInput && compactInput !== "{}" ? ` 输入：\`${compactInput.replace(/`/g, "'")}\`` : ""}`;
@@ -357,7 +357,7 @@ function buildSkillMarkdown(input: {
     .map((tool) => `| \`${tool}\` | 本轮已验证工具链的一部分 | 是 |`)
     .join("\n");
   const steps = input.calls
-    .map((call, index) => `${index + 1}. ${formatToolStep(call)}`)
+     .map((call, index) => `${index + 1}. ${formatToolStepForPrompt(call)}`)
     .join("\n");
   const resultSummary = input.assistantText.replace(/\s+/g, " ").trim().slice(0, 700);
 

@@ -13,7 +13,7 @@ export interface ChannelSafetyResult {
 
 const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\brm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?.*\/(\.ssh|\.config|\/etc)/i, reason: '禁止删除关键系统/项目目录' },
-  { pattern: /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f?\s+[\/~]/i, reason: '禁止递归删除根目录或用户目录' },
+  { pattern: /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f?\s+[/~]/i, reason: '禁止递归删除根目录或用户目录' },
   { pattern: /\bmkfs\b|\bformat\b|\bfdisk\b/i, reason: '禁止格式化磁盘操作' },
   { pattern: /\bdd\s+.*of=\/dev\//i, reason: '禁止直接写入设备' },
   { pattern: /\b(shutdown|reboot|halt|poweroff)\b/i, reason: '禁止关机/重启本机' },

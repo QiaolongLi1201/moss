@@ -335,6 +335,12 @@ The stable open-source surface of `@dmoss/agent` is the package export map defin
 
 Host-level routes and product integrations belong to the embedding application and should not be treated as the public API of this package.
 
+### `@internal` symbols
+
+Some exports are marked with `/** @internal */` JSDoc comments. These are **implementation details** that are exported only for internal use within the `@dmoss/*` package family. They are **not part of the stable public API** and may change or be removed in any release (including patch releases) without notice or migration path.
+
+If you depend on an `@internal` symbol, you are opting out of semver protections. Prefer the documented public API surface in [API.md](./API.md).
+
 ## License
 
 [MIT](./LICENSE)

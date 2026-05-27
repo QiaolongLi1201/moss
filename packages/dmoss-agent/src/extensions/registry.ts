@@ -136,53 +136,53 @@ function warnDeprecated(name: string): void {
   );
 }
 
-/** @deprecated Use `agent.extensions.setVendorPluginCallbacks()` instead. */
+/** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.setVendorPluginCallbacks()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function setVendorPluginCallbacks(callbacks: VendorPluginCallbacks): void {
   warnDeprecated('setVendorPluginCallbacks');
   getDefault().setVendorPluginCallbacks(callbacks);
 }
 
-/** @deprecated Use `agent.extensions.setKnowledgeRegistry()` instead. */
+/** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.setKnowledgeRegistry()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function setKnowledgeRegistryForExtensions(registry: KnowledgeRegistry): void {
   warnDeprecated('setKnowledgeRegistryForExtensions');
   getDefault().setKnowledgeRegistry(registry);
 }
 
-/** @deprecated Use `agent.extensions.apply()` instead. */
+/** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.apply()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function applyPlatformExtension(ext: DmossPlatformExtension): void {
   warnDeprecated('applyPlatformExtension');
   getDefault().apply(ext);
 }
 
-/** @deprecated Use `agent.extensions.applyForce()` instead. */
+/** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.applyForce()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function applyPlatformExtensionForce(ext: DmossPlatformExtension): void {
   warnDeprecated('applyPlatformExtensionForce');
   getDefault().applyForce(ext);
 }
 
-/** @deprecated Use `agent.extensions.reset()` instead. */
+/** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.reset()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function resetPlatformExtensionRegistryForTests(): void {
   getDefault().reset();
 }
 
-/** @deprecated Use `agent.extensions.listAppliedState()` instead. */
+/** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.listAppliedState()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function listAppliedPlatformExtensionState(): ReadonlyMap<string, boolean> {
   return getDefault().listAppliedState();
 }
 
-/** @deprecated Use `agent.extensions.setExtensionsSnapshot()` instead. */
+/** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.setExtensionsSnapshot()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function setRegisteredPlatformExtensionsSnapshot(
   exts: readonly DmossPlatformExtension[],
 ): void {
   getDefault().setExtensionsSnapshot(exts);
 }
 
-/** @deprecated Use `agent.extensions.getExtensions()` instead. */
+/** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.getExtensions()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function getRegisteredPlatformExtensions(): readonly DmossPlatformExtension[] {
   return getDefault().getExtensions();
 }
 
-/** @deprecated Use `agent.extensions.syncAtStartup()` instead. */
+/** @deprecated since 0.4.0, removal target 1.0. Use `agent.extensions.syncAtStartup()` instead. See [MIGRATION.md](../MIGRATION.md) for code examples. */
 export function syncPlatformExtensionsAtStartup(
   factories: Array<() => DmossPlatformExtension>,
 ): void {

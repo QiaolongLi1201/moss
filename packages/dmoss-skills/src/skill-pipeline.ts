@@ -1,6 +1,5 @@
 import * as crypto from "node:crypto";
 import type { LLMMessage } from "./llm-message.js";
-import type { SkillCandidateToolCall } from "./skill-candidate-store.js";
 import { writeSkillCandidate, listCandidates } from "./skill-candidate-store.js";
 import { distillCandidate, type DistillResult } from "./skill-distiller.js";
 import { promoteSkillCandidate, type PromoteResult } from "./skill-promoter.js";

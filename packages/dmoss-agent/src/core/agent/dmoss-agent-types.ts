@@ -2,12 +2,11 @@ import type {
   LLMProvider,
   LLMMessage,
   LLMContentBlock,
-  LLMResponse,
   LLMStreamEvent,
 } from '../llm/llm-provider.js';
-import type { Message } from '../session/session-jsonl.js';
+import type { Message, ContentBlock } from '../session/session-jsonl.js';
 import type { SessionStore } from '../session/session.js';
-import type { Tool, ToolContext, ToolCall, ToolResult } from '../tools/tool-types.js';
+import type { Tool, ToolCall, ToolResult, ToolContentBlock } from '../tools/tool-types.js';
 import type {
   ContextPruningSettings,
 } from '../../context/pruning.js';
@@ -191,6 +190,7 @@ export type DmossAgentEvent =
       result: string;
       isError: boolean;
       aborted?: { by: 'user' | 'timeout' };
+      structuredContent?: ToolContentBlock[];
     }
   | { type: 'turn_start'; turn: number }
   | { type: 'turn_end'; turn: number; stopReason: string; totalToolCalls?: number }
@@ -211,34 +211,66 @@ export type DmossAgentEvent =
   | { type: 'microcompact'; compressedCount: number; savedChars: number; savedTokens: number }
   | { type: 'done'; result: ChatResult };
 
+export type InternalContentBlock = Pick<
+  ContentBlock,
+  'type' | 'text' | 'id' | 'name' | 'input' | 'tool_use_id' | 'content' | 'is_error'
+>;
+
 export type InternalMessage = {
   role: 'user' | 'assistant';
   content: string | InternalContentBlock[];
   timestamp: number;
-  /** 与 session-jsonl Message.thinking 对齐；供开思考链的网关回传 reasoning_content */
   thinking?: string[];
 };
 
-export type InternalContentBlock = {
-  type: string;
-  text?: string;
-  id?: string;
-  name?: string;
-  input?: Record<string, unknown>;
-  tool_use_id?: string;
-  content?: string;
-  is_error?: boolean;
-};
-
 export function toSessionMessages(msgs: InternalMessage[]): Message[] {
-  return msgs as unknown as Message[];
+  return msgs.map((m) => ({
+    role: m.role,
+    content: typeof m.content === 'string' ? m.content : m.content.map((b) => ({ ...b })),
+    timestamp: m.timestamp,
+    ...(m.thinking ? { thinking: m.thinking } : {}),
+  }));
 }
 
 export function fromSessionMessages(msgs: Message[]): InternalMessage[] {
-  return msgs as unknown as InternalMessage[];
+  return msgs.map((m) => ({
+    role: m.role,
+    content:
+      typeof m.content === 'string'
+        ? m.content
+        : m.content.map((b) => ({
+            type: b.type,
+            ...(b.text !== undefined ? { text: b.text } : {}),
+            ...(b.id !== undefined ? { id: b.id } : {}),
+            ...(b.name !== undefined ? { name: b.name } : {}),
+            ...(b.input !== undefined ? { input: b.input } : {}),
+            ...(b.tool_use_id !== undefined ? { tool_use_id: b.tool_use_id } : {}),
+            ...(b.content !== undefined ? { content: b.content } : {}),
+            ...(b.is_error !== undefined ? { is_error: b.is_error } : {}),
+          })),
+    timestamp: m.timestamp,
+    ...(m.thinking ? { thinking: m.thinking } : {}),
+  }));
 }
 
 export function toLLMMessages(msgs: InternalMessage[]): LLMMessage[] {
-  return msgs as unknown as LLMMessage[];
+  return msgs.map((m) => ({
+    role: m.role,
+    content:
+      typeof m.content === 'string'
+        ? m.content
+        : m.content.map((b): LLMContentBlock => {
+            if (b.type === 'text') return { type: 'text', text: b.text ?? '' };
+            if (b.type === 'tool_use')
+              return { type: 'tool_use', id: b.id ?? '', name: b.name ?? '', input: b.input ?? {} };
+            return {
+              type: 'tool_result',
+              tool_use_id: b.tool_use_id ?? '',
+              content: b.content ?? '',
+              ...(b.is_error !== undefined ? { is_error: b.is_error } : {}),
+            };
+          }),
+    ...(m.thinking ? { thinking: m.thinking } : {}),
+  }));
 }
 

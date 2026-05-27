@@ -14,6 +14,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ChatOptions.experimentalUseAgentLoop` test override were removed so there is
   a single authoritative agent loop.
 
+### Deprecated
+
+The following global free functions are now deprecated (since 0.4.0, removal target 1.0).
+Migrate to instance methods on `DmossAgent` or `KnowledgeRegistry` / `PlatformExtensionRegistry`:
+
+| Deprecated function | Replacement |
+|---|---|
+| `registerKnowledgeModule(mod)` | `agent.registerKnowledge(mod)` |
+| `unregisterKnowledgeModule(id)` | `agent.knowledge.unregister(id)` |
+| `getKnowledgeModule(id)` | `agent.knowledge.get(id)` |
+| `getAllKnowledgeModules()` | `agent.knowledge.getAll()` |
+| `findModuleForPlatform(platform)` | `agent.knowledge.findForPlatform(platform)` |
+| `getAllDeviceProfiles()` | `agent.knowledge.getAllDeviceProfiles()` |
+| `getAllDocEntries()` | `agent.knowledge.getAllDocEntries()` |
+| `getAllPromptFragments()` | `agent.knowledge.getAllPromptFragments()` |
+| `getAllCommandPatterns()` | `agent.knowledge.getAllCommandPatterns()` |
+| `getAllFailureHints()` | `agent.knowledge.getAllFailureHints()` |
+| `getAggregatedEcosystemPrompt()` | `agent.knowledge.getAggregatedEcosystemPrompt()` |
+| `setVendorPluginCallbacks(cb)` | `agent.extensions.setVendorPluginCallbacks(cb)` |
+| `setKnowledgeRegistryForExtensions(reg)` | `agent.extensions.setKnowledgeRegistry(reg)` |
+| `applyPlatformExtension(ext)` | `agent.extensions.apply(ext)` |
+| `applyPlatformExtensionForce(ext)` | `agent.extensions.applyForce(ext)` |
+| `syncPlatformExtensionsAtStartup(factories)` | `agent.extensions.syncAtStartup(factories)` |
+| `getRegisteredPlatformExtensions()` | `agent.extensions.getExtensions()` |
+
+Deprecated functions emit a one-time `log.warn` on first call. The warning includes a stack trace
+to help identify call sites that need migration.
+
 ## [0.3.1] - 2026-05-02
 
 ### Added

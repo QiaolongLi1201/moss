@@ -157,7 +157,7 @@ export class SkillLearner {
   private scoreConfidence(
     toolCalls: ReturnType<typeof this.extractToolCalls>,
     pattern: ToolChainPattern,
-    messages: LLMMessage[],
+    _messages: LLMMessage[],
   ): number {
     let score = 0.3;
 
@@ -230,7 +230,7 @@ export class SkillLearner {
 
   private extractPreconditions(
     toolCalls: ReturnType<typeof this.extractToolCalls>,
-    messages: LLMMessage[],
+    _messages: LLMMessage[],
   ): string[] {
     const preconditions: string[] = [];
     const firstTool = toolCalls[0];
@@ -317,7 +317,7 @@ export class SkillLearner {
     if (Array.isArray(msg.content)) {
       return msg.content
         .filter((b): b is { type: 'text'; text: string } =>
-          typeof b === 'object' && b !== null && 'type' in b && (b as any).type === 'text'
+          typeof b === 'object' && b !== null && 'type' in b && b.type === 'text'
         )
         .map(b => b.text)
         .join(' ');

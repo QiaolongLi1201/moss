@@ -59,7 +59,7 @@ import type {
 } from './core/llm/llm-provider.js';
 import type { Tool } from './core/tools/tool-types.js';
 import { registerBuiltinTools } from './tools/builtin.js';
-import { validateMemoryWriteContent, buildSelfLearningMemoryDraft } from './core/memory/memory.js';
+import { validateMemoryWriteContent } from './core/memory/memory.js';
 import { SkillLearner } from './core/memory/skill-learner.js';
 import { SkillPipeline } from '@dmoss/skills';
 import { WorkspaceMemory } from './core/memory/workspace-memory.js';
@@ -621,8 +621,6 @@ async function main() {
   const extraPromptLayers: string[] = [];
   if (wsPromptLayer) extraPromptLayers.push(wsPromptLayer);
 
-  const selfLearningEnabled = process.env.DMOSS_SELF_LEARNING === 'true';
-
   const agent = new DmossAgent({
     llmProvider: cliProvider,
     sessionStore,
@@ -835,7 +833,7 @@ async function runInteractive(agent: DmossAgent, skillLearner?: SkillLearner) {
       const newModel = msg.slice(7).trim();
       if (newModel) {
         currentModel = newModel;
-        (agent.config as any).model = newModel;
+        agent.config.model = newModel;
         console.error(`[config] Model switched to: ${newModel}`);
       } else {
         console.error(`[config] Current model: ${currentModel}`);

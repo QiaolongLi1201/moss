@@ -40,6 +40,7 @@ const forbiddenText = [
 const allowedFakeFragments = [
   'sk-proj-abc',
   'sk-ant-oat-abcdef',
+  'sk-ant-api03',
   'sk-test',
   'sk-xxx',
   'sk-xxxxxxxx',

@@ -61,6 +61,7 @@ import {
 import { runAgentLoop } from '../loop/agent-loop.js';
 import type { AgentLoopParams } from '../loop/agent-loop-types.js';
 import type { MiniAgentEvent } from '../subagent/agent-events.js';
+import type { SpawnToolScope } from '../subagent/spawn-profile.js';
 import { createSubAgentRunner } from '../subagent/subagent-runner.js';
 import {
   createDmossAgentLoopEventAdapter,
@@ -446,7 +447,7 @@ export class DmossAgent {
         {
           runId: childRunId,
           parentRunId: runId,
-          scope: (params.scope as any) ?? 'full',
+          scope: ((params.scope ?? 'full') as SpawnToolScope),
           task: params.task,
           maxTurns: params.maxTurns ?? 10,
           timeoutMs: 120_000,

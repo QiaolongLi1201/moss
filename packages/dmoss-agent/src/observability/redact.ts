@@ -3,6 +3,35 @@
  * and credential-bearing URLs from structured data before it leaves the runtime.
  *
  * This is complementary to `safety/secret-sanitizer` which operates on raw text.
+ *
+ * ## DMOSS_TELEMETRY_ALLOW
+ *
+ * Hosts can opt specific fields into telemetry collection by setting the
+ * `DMOSS_TELEMETRY_ALLOW` environment variable with a comma-separated list:
+ *
+ *   DMOSS_TELEMETRY_ALLOW=requestId,sessionId,toolName
+ *
+ * **Security**: Fields matching sensitive patterns are **always rejected**, even
+ * if explicitly listed in `DMOSS_TELEMETRY_ALLOW`. The following patterns are
+ * blocked by default:
+ *
+ * - `SENSITIVE_FIELD_PATTERN`: token, api_key, secret, password, credential, auth,
+ *   private_key, access_key, connection_string, dsn, jwt, ssh_key, signing_key,
+ *   encryption_key, client_secret
+ * - `PROMPT_FIELD_PATTERN`: any field containing "prompt"
+ *
+ * Attempting to allow a sensitive field logs a warning and skips the field.
+ *
+ * ## Redaction rules
+ *
+ * 1. **Field names**: Matched against `SENSITIVE_FIELD_PATTERN` and `PROMPT_FIELD_PATTERN`.
+ *    Matches are replaced with `[REDACTED]`.
+ * 2. **IP addresses**: IPv4 and IPv6 addresses in string values are replaced with `[REDACTED]`.
+ * 3. **Credential-bearing URLs**: URLs with embedded credentials (e.g., `http://user:pass@host`)
+ *    have the credentials replaced with `[REDACTED]`.
+ * 4. **File contents**: Strings longer than 200 characters that look like file contents
+ *    (many lines, code patterns) are replaced with `[REDACTED: file content]`.
+ * 5. **Circular references**: Detected and replaced with `[CIRCULAR]`.
  */
 
 // ── Types ───────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import type { MemoryEmbeddingProvider, EmbeddedMemoryEntry } from './memory-embedding.js';
 import { cosineSimilarity, hybridScore } from './memory-embedding.js';
+import { memoryWarn } from './logger.js';
 
 /** Soft cap for total indexed characters — not enforced; used for consolidation hints. */
 export const MEMORY_INDEX_CHAR_SOFT_LIMIT = 50_000;
@@ -220,6 +221,7 @@ export class MemoryManager {
   private loaded = false;
   private _writeChain: Promise<void> = Promise.resolve();
   private embeddingMap = new Map<string, number[]>();
+  private invertedIndex = new Map<string, Set<string>>();
 
   constructor(baseDir: string = './.dmoss/memory', private embeddingProvider?: MemoryEmbeddingProvider) {
     this.baseDir = baseDir;
@@ -243,10 +245,14 @@ export class MemoryManager {
       const raw = await fs.readFile(path.join(this.baseDir, 'embeddings.json'), 'utf-8');
       const arr: EmbeddedMemoryEntry[] = JSON.parse(raw);
       this.embeddingMap = new Map(arr.map(e => [e.id, e.embedding]));
-    } catch {
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        memoryWarn('failed to load embeddings.json, starting fresh', err);
+      }
       this.embeddingMap = new Map();
     }
     this.pruneOrphanEmbeddings();
+    this.buildInvertedIndex();
     this.loaded = true;
   }
 
@@ -278,12 +284,63 @@ export class MemoryManager {
       }
     }
     if (pruned > 0) {
-      console.warn(`[memory] pruned ${pruned} orphan embedding(s) with no matching entry`);
+      memoryWarn(`pruned ${pruned} orphan embedding(s) with no matching entry`);
     }
   }
 
   private hashContent(content: string): string {
     return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
+  }
+
+  private extractTerms(content: string): string[] {
+    const tokens = content.toLowerCase().match(/[a-z0-9一-鿿]+/g) ?? [];
+    const terms = new Set<string>();
+    for (const token of tokens) {
+      for (let len = 2; len <= token.length; len++) {
+        for (let start = 0; start <= token.length - len; start++) {
+          terms.add(token.slice(start, start + len));
+        }
+      }
+    }
+    return [...terms];
+  }
+
+  private buildInvertedIndex(): void {
+    this.invertedIndex.clear();
+    for (const entry of this.entries) {
+      const terms = this.extractTerms(entry.content);
+      for (const term of terms) {
+        let ids = this.invertedIndex.get(term);
+        if (!ids) {
+          ids = new Set();
+          this.invertedIndex.set(term, ids);
+        }
+        ids.add(entry.id);
+      }
+    }
+  }
+
+  private addToIndex(id: string, content: string): void {
+    const terms = this.extractTerms(content);
+    for (const term of terms) {
+      let ids = this.invertedIndex.get(term);
+      if (!ids) {
+        ids = new Set();
+        this.invertedIndex.set(term, ids);
+      }
+      ids.add(id);
+    }
+  }
+
+  private removeFromIndex(id: string, content: string): void {
+    const terms = this.extractTerms(content);
+    for (const term of terms) {
+      const ids = this.invertedIndex.get(term);
+      if (ids) {
+        ids.delete(id);
+        if (ids.size === 0) this.invertedIndex.delete(term);
+      }
+    }
   }
 
   async add(
@@ -301,7 +358,9 @@ export class MemoryManager {
 
       const existingIndex = this.entries.findIndex((e) => e.hash === hash);
       if (existingIndex >= 0) {
+        this.removeFromIndex(this.entries[existingIndex].id, this.entries[existingIndex].content);
         this.entries[existingIndex].content = content;
+        this.addToIndex(this.entries[existingIndex].id, content);
         this.entries[existingIndex].path = filePath;
         if (options?.scope !== undefined) this.entries[existingIndex].scope = options.scope;
         if (options?.scopeRef !== undefined) this.entries[existingIndex].scopeRef = options.scopeRef;
@@ -334,6 +393,7 @@ export class MemoryManager {
         ...(options?.starred !== undefined && options.starred ? { starred: true } : {}),
       };
       this.entries.push(entry);
+      this.addToIndex(entry.id, content);
       await this.save();
       if (this.embeddingProvider) {
         try {
@@ -345,7 +405,7 @@ export class MemoryManager {
       }
       return id;
     }).catch(err => {
-      console.warn('[memory] write chain error:', err);
+      memoryWarn('write chain error:', err);
       return '';
     });
     this._writeChain = result.then(() => {});
@@ -369,8 +429,10 @@ export class MemoryManager {
       if (idx === -1) return false;
       const entry = this.entries[idx];
       if (patch.content !== undefined && typeof patch.content === 'string') {
+        this.removeFromIndex(id, entry.content);
         entry.content = patch.content;
         entry.hash = this.hashContent(patch.content);
+        this.addToIndex(id, entry.content);
       }
       if (patch.scope !== undefined) entry.scope = patch.scope;
       if (patch.scopeRef !== undefined) entry.scopeRef = patch.scopeRef;
@@ -385,7 +447,6 @@ export class MemoryManager {
       }
       await this.save();
       if (patch.content && this.embeddingProvider) {
-        this.embeddingMap.delete(id);
         try {
           const [vec] = await this.embeddingProvider.embed([patch.content]);
           this.embeddingMap.set(id, vec);
@@ -395,7 +456,7 @@ export class MemoryManager {
       }
       return true;
     }).catch(err => {
-      console.warn('[memory] write chain error:', err);
+      memoryWarn('write chain error:', err);
       return false;
     });
     this._writeChain = result.then(() => {});
@@ -450,9 +511,28 @@ export class MemoryManager {
         })
       : this.entries;
 
+    const filteredIds = new Set(filteredEntries.map(e => e.id));
+
     for (const variant of variants) {
       const queryTerms = extractQueryTerms(variant);
-      const ranked = rankEntriesByTerms(filteredEntries, queryTerms);
+
+      let ranked: MemorySearchResult[];
+      if (queryTerms.some(t => t.length < 2)) {
+        ranked = rankEntriesByTerms(filteredEntries, queryTerms);
+      } else {
+        const candidateIds = new Set<string>();
+        for (const term of queryTerms) {
+          const ids = this.invertedIndex.get(term);
+          if (ids) {
+            for (const id of ids) {
+              if (filteredIds.has(id)) candidateIds.add(id);
+            }
+          }
+        }
+        const candidateEntries = filteredEntries.filter(e => candidateIds.has(e.id));
+        ranked = rankEntriesByTerms(candidateEntries, queryTerms);
+      }
+
       for (const r of ranked) {
         const prev = bestById.get(r.entry.id);
         if (!prev || r.score > prev.score) {
@@ -590,6 +670,9 @@ export class MemoryManager {
       }
       if (toRemove.length > 0) {
         const removeSet = new Set(toRemove);
+        for (const entry of this.entries) {
+          if (removeSet.has(entry.id)) this.removeFromIndex(entry.id, entry.content);
+        }
         this.entries = this.entries.filter(e => !removeSet.has(e.id));
         for (const id of toRemove) this.embeddingMap.delete(id);
         await this.saveEmbeddings();
@@ -597,7 +680,7 @@ export class MemoryManager {
       if (softCount > 0 || hardCount > 0) await this.save();
       return softCount + hardCount;
     }).catch(err => {
-      console.warn('[memory] write chain error:', err);
+      memoryWarn('write chain error:', err);
       return 0;
     });
     this._writeChain = result.then(() => {});
@@ -648,13 +731,14 @@ export class MemoryManager {
       await this.load();
       const idx = this.entries.findIndex((e) => e.id === id);
       if (idx === -1) return false;
+      this.removeFromIndex(id, this.entries[idx].content);
       this.entries.splice(idx, 1);
       this.embeddingMap.delete(id);
       await this.save();
       await this.saveEmbeddings();
       return true;
     }).catch(err => {
-      console.warn('[memory] write chain error:', err);
+      memoryWarn('write chain error:', err);
       return false;
     });
     this._writeChain = result.then(() => {});
@@ -671,10 +755,11 @@ export class MemoryManager {
     const result = this._writeChain.then(async () => {
       this.entries = [];
       this.embeddingMap.clear();
+      this.invertedIndex.clear();
       await this.save();
       await this.saveEmbeddings();
     }).catch(err => {
-      console.warn('[memory] write chain error:', err);
+      memoryWarn('write chain error:', err);
     });
     this._writeChain = result;
     return result;

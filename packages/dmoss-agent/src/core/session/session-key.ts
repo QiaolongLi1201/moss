@@ -150,7 +150,7 @@ export function validateSessionKeyChars(key: string): { valid: boolean; reason?:
   }
   // Session key format: agent:<agentId>:<mainKey>
   // All parts should be safe filesystem characters
-  if (/[\/\\]/.test(key)) {
+  if (/[/\\]/.test(key)) {
     return { valid: false, reason: 'contains path separator' };
   }
   if (key.includes('..')) {

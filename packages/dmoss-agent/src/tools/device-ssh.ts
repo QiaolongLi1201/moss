@@ -12,10 +12,11 @@
  *   DMOSS_DEVICE_KEY      — Path to SSH private key (alternative to password)
  */
 
-import { execFileSync } from 'node:child_process';
-import type { Tool } from '../core/tools/tool-types.js';
+import type { Tool, ToolContext } from '../core/tools/tool-types.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
+import { runProcess, ProcessError } from '../utils/run-process.js';
+import { wrapAsDmoss, ErrorCode } from '../errors.js';
 
 export interface DeviceSshConfig {
   host: string;
@@ -25,7 +26,6 @@ export interface DeviceSshConfig {
   keyPath?: string;
 }
 
-/** Escape a single shell argument for POSIX sh. */
 function shellEscape(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`;
 }
@@ -41,6 +41,26 @@ function buildSshCommand(config: DeviceSshConfig, remoteCmd: string): string[] {
 
   parts.push('-p', String(port), `${user}@${config.host}`, shellEscape(remoteCmd));
   return parts;
+}
+
+async function sshRun(
+  config: DeviceSshConfig,
+  remoteCmd: string,
+  timeout: number,
+  ctx?: ToolContext,
+  maxBuffer?: number,
+): Promise<string> {
+  const sshBin = config.password ? 'sshpass' : 'ssh';
+  const sshCmd = buildSshCommand(config, remoteCmd);
+  const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
+  const result = await runProcess(sshBin, {
+    args: sshArgs,
+    timeout,
+    maxBuffer: maxBuffer ?? 10 * 1024 * 1024,
+    signal: ctx?.abortSignal,
+    env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
+  });
+  return result.stdout.trim() || '(no output)';
 }
 
 export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
@@ -59,26 +79,23 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       },
       required: ['command'],
     },
-    async execute(input) {
+    async execute(input, ctx) {
       const timeout = Number(input.timeout_ms) || 30_000;
       const safetyCheck = isCommandDangerous(input.command);
       if (safetyCheck.blocked) {
         return `Command blocked: ${safetyCheck.reason}`;
       }
-      const sshCmd = buildSshCommand(config, input.command);
       try {
-        const sshBin = config.password ? 'sshpass' : 'ssh';
-        const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
-        const result = execFileSync(sshBin, sshArgs, {
-          timeout,
-          maxBuffer: 10 * 1024 * 1024,
-          encoding: 'utf-8',
-          env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
+        return await sshRun(config, input.command, timeout, ctx);
+      } catch (err) {
+        if (err instanceof ProcessError) {
+          const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
+          return `Device command failed (exit ${err.exitCode}):\n${output || err.message}`;
+        }
+        throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
+          hint: 'Check SSH connectivity and credentials',
+          recoverable: true,
         });
-        return String(result).trim() || '(no output)';
-      } catch (err: any) {
-        const output = [err.stdout, err.stderr].filter(Boolean).map(String).join('\n').trim();
-        return `Device command failed (exit ${err.status ?? 'unknown'}):\n${output || err.message}`;
       }
     },
   };
@@ -88,7 +105,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
     description: 'Get basic information about the connected device (hostname, OS, CPU, memory).',
     metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: { type: 'object', properties: {} },
-    async execute() {
+    async execute(_input, ctx) {
       const commands = [
         'echo "hostname: $(hostname)"',
         'echo "os: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d \\"\\")"',
@@ -99,18 +116,17 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
         "echo \"disk: $(df -h / | awk 'NR==2{print $2}') total, $(df -h / | awk 'NR==2{print $3}') used\"",
         'echo "uptime: $(uptime -p 2>/dev/null || uptime)"',
       ];
-      const sshCmd = buildSshCommand(config, commands.join(' && '));
       try {
-        const sshBin = config.password ? 'sshpass' : 'ssh';
-        const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
-        const result = execFileSync(sshBin, sshArgs, {
-          timeout: 15_000,
-          encoding: 'utf-8',
-          maxBuffer: 1024 * 1024,
+        return await sshRun(config, commands.join(' && '), 15_000, ctx, 1024 * 1024);
+      } catch (err) {
+        if (err instanceof ProcessError) {
+          const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
+          return `Failed to get device info (exit ${err.exitCode}):\n${output || err.message}`;
+        }
+        throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
+          hint: 'Check SSH connectivity and device power',
+          recoverable: true,
         });
-        return result.trim();
-      } catch (err: any) {
-        return `Failed to get device info: ${err.message}`;
       }
     },
   };
@@ -126,23 +142,28 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       },
       required: ['path'],
     },
-    async execute(input) {
-      const sshCmd = buildSshCommand(config, `cat ${shellEscape(input.path)}`);
+    async execute(input, ctx) {
       try {
-        const sshBin = config.password ? 'sshpass' : 'ssh';
-        const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
-        const result = execFileSync(sshBin, sshArgs, {
-          timeout: 15_000,
-          encoding: 'utf-8',
-          maxBuffer: 5 * 1024 * 1024,
-        });
-        const content = result.trim();
+        const content = await sshRun(
+          config,
+          `cat ${shellEscape(input.path)}`,
+          15_000,
+          ctx,
+          5 * 1024 * 1024,
+        );
         if (content.length > 100_000) {
           return content.slice(0, 100_000) + '\n\n[... truncated]';
         }
         return content || '(empty file)';
-      } catch (err: any) {
-        return `Failed to read ${input.path}: ${err.message}`;
+      } catch (err) {
+        if (err instanceof ProcessError) {
+          const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
+          return `Failed to read ${input.path} (exit ${err.exitCode}):\n${output || err.message}`;
+        }
+        throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
+          hint: 'Check SSH connectivity and file path',
+          recoverable: true,
+        });
       }
     },
   };
@@ -157,16 +178,19 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
         path: { type: 'string', description: 'Directory path on the device (default: /home)' },
       },
     },
-    async execute(input) {
+    async execute(input, ctx) {
       const dir = input.path || '/home';
-      const sshCmd = buildSshCommand(config, `ls -la ${shellEscape(dir)}`);
       try {
-        const sshBin = config.password ? 'sshpass' : 'ssh';
-        const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
-        const result = execFileSync(sshBin, sshArgs, { timeout: 10_000, encoding: 'utf-8' });
-        return result.trim();
-      } catch (err: any) {
-        return `Failed to list ${dir}: ${err.message}`;
+        return await sshRun(config, `ls -la ${shellEscape(dir)}`, 10_000, ctx);
+      } catch (err) {
+        if (err instanceof ProcessError) {
+          const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
+          return `Failed to list ${dir} (exit ${err.exitCode}):\n${output || err.message}`;
+        }
+        throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
+          hint: 'Check SSH connectivity and directory path',
+          recoverable: true,
+        });
       }
     },
   };
@@ -174,9 +198,6 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
   return [deviceExec, deviceInfo, deviceFileRead, deviceFileList];
 }
 
-/**
- * Auto-detect device configuration from environment variables.
- */
 export function getDeviceConfigFromEnv(): DeviceSshConfig | null {
   const host = process.env.DMOSS_DEVICE_HOST;
   if (!host) return null;

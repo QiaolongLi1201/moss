@@ -275,7 +275,7 @@ export function runAgentLoop(
         // ========== Inner loop (tools + steering) ==========
         // C1: Buffer lives across inner-loop iterations — partial-failure leftovers
         // are preserved for the next iteration's flush attempt.
-        let turnAssistantBuffer: Message[] = [];
+        const turnAssistantBuffer: Message[] = [];
         while (state.hasMoreToolCalls || state.pendingMessages.length > 0) {
           if (state.turns >= maxTurns) {
             const needsToolFollow = lastMessageNeedsToolFollowUpLlm(currentMessages);

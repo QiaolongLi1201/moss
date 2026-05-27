@@ -196,7 +196,7 @@ export function extractToolInvocationFromPlanText(
        */
       if (type === 'string') {
         const stringPatterns = [
-          new RegExp(`${name}\\s*[=：:]\\s*\"([^\"\\n]{1,2048})\"`, 'i'),
+          new RegExp(`${name}\\s*[=：:]\\s*"([^"\\n]{1,2048})"`, 'i'),
           new RegExp(`${name}\\s*[=：:]\\s*'([^'\\n]{1,2048})'`, 'i'),
           new RegExp(`${name}\\s*[=：:]\\s*\`([^\`\\n]{1,2048})\``, 'i'),
           new RegExp(`${name}\\s*[=：:]\\s*(\\S+[^\\n，,。；;]*)`, 'i'),

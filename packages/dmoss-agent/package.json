@@ -185,18 +185,17 @@
     "@dmoss/memory": "^0.3.1",
     "@dmoss/skills": "^0.3.1",
     "@mariozechner/pi-ai": "^0.50.7",
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "undici": "^7.19.1"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
   },
   "peerDependencies": {
-    "zod": ">=3.0.0",
-    "undici": ">=6.0.0"
+    "zod": ">=3.0.0"
   },
   "peerDependenciesMeta": {
-    "zod": { "optional": true },
-    "undici": { "optional": true }
+    "zod": { "optional": true }
   },
   "engines": {
     "node": ">=22.16.0"

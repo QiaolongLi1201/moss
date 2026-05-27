@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
 import { executeOneToolCall, outcomeToResult } from '../dist/core/tools/execute-tool-call.js';
 
 describe('Structured Tool Content Blocks', () => {
@@ -75,6 +76,43 @@ describe('Structured Tool Content Blocks', () => {
 });
 
 describe('Tool Timeout Classification', () => {
+  it('does not let heartbeat watchdog preempt a tool within timeoutMs', async () => {
+    const events = [];
+    const tool = {
+      name: 'slow_but_valid_probe',
+      description: 'Completes within its declared timeout',
+      inputSchema: { type: 'object', properties: {} },
+      async execute(_input, ctx) {
+        await delay(60, undefined, { signal: ctx.abortSignal });
+        return 'completed inside timeout';
+      },
+    };
+
+    const outcome = await executeOneToolCall(
+      { id: 'call-slow-valid', name: 'slow_but_valid_probe', input: {} },
+      {
+        toolsForRun: [tool],
+        toolCtx: { workspaceDir: process.cwd(), sessionKey: 'slow-valid-session' },
+        sessionKey: 'slow-valid-session',
+        abortSignal: new AbortController().signal,
+        toolTimeoutMs: 120,
+        enableHeartbeat: true,
+        heartbeatIntervalMs: 10,
+        skipHeartbeatToolNames: new Set(),
+        push: (event) => events.push(event),
+      },
+    );
+
+    assert.equal(outcome.kind, 'completed');
+    assert.equal(outcome.isError, false);
+    assert.equal(outcome.text, 'completed inside timeout');
+    assert.equal(outcome.aborted, undefined);
+    assert.ok(
+      events.filter((event) => event.type === 'tool_execution_progress').length >= 3,
+      'test must exercise the heartbeat watchdog path before completion',
+    );
+  });
+
   it('classifies the internal watchdog timeout as timeout, not user abort', async () => {
     const events = [];
     const runAbort = new AbortController();
@@ -107,6 +145,38 @@ describe('Tool Timeout Classification', () => {
     assert.deepEqual(outcome.aborted, { by: 'timeout' });
     assert.match(outcome.text, /timed out/i);
     assert.equal(events.filter((event) => event.type === 'tool_execution_start').length, 1);
+  });
+});
+
+describe('Tool Approval Denial', () => {
+  it('falls back to the generic denial message when the reason is blank', async () => {
+    const outcome = await executeOneToolCall(
+      { id: 'call-denied-blank', name: 'approval_probe', input: {} },
+      {
+        toolsForRun: [{
+          name: 'approval_probe',
+          description: 'Should not execute',
+          inputSchema: { type: 'object', properties: {} },
+          async execute() {
+            assert.fail('denied tool must not execute');
+          },
+        }],
+        toolCtx: { workspaceDir: process.cwd(), sessionKey: 'denied-blank-session' },
+        sessionKey: 'denied-blank-session',
+        abortSignal: new AbortController().signal,
+        toolTimeoutMs: 1_000,
+        enableHeartbeat: false,
+        heartbeatIntervalMs: 1_000,
+        skipHeartbeatToolNames: new Set(),
+        checkToolApproval: async () => ({ approved: false, decision: 'deny', reason: '   ' }),
+        push: () => {},
+      },
+    );
+
+    assert.deepEqual(outcome, {
+      kind: 'denied',
+      text: 'Tool execution denied by user.',
+    });
   });
 });
 

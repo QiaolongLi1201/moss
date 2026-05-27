@@ -37,6 +37,16 @@ const TRANSIENT_RETRY_TOOLS = new Set(['read_file', 'search_code', 'search_files
 /** Max additional attempts after the initial failure (3 total including initial call). */
 const MAX_RETRY_ATTEMPTS = 2;
 
+function resolveMaxMissedHeartbeats(
+  toolTimeoutMs: number,
+  heartbeatIntervalMs: number,
+  explicitMaxMissed?: number,
+): number {
+  if (explicitMaxMissed !== undefined) return Math.max(1, explicitMaxMissed);
+  const normalizedIntervalMs = Math.max(1, heartbeatIntervalMs);
+  return Math.max(1, Math.ceil(toolTimeoutMs / normalizedIntervalMs));
+}
+
 function textFromStructuredContent(content: ToolContentBlock[]): string {
   const text = content
     .map((block) => {
@@ -75,7 +85,7 @@ export interface ExecuteToolCallDeps {
     id: string;
     name: string;
     input: unknown;
-  }) => Promise<{ approved: boolean; decision: string } | null>;
+  }) => Promise<{ approved: boolean; decision: string; reason?: string } | null>;
   /**
    * Push handler for SSE-style events. Mirrors the local stream.push from
    * runAgentLoop. The executor pushes:
@@ -95,7 +105,7 @@ export interface ExecuteToolCallDeps {
   onBeforeStartEmit?: (mutatedInput: Record<string, unknown>) => void;
   /**
    * C4 watchdog: max consecutive heartbeats with no tool progress before forced abort.
-   * Defaults to 3 (= 90s at the default 30s heartbeat interval).
+   * Defaults to the full tool timeout window so heartbeats don't preempt timeoutMs.
    */
   maxMissedHeartbeats?: number;
 }
@@ -185,7 +195,11 @@ export async function executeOneToolCall(
         decision,
       });
       if (!approval.approved) {
-        return { kind: 'denied', text: 'Tool execution denied by user.' };
+        const reason = approval.reason?.trim();
+        return {
+          kind: 'denied',
+          text: reason ? `Tool execution denied: ${reason}` : 'Tool execution denied by user.',
+        };
       }
     }
   }
@@ -270,7 +284,12 @@ export async function executeOneToolCall(
         combineAbortSignals(effectiveAbortSignal, timeoutAbortCtrl.signal) ?? effectiveAbortSignal;
       const attemptCtx: ToolContext = { ...callToolCtx, abortSignal: attemptSignal };
       if (!skipAgentHeartbeat) {
-        const maxMissed = deps.maxMissedHeartbeats ?? 3;
+        const heartbeatIntervalMs = Math.max(1, deps.heartbeatIntervalMs);
+        const maxMissed = resolveMaxMissedHeartbeats(
+          deps.toolTimeoutMs,
+          heartbeatIntervalMs,
+          deps.maxMissedHeartbeats,
+        );
         let beatsFired = 0;
         heartbeatHandle = setInterval(() => {
           const elapsed = Math.round((Date.now() - startMs) / 1000);
@@ -288,7 +307,7 @@ export async function executeOneToolCall(
             );
             try { timeoutAbortCtrl.abort(); } catch { /* noop */ }
           }
-        }, deps.heartbeatIntervalMs);
+        }, heartbeatIntervalMs);
       }
       // Emit start exactly once on the first attempt
       if (attempt === 0) emitStart();

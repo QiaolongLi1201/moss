@@ -300,6 +300,7 @@ function getDone(events) {
   assert(toolEnd, 'expected denied tool_end event');
   assert.equal(toolEnd.isError, true);
   assert.match(toolEnd.result, /denied/i);
+  assert.match(toolEnd.result, /blocked by test/);
   assert.equal(executeCount, 0);
   assert.equal(approvals.length, 1);
   assert.equal(approvals[0].tool.name, 'danger_probe');
@@ -310,11 +311,13 @@ function getDone(events) {
   assert.equal(done.result.toolResults.length, 1);
   assert.equal(done.result.toolResults[0].isError, true);
   assert.match(done.result.toolResults[0].content, /denied/i);
+  assert.match(done.result.toolResults[0].content, /blocked by test/);
   const storedToolResult = (await store.loadMessages('bridge-approval-denied'))
     .flatMap((message) => Array.isArray(message.content) ? message.content : [])
     .find((block) => block.type === 'tool_result' && block.tool_use_id === 'call-denied-1');
   assert(storedToolResult, 'expected denied tool_result to be persisted');
   assert.equal(storedToolResult.is_error, true);
+  assert.match(String(storedToolResult.content), /blocked by test/);
   assert(requests.length >= 2, 'expected provider tool-call round and follow-up round');
   assert(
     requests[0].tools?.some((tool) => tool.name === 'danger_probe'),
@@ -328,7 +331,8 @@ function getDone(events) {
           (block) =>
             block.type === 'tool_result' &&
             block.tool_use_id === 'call-denied-1' &&
-            /denied/i.test(String(block.content)),
+            /denied/i.test(String(block.content)) &&
+            /blocked by test/.test(String(block.content)),
         ),
       ),
     ),

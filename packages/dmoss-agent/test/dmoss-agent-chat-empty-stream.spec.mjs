@@ -35,9 +35,12 @@ async function callChatWithStream(streamFactory) {
 }
 
 {
+  let drainedAfterError = false;
   await assert.rejects(
     () => callChatWithStream(async function* () {
       yield { type: 'error', error: 'provider failed after partial stream', retriable: false };
+      drainedAfterError = true;
+      yield { type: 'error', error: 'later cleanup error', retriable: false };
       yield {
         type: 'done',
         result: {
@@ -52,10 +55,12 @@ async function callChatWithStream(streamFactory) {
       assert.ok(err instanceof DmossError);
       assert.equal(err.code, ErrorCode.INTERNAL_INVARIANT_VIOLATED);
       assert.match(err.message, /provider failed/);
+      assert.doesNotMatch(err.message, /later cleanup error/);
       return true;
     },
   );
-  console.log('[PASS] chat() gives error event precedence over later done');
+  assert.equal(drainedAfterError, true, 'chat() must drain after error so stream teardown can run');
+  console.log('[PASS] chat() drains after error while preserving error precedence');
 }
 
 {

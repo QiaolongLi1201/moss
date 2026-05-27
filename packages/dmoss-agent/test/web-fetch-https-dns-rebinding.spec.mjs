@@ -6,7 +6,26 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createWebFetchTool } from '../dist/tools/web-fetch.js';
+
+const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+
+// Test 0: HTTPS pinning uses undici at runtime, so package metadata must ship it.
+console.log('[TEST] undici is declared as a runtime dependency');
+{
+  assert.ok(packageJson.dependencies?.undici, 'web_fetch HTTPS pinning requires a runtime undici dependency');
+  assert.equal(
+    packageJson.peerDependencies?.undici,
+    undefined,
+    'undici must not be optional peer-only when default HTTPS pinning imports it',
+  );
+  assert.equal(
+    packageJson.peerDependenciesMeta?.undici,
+    undefined,
+    'undici must not be marked optional when default HTTPS pinning imports it',
+  );
+}
 
 // Mock DNS resolver that returns a public IP
 const mockResolver = async () => ['93.184.216.34']; // example.com IP

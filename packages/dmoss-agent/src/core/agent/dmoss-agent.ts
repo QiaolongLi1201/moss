@@ -274,19 +274,22 @@ export class DmossAgent {
    */
   async chat(sessionKey: string, userMessage: string, options?: ChatOptions): Promise<ChatResult> {
     let finalResult: ChatResult | undefined;
-    let lastError: unknown;
+    let firstError: unknown;
+    let sawError = false;
     for await (const event of this.streamChat(sessionKey, userMessage, options)) {
       if (event.type === 'done') {
         finalResult = event.result;
       } else if (event.type === 'error') {
-        lastError = event.error;
-        break;
+        if (!sawError) {
+          firstError = event.error;
+          sawError = true;
+        }
       }
     }
-    if (lastError) {
+    if (sawError) {
       throw new DmossError({
         code: ErrorCode.INTERNAL_INVARIANT_VIOLATED,
-        message: formatAgentError(lastError),
+        message: formatAgentError(firstError),
       });
     }
     if (finalResult) return finalResult;
@@ -570,7 +573,9 @@ export class DmossAgent {
                 ? (call.input as Record<string, unknown>)
                 : {};
             const decision = await hooks.onBeforeToolExec!({ tool, input, sessionKey });
-            return decision.approved ? null : { approved: false, decision: 'deny' };
+            return decision.approved
+              ? null
+              : { approved: false, decision: 'deny', reason: decision.reason };
           }
         : undefined,
       toolAbortSignalFor: options?.toolAbortSignalFor,

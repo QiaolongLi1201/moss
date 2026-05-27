@@ -2,9 +2,13 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { cosineSimilarity, hybridScore } from '../dist/memory-embedding.js';
 import { MemoryManager } from '../dist/memory-manager.js';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+async function cleanupDir(dir) {
+  await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+}
 
 describe('cosineSimilarity', () => {
   it('identical vectors return 1.0', () => {
@@ -74,7 +78,7 @@ describe('MemoryManager with embedding provider', () => {
     const carResult = results.find(r => r.entry.content === 'car is a pet');
     const catResult = results.find(r => r.entry.content === 'cat is a pet');
     assert.ok(catResult.score > carResult.score);
-    await rm(dir, { recursive: true, force: true });
+    await cleanupDir(dir);
   });
 
   it('embeddings survive reload', async () => {
@@ -84,7 +88,18 @@ describe('MemoryManager with embedding provider', () => {
     const mgr2 = new MemoryManager(dir, mockProvider);
     const results = await mgr2.search('cat', 1);
     assert.ok(results.length > 0);
-    await rm(dir, { recursive: true, force: true });
+    await cleanupDir(dir);
+  });
+
+  it('search persists access metadata before returning', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'moss-embed-'));
+    mgr = new MemoryManager(dir, mockProvider);
+    await mgr.add('cat facts', 'memory');
+    await mgr.search('cat', 1);
+    const index = JSON.parse(await readFile(join(dir, 'index.json'), 'utf8'));
+    assert.equal(index[0].accessCount, 1);
+    assert.equal(typeof index[0].accessedAt, 'number');
+    await cleanupDir(dir);
   });
 
   it('clear() removes embeddings', async () => {
@@ -94,7 +109,7 @@ describe('MemoryManager with embedding provider', () => {
     await mgr.clear();
     const results = await mgr.search('cat', 1);
     assert.equal(results.length, 0);
-    await rm(dir, { recursive: true, force: true });
+    await cleanupDir(dir);
   });
 
   it('cosineSimilarity handles different-length vectors', async () => {
@@ -109,7 +124,7 @@ describe('MemoryManager with embedding provider', () => {
     await mgr.delete(id);
     const results = await mgr.search('cat', 1);
     assert.equal(results.length, 0);
-    await rm(dir, { recursive: true, force: true });
+    await cleanupDir(dir);
   });
 
   it('update() re-embeds when content changes', async () => {
@@ -120,7 +135,7 @@ describe('MemoryManager with embedding provider', () => {
     const results = await mgr.search('vehicle', 3);
     const found = results.find(r => r.entry.id === id);
     assert.ok(found, 'updated entry should be found');
-    await rm(dir, { recursive: true, force: true });
+    await cleanupDir(dir);
   });
 
   it('update() keeps old embedding when re-embed fails', async () => {
@@ -137,6 +152,6 @@ describe('MemoryManager with embedding provider', () => {
     await mgr.update(id, { content: 'FAIL this content' });
     const results = await mgr.search('original', 1);
     assert.ok(results.length > 0, 'old embedding should still be present');
-    await rm(dir, { recursive: true, force: true });
+    await cleanupDir(dir);
   });
 });

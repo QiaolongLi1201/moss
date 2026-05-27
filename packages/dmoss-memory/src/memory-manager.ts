@@ -618,7 +618,7 @@ export class MemoryManager {
           }
           merged.sort((a, b) => b.score - a.score);
           const sliced = merged.slice(0, limit);
-          this.touchAccessed(sliced.map((r) => r.entry.id));
+          await this.touchAccessed(sliced.map((r) => r.entry.id));
           return sliced;
         }
 
@@ -628,22 +628,27 @@ export class MemoryManager {
     }
 
     const final = boosted.sort((a, b) => b.score - a.score).slice(0, limit);
-    this.touchAccessed(final.map((r) => r.entry.id));
+    await this.touchAccessed(final.map((r) => r.entry.id));
     return final;
   }
 
-  private touchAccessed(ids: string[]): void {
+  private async touchAccessed(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
-    const now = Date.now();
-    const idSet = new Set(ids);
-    for (const entry of this.entries) {
-      if (idSet.has(entry.id)) {
-        entry.accessedAt = now;
-        entry.accessCount = (entry.accessCount ?? 0) + 1;
+    const result = this._writeChain.then(async () => {
+      const now = Date.now();
+      const idSet = new Set(ids);
+      for (const entry of this.entries) {
+        if (idSet.has(entry.id)) {
+          entry.accessedAt = now;
+          entry.accessCount = (entry.accessCount ?? 0) + 1;
+        }
       }
-    }
-    const write = this._writeChain.then(() => this.save()).catch(() => {});
-    this._writeChain = write;
+      await this.save();
+    }).catch((err) => {
+      memoryWarn('write chain error:', err);
+    });
+    this._writeChain = result;
+    await result;
   }
 
   async expireStaleEntries(maxAgeDays: number, hardDeleteAfterDays?: number): Promise<number> {

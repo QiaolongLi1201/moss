@@ -50,6 +50,7 @@ export function runProcess(cmd: string, opts: RunProcessOptions): Promise<RunPro
       stdio: ['ignore', 'pipe', 'pipe'],
       env: opts.env,
       cwd: opts.cwd,
+      detached: process.platform !== 'win32',
     };
 
     const child = spawn(cmd, opts.args, spawnOpts);
@@ -62,7 +63,15 @@ export function runProcess(cmd: string, opts: RunProcessOptions): Promise<RunPro
     const kill = (signal: NodeJS.Signals = 'SIGKILL') => {
       if (killed) return;
       killed = true;
-      try { child.kill(signal); } catch { /* already dead */ }
+      try {
+        if (process.platform !== 'win32' && child.pid) {
+          process.kill(-child.pid, signal);
+        } else {
+          child.kill(signal);
+        }
+      } catch {
+        try { child.kill(signal); } catch { /* already dead */ }
+      }
     };
 
     if (opts.timeout && opts.timeout > 0) {

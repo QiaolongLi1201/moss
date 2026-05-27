@@ -17,20 +17,12 @@ import type { Tool } from '../core/tools/tool-types.js';
 import { assertSandboxPath } from '../safety/sandbox-paths.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
 import { createSubagentTool } from './create-subagent.js';
+import { safeChildEnv } from '../utils/safe-child-env.js';
 
 const IS_WIN = process.platform === 'win32';
 
-/** Block dangerous env vars from leaking to child processes. */
-const DANGEROUS_ENV_KEYS = new Set([
-  'SSHPASS', 'DMOSS_DEVICE_PASSWORD', 'DMOSS_API_KEY',
-  'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY',
-  'GROQ_API_KEY', 'AZURE_API_KEY', 'HF_TOKEN',
-]);
-
 function childEnv(_workspaceDir: string): Record<string, string> {
-  const env: Record<string, string> = { ...process.env, LANG: process.env.LANG || 'en_US.UTF-8' };
-  for (const key of DANGEROUS_ENV_KEYS) delete env[key];
-  return env;
+  return safeChildEnv({ LANG: process.env.LANG || 'en_US.UTF-8' });
 }
 
 async function safePath(inputPath: string, workspaceDir: string): Promise<string> {
@@ -207,7 +199,10 @@ export const searchFilesTool: Tool = {
 
 async function walkMatch(dir: string, pattern: string, limit: number): Promise<string[]> {
   const results: string[] = [];
-  const re = globToRegex(pattern);
+  const normalizedPattern = pattern.replace(/\\/g, '/');
+  const matchRelativePath = normalizedPattern.includes('/');
+  const re = globToRegex(normalizedPattern);
+  const root = dir;
 
   async function walk(d: string) {
     if (results.length >= limit) return;
@@ -219,8 +214,12 @@ async function walkMatch(dir: string, pattern: string, limit: number): Promise<s
       if (e.isDirectory()) {
         if (e.name === 'node_modules' || e.name === '.git') continue;
         await walk(full);
-      } else if (re.test(e.name)) {
-        results.push(full);
+      } else {
+        const relPath = path.relative(root, full).split(path.sep).join('/');
+        const target = matchRelativePath ? relPath : e.name;
+        if (re.test(target)) {
+          results.push(full);
+        }
       }
     }
   }
@@ -236,13 +235,29 @@ function globToRegex(pattern: string): RegExp {
     // Fall back to literal match for pathological patterns
     return new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
   }
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '\x00')        // temp placeholder for **
-    .replace(/\*/g, '[^/]*')            // single * matches non-slash chars only (no backtrack)
-    // eslint-disable-next-line no-control-regex
-    .replace(/\x00/g, '.*')           // ** matches anything
-    .replace(/\?/g, '[^/]');            // ? matches single non-slash char
+
+  let escaped = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === '*') {
+      if (pattern[i + 1] === '*') {
+        if (pattern[i + 2] === '/') {
+          escaped += '(?:.*/)?';
+          i += 2;
+        } else {
+          escaped += '.*';
+          i += 1;
+        }
+      } else {
+        escaped += '[^/]*';
+      }
+    } else if (ch === '?') {
+      escaped += '[^/]';
+    } else {
+      escaped += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    }
+  }
+
   return new RegExp(`^${escaped}$`, 'i');
 }
 

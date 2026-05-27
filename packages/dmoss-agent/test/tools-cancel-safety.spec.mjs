@@ -11,7 +11,57 @@
  */
 
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { runProcess, ProcessError } from '../dist/utils/run-process.js';
+
+function shellQuote(value) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForProcessExit(pid, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processIsAlive(pid)) return;
+    await delay(50);
+  }
+}
+
+async function assertShellLaunchedChildIsKilled(runShellCommand) {
+  const tmp = await mkdtemp(path.join(os.tmpdir(), 'dmoss-run-process-'));
+  const pidFile = path.join(tmp, 'child.pid');
+  let childPid = 0;
+
+  try {
+    const command = `sleep 60 >/dev/null 2>&1 & echo $! > ${shellQuote(pidFile)}; wait`;
+
+    await assert.rejects(
+      () => runShellCommand(command),
+      (err) => err instanceof ProcessError,
+    );
+
+    childPid = Number((await readFile(pidFile, 'utf8')).trim());
+    assert.ok(Number.isInteger(childPid) && childPid > 0, `invalid child pid: ${childPid}`);
+    await waitForProcessExit(childPid);
+    assert.equal(processIsAlive(childPid), false, `shell-launched child process still alive: ${childPid}`);
+  } finally {
+    if (childPid > 0 && processIsAlive(childPid)) {
+      try { process.kill(childPid, 'SIGKILL'); } catch { /* already dead */ }
+    }
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
 
 // ── Test 1: Normal command completes successfully ──
 {
@@ -107,4 +157,33 @@ import { runProcess, ProcessError } from '../dist/utils/run-process.js';
   console.log(`[PASS] Non-blocking: event loop ticked ${tickCount} times during child process`);
 }
 
-console.log('\n[pass] tools-cancel-safety: 7/7');
+// ── Test 8: Timeout kills shell-launched child processes ──
+if (process.platform !== 'win32') {
+  await assertShellLaunchedChildIsKilled((command) =>
+    runProcess('sh', { args: ['-c', command], timeout: 300 }),
+  );
+
+  console.log('[PASS] Timeout kills shell-launched child processes');
+} else {
+  console.log('[SKIP] Timeout kills shell-launched child processes (POSIX-only)');
+}
+
+// ── Test 9: AbortSignal kills shell-launched child processes ──
+if (process.platform !== 'win32') {
+  await assertShellLaunchedChildIsKilled((command) => {
+    const ac = new AbortController();
+    const promise = runProcess('sh', {
+      args: ['-c', command],
+      timeout: 30_000,
+      signal: ac.signal,
+    });
+    setTimeout(() => ac.abort(), 300);
+    return promise;
+  });
+
+  console.log('[PASS] AbortSignal kills shell-launched child processes');
+} else {
+  console.log('[SKIP] AbortSignal kills shell-launched child processes (POSIX-only)');
+}
+
+console.log('\n[pass] tools-cancel-safety: 9/9');

@@ -16,14 +16,20 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
-import type { Tool, ToolContext } from '../core/tools/tool-types.js';
+import type {
+  StructuredToolResult,
+  Tool,
+  ToolContentBlock,
+  ToolContext,
+} from '../core/tools/tool-types.js';
 import { DmossError, ErrorCode } from '../errors.js';
-import { safeChildEnv } from '../utils/safe-child-env.js';
+import { safeMcpChildEnv } from '../utils/safe-child-env.js';
 
 export interface McpServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  requestTimeoutMs?: number;
 }
 
 export interface McpConfig {
@@ -34,6 +40,27 @@ export interface McpTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+}
+
+interface McpContentBlock {
+  type: string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+  alt?: string;
+  uri?: string;
+  name?: string;
+  resource?: {
+    uri?: string;
+    name?: string;
+    mimeType?: string;
+    text?: string;
+  };
+}
+
+interface McpCallResult {
+  content?: McpContentBlock[];
+  isError?: boolean;
 }
 
 interface JsonRpcRequest {
@@ -90,7 +117,7 @@ class McpServerConnection {
     this.requestTimeoutMs = requestTimeoutMs;
     this.process = spawn(config.command, config.args ?? [], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: safeChildEnv(config.env),
+      env: safeMcpChildEnv(config.env),
     });
 
     this.process.stdout!.on('data', (chunk: Buffer) => {
@@ -246,32 +273,70 @@ function mcpToolToTool(
     },
     async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
       const result = await conn.callTool(mcpTool.name, input, ctx.abortSignal);
-      const callResult = result as {
-        content?: Array<{ type: string; text?: string }>;
-        isError?: boolean;
-      };
+      const callResult = result as McpCallResult;
       if (callResult.isError) {
-        const errMsg =
-          callResult.content
-            ?.filter((c) => c.type === 'text')
-            .map((c) => c.text ?? '')
-            .join('\n') || 'MCP tool returned error';
+        const errMsg = mcpContentToText(callResult.content) || 'MCP tool returned error';
         throw new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: errMsg });
       }
-      const texts =
-        callResult.content
-          ?.filter((c) => c.type === 'text')
-          .map((c) => c.text ?? '') ?? [];
-      return texts.join('\n') || JSON.stringify(callResult);
+      return mcpContentToText(callResult.content) || JSON.stringify(callResult);
+    },
+    async executeStructured(input: Record<string, unknown>, ctx: ToolContext): Promise<StructuredToolResult> {
+      const result = await conn.callTool(mcpTool.name, input, ctx.abortSignal);
+      const callResult = result as McpCallResult;
+      const content = mcpContentToToolContent(callResult.content);
+      return {
+        content: content.length > 0
+          ? content
+          : [{ type: 'text', text: JSON.stringify(callResult) }],
+        ...(callResult.isError ? { isError: true } : {}),
+      };
     },
   };
+}
+
+function mcpContentToText(content: McpContentBlock[] | undefined): string {
+  return mcpContentToToolContent(content)
+    .filter((block): block is Extract<ToolContentBlock, { type: 'text' }> | Extract<ToolContentBlock, { type: 'resource' }> =>
+      block.type === 'text' || (block.type === 'resource' && typeof block.text === 'string'),
+    )
+    .map((block) => block.type === 'text' ? block.text : (block.text ?? ''))
+    .filter((text) => text.length > 0)
+    .join('\n');
+}
+
+function mcpContentToToolContent(content: McpContentBlock[] | undefined): ToolContentBlock[] {
+  const mapped: ToolContentBlock[] = [];
+  for (const block of content ?? []) {
+    if (block.type === 'text') {
+      mapped.push({ type: 'text', text: block.text ?? '' });
+    } else if (block.type === 'image' && block.data && block.mimeType) {
+      mapped.push({
+        type: 'image',
+        data: block.data,
+        mimeType: block.mimeType,
+        ...(block.alt ? { alt: block.alt } : {}),
+      });
+    } else if (block.type === 'resource') {
+      const resource = block.resource ?? block;
+      if (resource.uri) {
+        mapped.push({
+          type: 'resource',
+          uri: resource.uri,
+          ...(resource.name ? { name: resource.name } : {}),
+          ...(resource.mimeType ? { mimeType: resource.mimeType } : {}),
+          ...(resource.text ? { text: resource.text } : {}),
+        });
+      }
+    }
+  }
+  return mapped;
 }
 
 export async function connectMcpServers(config: McpConfig): Promise<McpConnection[]> {
   const connections: McpConnection[] = [];
 
   for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
-    const conn = new McpServerConnection(serverName, serverConfig);
+    const conn = new McpServerConnection(serverName, serverConfig, serverConfig.requestTimeoutMs);
     try {
       await conn.initialize();
       const mcpTools = await conn.listTools();

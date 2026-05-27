@@ -374,4 +374,110 @@ rl.on('line', (line) => {
 
 console.log('  [PASS] real MCP server: tool error (isError) propagates as thrown error');
 
+// ── Real MCP server: rich content is exposed through executeStructured ──
+
+{
+  const mockServerPath = join(__dirname, '_mock_mcp_rich.tmp.mjs');
+  const serverCode = `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+
+const rl = createInterface({ input: process.stdin });
+function respond(id, result) {
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n');
+}
+
+rl.on('line', (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+  if (msg.id === undefined || msg.id === null) return;
+
+  switch (msg.method) {
+    case 'initialize':
+      respond(msg.id, {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'rich-server', version: '1.0.0' },
+      });
+      break;
+    case 'tools/list':
+      respond(msg.id, {
+        tools: [{
+          name: 'rich_result',
+          description: 'Returns mixed content',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+        }],
+      });
+      break;
+    case 'tools/call':
+      respond(msg.id, {
+        content: [
+          { type: 'text', text: 'plain detail' },
+          { type: 'image', data: 'ZmFrZQ==', mimeType: 'image/png', alt: 'fake image' },
+          {
+            type: 'resource',
+            resource: {
+              uri: 'file:///tmp/rich.txt',
+              name: 'rich.txt',
+              mimeType: 'text/plain',
+              text: 'resource text',
+            },
+          },
+        ],
+      });
+      break;
+    default:
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: msg.id,
+        error: { code: -32601, message: 'Method not found' },
+      }) + '\\n');
+  }
+});
+`;
+  writeFileSync(mockServerPath, serverCode);
+
+  try {
+    const connections = await withTimeout(
+      connectMcpServers({
+        mcpServers: {
+          richserver: {
+            command: 'node',
+            args: [mockServerPath],
+          },
+        },
+      }),
+      10000,
+      'connectMcpServers(richserver)',
+    );
+
+    const richTool = connections[0].tools.find((t) => t.name === 'richserver__rich_result');
+    assert.ok(richTool);
+    assert.equal(typeof richTool.executeStructured, 'function');
+
+    const structured = await richTool.executeStructured({}, { workspaceDir: '/tmp', sessionKey: 'rich' });
+    assert.deepEqual(structured, {
+      content: [
+        { type: 'text', text: 'plain detail' },
+        { type: 'image', data: 'ZmFrZQ==', mimeType: 'image/png', alt: 'fake image' },
+        {
+          type: 'resource',
+          uri: 'file:///tmp/rich.txt',
+          name: 'rich.txt',
+          mimeType: 'text/plain',
+          text: 'resource text',
+        },
+      ],
+    });
+
+    const text = await richTool.execute({}, { workspaceDir: '/tmp', sessionKey: 'rich' });
+    assert.equal(text, 'plain detail\nresource text');
+
+    await withTimeout(connections[0].close(), 5000, 'close');
+  } finally {
+    rmSync(mockServerPath, { force: true });
+  }
+}
+
+console.log('  [PASS] real MCP server: rich content maps to structured tool blocks');
+
 console.log('All MCP client checks passed.');

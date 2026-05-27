@@ -374,6 +374,82 @@ rl.on('line', (line) => {
 
 console.log('  [PASS] real MCP server: tool error (isError) propagates as thrown error');
 
+// ── Real MCP server: malformed stdout fails pending request promptly ──
+
+{
+  const mockServerPath = join(__dirname, '_mock_mcp_malformed_stdout.tmp.mjs');
+  const serverCode = `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+
+const rl = createInterface({ input: process.stdin });
+function respond(id, result) {
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n');
+}
+
+rl.on('line', (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+  if (msg.id === undefined || msg.id === null) return;
+
+  switch (msg.method) {
+    case 'initialize':
+      respond(msg.id, {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'malformed-stdout-server', version: '1.0.0' },
+      });
+      break;
+    case 'tools/list':
+      respond(msg.id, {
+        tools: [{
+          name: 'bad_stdout',
+          description: 'Writes malformed stdout instead of JSON-RPC',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+        }],
+      });
+      break;
+    case 'tools/call':
+      process.stdout.write('this is not json-rpc\\n');
+      break;
+  }
+});
+`;
+  writeFileSync(mockServerPath, serverCode);
+
+  let connections = [];
+  try {
+    connections = await withTimeout(
+      connectMcpServers({
+        mcpServers: {
+          badstdout: {
+            command: 'node',
+            args: [mockServerPath],
+            requestTimeoutMs: 500,
+          },
+        },
+      }),
+      10000,
+      'connectMcpServers(badstdout)',
+    );
+
+    const badTool = connections[0].tools.find((t) => t.name === 'badstdout__bad_stdout');
+    assert.ok(badTool);
+    await assert.rejects(
+      withTimeout(
+        badTool.execute({}, { workspaceDir: '/tmp', sessionKey: 'mcp-bad-stdout' }),
+        2000,
+        'bad_stdout.execute',
+      ),
+      /malformed JSON-RPC/i,
+    );
+  } finally {
+    await Promise.allSettled(connections.map((connection) => connection.close()));
+    rmSync(mockServerPath, { force: true });
+  }
+}
+
+console.log('  [PASS] real MCP server: malformed stdout fails pending request promptly');
+
 // ── Real MCP server: rich content is exposed through executeStructured ──
 
 {

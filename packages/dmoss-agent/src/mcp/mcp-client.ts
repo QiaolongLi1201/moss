@@ -167,8 +167,19 @@ class McpServerConnection {
             }
           }
         }
-      } catch {
-        // ignore malformed lines
+      } catch (err) {
+        if (this.pending.size > 0) {
+          const protocolError = new DmossError({
+            code: ErrorCode.MCP_CONNECTION_FAILED,
+            message: `MCP server ${this.serverName} emitted malformed JSON-RPC on stdout`,
+            cause: err,
+          });
+          for (const [, pending] of this.pending) {
+            clearTimeout(pending.timer);
+            pending.reject(protocolError);
+          }
+          this.pending.clear();
+        }
       }
     }
   }

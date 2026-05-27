@@ -33,6 +33,7 @@ npm install @dmoss/agent @dmoss/core
 | `@dmoss/agent/prompts` | Prompt telemetry helpers |
 | `@dmoss/agent/skills` | Skill registry |
 | `@dmoss/agent/utils` | Text smoothing, tracing, env helpers |
+| `@dmoss/agent/channels` | Message channel bridge for external chat platforms |
 | `@dmoss/agent/tools/builtin` | Built-in filesystem/shell/search tools |
 | `@dmoss/agent/mesh` | Multi-agent mesh (HTTP + LAN discovery) |
 | `@dmoss/agent/mcp` | Model Context Protocol client for external tool servers |
@@ -120,8 +121,7 @@ Returned by `chat()` and emitted by `streamChat()` on `done`:
 | `usage` | `{ inputTokens; outputTokens }` | Optional token usage |
 | `thinking` | `string[]` | Extracted thinking content |
 | `compactions` | `number` | Number of compaction passes |
-| `steeringEvents` | `string[]` | Fired steering guidance |
-| `stopReason` | `'max_turns_reached' \| 'tool_followup_cap_reached'` | Early termination reason |
+| `stopReason` | `string` | Last provider or agent termination reason |
 
 ### Goal Mode
 
@@ -174,14 +174,12 @@ type DmossAgentEvent =
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
   | { type: 'tool_start'; toolName: string; toolCallId: string; input: Record<string, unknown> }
-  | { type: 'tool_end'; toolName: string; toolCallId: string; result: string; isError: boolean; aborted?: { by: 'user' | 'timeout' } }
+  | { type: 'tool_end'; toolName: string; toolCallId: string; result: string; isError: boolean; aborted?: { by: 'user' | 'timeout' }; structuredContent?: ToolContentBlock[] }
   | { type: 'turn_start'; turn: number }
-  | { type: 'turn_end'; turn: number; stopReason: string }
+  | { type: 'turn_end'; turn: number; stopReason: string; totalToolCalls?: number }
   | { type: 'error'; error: string; retriable: boolean }
   | { type: 'compaction'; summaryChars: number; droppedMessages: number; checkpointOutline?: string[] }
   | { type: 'working_context_checkpoint'; status: string; reason: string; goal: string; nextAction: string }
-  | { type: 'steering'; pendingCount: number; firedRules: string[] }
-  | { type: 'follow_up'; guidance: string }
   | { type: 'microcompact'; compressedCount: number; savedChars: number; savedTokens: number }
   | { type: 'done'; result: ChatResult }
 ```
@@ -260,12 +258,15 @@ const hooks: AgentHooks = {
 interface Tool<TInput = any> {
   name: string
   description: string
+  metadata?: ToolMetadata
   inputSchema: {
     type: 'object'
     properties: Record<string, unknown>
     required?: string[]
   }
+  normalizeInput?: (input: TInput, ctx?: Pick<ToolContext, 'sessionKey' | 'sessionId'>) => TInput
   execute: (input: TInput, ctx: ToolContext) => Promise<string>
+  executeStructured?: (input: TInput, ctx: ToolContext) => Promise<StructuredToolResult>
 }
 ```
 
@@ -315,11 +316,14 @@ The **only** coupling between `DmossAgent` and any vendor SDK is **`LLMProvider`
 interface LLMProvider {
   readonly id: string
   readonly displayName: string
+  readonly capabilities?: { streaming?: boolean }
   complete(options: LLMRequestOptions): Promise<LLMResponse>
   stream(options: LLMRequestOptions, onEvent: (event: LLMStreamEvent) => void): Promise<LLMResponse>
   countTokens?(text: string): Promise<number>
 }
 ```
+
+`LLMResponse` may include `incomplete?: { reason: string }` when a provider has usable partial content but no trustworthy terminal response. `DmossAgent` treats that as a failed turn and will not call `AgentHooks.onLLMResponseEnd()` for it.
 
 ### Optional built-in adapter (`pi-ai`)
 
@@ -376,13 +380,14 @@ Call these **once at startup** in your host application so product-specific tool
 |----------|--------|---------|
 | `registerProtectedPaths()` | `@dmoss/agent` / `@dmoss/agent/safety` | Extra paths that must not be read/written by tools |
 | `registerToolOutputLimits()` | `@dmoss/agent/context` | Per-tool output truncation caps |
-| `registerMutatingToolHints()` | `@dmoss/agent/core` | Extra tool names/prefixes treated as mutating for idempotent replay |
 | `setOpenUrlMarkers()` | `@dmoss/agent/core` | Success/failure substrings in open-URL tool results (for `web_fetch` suppression) |
 | `registerNonMainChannelPrefixes()` | `@dmoss/agent/context` | Channel prefixes for non-main sessions |
 | `registerSpawnToolExtensions()` | `@dmoss/agent/core` | Extra tool names allowed for sub-agent spawns |
-| `setVendorPluginCallbacks()` | `@dmoss/agent` | Vendor plugin lifecycle hooks |
+| `setVendorPluginCallbacks()` | `@dmoss/agent` | Deprecated process-scoped vendor plugin lifecycle hooks |
 
-Hosts register these at startup (before instantiating `DmossAgent`) via a small bridge module tailored to their product. Example: a Node host might call `setVendorPluginCallbacks(...)` and `registerProtectedPaths(...)` in its server bootstrap.
+For new integrations, prefer `agent.extensions.setVendorPluginCallbacks(...)` on the specific `DmossAgent` instance. The free function remains for legacy startup bridges and writes to the deprecated process-scoped extension singleton.
+
+Idempotent replay mutability is declared on each `Tool` through `metadata.sideEffectClass`; there is no exported global mutating-tool hint registry.
 
 ## Safety API
 
@@ -453,6 +458,15 @@ Exported from `@dmoss/agent` (root):
 - `createWebFetchTool(opts?: WebFetchOptions): Tool`
 
 HTTP(S) fetch tool with SSRF protection, size limits, and HTML-to-text cleanup.
+
+## Channels
+
+Exported from `@dmoss/agent` and `@dmoss/agent/channels`:
+
+- `bridgeAgentToChannel(agent, channel, options?)`
+- Types: `BridgeAgentToChannelOptions`, `ChannelMessage`, `ChannelResponse`, `MessageChannel`
+
+`bridgeAgentToChannel` serializes messages per sender and applies a per-message `chatTimeoutMs` (default: 120 seconds) so one stalled upstream request cannot permanently block that sender's queue.
 
 ## Provider stream errors (implementation note)
 

@@ -13,6 +13,11 @@ The deprecated functions delegate to a **process-scoped singleton**, which means
 
 Instance-scoped APIs give each `DmossAgent` its own `KnowledgeRegistry` and `PlatformExtensionRegistry`, providing true isolation.
 
+As of the current unreleased version, `agent.extensions.*` is backed by a private
+`PlatformExtensionRegistry` per `DmossAgent`. Deprecated extension free functions
+still operate on a process-scoped legacy singleton; use them only as a migration
+bridge for startup wiring, not as the live registry for existing agents.
+
 ## Quick reference
 
 | Deprecated function | Replacement |

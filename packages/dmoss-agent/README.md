@@ -319,7 +319,7 @@ agent.registerKnowledge(jetsonKnowledge);
 
 - **`LLMProvider` vs `pi-ai`:** The harness is built around **`LLMProvider`**. **`PiAiLLMProvider` + `@mariozechner/pi-ai` are optional** — use them only if you want the pre-built pi-ai bridge; otherwise prefer a **self-hosted `LLMProvider`** for minimal behavioral dependency (see [`API.md`](./API.md) for the interface).
 - **Robotics prompt injected by default**: `DmossAgent.buildSystemPrompt()` includes the robotics engineering prompt from `@dmoss/core` unless opted out. Non-robotics hosts can set `domainPrompt: false` to skip it, or provide a custom `domainPrompt: () => string` to replace it with domain-specific guidance.
-- **Vendor plugin callbacks**: hosts should call `setVendorPluginCallbacks()` at startup before `applyPlatformExtension()` to enable the vendor plugin lifecycle. The mechanism is production-validated in real deployments.
+- **Vendor plugin callbacks**: new hosts should call `agent.extensions.setVendorPluginCallbacks()` before `agent.extensions.apply()` to keep vendor plugins scoped to one agent. Legacy hosts may still use the process-scoped `setVendorPluginCallbacks()` / `applyPlatformExtension()` wrappers during migration.
 - **Publishing**: The Moss stack is prepared as publishable npm workspaces. Before a release, run `npm run verify` from the repo root; it covers OSS boundary checks, workspace hygiene, workspace builds, typechecks, and package tests. Use the release checklist for host consumption validation.
 
 ## Documentation

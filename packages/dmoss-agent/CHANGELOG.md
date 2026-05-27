@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Each `DmossAgent` now owns a private `PlatformExtensionRegistry`, removing
+  the previous last-agent-wins extension knowledge binding. Deprecated extension
+  free functions still target the legacy process singleton and bridge startup
+  extension knowledge into future agents.
 - `DmossAgent.streamChat()` now always delegates to the unified `runAgentLoop` path.
   The legacy inline loop, `DMOSS_AGENT_LOOP_LEGACY` rollback switch, and
   `ChatOptions.experimentalUseAgentLoop` test override were removed so there is

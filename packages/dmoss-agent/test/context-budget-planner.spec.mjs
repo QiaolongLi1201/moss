@@ -34,7 +34,7 @@ import {
     turn: 2,
   });
   assert.equal(plan.reason, 'tool_followup_round');
-  assert.deepEqual(plan.actions, []);
+  assert.deepEqual(plan.actions, [{ kind: 'invalidate_stale_reads', reason: 'tool_followup_round' }]);
 }
 
 {

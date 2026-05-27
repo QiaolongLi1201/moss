@@ -42,7 +42,7 @@ const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bmount\b|\bumount\b/i, reason: '禁止挂载/卸载文件系统' },
   { pattern: /\biptables\b|\bufw\b|\bpft?ctl\b/i, reason: '禁止防火墙修改' },
   // Indirect command execution
-  { pattern: /\bfind\s+.*-exec\b/i, reason: '禁止 find -exec 任意命令执行' },
+  { pattern: /\bfind\s+.*-exec(?:dir)?\b/i, reason: '禁止 find -exec/-execdir 任意命令执行' },
   { pattern: /\bxargs\b/i, reason: '禁止 xargs 任意命令执行' },
   { pattern: /\bawk\s+.*system\b/i, reason: '禁止 awk system 调用' },
   { pattern: /\btar\b.*--checkpoint-action/i, reason: '禁止 tar 命令注入' },
@@ -104,13 +104,19 @@ export function isCommandDangerous(command: string): ChannelSafetyResult {
       if (pattern.test(shellOnly)) return { blocked: true, reason };
     }
   }
-  // 额外扫描 heredoc 内容（如果存在）
+  // 额外扫描 heredoc 内容（如果存在）以及 heredoc 结束符之后的尾部命令
   const heredocMatch = command.match(/<<-?\s*['"]?(\w+)['"]?\s*\n([\s\S]*?)\n\1/);
   if (heredocMatch) {
     const heredocBody = heredocMatch[2];
     if (matchesDangerousPatterns(heredocBody)) {
       for (const { pattern, reason } of DANGEROUS_COMMAND_PATTERNS) {
         if (pattern.test(heredocBody)) return { blocked: true, reason };
+      }
+    }
+    const afterHeredoc = command.slice(heredocMatch.index! + heredocMatch[0].length);
+    if (afterHeredoc && matchesDangerousPatterns(afterHeredoc)) {
+      for (const { pattern, reason } of DANGEROUS_COMMAND_PATTERNS) {
+        if (pattern.test(afterHeredoc)) return { blocked: true, reason };
       }
     }
   }

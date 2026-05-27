@@ -29,7 +29,6 @@ export type {
 } from './tool-hooks.js';
 export {
   isToolAssumedMutating,
-  registerMutatingToolHints,
   findReplayableToolResultContent,
 } from './tool-idempotent-replay.js';
 export {

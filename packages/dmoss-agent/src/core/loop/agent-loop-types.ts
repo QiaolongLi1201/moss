@@ -4,6 +4,7 @@ import type { CompactHookRegistry } from './compact-hooks.js';
 import type { Message } from '../session/session-jsonl.js';
 import type { ToolHookRegistry } from '../tools/tool-hooks.js';
 import type { Tool, ToolContext } from '../tools/tool-types.js';
+import type { SteeringEngine } from './steering.js';
 
 /**
  * Platform-specific loop configuration injected by the host wrapper.
@@ -79,9 +80,10 @@ export interface AgentLoopPolicy {
 }
 
 export interface AgentLoopExtensions {
-  getSteeringMessages: () => Promise<Message[]>;
+  getSteeringMessages?: () => Promise<Message[]>;
   getFollowUpMessages?: () => Promise<Message[]>;
   compactHooks?: CompactHookRegistry;
+  steeringEngine?: SteeringEngine;
 }
 
 export interface AgentLoopDeps {

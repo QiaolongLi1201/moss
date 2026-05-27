@@ -46,6 +46,7 @@ export class JsonlSessionStore implements SessionStore {
       const raw = await fsp.readFile(filePath, 'utf-8');
       const lines = raw.split('\n').filter((l) => l.trim());
       const messages: LLMMessage[] = [];
+      let malformedCount = 0;
       for (const line of lines) {
         try {
           const entry = JSON.parse(line) as JsonlSessionEntry;
@@ -55,8 +56,11 @@ export class JsonlSessionStore implements SessionStore {
             messages.splice(0, messages.length, ...entry.messages);
           }
         } catch {
-          // skip malformed lines
+          malformedCount++;
         }
+      }
+      if (malformedCount > 0) {
+        console.warn(`[session] ${sessionKey}: skipped ${malformedCount} malformed line(s) during load`);
       }
       return messages;
     } catch (err) {

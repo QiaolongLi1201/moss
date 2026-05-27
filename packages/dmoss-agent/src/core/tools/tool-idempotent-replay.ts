@@ -2,52 +2,25 @@
  * 通用「重复工具调用」短路：对**假定无会话外副作用**的工具，若历史里已有
  * 同名 + 同参的成功 tool_result，则复用正文，避免 reasoning 模型连打。
  *
- * 采用**块名单**（mutating）：凡未列入且未匹配前缀者，均允许重放推断。
+ * 采用**白名单**：只有 `metadata.sideEffectClass === 'readonly'` 的工具才允许重放。
+ * 未声明 metadata 或声明了副作用类别的工具一律视为 mutating，不予重放。
  */
 
 import type { LLMMessage, LLMContentBlock } from '../llm/llm-provider.js';
-
-/** Built-in mutating tool names that must never replay cached results */
-const BUILTIN_MUTATING_EXACT = new Set<string>([
-  'device_exec',
-  'exec',
-  'memory_write',
-  'memory_save',
-  'web_search',
-  'write_file',
-  'ros2_service_call',
-  'ros2_launch',
-]);
-
-/** Built-in mutating tool prefixes */
-const BUILTIN_MUTATING_PREFIXES = [
-  'device_file_write',
-  'device_file_delete',
-  'device_file_upload',
-];
-
-/** Host-registered additional mutating exact names */
-const hostMutatingExact = new Set<string>();
-/** Host-registered additional mutating prefixes */
-const hostMutatingPrefixes: string[] = [];
+import type { ToolSideEffectClass } from './tool-types.js';
 
 /**
- * Register additional mutating tool names/prefixes from the host application.
- * Called once at startup via the bridge layer.
+ * Determine whether a tool should be assumed mutating (and thus block replay).
+ *
+ * Whitelist mode: only tools explicitly declared as `sideEffectClass: 'readonly'`
+ * are allowed for idempotent replay. All other tools (including those without
+ * metadata) are assumed mutating and will not replay cached results.
  */
-export function registerMutatingToolHints(hints: {
-  exact?: string[];
-  prefixes?: string[];
-}): void {
-  if (hints.exact) for (const n of hints.exact) hostMutatingExact.add(n);
-  if (hints.prefixes) hostMutatingPrefixes.push(...hints.prefixes);
-}
-
-export function isToolAssumedMutating(toolName: string): boolean {
-  const n = String(toolName || '').trim();
-  if (!n) return true;
-  if (BUILTIN_MUTATING_EXACT.has(n) || hostMutatingExact.has(n)) return true;
-  return [...BUILTIN_MUTATING_PREFIXES, ...hostMutatingPrefixes].some((p) => n.startsWith(p));
+export function isToolAssumedMutating(
+  _toolName: string,
+  sideEffectClass?: ToolSideEffectClass,
+): boolean {
+  return sideEffectClass !== 'readonly';
 }
 
 /** Stable serialization of tool input with recursive key sorting */
@@ -77,8 +50,9 @@ export function findReplayableToolResultContent(
   toolName: string,
   input: Record<string, unknown>,
   lookback = 32,
+  sideEffectClass?: ToolSideEffectClass,
 ): string | null {
-  if (isToolAssumedMutating(toolName)) return null;
+  if (isToolAssumedMutating(toolName, sideEffectClass)) return null;
 
   const want = stableSerializeToolInput(input);
   const start = Math.max(0, messages.length - lookback);

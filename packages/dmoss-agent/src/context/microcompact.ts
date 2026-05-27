@@ -70,13 +70,20 @@ export function microcompact(
     if (typeof msg.content === 'string') continue;
     for (let bi = 0; bi < msg.content.length; bi++) {
       const block = msg.content[bi];
-      if (
-        block.type === 'tool_result' &&
-        typeof block.content === 'string' &&
-        block.content.length >= cfg.minContentLength &&
-        block.content !== cfg.placeholder
-      ) {
-        allToolResults.push({ msgIdx: mi, blockIdx: bi, content: block.content });
+      if (block.type !== 'tool_result') continue;
+      if (typeof block.content === 'string') {
+        if (block.content.length >= cfg.minContentLength && block.content !== cfg.placeholder) {
+          allToolResults.push({ msgIdx: mi, blockIdx: bi, content: block.content });
+        }
+      } else if (Array.isArray(block.content as unknown)) {
+        const arr = block.content as unknown as Array<{ type?: string; text?: string }>;
+        const combined = arr
+          .filter((b) => b.type === 'text' && typeof b.text === 'string')
+          .map((b) => b.text!)
+          .join('\n');
+        if (combined.length >= cfg.minContentLength && combined !== cfg.placeholder) {
+          allToolResults.push({ msgIdx: mi, blockIdx: bi, content: combined });
+        }
       }
     }
   }
@@ -112,7 +119,16 @@ export function microcompact(
       if (compressSet.has(key)) {
         modified = true;
         compressedCount++;
-        const originalText = typeof block.content === 'string' ? block.content : '';
+        let originalText = '';
+        if (typeof block.content === 'string') {
+          originalText = block.content;
+        } else if (Array.isArray(block.content as unknown)) {
+          const arr = block.content as unknown as Array<{ type?: string; text?: string }>;
+          originalText = (arr as Array<{ type?: string; text?: string }>)
+            .filter((b) => b.type === 'text' && typeof b.text === 'string')
+            .map((b) => b.text!)
+            .join('\n');
+        }
         savedChars += originalText.length - cfg.placeholder.length;
         savedTokens += Math.max(0, estimateTokensForText(originalText) - placeholderTokens);
         return { ...block, content: cfg.placeholder };

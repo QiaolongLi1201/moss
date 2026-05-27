@@ -89,6 +89,7 @@ async function collectEvents(agent, sessionKey, prompt) {
       properties: { value: { type: 'number' } },
       required: ['value'],
     },
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     async execute(input) {
       executeCount += 1;
       return `probe:${input.value}`;

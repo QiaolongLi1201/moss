@@ -10,6 +10,7 @@
 
 import dgram from 'node:dgram';
 import os from 'node:os';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { AgentMesh, MeshPeer } from './agent-mesh.js';
 import { getRootLogger } from '../logger.js';
 
@@ -17,6 +18,7 @@ const log = getRootLogger().child('mesh:lan-discovery');
 
 const BROADCAST_PORT = parseInt(process.env.DMOSS_MESH_DISCOVERY_PORT || '9091', 10) || 9091;
 const BROADCAST_INTERVAL_MS = 10_000;
+const HMAC_TIMESTAMP_TOLERANCE_MS = 30_000;
 
 export interface LanDiscoveryConfig {
   mesh: AgentMesh;
@@ -25,6 +27,8 @@ export interface LanDiscoveryConfig {
   agentName: string;
   /** Capabilities to advertise in broadcast announcements. */
   capabilities?: string[];
+  /** Shared secret for HMAC authentication of broadcast messages. */
+  sharedSecret?: string;
 }
 
 interface BroadcastMessage {
@@ -34,6 +38,33 @@ interface BroadcastMessage {
   meshPort: number;
   capabilities: string[];
   deviceInfo?: string;
+  timestamp?: number;
+  hmac?: string;
+}
+
+function computeBroadcastHmac(
+  id: string,
+  name: string,
+  meshPort: number,
+  timestamp: number,
+  secret: string,
+): string {
+  const payload = JSON.stringify({ id, name, meshPort, timestamp });
+  return createHmac('sha256', secret).update(payload).digest('hex');
+}
+
+function verifyBroadcastHmac(
+  id: string,
+  name: string,
+  meshPort: number,
+  timestamp: number,
+  receivedHmac: string,
+  secret: string,
+): boolean {
+  const expected = computeBroadcastHmac(id, name, meshPort, timestamp, secret);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(receivedHmac);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export class LanDiscovery {
@@ -44,6 +75,7 @@ export class LanDiscovery {
   private readonly config: LanDiscoveryConfig;
   private running = false;
   private onPeerDiscovered: ((peer: MeshPeer) => void) | null = null;
+  private warnedNoSecret = false;
 
   constructor(config: LanDiscoveryConfig) {
     this.config = config;
@@ -73,6 +105,26 @@ export class LanDiscovery {
 
         // L1: Validate capabilities
         if (!Array.isArray(msg.capabilities)) msg.capabilities = [];
+
+        const secret = this.config.sharedSecret?.trim();
+        if (secret) {
+          if (!msg.hmac || typeof msg.hmac !== 'string' || typeof msg.timestamp !== 'number') {
+            log.warn('dropping unsigned broadcast: missing hmac or timestamp', { from: rinfo.address, peerId: msg.id });
+            return;
+          }
+          const skew = Math.abs(Date.now() - msg.timestamp);
+          if (skew > HMAC_TIMESTAMP_TOLERANCE_MS) {
+            log.warn('dropping broadcast: timestamp skew exceeds tolerance', { from: rinfo.address, peerId: msg.id, skewMs: skew });
+            return;
+          }
+          if (!verifyBroadcastHmac(msg.id, msg.name, port, msg.timestamp, msg.hmac, secret)) {
+            log.warn('dropping broadcast: HMAC verification failed', { from: rinfo.address, peerId: msg.id });
+            return;
+          }
+        } else if (!this.warnedNoSecret) {
+          this.warnedNoSecret = true;
+          log.warn('LAN discovery running without sharedSecret: broadcast messages are unauthenticated');
+        }
 
         const existing = this.config.mesh.getPeers().find(p => p.id === msg.id);
         if (!existing) {
@@ -137,6 +189,12 @@ export class LanDiscovery {
       meshPort: this.config.meshPort,
       capabilities: this.config.capabilities ?? [],
     };
+
+    const secret = this.config.sharedSecret?.trim();
+    if (secret) {
+      msg.timestamp = Date.now();
+      msg.hmac = computeBroadcastHmac(msg.id, msg.name, msg.meshPort, msg.timestamp, secret);
+    }
 
     const buf = Buffer.from(JSON.stringify(msg));
     const addresses = this.getAllBroadcastAddresses();

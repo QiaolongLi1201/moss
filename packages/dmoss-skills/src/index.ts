@@ -50,3 +50,9 @@ export {
   generateSkillTemplate,
   type SkillValidationResult,
 } from "./skill-validation.js";
+
+export {
+  SkillPipeline,
+  type SkillPipelineConfig,
+  type SkillPipelineResult,
+} from "./skill-pipeline.js";

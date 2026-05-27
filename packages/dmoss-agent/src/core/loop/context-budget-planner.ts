@@ -77,7 +77,7 @@ export function planContextBudgetActions(
 
   if (input.isToolFollowUpRound) {
     return {
-      actions: [],
+      actions: [{ kind: 'invalidate_stale_reads', reason: 'tool_followup_round' }],
       reason: 'tool_followup_round',
       warningThreshold,
       proactiveThreshold,

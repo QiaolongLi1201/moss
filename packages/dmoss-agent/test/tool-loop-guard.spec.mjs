@@ -29,6 +29,7 @@ function makeTool(name, calls) {
       type: 'object',
       properties: { value: { type: 'string' } },
     },
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     async execute(input) {
       calls.push({ name, input });
       return `${name}:ok:${JSON.stringify(input)}`;

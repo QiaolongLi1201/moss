@@ -30,6 +30,7 @@ const log = getRootLogger().child('agent:loop');
 export interface AgentLoopToolExecutionMetrics {
   totalToolCalls: number;
   toolErrors: number;
+  consecutiveToolErrors: number;
   toolCallsByName: Record<string, number>;
   prepNextTurnParallelMs: number;
 }
@@ -57,7 +58,7 @@ export interface ExecuteAgentLoopToolCallsParams {
   loadToolsMetaName?: string;
   toolLoopGuard: ToolLoopGuardState;
   metrics: AgentLoopToolExecutionMetrics;
-  getSteeringMessages: () => Promise<Message[]>;
+  evaluateSteering: () => Message[];
   appendMessage: (sessionKey: string, msg: Message) => Promise<void>;
   push: (event: MiniAgentEvent) => void;
 }
@@ -84,7 +85,7 @@ export async function executeAgentLoopToolCalls(
     loadToolsMetaName,
     toolLoopGuard,
     metrics,
-    getSteeringMessages,
+    evaluateSteering,
     appendMessage,
     push,
   } = params;
@@ -128,11 +129,14 @@ export async function executeAgentLoopToolCalls(
       };
     }
 
+    const resolvedTools = resolveToolsForRun();
+    const toolMeta = resolvedTools.find((t) => t.name === call.name)?.metadata;
     const replayed = findReplayableToolResultContent(
       historyBeforeAssistant,
       call.name,
       call.input,
       6,
+      toolMeta?.sideEffectClass,
     );
     if (replayed) {
       log.info('tool replay: reusing recent identical-params result', {
@@ -166,7 +170,12 @@ export async function executeAgentLoopToolCalls(
     const { text: result, isError, structuredContent } = outcomeToResult(outcome);
     metrics.totalToolCalls++;
     metrics.toolCallsByName[call.name] = (metrics.toolCallsByName[call.name] ?? 0) + 1;
-    if (isError) metrics.toolErrors++;
+    if (isError) {
+      metrics.toolErrors++;
+      metrics.consecutiveToolErrors++;
+    } else {
+      metrics.consecutiveToolErrors = 0;
+    }
 
     const truncatedResult = truncateToolOutput(call.name, result);
     const preview =
@@ -275,7 +284,7 @@ export async function executeAgentLoopToolCalls(
               };
         recordToolOutcome(call, outcome);
       }
-      const steering = await getSteeringMessages();
+      const steering = evaluateSteering();
       if (steering.length > 0) {
         steeringMessages = steering;
       }
@@ -311,7 +320,7 @@ export async function executeAgentLoopToolCalls(
 
         if (outcome.kind === 'hook-blocked') {
           recordToolOutcome(call, outcome);
-          const steering = await getSteeringMessages();
+          const steering = evaluateSteering();
           if (steering.length > 0) {
             steeringMessages = steering;
           }
@@ -324,7 +333,7 @@ export async function executeAgentLoopToolCalls(
 
         if (outcome.kind === 'denied') {
           recordToolOutcome(call, outcome);
-          const steering = await getSteeringMessages();
+          const steering = evaluateSteering();
           if (steering.length > 0) {
             steeringMessages = steering;
             skipRemainingToolCalls(group.calls.slice(gi + 1));
@@ -335,7 +344,7 @@ export async function executeAgentLoopToolCalls(
 
         recordToolOutcome(call, outcome);
 
-        const steering = await getSteeringMessages();
+        const steering = evaluateSteering();
         if (steering.length > 0) {
           steeringMessages = steering;
           skipRemainingToolCalls(group.calls.slice(gi + 1));
@@ -370,7 +379,7 @@ export async function executeAgentLoopToolCalls(
     await appendMessage(sessionKey, resultMsg);
     toolResultMsgPersisted = true;
     // Fetch steering in parallel after persist succeeds.
-    newSteering = await getSteeringMessages();
+    newSteering = evaluateSteering();
     metrics.prepNextTurnParallelMs += Date.now() - parallelStartMs;
   } finally {
     if (abortSignal.aborted && !toolResultMsgPersisted) {

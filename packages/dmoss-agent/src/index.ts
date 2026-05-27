@@ -15,6 +15,12 @@
 // --- Knowledge Module System ---
 export {
   KnowledgeRegistry,
+} from './knowledge/index.js';
+/**
+ * @deprecated Use KnowledgeRegistry instance methods instead.
+ * Re-exported for backward compatibility — will be removed in next major version.
+ */
+export {
   registerKnowledgeModule,
   unregisterKnowledgeModule,
   getKnowledgeModule,
@@ -68,6 +74,7 @@ export { DmossAgent } from './core/index.js';
 export type { DmossAgentConfig, ChatOptions, ChatResult, DmossAgentEvent } from './core/index.js';
 export type { AgentHooks, ToolApprovalRequest, ToolApprovalDecision } from './core/index.js';
 export type { AgentLoopHardCaps } from './core/index.js';
+/** @internal Agent loop hard-cap resolution. */
 export { resolveEffectiveCaps } from './core/index.js';
 export {
   executeGoalCommand,
@@ -87,11 +94,13 @@ export type {
   HandleGoalCommandParams,
   ParsedGoalCommand,
 } from './goal.js';
+/** @internal Thinking-stream parsing internals. */
 export { createInlineThinkingRouter, splitThinkingTagsFromAssistantText } from './core/index.js';
 export type { InlineThinkingRouter } from './core/index.js';
 export { ToolRegistry } from './core/index.js';
 export type { ToolGroup, ToolRegistryOptions } from './core/index.js';
 export type { ToolContext, Tool, ToolCall, ToolResult, ToolContentBlock, StructuredToolResult } from './core/index.js';
+/** @internal Tool pipeline implementation detail. */
 export { canHostInjectToolWithEmptyInput } from './core/index.js';
 export type {
   LLMProvider,
@@ -111,10 +120,20 @@ export type { SessionStore, SessionMeta } from './core/index.js';
  * `user` role). Without these, callers double-count checkpoint messages as
  * "prior user", which contradicts what the model actually sees in `messages`.
  */
+/**
+ * @internal Task-frame checkpoint helpers are implementation details.
+ * Hosts counting real prior messages should use these, but they are not
+ * part of the stable public contract.
+ */
 export {
   isTaskFrameCheckpointMessage,
   stripTaskFrameCheckpointsFromLlmMessages,
 } from './core/index.js';
+/**
+ * @internal Lane management is an internal concurrency primitive.
+ * Hosts should not depend on these — use DmossAgent's public API instead.
+ * Re-exported via subpath `@dmoss/agent/core` for advanced use cases.
+ */
 export {
   enqueueInLane,
   setLaneConcurrency,
@@ -170,7 +189,7 @@ export {
 } from './provider/index.js';
 export type { FailoverReason, RetryOptions } from './provider/index.js';
 
-// --- Message Convert ---
+/** @internal Pi-AI adapter message conversion. */
 export { convertMessagesToPi } from './core/index.js';
 
 // --- Spawn Profile ---

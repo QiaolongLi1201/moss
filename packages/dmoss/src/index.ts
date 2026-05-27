@@ -60,6 +60,9 @@ export type {
   MossHostToolRef,
 } from './contracts/host-adapter.js';
 
+// --- Constants ---
+export { DEFAULT_MODEL } from './constants.js';
+
 // --- Robotics engineering prompts ---
 export {
   buildRoboticsEngineeringPrompt,

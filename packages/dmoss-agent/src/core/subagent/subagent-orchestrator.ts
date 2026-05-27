@@ -221,11 +221,9 @@ export async function runPipeline(
   for (const config of configs) {
     if (parentSignal?.aborted) break;
 
-    // Inject previous result as structured context (not string concatenation)
     const augmentedConfig: SubAgentConfig = previousResult
       ? {
           ...config,
-          task: `${config.task}\n\n[Previous step result (runId: ${previousResult.runId}, success: ${previousResult.success})]\n${previousResult.summary}`,
           previousStepResult: {
             runId: previousResult.runId,
             summary: previousResult.summary,

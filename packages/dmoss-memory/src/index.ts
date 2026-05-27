@@ -27,7 +27,9 @@ export {
 
 export {
   buildSelfLearningMemoryDraft,
+  buildImplicitLearningDraft,
   type SelfLearningMemoryDraft,
+  type ImplicitSignalContext,
 } from "./self-learning-memory.js";
 
 export { cosineSimilarity, hybridScore } from './memory-embedding.js';

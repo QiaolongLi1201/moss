@@ -146,6 +146,12 @@ export interface MemoryEntry {
   topic?: string;
   /** 学习库标星；旧条目（undefined）语义等同未标星 / false，仅 `true` 为标星。 */
   starred?: boolean;
+  /** 最近一次被 search() 命中的时间戳；旧条目（undefined）视为未访问。 */
+  accessedAt?: number;
+  /** 被 search() 命中的累计次数；旧条目（undefined）视为 0。 */
+  accessCount?: number;
+  /** 由 expireStaleEntries() 标记；搜索时降权，不自动删除。 */
+  stale?: boolean;
 }
 
 export interface MemorySearchResult {
@@ -240,6 +246,7 @@ export class MemoryManager {
     } catch {
       this.embeddingMap = new Map();
     }
+    this.pruneOrphanEmbeddings();
     this.loaded = true;
   }
 
@@ -259,6 +266,20 @@ export class MemoryManager {
     const arr = Array.from(this.embeddingMap.entries()).map(([id, embedding]) => ({ id, embedding }));
     await fs.writeFile(tmp, JSON.stringify(arr), 'utf-8');
     await fs.rename(tmp, embedPath);
+  }
+
+  private pruneOrphanEmbeddings(): void {
+    const entryIds = new Set(this.entries.map(e => e.id));
+    let pruned = 0;
+    for (const id of this.embeddingMap.keys()) {
+      if (!entryIds.has(id)) {
+        this.embeddingMap.delete(id);
+        pruned++;
+      }
+    }
+    if (pruned > 0) {
+      console.warn(`[memory] pruned ${pruned} orphan embedding(s) with no matching entry`);
+    }
   }
 
   private hashContent(content: string): string {
@@ -440,14 +461,31 @@ export class MemoryManager {
       }
     }
 
+    const STALE_THRESHOLD_DAYS = 90;
+    const STALE_PENALTY = 0.5;
+    const staleCutoff = Date.now() - STALE_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
+
     /** pinned 条目给 1.15× 小幅加权（R-3 决策：仅 UI 排序 + 轻加权，不破坏 BM25 排序语义）。 */
-    const boosted: MemorySearchResult[] = [...bestById.values()].map((r) =>
-      r.entry.pinned ? { ...r, score: r.score * 1.15 } : r,
-    );
+    /** stale 非 pinned 条目（超过阈值未访问）降权 0.5×。 */
+    const boosted: MemorySearchResult[] = [...bestById.values()].map((r) => {
+      let score = r.score;
+      if (r.entry.pinned) {
+        score *= 1.15;
+      } else if (r.entry.stale) {
+        score *= STALE_PENALTY;
+      } else {
+        const lastAccess = r.entry.accessedAt ?? r.entry.createdAt;
+        if (lastAccess < staleCutoff) {
+          score *= STALE_PENALTY;
+        }
+      }
+      return { ...r, score };
+    });
 
     if (this.embeddingProvider && this.embeddingMap.size > 0) {
       try {
         const [queryVec] = await this.embeddingProvider.embed([query]);
+
         for (const result of boosted) {
           const embedding = this.embeddingMap.get(result.entry.id);
           if (embedding) {
@@ -455,12 +493,115 @@ export class MemoryManager {
             result.score = hybridScore(result.score, semanticScore);
           }
         }
+
+        const bm25Ids = new Set(boosted.map((r) => r.entry.id));
+        const semanticCandidates: { id: string; score: number }[] = [];
+        for (const entry of filteredEntries) {
+          if (bm25Ids.has(entry.id)) continue;
+          const embedding = this.embeddingMap.get(entry.id);
+          if (!embedding) continue;
+          const sim = cosineSimilarity(queryVec, embedding);
+          if (sim > 0.3) {
+            semanticCandidates.push({ id: entry.id, score: sim });
+          }
+        }
+        semanticCandidates.sort((a, b) => b.score - a.score);
+
+        if (semanticCandidates.length > 0) {
+          const k = 60;
+          const rrfScores = new Map<string, number>();
+          boosted.forEach((r, i) => {
+            rrfScores.set(r.entry.id, 1 / (k + i + 1));
+          });
+          semanticCandidates.slice(0, limit * 2).forEach((c, i) => {
+            const prev = rrfScores.get(c.id) ?? 0;
+            rrfScores.set(c.id, prev + 1 / (k + i + 1));
+          });
+
+          const entryById = new Map(filteredEntries.map((e) => [e.id, e]));
+          const merged: MemorySearchResult[] = [];
+          for (const [id, rrfScore] of rrfScores) {
+            const bm25Result = boosted.find((r) => r.entry.id === id);
+            if (bm25Result) {
+              merged.push({ ...bm25Result, score: rrfScore });
+            } else {
+              const entry = entryById.get(id);
+              if (entry) {
+                const pinned = entry.pinned ? 1.15 : 1;
+                merged.push({
+                  entry,
+                  score: rrfScore * pinned,
+                  snippet: entry.content.slice(0, 200),
+                });
+              }
+            }
+          }
+          merged.sort((a, b) => b.score - a.score);
+          const sliced = merged.slice(0, limit);
+          this.touchAccessed(sliced.map((r) => r.entry.id));
+          return sliced;
+        }
+
         boosted.sort((a, b) => b.score - a.score);
       } catch {
       }
     }
 
-    return boosted.sort((a, b) => b.score - a.score).slice(0, limit);
+    const final = boosted.sort((a, b) => b.score - a.score).slice(0, limit);
+    this.touchAccessed(final.map((r) => r.entry.id));
+    return final;
+  }
+
+  private touchAccessed(ids: string[]): void {
+    if (ids.length === 0) return;
+    const now = Date.now();
+    const idSet = new Set(ids);
+    for (const entry of this.entries) {
+      if (idSet.has(entry.id)) {
+        entry.accessedAt = now;
+        entry.accessCount = (entry.accessCount ?? 0) + 1;
+      }
+    }
+    const write = this._writeChain.then(() => this.save()).catch(() => {});
+    this._writeChain = write;
+  }
+
+  async expireStaleEntries(maxAgeDays: number, hardDeleteAfterDays?: number): Promise<number> {
+    const result = this._writeChain.then(async () => {
+      await this.load();
+      const now = Date.now();
+      const softCutoff = now - maxAgeDays * 24 * 60 * 60 * 1000;
+      const hardCutoff = hardDeleteAfterDays
+        ? now - hardDeleteAfterDays * 24 * 60 * 60 * 1000
+        : null;
+      let softCount = 0;
+      let hardCount = 0;
+      const toRemove: string[] = [];
+      for (const entry of this.entries) {
+        if (entry.pinned) continue;
+        const lastAccess = entry.accessedAt ?? entry.createdAt;
+        if (hardCutoff !== null && lastAccess < hardCutoff) {
+          toRemove.push(entry.id);
+          hardCount++;
+        } else if (!entry.stale && lastAccess < softCutoff) {
+          entry.stale = true;
+          softCount++;
+        }
+      }
+      if (toRemove.length > 0) {
+        const removeSet = new Set(toRemove);
+        this.entries = this.entries.filter(e => !removeSet.has(e.id));
+        for (const id of toRemove) this.embeddingMap.delete(id);
+        await this.saveEmbeddings();
+      }
+      if (softCount > 0 || hardCount > 0) await this.save();
+      return softCount + hardCount;
+    }).catch(err => {
+      console.warn('[memory] write chain error:', err);
+      return 0;
+    });
+    this._writeChain = result.then(() => {});
+    return result;
   }
 
   /** Sum of stored entry lengths — for soft-limit / consolidation hints. */

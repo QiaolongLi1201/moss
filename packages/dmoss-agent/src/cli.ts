@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import * as readline from 'node:readline';
 import { DmossAgent, JsonlSessionStore, MemoryManager } from './core/index.js';
 import { configureRootLogger, type LogLevel } from './logger.js';
+import { DEFAULT_MODEL } from '@dmoss/core';
 import pc from 'picocolors';
 
 /**
@@ -58,8 +59,9 @@ import type {
 } from './core/llm/llm-provider.js';
 import type { Tool } from './core/tools/tool-types.js';
 import { registerBuiltinTools } from './tools/builtin.js';
-import { validateMemoryWriteContent } from './core/memory/memory.js';
+import { validateMemoryWriteContent, buildSelfLearningMemoryDraft } from './core/memory/memory.js';
 import { SkillLearner } from './core/memory/skill-learner.js';
+import { SkillPipeline } from '@dmoss/skills';
 import { WorkspaceMemory } from './core/memory/workspace-memory.js';
 import { createDockerExecTool } from './tools/docker-exec.js';
 import { createDeviceSshTools, getDeviceConfigFromEnv } from './tools/device-ssh.js';
@@ -151,7 +153,7 @@ loadEnvFromAncestors(path.dirname(fileURLToPath(import.meta.url)));
 const configFile = loadConfigFile();
 
 const API_KEY = process.env.DMOSS_API_KEY || process.env.OPENAI_API_KEY || configFile.apiKey || '';
-const MODEL = process.env.DMOSS_MODEL || configFile.model || 'claude-sonnet-4-20250514';
+const MODEL = process.env.DMOSS_MODEL || configFile.model || DEFAULT_MODEL;
 const BASE_URL =
   process.env.DMOSS_BASE_URL ||
   process.env.OPENAI_BASE_URL ||
@@ -244,6 +246,7 @@ if (argv.includes('--help') || argv.includes('-h')) {
     `    ${c.magenta('DMOSS_TRACE')}             ${c.dim('console → emit tracing spans to stderr')}`,
     `    ${c.magenta('DMOSS_LLM_USAGE_LOG')}     ${c.dim('path to append LLM usage JSONL records')}`,
     `    ${c.magenta('DMOSS_LLM_USAGE')}         ${c.dim('=1 → enable usage logging even without explicit path')}`,
+    `    ${c.magenta('DMOSS_SELF_LEARNING')}     ${c.dim('=true → extract user correction feedback as memory')}`,
     '',
     `  ${c.bold('Config file')}`,
     `    ${c.gray(path.join(configDir, 'config.json'))}`,
@@ -608,6 +611,7 @@ async function main() {
   const sessionStore = new JsonlSessionStore({ dir: sessionsDir });
   const memoryManager = new MemoryManager(memoryDir);
   const skillLearner = new SkillLearner({ skillsDir });
+  const skillPipeline = new SkillPipeline({ workspaceDir: WORKSPACE, model: MODEL });
   const workspaceMemory = new WorkspaceMemory({ workspaceDir: WORKSPACE });
 
   const wsContext = await workspaceMemory.loadContext();
@@ -616,12 +620,15 @@ async function main() {
   const extraPromptLayers: string[] = [];
   if (wsPromptLayer) extraPromptLayers.push(wsPromptLayer);
 
+  const selfLearningEnabled = process.env.DMOSS_SELF_LEARNING === 'true';
+
   const agent = new DmossAgent({
     llmProvider: cliProvider,
     sessionStore,
     model: MODEL,
     enableToolOutputTruncation: true,
     extraPromptLayers,
+    skillPipeline,
     hooks: {
       enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: WORKSPACE }),
     },
@@ -710,6 +717,7 @@ async function main() {
         meshPort: meshPort,
         agentId: meshId,
         agentName: meshName,
+        sharedSecret: meshSharedSecret,
       });
 
       discovery.onNewPeer((peer) => {

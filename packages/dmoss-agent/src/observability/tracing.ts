@@ -23,7 +23,11 @@ export interface TraceSpan {
 
 export interface Tracer {
   /** Start a new span. Returns a no-op span when tracing is disabled. */
-  startSpan(name: string, attributes?: Record<string, string | number | boolean>): TraceSpan;
+  startSpan(
+    name: string,
+    attributes?: Record<string, string | number | boolean>,
+    parent?: TraceSpan,
+  ): TraceSpan;
 }
 
 // ── No-op tracer ────────────────────────────────────────────────
@@ -36,7 +40,7 @@ const noopSpan: TraceSpan = {
 };
 
 const noopTracer: Tracer = {
-  startSpan(_name, _attrs) {
+  startSpan(_name, _attrs, _parent) {
     return noopSpan;
   },
 };
@@ -45,10 +49,11 @@ const noopTracer: Tracer = {
 
 function createConsoleTracer(): Tracer {
   return {
-    startSpan(name, attributes) {
+    startSpan(name, attributes, parent) {
       const start = Date.now();
       const attrs = attributes ? ` ${JSON.stringify(attributes)}` : '';
-      console.error(`[trace] ▶ ${name}${attrs}`);
+      const parentInfo = parent ? ` (parent)` : '';
+      console.error(`[trace] ▶ ${name}${attrs}${parentInfo}`);
       return {
         setAttribute(key, value) {
           console.error(`[trace]   ${name}.${key} = ${value}`);
@@ -74,6 +79,7 @@ function createConsoleTracer(): Tracer {
 // ── Factory ─────────────────────────────────────────────────────
 
 let _globalTracer: Tracer = noopTracer;
+let _traceRedactor: ((text: string) => string) | null = null;
 
 /**
  * Configure the global tracer. Call once at startup.
@@ -85,6 +91,19 @@ export function setTracer(tracer: Tracer | 'console'): void {
   } else {
     _globalTracer = tracer;
   }
+}
+
+/**
+ * Set a redaction function applied to error messages in trace spans
+ * before they reach the tracer backend. Use this to prevent secrets
+ * from leaking through tracing output.
+ */
+export function setTraceRedactor(fn: (text: string) => string): void {
+  _traceRedactor = fn;
+}
+
+function redactTraceMessage(text: string): string {
+  return _traceRedactor ? _traceRedactor(text) : text;
 }
 
 /** Get the current tracer (never null). */
@@ -100,14 +119,15 @@ export async function withSpan<T>(
   name: string,
   attributes: Record<string, string | number | boolean> | undefined,
   fn: (span: TraceSpan) => Promise<T>,
+  parent?: TraceSpan,
 ): Promise<T> {
-  const span = _globalTracer.startSpan(name, attributes);
+  const span = _globalTracer.startSpan(name, attributes, parent);
   try {
     const result = await fn(span);
     span.setStatus(true);
     return result;
   } catch (err) {
-    span.setStatus(false, err instanceof Error ? err.message : String(err));
+    span.setStatus(false, redactTraceMessage(err instanceof Error ? err.message : String(err)));
     throw err;
   } finally {
     span.end();

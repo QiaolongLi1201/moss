@@ -84,9 +84,9 @@ import { resolveSpawnToolSet, buildSubagentPromptAddon } from '../dist/core/suba
 {
   const exploreTools = resolveSpawnToolSet('explore');
   assert.ok(exploreTools, 'explore scope should return a tool set');
-  assert.ok(exploreTools.has('read'), 'explore should include "read"');
-  assert.ok(exploreTools.has('grep'), 'explore should include "grep"');
-  assert.ok(!exploreTools.has('write'), 'explore should NOT include "write"');
+  assert.ok(exploreTools.has('read_file'), 'explore should include "read_file"');
+  assert.ok(exploreTools.has('search_files'), 'explore should include "search_files"');
+  assert.ok(!exploreTools.has('write_file'), 'explore should NOT include "write_file"');
   assert.ok(!exploreTools.has('exec'), 'explore should NOT include "exec"');
   assert.ok(!exploreTools.has('create_subagent'), 'explore should NOT include "create_subagent"');
 
@@ -96,7 +96,7 @@ import { resolveSpawnToolSet, buildSubagentPromptAddon } from '../dist/core/suba
   const verifyTools = resolveSpawnToolSet('verify');
   assert.ok(verifyTools, 'verify scope should return a tool set');
   assert.ok(verifyTools.has('exec'), 'verify should include "exec"');
-  assert.ok(!verifyTools.has('write'), 'verify should NOT include "write"');
+  assert.ok(!verifyTools.has('write_file'), 'verify should NOT include "write_file"');
 
   console.log('  [PASS] resolveSpawnToolSet filters correctly by scope');
 }
@@ -150,7 +150,7 @@ import { resolveSpawnToolSet, buildSubagentPromptAddon } from '../dist/core/suba
   assert.equal(createSubagentTool.metadata?.planMode, 'allow');
   assert.ok(createSubagentTool.inputSchema.properties.task, 'schema should have task property');
   assert.ok(createSubagentTool.inputSchema.properties.scope, 'schema should have scope property');
-  assert.ok(createSubagentTool.inputSchema.properties.mode, 'schema should have mode property');
+  assert.ok(!createSubagentTool.inputSchema.properties.mode, 'schema should not have unimplemented mode property');
   assert.deepEqual(createSubagentTool.inputSchema.required, ['task']);
   console.log('  [PASS] tool metadata and schema are correct');
 }

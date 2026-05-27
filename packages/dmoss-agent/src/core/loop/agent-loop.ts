@@ -20,6 +20,7 @@ import {
 import { resolveToolFollowupBypassCap } from '../../utils/max-agent-turns.js';
 import {
   resolveContextCharsPerTokenUnit,
+  estimateMessagesChars,
 } from '../../context/tokens.js';
 import {
   createMiniAgentStream,
@@ -46,6 +47,7 @@ import {
 } from '../tools/tool-loop-guard.js';
 import type { AgentLoopHardCaps, AgentLoopParams } from './agent-loop-types.js';
 import { createInitialLoopState, resetIterationState } from './agent-loop-state.js';
+import type { SteeringContext } from './steering.js';
 import {
   prepareTurnContext,
 } from './agent-loop-context-prep.js';
@@ -148,7 +150,6 @@ export function runAgentLoop(
       reasoning,
       maxTurns,
       contextTokens,
-      getSteeringMessages,
       getFollowUpMessages,
       appendMessage,
       prepareCompaction,
@@ -159,6 +160,7 @@ export function runAgentLoop(
       systemPromptMeta,
       platform,
       hardCaps,
+      steeringEngine,
     } = params;
 
     const persistCurrentMessages = async (messages?: Message[]): Promise<void> => {
@@ -187,9 +189,6 @@ export function runAgentLoop(
     // prompt prefix cache stability checks, not loop-control state.
     let previousPrefixSnapshot: Message[] | null = null;
     let previousToolNames: string[] | null = null;
-
-    // C3: Track consecutive turn errors to prevent zombie loops on fatal provider errors.
-    let consecutiveTurnErrors = 0;
 
     const runStartMs = Date.now();
     const INTER_TURN_SILENCE_WINDOW = 50;
@@ -237,6 +236,29 @@ export function runAgentLoop(
 
     const resolveToolsForRun = () => getToolsForRun ? getToolsForRun() : params.toolsForRun;
 
+    const evaluateSteering = (): Message[] => {
+      if (!steeringEngine) return [];
+      const maxOut = maxOutputTokensParam ?? modelDef.maxTokens ?? 8192;
+      const effCtx = getEffectiveContextWindowTokens(contextTokens, maxOut);
+      const steerCtx: SteeringContext = {
+        messages: currentMessages as unknown as import('../llm/llm-provider.js').LLMMessage[],
+        turn: state.turns,
+        consecutiveToolErrors: state.toolExecutionMetrics.consecutiveToolErrors,
+        totalToolCalls: state.toolExecutionMetrics.totalToolCalls,
+        contextUsageRatio: effCtx > 0
+          ? estimateMessagesChars(currentMessages) / (effCtx * resolveContextCharsPerTokenUnit())
+          : 0,
+        sessionKey,
+      };
+      const result = steeringEngine.evaluate(steerCtx);
+      if (!result.triggered) return [];
+      return result.guidances.map((g) => ({
+        role: 'user' as const,
+        content: [{ type: 'text' as const, text: g }],
+        timestamp: Date.now(),
+      }));
+    };
+
     try {
       for (const syn of consumePendingAbortedToolSyntheticMessages(sessionKey)) {
         await appendMessage(sessionKey, syn);
@@ -244,7 +266,7 @@ export function runAgentLoop(
       }
 
       const charsPerUnit = resolveContextCharsPerTokenUnit();
-      state.pendingMessages = await getSteeringMessages();
+      state.pendingMessages = evaluateSteering();
 
       // ========== Outer loop (follow-ups) ==========
       outerLoop: while (true) {
@@ -284,8 +306,7 @@ export function runAgentLoop(
           }
           stream.push({ type: 'turn_start', turn: state.turns });
 
-          const deferPendingUntilToolFollowUpCompletes = lastMessageNeedsToolFollowUpLlm(currentMessages);
-          if (state.pendingMessages.length > 0 && !deferPendingUntilToolFollowUpCompletes) {
+          if (state.pendingMessages.length > 0) {
             for (const msg of state.pendingMessages) {
               await appendMessage(sessionKey, msg);
               currentMessages.push(msg);
@@ -398,14 +419,14 @@ export function runAgentLoop(
               checkToolApproval: params.checkToolApproval,
               toolAbortSignalFor: params.toolAbortSignalFor,
               enrichToolContext: params.enrichToolContext,
-              getSteeringMessages,
+              evaluateSteering,
               appendMessage,
               push: (e) => stream.push(e),
               buildCorrectionMessage,
             });
 
             // C3: Successful turn — reset consecutive error budget.
-            consecutiveTurnErrors = 0;
+            state.consecutiveTurnErrors = 0;
 
             // C1: Flush any remaining buffered assistant messages (for non-tool paths;
             // tool_execute path already flushed inline before tool execution).
@@ -424,13 +445,13 @@ export function runAgentLoop(
 
             // C3: Classify the error — propagate fatal/non-retryable errors immediately.
             const classification = classifyLlmError(turnErr);
-            consecutiveTurnErrors++;
-            if (classification.retryable === false || consecutiveTurnErrors > effectiveCaps.maxConsecutiveTurnErrors) {
+            state.consecutiveTurnErrors++;
+            if (classification.retryable === false || state.consecutiveTurnErrors > effectiveCaps.maxConsecutiveTurnErrors) {
               log.warn('fatal or exhausted per-turn error, propagating', {
                 error: describeError(turnErr),
                 retryable: classification.retryable,
                 category: classification.category,
-                consecutiveTurnErrors,
+                consecutiveTurnErrors: state.consecutiveTurnErrors,
                 turn: state.turns,
                 sessionKey,
               });
@@ -442,7 +463,7 @@ export function runAgentLoop(
               error: describeError(turnErr),
               retryable: classification.retryable,
               category: classification.category,
-              attempt: consecutiveTurnErrors,
+              attempt: state.consecutiveTurnErrors,
               turn: state.turns,
               sessionKey,
             });

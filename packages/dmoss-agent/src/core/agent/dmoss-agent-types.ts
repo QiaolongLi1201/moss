@@ -17,6 +17,7 @@ import type { TailToolSnipConfig } from '../../context/tail-tool-snip.js';
 import type { FollowUpGuardConfig } from '../loop/follow-up-guard.js';
 import type { CompactHookRegistry } from '../loop/compact-hooks.js';
 import type { SkillLearner } from '../memory/skill-learner.js';
+import type { SkillPipeline } from '@dmoss/skills';
 import type { AgentHooks } from './agent-hooks.js';
 import type { ThinkingLevel } from '../../provider/pi-ai-types.js';
 import type { SteeringRule } from '../loop/steering.js';
@@ -122,6 +123,21 @@ export interface DmossAgentConfig
    * into the configured skills directory.
    */
   skillLearner?: SkillLearner;
+  /**
+   * Optional SkillPipeline: when set, the agent will run the full
+   * write→distill→promote pipeline after each successful multi-step run,
+   * producing validated SKILL.md drafts and auto-promoting high-confidence skills.
+   */
+  skillPipeline?: SkillPipeline;
+
+  /**
+   * Optional self-learning hook: called after each completed agent run with the
+   * last user message so the host can extract correction/feedback signals
+   * (e.g. via `buildSelfLearningMemoryDraft`) and persist them as memory.
+   *
+   * Default: undefined (disabled). Gate with `DMOSS_SELF_LEARNING=true` in CLI.
+   */
+  onSelfLearningExtract?: (params: { sessionKey: string; lastUserMessage: string }) => Promise<void>;
 
   // ── Steering engine ──
   /** Enable rule-based steering injection (default: true) */

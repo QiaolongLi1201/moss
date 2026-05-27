@@ -15,6 +15,7 @@
 import { execFileSync } from 'node:child_process';
 import type { Tool } from '../core/tools/tool-types.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
+import { isCommandDangerous } from '../safety/channel-safety.js';
 
 export interface DeviceSshConfig {
   host: string;
@@ -60,6 +61,10 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
     },
     async execute(input) {
       const timeout = Number(input.timeout_ms) || 30_000;
+      const safetyCheck = isCommandDangerous(input.command);
+      if (safetyCheck.blocked) {
+        return `Command blocked: ${safetyCheck.reason}`;
+      }
       const sshCmd = buildSshCommand(config, input.command);
       try {
         const sshBin = config.password ? 'sshpass' : 'ssh';

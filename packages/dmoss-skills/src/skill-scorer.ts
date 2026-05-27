@@ -103,7 +103,7 @@ export function scoreSkillCandidate(
 
 function detectErrorRecovery(toolCalls: SkillCandidateToolCall[]): boolean {
   for (let i = 0; i < toolCalls.length - 1; i++) {
-    if (toolCalls[i].failed && !toolCalls[toolCalls.length - 1].failed) {
+    if (toolCalls[i].failed && !toolCalls[i + 1].failed) {
       return true;
     }
   }

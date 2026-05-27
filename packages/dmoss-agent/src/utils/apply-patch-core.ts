@@ -163,6 +163,7 @@ export function applyUpdateHunk(
 
   let result = [...origLines];
   let offset = 0;
+  const modifiedRanges: Array<[number, number]> = [];
 
   for (const group of contextGroups) {
     if (group.removes.length === 0 && group.adds.length === 0) continue;
@@ -184,6 +185,15 @@ export function applyUpdateHunk(
     const insertAt = anchor.index + group.contextLines.length;
     const removeCount = group.removes.length;
 
+    for (const [start, end] of modifiedRanges) {
+      if (anchor.index < end && insertAt + removeCount > start) {
+        return {
+          result: original,
+          error: `hunk 重叠：当前锚点 [${anchor.index}, ${insertAt + removeCount}) 与已修改区间 [${start}, ${end}) 重叠`,
+        };
+      }
+    }
+
     if (removeCount > 0) {
       for (let r = 0; r < removeCount; r++) {
         const actualIdx = insertAt + r;
@@ -204,6 +214,7 @@ export function applyUpdateHunk(
 
     const adds = normalizeAddsForAnchor(group.adds, anchor);
     result.splice(insertAt, removeCount, ...adds);
+    modifiedRanges.push([insertAt, insertAt + adds.length]);
     offset = insertAt + adds.length;
   }
 

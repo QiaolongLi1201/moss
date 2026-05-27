@@ -11,16 +11,56 @@
  * - Provider reuse: child shares the parent's LLM stream function and model.
  */
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { Tool } from '../tools/tool-types.js';
 import type { Model, StreamFunction, ThinkingLevel } from '../../provider/pi-ai-types.js';
 import type { AgentLoopPlatformConfig } from '../loop/agent-loop-types.js';
 import type { Message } from '../session/session-jsonl.js';
 import type { SubAgentConfig, SubAgentResult, SubAgentRunner } from './subagent-orchestrator.js';
 import { resolveSpawnToolSet, buildSubagentPromptAddon } from './spawn-profile.js';
+import type { SpawnToolScope } from './spawn-profile.js';
 import { runAgentLoop } from '../loop/agent-loop.js';
 import { getRootLogger } from '../../logger.js';
 
 const log = getRootLogger().child('subagent-runner');
+
+const READONLY_SCOPES: ReadonlySet<SpawnToolScope> = new Set([
+  'read-only', 'device-read', 'explore', 'plan',
+]);
+
+function scopeNeedsIsolation(scope: SpawnToolScope): boolean {
+  return !READONLY_SCOPES.has(scope);
+}
+
+async function prepareWorkspaceDir(
+  scope: SpawnToolScope,
+  runId: string,
+): Promise<{ workspaceDir: string; isolated: boolean }> {
+  const cwd = process.cwd();
+  if (!scopeNeedsIsolation(scope)) {
+    return { workspaceDir: cwd, isolated: false };
+  }
+  const isolatedDir = path.join(cwd, '.dmoss-subagent', runId);
+  await fs.mkdir(isolatedDir, { recursive: true });
+  log.info('created isolated workspace for child agent', {
+    runId,
+    scope,
+    workspaceDir: isolatedDir,
+  });
+  return { workspaceDir: isolatedDir, isolated: true };
+}
+
+async function cleanupIsolatedWorkspace(workspaceDir: string): Promise<void> {
+  try {
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  } catch (err) {
+    log.warn('failed to clean up isolated workspace', {
+      workspaceDir,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 export interface SubAgentRunnerDeps {
   /** Parent agent's full tool list (runner filters by scope). */
@@ -41,6 +81,10 @@ export interface SubAgentRunnerDeps {
   reasoning?: ThinkingLevel;
   /** Platform-specific loop configuration. */
   platform?: AgentLoopPlatformConfig;
+  /** Maximum nesting depth for sub-agent spawning (default: 1). */
+  maxSpawnDepth?: number;
+  /** Tool hook registry for child agent (inherits parent's sanitizer). */
+  toolHooks?: import('../tools/tool-hooks.js').ToolHookRegistry;
 }
 
 /**
@@ -66,11 +110,14 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
       : [...deps.parentTools];
     const filteredTools = scopedTools.filter((t) => t.name !== 'create_subagent');
 
-    // 2. Prompt addon: inject scope-specific constraints
+    // 2. Prompt addon: inject scope-specific constraints + previous step result
     const promptAddon = buildSubagentPromptAddon(config.scope);
-    const childSystemPrompt = promptAddon
-      ? `${deps.systemPrompt}\n\n${promptAddon}`
-      : deps.systemPrompt;
+    const prevStepAddon = config.previousStepResult
+      ? `[Previous pipeline step result]\nrunId: ${config.previousStepResult.runId}\nsuccess: ${config.previousStepResult.success}\nsummary:\n${config.previousStepResult.summary}`
+      : undefined;
+    const childSystemPrompt = [deps.systemPrompt, promptAddon, prevStepAddon]
+      .filter(Boolean)
+      .join('\n\n');
 
     // 3. Initial message: the task description
     const childMessages: Message[] = [
@@ -82,12 +129,15 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
     let toolResultCount = 0;
     let turnCount = 0;
 
+    const { workspaceDir, isolated } = await prepareWorkspaceDir(config.scope, childRunId);
+
     log.info('starting child agent', {
       runId: childRunId,
       scope: config.scope,
       maxTurns: config.maxTurns ?? 10,
       toolCount: filteredTools.length,
       parentRunId: config.parentRunId,
+      isolatedWorkspace: isolated,
     });
 
     try {
@@ -102,9 +152,11 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
         toolsForRun: filteredTools,
         getToolsForRun: () => filteredTools,
         toolCtx: {
-          workspaceDir: process.cwd(),
+          workspaceDir,
           sessionKey: childSessionKey,
           abortSignal: signal,
+          maxSpawnDepth: deps.maxSpawnDepth ?? 1,
+          currentSpawnDepth: 1,
         },
         modelDef: deps.modelDef,
         streamFn: deps.streamFn,
@@ -112,7 +164,6 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
         reasoning: deps.reasoning,
         maxTurns: config.maxTurns ?? 10,
         contextTokens: deps.contextTokens,
-        getSteeringMessages: async () => [],
         appendMessage: async (_key, msg) => {
           inMemoryMessages.push(msg);
         },
@@ -123,6 +174,7 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
         abortSignal: signal,
         maxOutputTokens: deps.maxOutputTokens,
         platform: deps.platform,
+        toolHooks: deps.toolHooks,
       });
 
       // 6. Consume the event stream, collecting metrics
@@ -166,6 +218,10 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
         success: false,
         error: errorMsg,
       };
+    } finally {
+      if (isolated) {
+        await cleanupIsolatedWorkspace(workspaceDir);
+      }
     }
   };
 }

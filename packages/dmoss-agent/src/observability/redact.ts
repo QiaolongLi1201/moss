@@ -187,11 +187,18 @@ export function redactSensitiveData(obj: unknown, options?: RedactOptions): unkn
 export function parseTelemetryAllow(): Set<string> {
   const raw = process.env.DMOSS_TELEMETRY_ALLOW;
   if (!raw || typeof raw !== 'string') return new Set();
-  return new Set(
-    raw
-      .split(',')
-      .map((f) => f.trim())
-      .filter((f) => f.length > 0),
-  );
+  const fields = raw
+    .split(',')
+    .map((f) => f.trim())
+    .filter((f) => f.length > 0);
+  const allowed = new Set<string>();
+  for (const field of fields) {
+    if (SENSITIVE_FIELD_PATTERN.test(field) || PROMPT_FIELD_PATTERN.test(field)) {
+      console.warn(`[redact] DMOSS_TELEMETRY_ALLOW: rejected sensitive field "${field}"`);
+      continue;
+    }
+    allowed.add(field);
+  }
+  return allowed;
 }
 

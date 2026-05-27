@@ -21,18 +21,20 @@ const log = getRootLogger().child('agent');
 import { ToolRegistry } from '../tools/tool-registry.js';
 import type { AgentHooks } from './agent-hooks.js';
 import { KnowledgeRegistry, drainPendingGlobalModules } from '../../knowledge/registry.js';
-import { buildRoboticsEngineeringPrompt } from '@dmoss/core';
+import { buildRoboticsEngineeringPrompt, DEFAULT_MODEL } from '@dmoss/core';
 import type { KnowledgeModule } from '@dmoss/core';
 import {
   compactHistoryIfNeeded,
   type SummarizeFn,
 } from '../../context/compaction.js';
 import { createRemoteCompactProviderFromEnv } from '../../context/remote-compaction.js';
+import { setTraceRedactor } from '../../observability/tracing.js';
+import { setKnowledgeRegistryForExtensions } from '../../extensions/registry.js';
 import { resolveContextCharsPerTokenUnit } from '../../context/tokens.js';
 import { getEffectiveContextWindowTokens } from '../../context/window-economics.js';
 import { resolveDmossMaxAgentTurns } from '../../utils/max-agent-turns.js';
 import { SteeringEngine, DEFAULT_STEERING_RULES } from '../loop/steering.js';
-import { lastMessageNeedsToolFollowUp } from '../loop/follow-up-guard.js';
+import { lastMessageNeedsToolFollowUp, detectUnexecutedToolIntents, DEFAULT_FOLLOW_UP_GUARD_CONFIG } from '../loop/follow-up-guard.js';
 import { buildCompactionCheckpointOutline } from '../loop/compact-hooks.js';
 import {
   buildTaskFrameContext,
@@ -59,6 +61,7 @@ import {
 import { runAgentLoop } from '../loop/agent-loop.js';
 import type { AgentLoopParams } from '../loop/agent-loop-types.js';
 import type { MiniAgentEvent } from '../subagent/agent-events.js';
+import { createSubAgentRunner } from '../subagent/subagent-runner.js';
 import {
   createDmossAgentLoopEventAdapter,
   createModelDefFromDmossConfig,
@@ -135,6 +138,7 @@ export class DmossAgent {
     this.tools = new ToolRegistry();
     this.toolHooks = new ToolHookRegistry();
     this.toolHooks.registerPost(createSecretSanitizerHook(sanitizeSecrets));
+    setTraceRedactor(sanitizeSecrets);
 
     if (config.enableSteering !== false) {
       const rules = config.replaceDefaultSteeringRules
@@ -143,6 +147,8 @@ export class DmossAgent {
       this.steeringEngine = new SteeringEngine(rules);
     }
 
+    // Wire extensions to this instance's KnowledgeRegistry (avoids deprecated global path).
+    setKnowledgeRegistryForExtensions(this.knowledge);
     // H2: Bridge deprecated global knowledge registrations into this instance.
     drainPendingGlobalModules(this.knowledge);
   }
@@ -403,9 +409,60 @@ export class DmossAgent {
       },
     });
 
+    const modelDef = createModelDefFromDmossConfig({
+      ...this.config,
+      maxTokens: maxOutputTokens,
+      contextTokens,
+    });
+
+    const subAgentRunner = createSubAgentRunner({
+      parentTools: allTools,
+      streamFn,
+      modelDef,
+      systemPrompt,
+      maxOutputTokens,
+      contextTokens,
+      temperature,
+      reasoning: this.config.reasoning || undefined,
+      toolHooks: this.toolHooks,
+    });
+
+    const MAX_SUBAGENTS_PER_RUN = 8;
+    let spawnedCount = 0;
+
+    toolCtx.spawnSubagent = async (params) => {
+      if (spawnedCount >= MAX_SUBAGENTS_PER_RUN) {
+        return {
+          runId: '',
+          sessionKey: '',
+          summary: `Sub-agent spawn cap reached (${MAX_SUBAGENTS_PER_RUN}). Complete remaining work directly.`,
+          success: false,
+        };
+      }
+      spawnedCount++;
+      const childRunId = `${runId}/sub-${crypto.randomUUID().slice(0, 8)}`;
+      const result = await subAgentRunner(
+        {
+          runId: childRunId,
+          parentRunId: runId,
+          scope: (params.scope as any) ?? 'full',
+          task: params.task,
+          maxTurns: params.maxTurns ?? 10,
+          timeoutMs: 120_000,
+        },
+        abortSignal,
+      );
+      return {
+        runId: result.runId,
+        sessionKey: `subagent:${result.runId}`,
+        summary: result.summary,
+        success: result.success,
+      };
+    };
+
     const summarize: SummarizeFn = async (params) => {
       const resp = await provider.complete({
-        model: this.config.model ?? 'claude-sonnet-4-20250514',
+        model: this.config.model ?? DEFAULT_MODEL,
         systemPrompt: params.system,
         messages: [{ role: 'user', content: params.userPrompt }],
         maxTokens: params.maxTokens,
@@ -426,17 +483,13 @@ export class DmossAgent {
       toolsForRun: allTools,
       getToolsForRun: () => allTools,
       toolCtx,
-      modelDef: createModelDefFromDmossConfig({
-        ...this.config,
-        maxTokens: maxOutputTokens,
-        contextTokens,
-      }),
+      modelDef,
       streamFn,
       temperature,
       reasoning: this.config.reasoning || undefined,
       maxTurns,
       contextTokens,
-      getSteeringMessages: async () => [],
+      steeringEngine: this.steeringEngine ?? undefined,
       appendMessage: async (key, msg) => {
         await store.appendMessage(key, msg as unknown as LLMMessage);
       },
@@ -486,6 +539,24 @@ export class DmossAgent {
       platform: {
         toolTimeoutMs: this.config.toolTimeoutMs,
       },
+      getFollowUpMessages: this.config.enableFollowUpGuard !== false
+        ? async () => {
+            const followUpConfig = { ...DEFAULT_FOLLOW_UP_GUARD_CONFIG, ...this.config.followUpGuardConfig };
+            if (!followUpConfig.enabled) return [];
+            const followUps = detectUnexecutedToolIntents(
+              toLLMMessages(messages),
+              followUpConfig.extraPatterns,
+              followUpConfig.maxFollowUps,
+            );
+            if (followUps.length === 0) return [];
+            const now = Date.now();
+            return followUps.map(fu => ({
+              role: 'user' as const,
+              content: fu.guidance,
+              timestamp: now,
+            }));
+          }
+        : undefined,
     };
 
     return {
@@ -647,23 +718,95 @@ export class DmossAgent {
       yield checkpointEvent;
     }
 
-    // Auto-distill reusable skills from successful multi-step runs.
+    const needsSessionMessages =
+      ((this.config.skillLearner || this.config.skillPipeline) &&
+        state.taskFrame.status === 'completed' &&
+        done.result.toolCalls.length >= 2) ||
+      this.config.onSelfLearningExtract;
+
+    let sessionMessages: LLMMessage[] | undefined;
+    if (needsSessionMessages) {
+      try {
+        sessionMessages = (await this.config.sessionStore.loadMessages(
+          run.sessionKey,
+        )) as unknown as LLMMessage[];
+      } catch (err) {
+        log.warn('failed to load session messages (non-critical)', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     if (
       this.config.skillLearner &&
+      sessionMessages &&
       state.taskFrame.status === 'completed' &&
       done.result.toolCalls.length >= 2
     ) {
       try {
-        const sessionMessages = await this.config.sessionStore.loadMessages(run.sessionKey);
         const skillPath = await this.config.skillLearner.maybeLearnFromSession(
           run.sessionKey,
-          sessionMessages as unknown as LLMMessage[],
+          sessionMessages,
         );
         if (skillPath) {
           log.info('auto-distilled skill from session', { sessionKey: run.sessionKey, skillPath });
         }
       } catch (err) {
         log.warn('skill learner failed (non-critical)', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    if (
+      this.config.skillPipeline &&
+      sessionMessages &&
+      state.taskFrame.status === 'completed' &&
+      done.result.toolCalls.length >= 2
+    ) {
+      try {
+        const pipelineResult = await this.config.skillPipeline.processSession(
+          run.sessionKey,
+          sessionMessages as never,
+        );
+        if (pipelineResult?.promoted) {
+          log.info('auto-promoted skill from session', {
+            sessionKey: run.sessionKey,
+            skillId: pipelineResult.promoted.skillId,
+            skillPath: pipelineResult.promoted.skillPath,
+          });
+        } else if (pipelineResult?.distill) {
+          log.info('distilled skill candidate (below auto-promote threshold)', {
+            sessionKey: run.sessionKey,
+            candidateId: pipelineResult.candidateId,
+            confidence: pipelineResult.distill.score.confidence,
+          });
+        }
+      } catch (err) {
+        log.warn('skill pipeline failed (non-critical)', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    if (this.config.onSelfLearningExtract && sessionMessages) {
+      try {
+        let lastUserMessage: string | undefined;
+        for (let i = sessionMessages.length - 1; i >= 0; i--) {
+          const m = sessionMessages[i];
+          if (m.role === 'user') {
+            lastUserMessage = typeof m.content === 'string' ? m.content : '';
+            break;
+          }
+        }
+        if (lastUserMessage) {
+          await this.config.onSelfLearningExtract({
+            sessionKey: run.sessionKey,
+            lastUserMessage,
+          });
+        }
+      } catch (err) {
+        log.warn('self-learning extract failed (non-critical)', {
           error: err instanceof Error ? err.message : String(err),
         });
       }

@@ -140,7 +140,9 @@ async function resolveMemoryBootstrapEntries(
     let key = entry.filePath;
     try {
       key = await fs.realpath(entry.filePath);
-    } catch {}
+    } catch {
+      // realpath failed (permission denied or broken symlink) — fall back to raw path for dedup
+    }
     if (seen.has(key)) {
       continue;
     }

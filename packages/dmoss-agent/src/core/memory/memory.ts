@@ -4,10 +4,12 @@ export {
   LEARNING_TOPIC_SLUGS,
   buildMemorySearchQueryVariants,
   validateMemoryWriteContent,
+  buildSelfLearningMemoryDraft,
   type LearningTopicSlug,
   type MemoryEntry,
   type MemoryScope,
   type MemorySearchResult,
   type MemorySource,
   type MemoryWriteValidation,
+  type SelfLearningMemoryDraft,
 } from '@dmoss/memory';

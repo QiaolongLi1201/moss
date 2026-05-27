@@ -45,6 +45,7 @@ export interface RemoteCompactRequest {
   contextWindowTokens: number;
   model?: string;
   customInstructions?: string;
+  abortSignal?: AbortSignal;
 }
 
 export interface RemoteCompactResponse {
@@ -65,6 +66,7 @@ export interface HybridCompactionConfig {
   contextWindowTokens: number;
   reserveTokens?: number;
   customInstructions?: string;
+  abortSignal?: AbortSignal;
 }
 
 function redactSecretsInText(text: string): string {
@@ -152,11 +154,14 @@ export class HttpRemoteCompactProvider implements RemoteCompactProvider {
   async compact(request: RemoteCompactRequest): Promise<RemoteCompactResponse> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const signal = request.abortSignal
+      ? AbortSignal.any([controller.signal, request.abortSignal])
+      : controller.signal;
 
     try {
       const res = await fetch(this.compactUrl, {
         method: 'POST',
-        signal: controller.signal,
+        signal,
         headers: {
           'Content-Type': 'application/json',
           ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
@@ -275,6 +280,7 @@ export async function hybridCompact(
           maxOutputTokens,
           contextWindowTokens: config.contextWindowTokens,
           customInstructions: config.customInstructions,
+          abortSignal: config.abortSignal,
         });
 
         if (result.summary) {

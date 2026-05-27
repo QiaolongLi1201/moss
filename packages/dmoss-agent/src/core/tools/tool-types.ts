@@ -32,6 +32,8 @@ export interface ToolContext {
     summary: string;
     success: boolean;
   }>;
+  maxSpawnDepth?: number;
+  currentSpawnDepth?: number;
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { Message } from "../core/session/session-jsonl.js";
+import { sanitizeSecrets } from "../safety/secret-sanitizer.js";
 
 const DEFAULT_SUMMARY_FALLBACK = "No prior history.";
 const DETERMINISTIC_SUMMARY_MAX_CHARS = 12_000;
@@ -33,21 +34,21 @@ function stringifyToolInput(input: Record<string, unknown> | undefined): string 
 function fallbackMessageNote(message: Message, index: number): string {
   const label = `${index + 1}. ${message.role}`;
   if (typeof message.content === "string") {
-    return `${label}: ${truncateMiddle(message.content, DETERMINISTIC_NOTE_MAX_CHARS)}`;
+    return `${label}: ${sanitizeSecrets(truncateMiddle(message.content, DETERMINISTIC_NOTE_MAX_CHARS))}`;
   }
 
   const parts: string[] = [];
   for (const block of message.content) {
     if (block.type === "text" && block.text) {
-      parts.push(`text=${JSON.stringify(truncateMiddle(block.text, 420))}`);
+      parts.push(`text=${JSON.stringify(sanitizeSecrets(truncateMiddle(block.text, 420)))}`);
       continue;
     }
     if (block.type === "tool_use") {
-      parts.push(`tool_use ${block.name ?? "tool"}(${stringifyToolInput(block.input)})`);
+      parts.push(`tool_use ${block.name ?? "tool"}(${sanitizeSecrets(stringifyToolInput(block.input))})`);
       continue;
     }
     if (block.type === "tool_result") {
-      const body = truncateMiddle(block.content ?? "", 520);
+      const body = sanitizeSecrets(truncateMiddle(block.content ?? "", 520));
       parts.push(
         `tool_result ${block.name ?? "tool"}${block.is_error ? " error" : ""}: ${JSON.stringify(body)}`,
       );

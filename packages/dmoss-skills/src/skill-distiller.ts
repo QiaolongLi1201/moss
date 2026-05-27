@@ -25,6 +25,7 @@ export interface DistillResult {
 export async function distillCandidate(
   workspaceDir: string,
   candidateId: string,
+  options?: { patternOccurrences?: number },
 ): Promise<DistillResult | null> {
   const candidatesRoot = getCandidatesRoot(workspaceDir);
   const candidateDir = path.join(candidatesRoot, candidateId);
@@ -39,7 +40,7 @@ export async function distillCandidate(
     return null;
   }
 
-  const score = scoreSkillCandidate(evidence);
+  const score = scoreSkillCandidate(evidence, options?.patternOccurrences);
   const markdown = buildDraftMarkdown(evidence, score);
   const draftPath = path.join(candidateDir, DRAFT_FILE);
 

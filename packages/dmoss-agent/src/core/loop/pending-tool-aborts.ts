@@ -14,8 +14,31 @@ interface PendingAbortEntry {
   startedAt: number;
 }
 
+const PENDING_ABORT_TTL_MS = 5 * 60 * 1000;
+const GC_INTERVAL_MS = 60 * 1000;
+
 /** sessionKey -> toolUseId -> entry */
 const pendingAbortBySession = new Map<string, Map<string, PendingAbortEntry>>();
+
+let gcTimer: ReturnType<typeof setInterval> | undefined;
+
+function scheduleGc(): void {
+  if (gcTimer) return;
+  gcTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [sessionKey, m] of pendingAbortBySession) {
+      for (const [id, entry] of m) {
+        if (now - entry.startedAt > PENDING_ABORT_TTL_MS) m.delete(id);
+      }
+      if (m.size === 0) pendingAbortBySession.delete(sessionKey);
+    }
+    if (pendingAbortBySession.size === 0 && gcTimer) {
+      clearInterval(gcTimer);
+      gcTimer = undefined;
+    }
+  }, GC_INTERVAL_MS);
+  if (gcTimer && typeof gcTimer === 'object' && 'unref' in gcTimer) gcTimer.unref();
+}
 
 export function notePendingAbortedToolCalls(
   sessionKey: string,
@@ -31,6 +54,7 @@ export function notePendingAbortedToolCalls(
   for (const c of calls) {
     if (c.id) m.set(c.id, { name: c.name, startedAt: now });
   }
+  scheduleGc();
 }
 
 /**

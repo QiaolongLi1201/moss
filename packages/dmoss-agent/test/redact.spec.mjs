@@ -317,20 +317,20 @@ console.log('  [PASS] does not mutate input');
 // ── DMOSS_TELEMETRY_ALLOW parsing ──
 
 {
-  // Normal comma-separated list
+  // Normal comma-separated list — sensitive fields are rejected
   const original = process.env.DMOSS_TELEMETRY_ALLOW;
-  process.env.DMOSS_TELEMETRY_ALLOW = 'prompt,token,secret';
+  process.env.DMOSS_TELEMETRY_ALLOW = 'name,version,token,secret';
   const result = parseTelemetryAllow();
-  assert.deepEqual(result, new Set(['prompt', 'token', 'secret']));
+  assert.deepEqual(result, new Set(['name', 'version']));
   process.env.DMOSS_TELEMETRY_ALLOW = original;
 }
 
 {
-  // With whitespace
+  // With whitespace — sensitive fields rejected, safe fields kept
   const original = process.env.DMOSS_TELEMETRY_ALLOW;
-  process.env.DMOSS_TELEMETRY_ALLOW = ' prompt , token ';
+  process.env.DMOSS_TELEMETRY_ALLOW = ' model , password ';
   const result = parseTelemetryAllow();
-  assert.deepEqual(result, new Set(['prompt', 'token']));
+  assert.deepEqual(result, new Set(['model']));
   process.env.DMOSS_TELEMETRY_ALLOW = original;
 }
 
@@ -354,11 +354,13 @@ console.log('  [PASS] does not mutate input');
 
 {
   // DMOSS_TELEMETRY_ALLOW integrates with redactSensitiveData
+  // Sensitive fields in the env var are rejected; only safe fields pass through
   const original = process.env.DMOSS_TELEMETRY_ALLOW;
-  process.env.DMOSS_TELEMETRY_ALLOW = 'prompt';
-  const input = { prompt: 'hello world', token: 'abc123' };
+  process.env.DMOSS_TELEMETRY_ALLOW = 'model,prompt';
+  const input = { model: 'gpt-4', prompt: 'hello world', token: 'abc123' };
   const result = redactSensitiveData(input);
-  assert.deepEqual(result, { prompt: 'hello world', token: '[REDACTED]' });
+  // 'model' is allowed (not sensitive), 'prompt' is rejected (matches PROMPT_FIELD_PATTERN)
+  assert.deepEqual(result, { model: 'gpt-4', prompt: '[REDACTED]', token: '[REDACTED]' });
   process.env.DMOSS_TELEMETRY_ALLOW = original;
 }
 

@@ -17,7 +17,7 @@ export type SpawnToolScope =
   | "verify";
 
 const CORE_READ_TOOLS = [
-  "read", "list", "grep", "memory_search", "memory_get",
+  "read_file", "list_directory", "search_files", "search_code", "memory_search", "memory_get",
 ];
 
 const DEVICE_READ_TOOLS = [
@@ -35,20 +35,27 @@ const ATTACHMENT_TOOLS = [
 
 const SKILL_TOOLS = ["find_skills", "skillhub_search"];
 
-let _hostSpawnToolExtensions: Record<string, string[]> = {};
+let _hostSpawnToolExtensions: Readonly<Record<string, readonly string[]>> = Object.freeze({});
 
 /**
  * Register additional tool names for spawn scopes.
  * Called by the host application to inject product-specific tools
  * (e.g., board agent status tools, device-specific commands).
+ *
+ * The extensions object is frozen on registration to prevent mutation
+ * after concurrent sub-agents start reading it.
  */
 export function registerSpawnToolExtensions(
   extensions: Record<string, string[]>,
 ): void {
-  _hostSpawnToolExtensions = { ...extensions };
+  const frozen: Record<string, readonly string[]> = {};
+  for (const [k, v] of Object.entries(extensions)) {
+    frozen[k] = Object.freeze([...v]);
+  }
+  _hostSpawnToolExtensions = Object.freeze(frozen);
 }
 
-function hostToolsForScope(scope: string): string[] {
+function hostToolsForScope(scope: string): readonly string[] {
   return _hostSpawnToolExtensions[scope] ?? _hostSpawnToolExtensions['*'] ?? [];
 }
 

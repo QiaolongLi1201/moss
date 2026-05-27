@@ -65,7 +65,7 @@ export interface ProcessLlmResponseParams {
   }) => Promise<{ approved: boolean; decision: string } | null>;
   toolAbortSignalFor?: (toolCallId: string) => AbortSignal | undefined;
   enrichToolContext?: (baseCtx: ToolContext, sessionKey: string) => ToolContext;
-  getSteeringMessages: () => Promise<Message[]>;
+  evaluateSteering: () => Message[];
   appendMessage: (sessionKey: string, msg: Message) => Promise<void>;
   push: (event: MiniAgentEvent) => void;
   buildCorrectionMessage: (systemText: string) => Message;
@@ -122,7 +122,7 @@ export async function processLlmResponse(
     checkToolApproval,
     toolAbortSignalFor,
     enrichToolContext,
-    getSteeringMessages,
+    evaluateSteering,
     appendMessage,
     push,
     buildCorrectionMessage,
@@ -231,7 +231,7 @@ export async function processLlmResponse(
 
   // ===== Fetch steering (for non-tool paths) =====
   const cachedSteering = toolCalls.length === 0
-    ? await getSteeringMessages()
+    ? evaluateSteering()
     : [];
 
   // ===== Decide action =====
@@ -335,7 +335,7 @@ export async function processLlmResponse(
     loadToolsMetaName,
     toolLoopGuard,
     metrics: state.toolExecutionMetrics,
-    getSteeringMessages,
+    evaluateSteering,
     appendMessage,
     push,
   });

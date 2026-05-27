@@ -95,7 +95,7 @@ export class SessionManager {
         try {
           await rewriteSessionFile(evictState, this.baseDir);
         } catch {
-          // If flush fails, still evict to prevent unbounded memory growth
+          // flush before eviction failed — still evict to prevent unbounded memory growth
         }
       }
       const evictBytes = this.sessionApproxBytes.get(key) ?? 0;
@@ -714,7 +714,7 @@ async function rewriteSessionFile(
     try {
       await fs.rename(state.filePath, `${state.filePath}.1`);
     } catch {
-      // File may not exist on first flush — safe to ignore
+      // archive rotation: file may not exist on first flush — safe to ignore
     }
   }
 

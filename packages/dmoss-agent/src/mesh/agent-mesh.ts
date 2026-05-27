@@ -159,6 +159,7 @@ export class AgentMesh {
   private queryTokens: number;
   private readonly maxQueriesPerMinute: number;
   private lastQueryRefill: number;
+  private _currentInboundDepth: number = 0;
 
   constructor(config: MeshConfig) {
     this.config = config;
@@ -372,7 +373,13 @@ export class AgentMesh {
         }
 
         if (this.queryHandler) {
-          const response = await this.queryHandler(query, fromPeer);
+          this._currentInboundDepth = callDepth;
+          let response: string;
+          try {
+            response = await this.queryHandler(query, fromPeer);
+          } finally {
+            this._currentInboundDepth = 0;
+          }
           if (isMeshVerboseEnabled()) {
             console.error(`[mesh] ✅ Responded to ${msg.fromName}`);
           }
@@ -437,6 +444,7 @@ export class AgentMesh {
 
   async queryPeers(
     query: string,
+    options?: { callDepth?: number },
   ): Promise<Array<{ peerId: string; peerName: string; response: string }>> {
     // Rate limit check (token bucket)
     if (!this.tryConsumeQueryToken()) {
@@ -447,6 +455,9 @@ export class AgentMesh {
     const results: Array<{ peerId: string; peerName: string; response: string }> = [];
 
     const traceId = randomUUID();
+    const outgoingDepth = typeof options?.callDepth === 'number'
+      ? options.callDepth
+      : this._currentInboundDepth + 1;
     const msg: MeshMessage = {
       type: 'query',
       fromId: this.config.id,
@@ -454,7 +465,7 @@ export class AgentMesh {
       payload: { query, _visitedPeers: [this.config.id] },
       timestamp: Date.now(),
       traceId,
-      callDepth: 0,
+      callDepth: outgoingDepth,
     };
 
     const peerList = [...this.peers.values()];

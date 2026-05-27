@@ -19,6 +19,8 @@
  *  - follow-up 姊妹: `2026-04-24-provider-error-context-roundtrip`（子任务 B，未开始）
  */
 
+import { sanitizeSecrets } from '../safety/secret-sanitizer.js';
+
 export type ProviderErrorCategory =
   | 'auth'
   | 'context_corruption'
@@ -552,23 +554,12 @@ export function renderProviderErrorSurface(surface: ProviderErrorSurface): strin
 }
 
 /**
- * 从 raw errorMessage 里剥离常见敏感 token（API Key / Bearer / ssh-ed25519 / JWT），
+ * 从 raw errorMessage 里剥离敏感 token，
  * 用于写入 `error_detail` 列前的最后一道防线。
  *
- * 注意：这不是全集 sanitize，只覆盖"上游 provider 错误报文里最常出现"的 4 类。
- * `first-success-error-recovery` 的 `SENSITIVE_PATTERNS` 是 UI 侧全集；两者可独立存在。
+ * 复用 `secret-sanitizer.ts` 的全集规则（22 条），避免子集遗漏导致泄露。
  */
 export function sanitizeRawErrorForDetail(raw: string): string {
   if (!raw) return '';
-  let out = raw;
-  // OpenAI / Anthropic-style keys
-  out = out.replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, '<redacted-api-key>');
-  out = out.replace(/\bsk-ant-[A-Za-z0-9_-]{20,}\b/g, '<redacted-api-key>');
-  // Bearer header content
-  out = out.replace(/Bearer\s+[A-Za-z0-9._\-]+/gi, 'Bearer <redacted>');
-  // SSH keys
-  out = out.replace(/ssh-(?:ed25519|rsa|ecdsa)\s+[A-Za-z0-9+/=]+/g, '<redacted-ssh-key>');
-  // JWT (3-segment base64)
-  out = out.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '<redacted-jwt>');
-  return out;
+  return sanitizeSecrets(raw);
 }

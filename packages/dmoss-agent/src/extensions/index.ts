@@ -3,6 +3,7 @@ export {
   applyPlatformExtensionForce,
   syncPlatformExtensionsAtStartup,
   setVendorPluginCallbacks,
+  setKnowledgeRegistryForExtensions,
   getRegisteredPlatformExtensions,
   setRegisteredPlatformExtensionsSnapshot,
   resetPlatformExtensionRegistryForTests,

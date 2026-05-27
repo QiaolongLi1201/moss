@@ -15,6 +15,7 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import type { Tool } from '../core/tools/tool-types.js';
 import { assertSandboxPath } from '../safety/sandbox-paths.js';
+import { isCommandDangerous } from '../safety/channel-safety.js';
 import { createSubagentTool } from './create-subagent.js';
 
 const IS_WIN = process.platform === 'win32';
@@ -152,6 +153,10 @@ export const execTool: Tool = {
       return (
         `Command skipped: uname is not available on Windows cmd.\n${WIN_POSIX_HINT}`
       );
+    }
+    const safetyCheck = isCommandDangerous(input.command);
+    if (safetyCheck.blocked) {
+      return `Command blocked: ${safetyCheck.reason}`;
     }
     try {
       const shell = IS_WIN ? process.env.COMSPEC || 'cmd.exe' : '/bin/sh';

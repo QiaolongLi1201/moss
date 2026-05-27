@@ -28,6 +28,7 @@ export interface AgentLoopMutableState {
   overflowState: OverflowRecoveryState;
   toolExecutionMetrics: AgentLoopToolExecutionMetrics;
   interTurnSilenceMs: number[];
+  consecutiveTurnErrors: number;
 }
 
 export function createInitialLoopState(): AgentLoopMutableState {
@@ -48,8 +49,9 @@ export function createInitialLoopState(): AgentLoopMutableState {
     firstTokenMs: null,
     lastTurnEndMs: null,
     overflowState: createOverflowRecoveryState(),
-    toolExecutionMetrics: { totalToolCalls: 0, toolErrors: 0, toolCallsByName: {}, prepNextTurnParallelMs: 0 },
+    toolExecutionMetrics: { totalToolCalls: 0, toolErrors: 0, consecutiveToolErrors: 0, toolCallsByName: {}, prepNextTurnParallelMs: 0 },
     interTurnSilenceMs: [],
+    consecutiveTurnErrors: 0,
   };
 }
 

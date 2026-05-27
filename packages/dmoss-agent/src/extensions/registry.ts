@@ -8,7 +8,7 @@
 
 import type { DmossVendorPlugin } from '@dmoss/core';
 import type { DmossPlatformExtension } from '@dmoss/core';
-import { registerKnowledgeModule, unregisterKnowledgeModule } from '../knowledge/registry.js';
+import { KnowledgeRegistry } from '../knowledge/registry.js';
 
 export interface VendorPluginCallbacks<THostTool = unknown> {
   register(plugin: DmossVendorPlugin<THostTool>): void;
@@ -22,6 +22,17 @@ export function setVendorPluginCallbacks(callbacks: VendorPluginCallbacks): void
   vendorCallbacks = callbacks;
 }
 
+let _knowledgeRegistry: KnowledgeRegistry | null = null;
+
+/**
+ * Set the KnowledgeRegistry instance for platform extension registration.
+ * When set, extensions register/unregister knowledge modules directly on
+ * this instance instead of the deprecated global bridge.
+ */
+export function setKnowledgeRegistryForExtensions(registry: KnowledgeRegistry): void {
+  _knowledgeRegistry = registry;
+}
+
 const lastApplied = new Map<string, boolean>();
 
 export function applyPlatformExtension(ext: DmossPlatformExtension): void {
@@ -30,13 +41,17 @@ export function applyPlatformExtension(ext: DmossPlatformExtension): void {
   if (prev === want && prev !== undefined) return;
 
   if (!want) {
-    unregisterKnowledgeModule(ext.knowledgeModuleId);
+    if (_knowledgeRegistry) {
+      _knowledgeRegistry.unregister(ext.knowledgeModuleId);
+    }
     vendorCallbacks?.unregister(ext.vendorPluginId);
     lastApplied.set(ext.id, false);
     return;
   }
 
-  registerKnowledgeModule(ext.getKnowledgeModule());
+  if (_knowledgeRegistry) {
+    _knowledgeRegistry.register(ext.getKnowledgeModule());
+  }
   vendorCallbacks?.register(ext.getVendorPlugin());
   lastApplied.set(ext.id, true);
 }

@@ -26,6 +26,7 @@ export {
   getKnowledgeModule,
   getAllKnowledgeModules,
   findModuleForPlatform,
+  findModuleForFamily,
   getAllDeviceProfiles,
   getAllDocEntries,
   getAllPromptFragments,
@@ -40,8 +41,13 @@ export {
   getDefaultExtensionsRegistry,
   syncPlatformExtensionsAtStartup,
   setVendorPluginCallbacks,
+  setKnowledgeRegistryForExtensions,
   applyPlatformExtension,
+  applyPlatformExtensionForce,
   getRegisteredPlatformExtensions,
+  setRegisteredPlatformExtensionsSnapshot,
+  resetPlatformExtensionRegistryForTests,
+  listAppliedPlatformExtensionState,
 } from './extensions/index.js';
 export type { VendorPluginCallbacks } from './extensions/index.js';
 
@@ -172,6 +178,15 @@ export type {
   ContextWindowGuardResult,
 } from './context/index.js';
 
+// --- Channels ---
+export { bridgeAgentToChannel } from './channels/index.js';
+export type {
+  BridgeAgentToChannelOptions,
+  ChannelMessage,
+  ChannelResponse,
+  MessageChannel,
+} from './channels/index.js';
+
 // --- Provider: pi-ai adapter ---
 export { PiAiLLMProvider } from './provider/index.js';
 export type { PiAiModelInfo, PiAiStreamFunction, PiAiLLMProviderConfig } from './provider/index.js';
@@ -285,4 +300,3 @@ export type {
   PostToolUseFailureHook,
   PreToolUseDecision,
 } from './core/index.js';
-

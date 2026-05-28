@@ -34,6 +34,12 @@ function withEnv(vars, fn) {
     });
 }
 
+function envValue(env, key) {
+  const expected = key.toUpperCase();
+  const actual = Object.keys(env).find((candidate) => candidate.toUpperCase() === expected);
+  return actual ? env[actual] : undefined;
+}
+
 console.log('[TEST] docker exec backend does not leak ambient host secrets');
 {
   const workspaceDir = mkdtempSync(join(tmpdir(), 'dmoss-docker-exec-env-'));
@@ -105,7 +111,7 @@ console.log('[TEST] docker exec backend does not leak ambient host secrets');
       // Ordinary host env and docker-client config must survive so remote-docker
       // and credential-helper users keep working.
       assert.equal(capturedEnv.SAFE_VAR, 'ordinary-host-value', 'ordinary host env should pass through');
-      assert.ok(capturedEnv.PATH, 'PATH must pass through so docker CLI is locatable');
+      assert.ok(envValue(capturedEnv, 'PATH'), 'PATH must pass through so docker CLI is locatable');
       assert.equal(capturedEnv.DOCKER_HOST, 'tcp://remote-docker.example:2375', 'DOCKER_HOST must pass through');
       assert.equal(capturedEnv.DOCKER_TLS_VERIFY, '1', 'DOCKER_TLS_VERIFY must pass through');
       assert.equal(capturedEnv.DOCKER_CERT_PATH, '/etc/docker/certs', 'DOCKER_CERT_PATH must pass through');

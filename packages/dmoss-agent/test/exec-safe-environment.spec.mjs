@@ -4,7 +4,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execTool } from '../dist/tools/builtin.js';
@@ -26,6 +26,13 @@ function withEnv(vars, fn) {
         }
       }
     });
+}
+
+function quoteCommandArg(value) {
+  if (process.platform === 'win32') {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return JSON.stringify(value);
 }
 
 console.log('[TEST] exec tool does not leak ambient host secrets');
@@ -66,7 +73,9 @@ console.log('[TEST] exec tool does not leak ambient host secrets');
         'PATH_PRESENT:Boolean(process.env.PATH),' +
         'LANG_PRESENT:Boolean(process.env.LANG)' +
         '}))';
-      const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+      const scriptPath = join(workspaceDir, 'print-env.mjs');
+      writeFileSync(scriptPath, script);
+      const command = `${quoteCommandArg(process.execPath)} ${quoteCommandArg(scriptPath)}`;
       const output = await execTool.execute(
         { command, timeout_ms: 5000 },
         { workspaceDir, sessionKey: 'exec-safe-env' },

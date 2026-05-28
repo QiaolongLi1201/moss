@@ -86,6 +86,48 @@ roadmap defines the north star, non-goals, six-month target, and phase plan:
 
 - [`docs/roadmap.md`](docs/roadmap.md)
 
+## Maintainer Guides
+
+These documents are intended to be durable project manuals, not session notes:
+
+- [`AGENTS.md`](AGENTS.md): agent working rules, architecture-review discipline,
+  CodeGraph usage, and bug-fix checklists for this repository.
+- [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md): current
+  architecture findings, rejected hypotheses, and "do not change" decisions.
+- [`CLEAN_CODE_ASSESSMENT.md`](CLEAN_CODE_ASSESSMENT.md): code quality review
+  and cleanup guidance.
+- [`docs/host-adapter-contract.md`](docs/host-adapter-contract.md): Host
+  Adapter contract guide.
+- [`docs/tool-runtime.md`](docs/tool-runtime.md): tool execution pipeline,
+  ownership boundaries, hooks, approval, timeout, and guard limits.
+- [`docs/tool-side-effect-idempotency-rfc.md`](docs/tool-side-effect-idempotency-rfc.md):
+  RFC for in-flight deduplication of non-idempotent tools.
+- [`docs/release-checklist.md`](docs/release-checklist.md): release validation
+  and host update checklist.
+
+Historical phase notes such as [`docs/goals-phase-5.md`](docs/goals-phase-5.md)
+and [`docs/goals-phase-6.md`](docs/goals-phase-6.md) can help explain why the
+current contracts and tests exist, but the roadmap and release checklist are the
+source of truth for new work.
+
+## Architecture Review Discipline
+
+Do not turn open-ended reviews into endless issue lists. A candidate issue is
+worth fixing only when it blocks a committed goal, a real host path, safety,
+data correctness, resource lifecycle, or a contract that downstream users rely
+on. Style concerns, framework feature comparisons, and speculative future
+abstractions should be recorded as observations or rejected explicitly.
+
+Before changing architecture, preserve this loop:
+
+1. Generate hypotheses from the actual code and active host workflows.
+2. Try to falsify each hypothesis by reading source, checking callers, tracing
+   runtime flow, or running a focused test.
+3. Fix bugs with declare + enforce + test. Existing tests are regression
+   checks; the fix still needs a test that would have failed before the change.
+4. Document "do not touch" conclusions when a suspicion is falsified, so future
+   reviews do not spend time re-litigating the same point.
+
 ## What Does Not Belong In Moss
 
 Keep product-specific code in the host repository.

@@ -44,6 +44,12 @@ function withEnv(vars, fn) {
     });
 }
 
+function envValue(env, key) {
+  const expected = key.toUpperCase();
+  const actual = Object.keys(env).find((candidate) => candidate.toUpperCase() === expected);
+  return actual ? env[actual] : undefined;
+}
+
 const syntheticSecret = `XYZ_SECRET_${Date.now()}`;
 const hostSecrets = {
   OPENROUTER_API_KEY: 'host-openrouter-secret',
@@ -75,8 +81,12 @@ await withEnv(hostSecrets, async () => {
 
   assert.equal(env.MCP_CUSTOM_VAR, 'custom-value', 'explicit MCP env should be applied');
   assert.equal(env.OPENROUTER_API_KEY, 'explicit-mcp-secret', 'explicit provider key should be applied');
-  if (process.env.PATH) assert.equal(env.PATH, process.env.PATH, 'PATH should be preserved');
-  if (process.env.HOME) assert.equal(env.HOME, process.env.HOME, 'HOME should be preserved');
+  const hostPath = envValue(process.env, 'PATH');
+  const childPath = envValue(env, 'PATH');
+  if (hostPath) assert.equal(childPath, hostPath, 'PATH should be preserved');
+  const hostHome = envValue(process.env, 'HOME');
+  const childHome = envValue(env, 'HOME');
+  if (hostHome) assert.equal(childHome, hostHome, 'HOME should be preserved');
 });
 console.log('  ✓ safeMcpChildEnv uses a closed allowlist plus explicit overrides');
 
@@ -85,6 +95,12 @@ await withEnv(hostSecrets, async () => {
   const mockServerPath = join(__dirname, '_mock_mcp_env.tmp.mjs');
   const serverCode = `#!/usr/bin/env node
 import { createInterface } from 'node:readline';
+
+const envValue = (key) => {
+  const expected = key.toUpperCase();
+  const actual = Object.keys(process.env).find((candidate) => candidate.toUpperCase() === expected);
+  return actual ? process.env[actual] : undefined;
+};
 
 const rl = createInterface({ input: process.stdin });
 rl.on('line', (line) => {
@@ -132,8 +148,8 @@ rl.on('line', (line) => {
       SAFE_VAR: process.env.SAFE_VAR,
       SYNTHETIC_SECRET: process.env.${syntheticSecret},
       MCP_CUSTOM_VAR: process.env.MCP_CUSTOM_VAR,
-      PATH_PRESENT: Boolean(process.env.PATH),
-      HOME_PRESENT: Boolean(process.env.HOME),
+      PATH_PRESENT: Boolean(envValue('PATH')),
+      HOME_PRESENT: Boolean(envValue('HOME')),
     };
     process.stdout.write(JSON.stringify({
       jsonrpc: '2.0',

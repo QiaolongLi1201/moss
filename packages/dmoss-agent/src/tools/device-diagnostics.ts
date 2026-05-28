@@ -53,7 +53,7 @@ export function createDeviceDiagnosticsTools(config: DeviceSshConfig): Tool[] {
         'echo "=== CPU Temperature ==="',
         'cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | while read t; do echo "  $(echo "scale=1; $t/1000" | bc)°C"; done',
         'echo ""',
-        'echo "=== BPU Temperature (RDK) ==="',
+        'echo "=== Accelerator Temperature ==="',
         'cat /sys/class/hwmon/hwmon*/temp*_input 2>/dev/null | while read t; do echo "  $(echo "scale=1; $t/1000" | bc)°C"; done',
         'echo ""',
         'echo "=== GPU Temperature ==="',

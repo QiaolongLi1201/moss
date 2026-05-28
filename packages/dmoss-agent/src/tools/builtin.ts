@@ -125,7 +125,7 @@ export const execTool: Tool = {
   name: 'exec',
   description:
     'Execute a shell command in the workspace directory. Returns stdout + stderr. Commands run with cwd set to the workspace. ' +
-    'On Windows, this is the host PC shell (not the RDK board); prefer device_exec when SSH is configured.',
+    'On Windows, this is the host PC shell (not a remote device); prefer device_exec when SSH is configured.',
   metadata: {
     sideEffectClass: 'local_write',
     planMode: 'requires_user_confirmation',

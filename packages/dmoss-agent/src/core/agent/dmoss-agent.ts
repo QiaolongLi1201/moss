@@ -215,8 +215,8 @@ export class DmossAgent {
    * 2. Registered knowledge modules: ecosystem text, prompt fragments, and
    *    platform profile facts. These are packaged/provenanced device facts and
    *    should be deterministic for an agent instance.
-   * 3. Host extraPromptLayers and per-turn extraContext. RDK Studio uses these
-   *    for memory picks, matched skills, active device state, and task hints.
+   * 3. Host extraPromptLayers and per-turn extraContext. Hosts use these for
+   *    memory picks, matched skills, active device state, and task hints.
    *    They come later so fresh user/workspace context can narrow or override
    *    generic knowledge, but hosts must keep them bounded before calling Moss.
    */

@@ -1,8 +1,8 @@
 /**
  * Device SSH Tools — connect to and execute commands on remote devices.
  *
- * These tools enable D-Moss to control physical hardware (RDK boards,
- * Jetson devices, Raspberry Pi, etc.) over SSH.
+ * These tools enable D-Moss to control physical hardware (embedded Linux
+ * boards, edge devices, SBCs, etc.) over SSH.
  *
  * Configuration:
  *   DMOSS_DEVICE_HOST     — Device IP or hostname

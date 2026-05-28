@@ -28,13 +28,6 @@ function withEnv(vars, fn) {
     });
 }
 
-function quoteCommandArg(value) {
-  if (process.platform === 'win32') {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return JSON.stringify(value);
-}
-
 console.log('[TEST] exec tool does not leak ambient host secrets');
 {
   const workspaceDir = mkdtempSync(join(tmpdir(), 'dmoss-exec-env-'));
@@ -75,7 +68,7 @@ console.log('[TEST] exec tool does not leak ambient host secrets');
         '}))';
       const scriptPath = join(workspaceDir, 'print-env.mjs');
       writeFileSync(scriptPath, script);
-      const command = `${quoteCommandArg(process.execPath)} ${quoteCommandArg(scriptPath)}`;
+      const command = 'node print-env.mjs';
       const output = await execTool.execute(
         { command, timeout_ms: 5000 },
         { workspaceDir, sessionKey: 'exec-safe-env' },

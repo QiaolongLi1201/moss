@@ -78,19 +78,35 @@ function createConsoleTracer(): Tracer {
 
 // ── Factory ─────────────────────────────────────────────────────
 
-let _globalTracer: Tracer = noopTracer;
-let _traceRedactor: ((text: string) => string) | null = null;
+export class TraceRegistry {
+  private tracer: Tracer = noopTracer;
+  private redactor: ((text: string) => string) | null = null;
+
+  setTracer(tracer: Tracer | 'console'): void {
+    this.tracer = tracer === 'console' ? createConsoleTracer() : tracer;
+  }
+
+  setTraceRedactor(fn: (text: string) => string): void {
+    this.redactor = fn;
+  }
+
+  getTracer(): Tracer {
+    return this.tracer;
+  }
+
+  redactMessage(text: string): string {
+    return this.redactor ? this.redactor(text) : text;
+  }
+}
+
+const defaultTraceRegistry = new TraceRegistry();
 
 /**
  * Configure the global tracer. Call once at startup.
  * Pass `"console"` for debug output, or a custom Tracer instance.
  */
 export function setTracer(tracer: Tracer | 'console'): void {
-  if (tracer === 'console') {
-    _globalTracer = createConsoleTracer();
-  } else {
-    _globalTracer = tracer;
-  }
+  defaultTraceRegistry.setTracer(tracer);
 }
 
 /**
@@ -99,16 +115,12 @@ export function setTracer(tracer: Tracer | 'console'): void {
  * from leaking through tracing output.
  */
 export function setTraceRedactor(fn: (text: string) => string): void {
-  _traceRedactor = fn;
-}
-
-function redactTraceMessage(text: string): string {
-  return _traceRedactor ? _traceRedactor(text) : text;
+  defaultTraceRegistry.setTraceRedactor(fn);
 }
 
 /** Get the current tracer (never null). */
 export function getTracer(): Tracer {
-  return _globalTracer;
+  return defaultTraceRegistry.getTracer();
 }
 
 /**
@@ -121,13 +133,13 @@ export async function withSpan<T>(
   fn: (span: TraceSpan) => Promise<T>,
   parent?: TraceSpan,
 ): Promise<T> {
-  const span = _globalTracer.startSpan(name, attributes, parent);
+  const span = defaultTraceRegistry.getTracer().startSpan(name, attributes, parent);
   try {
     const result = await fn(span);
     span.setStatus(true);
     return result;
   } catch (err) {
-    span.setStatus(false, redactTraceMessage(err instanceof Error ? err.message : String(err)));
+    span.setStatus(false, defaultTraceRegistry.redactMessage(err instanceof Error ? err.message : String(err)));
     throw err;
   } finally {
     span.end();

@@ -224,9 +224,13 @@ export { convertMessagesToPi } from './core/index.js';
 // --- Spawn Profile ---
 export type { SpawnToolScope } from './core/index.js';
 export {
+  SpawnProfileRegistry,
   SPAWN_TOOL_SCOPE_SETS,
+  createSpawnProfileRegistryFromDefaults,
+  getDefaultSpawnProfileRegistry,
   resolveSpawnToolSet,
   buildSubagentPromptAddon,
+  registerSpawnToolExtensions,
 } from './core/index.js';
 
 // --- Built-in Tools ---
@@ -271,6 +275,7 @@ export {
 export {
   redactSensitiveData,
   parseTelemetryAllow,
+  TraceRegistry,
   setTracer,
   getTracer,
   withSpan,

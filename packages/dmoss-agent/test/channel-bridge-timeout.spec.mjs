@@ -122,4 +122,48 @@ assert.equal(calls, 2, 'second message should run after the timed-out message se
   releaseSlow();
 }
 
+{
+  const cappedChannel = new FakeChannel();
+  let releaseHold;
+  let overflowEvent = null;
+  const cappedAgent = {
+    async chat(_sessionKey, text) {
+      if (text === 'hold') {
+        return new Promise((resolve) => {
+          releaseHold = () => resolve({
+            response: 'released',
+            toolCalls: [],
+            toolResults: [],
+            stopReason: 'end_turn',
+          });
+        });
+      }
+      return {
+        response: `ok:${text}`,
+        toolCalls: [],
+        toolResults: [],
+        stopReason: 'end_turn',
+      };
+    },
+  };
+
+  bridgeAgentToChannel(cappedAgent, cappedChannel, {
+    chatTimeoutMs: 1_000,
+    maxSessionQueues: 1,
+    onQueueOverflow: (event) => {
+      overflowEvent = event;
+    },
+  });
+  const held = cappedChannel.send('hold', 'sender-a');
+  await assert.rejects(
+    () => withDeadline(cappedChannel.send('second-sender', 'sender-b'), 500),
+    (err) => err instanceof DmossError && err.code === ErrorCode.TOOL_EXECUTION_FAILED,
+  );
+  assert.equal(overflowEvent?.channelId, 'fake-channel');
+  assert.equal(overflowEvent?.queueSize, 1);
+  assert.equal(overflowEvent?.maxSessionQueues, 1);
+  releaseHold();
+  assert.deepEqual(await withDeadline(held, 500), { text: 'released' });
+}
+
 console.log('[PASS] channel bridge times out stalled chat calls and continues the queue');

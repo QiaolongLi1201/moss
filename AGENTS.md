@@ -98,6 +98,32 @@ For non-trivial evaluations, use the three-phase approach (see `ARCHITECTURE_ASS
 
 When reviewing architecture, explicitly identify things that are well-designed and should not be changed. This prevents future sessions from re-proposing the same bad ideas. See `ARCHITECTURE_ASSESSMENT.md` §4 for the current "don't touch" list.
 
+### 7. Moss Architecture Brainstorming Skill
+
+Use this before turning an architecture review into another repair loop. The point is to decide what is a real Moss problem, what is only an observation, and what should explicitly not be changed.
+
+Trigger this workflow when a task asks for architecture evaluation, roadmap cleanup, multi-agent review synthesis, "what else is wrong", "what should we fix next", or any broad refactor proposal.
+
+1. **Diverge first, then judge.** Generate candidate concerns from at least three viewpoints: Moss maintainer, current RDK Studio host, and a minimal future external host. Keep candidates as hypotheses until source or runtime evidence supports them.
+2. **Classify the concern.**
+   - A: blocks the current goal or a committed near-term roadmap item.
+   - B: may block a plausible future direction, but no concrete host or user is blocked today.
+   - C: is mostly taste, style, framework comparison, or "best practice" drift.
+3. **Apply the five rejection gates.** Downgrade the concern unless it survives all five:
+   - Roadmap gate: which committed Moss/RDK Studio goal does this block?
+   - Host gate: which real host or integration path can hit it?
+   - Cost gate: is the cost data loss, security risk, silent wrong behavior, leak, or hard evolution block?
+   - Anti-speculation gate: does the fix add general resilience, or does it predict an uncommitted future?
+   - Survival gate: has the current design already survived production use without the alleged failure?
+4. **Choose one of four outcomes.**
+   - Fix now: silent bug, contract violation, safety issue, leak, or low-cost documentation that prevents real misuse.
+   - Measure first: performance, scale, or reliability concern without numbers.
+   - Defer with trigger: future-evolution concern; write the concrete trigger that reopens it.
+   - Do not fix: style-only concern, abstraction preference, or "mainstream frameworks do X" comparison without a Moss scenario.
+5. **Record rejected ideas.** A good assessment must include "do not touch" and "deferred until trigger" items. This prevents every later agent from rediscovering the same non-problems and extending the bug-hunting loop forever.
+
+When using multi-agent review, assign distinct roles instead of asking several agents the same broad question: maintainer simplicity, RDK Studio delivery risk, external-host onboarding, and contrarian "why not fix this" review. The coordinator owns the final call and must cite evidence for every fix-now item.
+
 ## Bug Fix Discipline: Declare + Enforce + Test
 
 When fixing a bug, especially one involving contracts, interfaces, or architectural invariants, the fix is not complete until all three steps are done:

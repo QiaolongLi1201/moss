@@ -76,6 +76,18 @@ export interface MossHostKnowledgeRef {
   stability: MossHostCapabilityStability;
 }
 
+export interface MossHostMemoryProviderRef {
+  id: string;
+  version: string;
+  stability: MossHostCapabilityStability;
+}
+
+export interface MossHostSkillStoreRef {
+  id: string;
+  version: string;
+  stability: MossHostCapabilityStability;
+}
+
 export interface MossHostCapabilityRef {
   kind: MossHostCapabilityKind;
   version: string;
@@ -100,7 +112,44 @@ export interface MossHostRuntimeManifest {
   providers: readonly MossHostProviderRef[];
   tools: readonly MossHostToolRef[];
   eventSinks: readonly MossHostEventSinkRef[];
+  /**
+   * Optional long-term-memory source supplied by the host.
+   *
+   * Memory is user/session-derived state: preferences, durable notes, learned
+   * corrections, or workspace facts that may evolve while the agent runs. It is
+   * read late in prompt assembly as dynamic context, after stable product and
+   * knowledge layers, so fresh user facts can override generic documentation
+   * without changing the packaged knowledge module. Hosts should treat memory
+   * as mutable, scoped by user/workspace/session policy, and separate from
+   * bundled device facts. Memory providers may also expose write tools, but the
+   * manifest entry only describes the read/injection capability.
+   */
+  memoryProvider?: MossHostMemoryProviderRef;
+  /**
+   * Domain knowledge modules registered by the host.
+   *
+   * Knowledge is packaged, provenance-bearing domain data: device profiles,
+   * documentation references, command patterns, failure hints, and endorsed
+   * skills. Moss injects knowledge before memory and before per-turn context,
+   * using module conflict rules and platform matching rather than recency. A
+   * module should be versioned with the host release or remote knowledge bundle
+   * that supplied it. Use this axis for facts a new agent instance should know
+   * consistently; use memory for user-specific learned state and tools or
+   * extensions for executable behavior.
+   */
   knowledgeModules: readonly MossHostKnowledgeRef[];
+  /**
+   * Optional host skill catalog/runtime.
+   *
+   * Skills are procedural instructions or recipes that help the agent decide
+   * how to act, but they are not device facts and should not be used as durable
+   * user memory. Hosts usually load skill metadata during routing, then inject
+   * only the matched skill bodies for the current task. Skill context is merged
+   * after stable knowledge but before final per-turn hints, and may contribute
+   * tools or commands through the normal tool/approval boundary. Use this axis
+   * when a host can discover, install, validate, or execute reusable procedures.
+   */
+  skillStore?: MossHostSkillStoreRef;
 }
 
 export interface MossHostCompatibilityRequirement {

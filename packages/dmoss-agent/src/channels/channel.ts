@@ -7,6 +7,9 @@
  */
 import type { DmossAgent } from '../core/agent/dmoss-agent.js';
 import { DmossError, ErrorCode } from '../errors.js';
+import { getRootLogger } from '../logger.js';
+
+const log = getRootLogger().child('channels');
 
 export interface ChannelMessage {
   id: string;
@@ -44,9 +47,23 @@ export interface BridgeAgentToChannelOptions {
    * otherwise their late work may continue outside the channel queue.
    */
   chatTimeoutMs?: number;
+  /**
+   * Last-resort cap for distinct in-flight sender queues in one bridge.
+   * Default: 1000. This protects hosts when upstream agent calls ignore abort
+   * and many new senders arrive before old queues can be cleaned up.
+   */
+  maxSessionQueues?: number;
+  /** Optional telemetry hook for tests or host metrics when the queue cap trips. */
+  onQueueOverflow?: (event: {
+    channelId: string;
+    sessionKey: string;
+    queueSize: number;
+    maxSessionQueues: number;
+  }) => void;
 }
 
 const DEFAULT_CHAT_TIMEOUT_MS = 120_000;
+const DEFAULT_MAX_SESSION_QUEUES = 1000;
 
 async function chatWithTimeout(
   agent: DmossAgent,
@@ -103,8 +120,26 @@ export function bridgeAgentToChannel(
   /** Per-session message queue scoped to this bridge instance. */
   const sessionQueues = new Map<string, Promise<void>>();
   const chatTimeoutMs = options?.chatTimeoutMs ?? DEFAULT_CHAT_TIMEOUT_MS;
+  const maxSessionQueues = Math.max(1, Math.floor(options?.maxSessionQueues ?? DEFAULT_MAX_SESSION_QUEUES));
 
   const enqueue = (sessionKey: string, fn: () => Promise<void>): void => {
+    if (!sessionQueues.has(sessionKey) && sessionQueues.size >= maxSessionQueues) {
+      const event = {
+        channelId: channel.id,
+        sessionKey,
+        queueSize: sessionQueues.size,
+        maxSessionQueues,
+      };
+      log.warn('channel session queue cap reached; rejecting new sender queue', event);
+      options?.onQueueOverflow?.(event);
+      throw new DmossError({
+        code: ErrorCode.TOOL_EXECUTION_FAILED,
+        message: `channel session queue cap reached (${sessionQueues.size}/${maxSessionQueues})`,
+        hint: 'A previous channel agent call may be hung. Check provider/tool abort handling.',
+        recoverable: true,
+        context: event,
+      });
+    }
     const prev = sessionQueues.get(sessionKey) ?? Promise.resolve();
     const next = prev.then(fn, fn); // 即使前一个失败也继续
     sessionQueues.set(sessionKey, next);

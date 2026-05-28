@@ -16,7 +16,11 @@
 
 import assert from 'node:assert/strict';
 import { createSubagentTool } from '../dist/tools/create-subagent.js';
-import { resolveSpawnToolSet, buildSubagentPromptAddon } from '../dist/core/subagent/spawn-profile.js';
+import {
+  SpawnProfileRegistry,
+  resolveSpawnToolSet,
+  buildSubagentPromptAddon,
+} from '../dist/core/subagent/spawn-profile.js';
 
 // ── Test 1: Tool rejects when ctx.spawnSubagent is not set ──
 {
@@ -101,7 +105,24 @@ import { resolveSpawnToolSet, buildSubagentPromptAddon } from '../dist/core/suba
   console.log('  [PASS] resolveSpawnToolSet filters correctly by scope');
 }
 
-// ── Test 5: buildSubagentPromptAddon injects scope constraints ──
+// ── Test 5: SpawnProfileRegistry isolates host extensions per agent ──
+{
+  const registryA = new SpawnProfileRegistry();
+  registryA.registerSpawnToolExtensions({ explore: ['host_a_status'] });
+  const registryB = new SpawnProfileRegistry();
+  registryB.registerSpawnToolExtensions({ explore: ['host_b_status'] });
+
+  const toolsA = resolveSpawnToolSet('explore', registryA);
+  const toolsB = resolveSpawnToolSet('explore', registryB);
+
+  assert.ok(toolsA.has('host_a_status'), 'registry A should include its host tool');
+  assert.ok(!toolsA.has('host_b_status'), 'registry A must not see registry B tools');
+  assert.ok(toolsB.has('host_b_status'), 'registry B should include its host tool');
+  assert.ok(!toolsB.has('host_a_status'), 'registry B must not see registry A tools');
+  console.log('  [PASS] SpawnProfileRegistry isolates host extensions per instance');
+}
+
+// ── Test 6: buildSubagentPromptAddon injects scope constraints ──
 {
   const exploreAddon = buildSubagentPromptAddon('explore');
   assert.ok(exploreAddon.length > 0, 'explore addon should not be empty');
@@ -125,7 +146,7 @@ import { resolveSpawnToolSet, buildSubagentPromptAddon } from '../dist/core/suba
   console.log('  [PASS] buildSubagentPromptAddon injects correct constraints per scope');
 }
 
-// ── Test 6: Tool defaults scope to "full" and maxTurns to 10 ──
+// ── Test 7: Tool defaults scope to "full" and maxTurns to 10 ──
 {
   let capturedParams = null;
   const ctx = {
@@ -143,7 +164,7 @@ import { resolveSpawnToolSet, buildSubagentPromptAddon } from '../dist/core/suba
   console.log('  [PASS] tool defaults scope to "full" and maxTurns to 10');
 }
 
-// ── Test 7: Tool metadata is correct ──
+// ── Test 8: Tool metadata is correct ──
 {
   assert.equal(createSubagentTool.name, 'create_subagent');
   assert.equal(createSubagentTool.metadata?.sideEffectClass, 'subagent');
@@ -155,7 +176,7 @@ import { resolveSpawnToolSet, buildSubagentPromptAddon } from '../dist/core/suba
   console.log('  [PASS] tool metadata and schema are correct');
 }
 
-// ── Test 8: Scope filtering prevents recursion ──
+// ── Test 9: Scope filtering prevents recursion ──
 {
   // Simulate what the runner does: filter out create_subagent from any scope
   const allToolNames = ['read', 'write', 'exec', 'create_subagent', 'grep'];
@@ -178,4 +199,4 @@ import { resolveSpawnToolSet, buildSubagentPromptAddon } from '../dist/core/suba
   console.log('  [PASS] recursion prevention: create_subagent filtered from all scopes');
 }
 
-console.log('\n[pass] create-subagent: 8/8');
+console.log('\n[pass] create-subagent: 9/9');

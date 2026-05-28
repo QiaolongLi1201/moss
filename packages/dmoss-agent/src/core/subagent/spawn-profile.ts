@@ -35,7 +35,44 @@ const ATTACHMENT_TOOLS = [
 
 const SKILL_TOOLS = ["find_skills", "skillhub_search"];
 
-let _hostSpawnToolExtensions: Readonly<Record<string, readonly string[]>> = Object.freeze({});
+export class SpawnProfileRegistry {
+  private hostSpawnToolExtensions: Readonly<Record<string, readonly string[]>> = Object.freeze({});
+
+  /**
+   * Replaces the host extension map for this registry.
+   * Callers that collect extensions from multiple plugins should merge them
+   * before registering; later calls intentionally replace earlier ones.
+   */
+  registerSpawnToolExtensions(extensions: Record<string, readonly string[]>): void {
+    const frozen: Record<string, readonly string[]> = {};
+    for (const [k, v] of Object.entries(extensions)) {
+      frozen[k] = Object.freeze([...v]);
+    }
+    this.hostSpawnToolExtensions = Object.freeze(frozen);
+  }
+
+  toolsForScope(scope: string): readonly string[] {
+    return this.hostSpawnToolExtensions[scope] ?? this.hostSpawnToolExtensions['*'] ?? [];
+  }
+
+  copyCompatibilityStateFrom(source: SpawnProfileRegistry): void {
+    this.hostSpawnToolExtensions = source.hostSpawnToolExtensions;
+  }
+}
+
+const defaultSpawnProfileRegistry = new SpawnProfileRegistry();
+
+export function getDefaultSpawnProfileRegistry(): SpawnProfileRegistry {
+  return defaultSpawnProfileRegistry;
+}
+
+export function createSpawnProfileRegistryFromDefaults(): SpawnProfileRegistry {
+  const registry = new SpawnProfileRegistry();
+  // Snapshot deprecated global compatibility state at agent construction time.
+  // Later global registrations do not mutate existing agents.
+  registry.copyCompatibilityStateFrom(defaultSpawnProfileRegistry);
+  return registry;
+}
 
 /**
  * Register additional tool names for spawn scopes.
@@ -44,19 +81,16 @@ let _hostSpawnToolExtensions: Readonly<Record<string, readonly string[]>> = Obje
  *
  * The extensions object is frozen on registration to prevent mutation
  * after concurrent sub-agents start reading it.
+ *
+ * @deprecated since 0.4.0, removal target 1.0. Use
+ * `agent.spawnRegistry.registerSpawnToolExtensions()` for per-agent isolation.
+ * New agents snapshot this global compatibility state when constructed;
+ * existing agents are not retroactively updated by later global calls.
  */
 export function registerSpawnToolExtensions(
   extensions: Record<string, string[]>,
 ): void {
-  const frozen: Record<string, readonly string[]> = {};
-  for (const [k, v] of Object.entries(extensions)) {
-    frozen[k] = Object.freeze([...v]);
-  }
-  _hostSpawnToolExtensions = Object.freeze(frozen);
-}
-
-function hostToolsForScope(scope: string): readonly string[] {
-  return _hostSpawnToolExtensions[scope] ?? _hostSpawnToolExtensions['*'] ?? [];
+  defaultSpawnProfileRegistry.registerSpawnToolExtensions(extensions);
 }
 
 /**
@@ -100,6 +134,7 @@ export const SPAWN_TOOL_SCOPE_SETS: Record<
 
 export function resolveSpawnToolSet(
   scope: SpawnToolScope | undefined,
+  registry: SpawnProfileRegistry = defaultSpawnProfileRegistry,
 ): Set<string> | null {
   if (!scope || scope === "full") return null;
   // Merge base tools + host extensions at call time (not module init)
@@ -107,7 +142,7 @@ export function resolveSpawnToolSet(
   // module load were silently ignored.
   const base = SPAWN_TOOL_SCOPE_SETS[scope];
   const merged = new Set(base);
-  for (const t of hostToolsForScope(scope)) merged.add(t);
+  for (const t of registry.toolsForScope(scope)) merged.add(t);
   return merged;
 }
 

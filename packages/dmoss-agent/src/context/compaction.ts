@@ -395,7 +395,8 @@ async function summarizeWithFallback(params: {
     }
   }
 
-  return `Context contained ${params.messages.length} messages. Summary unavailable due to size limits.`;
+  const fallback = `Context contained ${params.messages.length} messages. Summary unavailable due to size limits.`;
+  return oversizedNotes.length > 0 ? `${fallback}\n\n${oversizedNotes.join("\n")}` : fallback;
 }
 
 export async function summarizeInStages(params: {

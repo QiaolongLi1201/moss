@@ -19,7 +19,7 @@ import type { AgentLoopPlatformConfig } from '../loop/agent-loop-types.js';
 import type { Message } from '../session/session-jsonl.js';
 import type { SubAgentConfig, SubAgentResult, SubAgentRunner } from './subagent-orchestrator.js';
 import { resolveSpawnToolSet, buildSubagentPromptAddon } from './spawn-profile.js';
-import type { SpawnToolScope } from './spawn-profile.js';
+import type { SpawnProfileRegistry, SpawnToolScope } from './spawn-profile.js';
 import { runAgentLoop } from '../loop/agent-loop.js';
 import { getRootLogger } from '../../logger.js';
 
@@ -85,6 +85,8 @@ export interface SubAgentRunnerDeps {
   maxSpawnDepth?: number;
   /** Tool hook registry for child agent (inherits parent's sanitizer). */
   toolHooks?: import('../tools/tool-hooks.js').ToolHookRegistry;
+  /** Per-agent spawn scope registry. Defaults to deprecated global compatibility registry. */
+  spawnRegistry?: SpawnProfileRegistry;
 }
 
 /**
@@ -104,7 +106,7 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
     const childSessionKey = `subagent:${childRunId}`;
 
     // 1. Tool filtering: scope-based + recursion prevention
-    const allowedTools = resolveSpawnToolSet(config.scope);
+    const allowedTools = resolveSpawnToolSet(config.scope, deps.spawnRegistry);
     const scopedTools = allowedTools
       ? deps.parentTools.filter((t) => allowedTools.has(t.name))
       : [...deps.parentTools];

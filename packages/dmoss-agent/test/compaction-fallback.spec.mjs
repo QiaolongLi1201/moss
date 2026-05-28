@@ -13,6 +13,7 @@
 
 import assert from 'node:assert/strict';
 import { compactHistoryIfNeeded } from '../dist/context/index.js';
+import { summarizeInStages } from '../dist/context/compaction.js';
 import { createCompactionSummaryMessage } from '../dist/core/session/session-jsonl.js';
 import { mergePriorCompactionSummaries, extractCompactionSummaryText } from '../dist/context/summary-checkpoint-merge.js';
 import { buildDeterministicCompactionSummary } from '../dist/context/deterministic-summary.js';
@@ -156,4 +157,66 @@ function makeMessages(count) {
   console.log('  [PASS] smaller-chunks fallback produces summary');
 }
 
-console.log('\n[pass] compaction-fallback: 10/10');
+// ── Test 11: summarizeInStages degrades to deterministic text when both attempts fail ──
+{
+  let callCount = 0;
+  const summary = await summarizeInStages({
+    messages: makeMessages(2),
+    summarize: async () => {
+      callCount++;
+      throw new Error('summarizer unavailable');
+    },
+    maxTokens: 100,
+    maxChunkTokens: 1000,
+    contextWindow: 1000,
+    minMessagesForSplit: 99,
+  });
+
+  assert.equal(callCount, 2, 'initial summarize and smaller-chunks fallback should both run');
+  assert.match(summary, /^Context contained 2 messages\. Summary unavailable due to size limits\./);
+  console.log('  [PASS] summarizeInStages: double failure returns deterministic fallback text');
+}
+
+// ── Test 12: summarizeInStages preserves oversized-message notes when all content is too large ──
+{
+  const summary = await summarizeInStages({
+    messages: [{ role: 'user', content: 'oversized '.repeat(10_000) }],
+    summarize: async () => {
+      throw new Error('summarizer unavailable');
+    },
+    maxTokens: 100,
+    maxChunkTokens: 1000,
+    contextWindow: 100,
+    minMessagesForSplit: 99,
+  });
+
+  assert.match(summary, /^Context contained 1 messages\. Summary unavailable due to size limits\./);
+  assert.match(summary, /\[Large user \(~\d+K tokens\) omitted\]/);
+  console.log('  [PASS] summarizeInStages: oversized-only fallback includes omitted-message notes');
+}
+
+// ── Test 13: summarizeInStages falls back after second summarizeChunks failure with mixed sizes ──
+{
+  let callCount = 0;
+  const summary = await summarizeInStages({
+    messages: [
+      { role: 'user', content: 'small message' },
+      { role: 'assistant', content: 'oversized '.repeat(10_000) },
+    ],
+    summarize: async () => {
+      callCount++;
+      throw new Error(`summarizer failed ${callCount}`);
+    },
+    maxTokens: 100,
+    maxChunkTokens: 1000,
+    contextWindow: 100,
+    minMessagesForSplit: 99,
+  });
+
+  assert.equal(callCount, 2, 'must try smaller non-oversized chunks before final fallback');
+  assert.match(summary, /^Context contained 2 messages\. Summary unavailable due to size limits\./);
+  assert.match(summary, /\[Large assistant \(~\d+K tokens\) omitted\]/);
+  console.log('  [PASS] summarizeInStages: smaller-chunks second failure returns final fallback');
+}
+
+console.log('\n[pass] compaction-fallback: 13/13');

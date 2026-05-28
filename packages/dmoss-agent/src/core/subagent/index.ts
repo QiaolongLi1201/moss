@@ -9,7 +9,10 @@ export type {
 } from './agent-events.js';
 export type { SpawnToolScope } from './spawn-profile.js';
 export {
+  SpawnProfileRegistry,
   SPAWN_TOOL_SCOPE_SETS,
+  createSpawnProfileRegistryFromDefaults,
+  getDefaultSpawnProfileRegistry,
   resolveSpawnToolSet,
   buildSubagentPromptAddon,
   registerSpawnToolExtensions,

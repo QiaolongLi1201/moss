@@ -62,6 +62,10 @@ import { runAgentLoop } from '../loop/agent-loop.js';
 import type { AgentLoopParams } from '../loop/agent-loop-types.js';
 import type { MiniAgentEvent } from '../subagent/agent-events.js';
 import type { SpawnToolScope } from '../subagent/spawn-profile.js';
+import {
+  createSpawnProfileRegistryFromDefaults,
+  SpawnProfileRegistry,
+} from '../subagent/spawn-profile.js';
 import { createSubAgentRunner } from '../subagent/subagent-runner.js';
 import {
   createDmossAgentLoopEventAdapter,
@@ -153,6 +157,7 @@ export class DmossAgent {
   readonly config: DmossAgentConfig;
   readonly extensions: PlatformExtensionRegistry;
   readonly commandQueues: CommandQueueRegistry;
+  readonly spawnRegistry: SpawnProfileRegistry;
 
   /** Instance-scoped knowledge registry — isolates modules per agent. */
   private readonly knowledge = new KnowledgeRegistry();
@@ -170,6 +175,7 @@ export class DmossAgent {
     this.tools = new ToolRegistry();
     this.extensions = createAgentExtensionRegistryFromDefaults();
     this.commandQueues = new CommandQueueRegistry();
+    this.spawnRegistry = createSpawnProfileRegistryFromDefaults();
     this.toolHooks = new ToolHookRegistry();
     this.toolHooks.registerPost(createSecretSanitizerHook(sanitizeSecrets));
     setTraceRedactor(sanitizeSecrets);
@@ -201,7 +207,19 @@ export class DmossAgent {
     this.knowledge.dispose();
   }
 
-  /** Build the system prompt for a given platform context */
+  /**
+   * Build the system prompt for a given platform context.
+   *
+   * Merge order is intentional and mirrors the host-adapter axes:
+   * 1. Stable base/domain prompt and tool-result safety rules.
+   * 2. Registered knowledge modules: ecosystem text, prompt fragments, and
+   *    platform profile facts. These are packaged/provenanced device facts and
+   *    should be deterministic for an agent instance.
+   * 3. Host extraPromptLayers and per-turn extraContext. RDK Studio uses these
+   *    for memory picks, matched skills, active device state, and task hints.
+   *    They come later so fresh user/workspace context can narrow or override
+   *    generic knowledge, but hosts must keep them bounded before calling Moss.
+   */
   buildSystemPrompt(options?: { platform?: string; extraContext?: string }): string {
     const parts: string[] = [];
 
@@ -470,6 +488,7 @@ export class DmossAgent {
       temperature,
       reasoning: this.config.reasoning || undefined,
       toolHooks: this.toolHooks,
+      spawnRegistry: this.spawnRegistry,
     });
 
     const MAX_SUBAGENTS_PER_RUN = 8;

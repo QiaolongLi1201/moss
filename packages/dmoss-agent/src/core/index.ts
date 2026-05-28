@@ -249,7 +249,10 @@ export type {
 } from './subagent/index.js';
 export type { SpawnToolScope } from './subagent/index.js';
 export {
+  SpawnProfileRegistry,
   SPAWN_TOOL_SCOPE_SETS,
+  createSpawnProfileRegistryFromDefaults,
+  getDefaultSpawnProfileRegistry,
   resolveSpawnToolSet,
   buildSubagentPromptAddon,
   registerSpawnToolExtensions,

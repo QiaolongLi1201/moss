@@ -1,6 +1,7 @@
 export { redactSensitiveData, parseTelemetryAllow } from './redact.js';
 export type { RedactOptions } from './redact.js';
 export {
+  TraceRegistry,
   setTracer,
   getTracer,
   withSpan,

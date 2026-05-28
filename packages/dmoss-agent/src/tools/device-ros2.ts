@@ -11,7 +11,7 @@ import type { DeviceSshConfig } from './device-ssh.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
 import { runProcess, ProcessError } from '../utils/run-process.js';
 import { wrapAsDmoss, ErrorCode } from '../errors.js';
-import { buildSshCommand, shellEscape } from './ssh-utils.js';
+import { buildSshCommand, missingSshExecutableProcessError, shellEscape } from './ssh-utils.js';
 
 const ROS_SETUP = 'source /opt/tros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash 2>/dev/null || true';
 
@@ -36,6 +36,11 @@ async function sshExec(
     });
     return result.stdout.trim();
   } catch (err) {
+    const missingExecutable = missingSshExecutableProcessError(
+      err,
+      config.password ? 'sshpass' : 'ssh',
+    );
+    if (missingExecutable) return missingExecutable.stderr;
     if (err instanceof ProcessError) {
       const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
       return output || `Error: ${err.message}`;

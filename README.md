@@ -150,7 +150,12 @@ core packages should stay useful to other robotics or device-product hosts.
 
 Use Node 22.16 or newer for this workspace.
 
-```bash
+Moss is verified on Ubuntu, macOS, and Windows in CI. Device and ROS tools are
+optional runtime capabilities: they require host-side `ssh`/`sshpass` when
+configured, and execute Linux commands on the remote device rather than on the
+developer workstation.
+
+```sh
 npm install
 npm run verify
 ```

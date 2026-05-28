@@ -17,7 +17,7 @@ import { safeChildEnv } from '../utils/safe-child-env.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
 import { runProcess, ProcessError } from '../utils/run-process.js';
 import { wrapAsDmoss, ErrorCode } from '../errors.js';
-import { buildSshCommand, shellEscape } from './ssh-utils.js';
+import { buildSshCommand, missingSshExecutableProcessError, shellEscape } from './ssh-utils.js';
 
 export interface DeviceSshConfig {
   host: string;
@@ -37,13 +37,18 @@ async function sshRun(
   const sshBin = config.password ? 'sshpass' : 'ssh';
   const sshCmd = buildSshCommand(config, remoteCmd);
   const sshArgs = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
-  const result = await runProcess(sshBin, {
-    args: sshArgs,
-    timeout,
-    maxBuffer: maxBuffer ?? 10 * 1024 * 1024,
-    signal: ctx?.abortSignal,
-    env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
-  });
+  let result: Awaited<ReturnType<typeof runProcess>>;
+  try {
+    result = await runProcess(sshBin, {
+      args: sshArgs,
+      timeout,
+      maxBuffer: maxBuffer ?? 10 * 1024 * 1024,
+      signal: ctx?.abortSignal,
+      env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
+    });
+  } catch (err) {
+    throw missingSshExecutableProcessError(err, sshBin) ?? err;
+  }
   return result.stdout.trim() || '(no output)';
 }
 

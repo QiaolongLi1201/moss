@@ -7,7 +7,7 @@
  * Drop-in for device tools that previously used `execFileSync`.
  */
 
-import { spawn, type SpawnOptions } from 'node:child_process';
+import { spawn, spawnSync, type SpawnOptions } from 'node:child_process';
 
 export interface RunProcessOptions {
   args: string[];
@@ -64,7 +64,13 @@ export function runProcess(cmd: string, opts: RunProcessOptions): Promise<RunPro
       if (killed) return;
       killed = true;
       try {
-        if (process.platform !== 'win32' && child.pid) {
+        if (process.platform === 'win32' && child.pid) {
+          spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+            stdio: 'ignore',
+            windowsHide: true,
+          });
+          child.kill(signal);
+        } else if (process.platform !== 'win32' && child.pid) {
           process.kill(-child.pid, signal);
         } else {
           child.kill(signal);

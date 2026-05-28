@@ -177,17 +177,37 @@ const readme = `# ${projectName}
 
 A D-Moss agent project.
 
+## Prerequisites
+
+- Node.js 22.16 or newer
+- Optional for device tools: OpenSSH Client (ssh) on the host
+- Optional for password-based SSH: sshpass on Unix-like hosts, or WSL on Windows. Key-based auth with DMOSS_DEVICE_KEY is recommended on Windows.
+
 ## Setup
 
-\`\`\`bash
+\`\`\`sh
 npm install
 \`\`\`
 
 ## Run
 
-\`\`\`bash
+\`\`\`sh
 npm run typecheck
 DMOSS_API_KEY=your-key npm start
+\`\`\`
+
+Windows PowerShell:
+
+\`\`\`powershell
+npm run typecheck
+$env:DMOSS_API_KEY="your-key"; npm start
+\`\`\`
+
+Windows cmd.exe:
+
+\`\`\`bat
+npm run typecheck
+set DMOSS_API_KEY=your-key && npm start
 \`\`\`
 
 ## MCP (Model Context Protocol)
@@ -195,8 +215,18 @@ DMOSS_API_KEY=your-key npm start
 MCP lets your agent use external tools (filesystem, databases, APIs) via standardized servers.
 
 1. Copy the example config:
-   \`\`\`bash
+   \`\`\`sh
    cp mcp.json.example mcp.json
+   \`\`\`
+
+   Windows PowerShell:
+   \`\`\`powershell
+   Copy-Item mcp.json.example mcp.json
+   \`\`\`
+
+   Windows cmd.exe:
+   \`\`\`bat
+   copy mcp.json.example mcp.json
    \`\`\`
 2. Edit \`mcp.json\` to point to your desired directories or services.
 3. Uncomment the MCP loading code in \`index.ts\` to connect MCP servers and register their tools with your agent.
@@ -232,4 +262,16 @@ Done! Next steps:
   cd ${projectName}
   npm run typecheck
   DMOSS_API_KEY=your-key npm start
+
+Windows PowerShell:
+
+  cd ${projectName}
+  npm run typecheck
+  $env:DMOSS_API_KEY="your-key"; npm start
+
+Windows cmd.exe:
+
+  cd ${projectName}
+  npm run typecheck
+  set DMOSS_API_KEY=your-key && npm start
 `);

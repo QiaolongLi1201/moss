@@ -33,6 +33,15 @@ test('scaffolds minimal project without installing dependencies', () => {
   assert.equal(packageJson.scripts.typecheck.includes('tsc --noEmit'), true);
   assert.equal(fs.existsSync(path.join(target, 'index.ts')), true);
   assert.equal(fs.existsSync(path.join(target, 'README.md')), true);
+  const readme = fs.readFileSync(path.join(target, 'README.md'), 'utf8');
+  assert.match(readme, /Node\.js 22\.16 or newer/);
+  assert.match(readme, /OpenSSH Client/);
+  assert.match(readme, /Windows PowerShell/);
+  assert.match(readme, /\$env:DMOSS_API_KEY/);
+  assert.match(readme, /Windows cmd\.exe/);
+  assert.match(readme, /set DMOSS_API_KEY=your-key && npm start/);
+  assert.match(readme, /Copy-Item mcp\.json\.example mcp\.json/);
+  assert.match(readme, /copy mcp\.json\.example mcp\.json/);
   assert.equal(fs.existsSync(path.join(target, 'node_modules')), false);
 });
 

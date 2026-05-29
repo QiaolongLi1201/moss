@@ -18,6 +18,7 @@ import { assertSandboxPath } from '../safety/sandbox-paths.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
 import { createSubagentTool } from './create-subagent.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
+import micromatch from 'micromatch';
 
 const IS_WIN = process.platform === 'win32';
 
@@ -160,7 +161,15 @@ export const execTool: Tool = {
         env: childEnv(ctx.workspaceDir),
         cwd: ctx.workspaceDir,
       });
-      return result.stdout.trim() || '(no output)';
+      const STDERR_MAX = 4096;
+      const stderrRaw = result.stderr.trim();
+      const stderrFmt = stderrRaw
+        ? (stderrRaw.length > STDERR_MAX
+            ? `--- stderr (truncated ${stderrRaw.length}→${STDERR_MAX} chars) ---\n${stderrRaw.slice(0, STDERR_MAX)}`
+            : `--- stderr ---\n${stderrRaw}`)
+        : '';
+      const outParts = [result.stdout.trim(), stderrFmt].filter(Boolean);
+      return outParts.join('\n\n') || '(no output)';
     } catch (err) {
       if (err instanceof ProcessError) {
         const output = [err.stdout.trim(), err.stderr.trim()].filter(Boolean).join('\n');
@@ -201,7 +210,6 @@ async function walkMatch(dir: string, pattern: string, limit: number): Promise<s
   const results: string[] = [];
   const normalizedPattern = pattern.replace(/\\/g, '/');
   const matchRelativePath = normalizedPattern.includes('/');
-  const re = globToRegex(normalizedPattern);
   const root = dir;
 
   async function walk(d: string) {
@@ -217,7 +225,7 @@ async function walkMatch(dir: string, pattern: string, limit: number): Promise<s
       } else {
         const relPath = path.relative(root, full).split(path.sep).join('/');
         const target = matchRelativePath ? relPath : e.name;
-        if (re.test(target)) {
+        if (micromatch.isMatch(target, normalizedPattern, { dot: false, basename: false, nocase: true })) {
           results.push(full);
         }
       }
@@ -228,38 +236,7 @@ async function walkMatch(dir: string, pattern: string, limit: number): Promise<s
   return results;
 }
 
-function globToRegex(pattern: string): RegExp {
-  // Guard against ReDoS: cap wildcard count and use non-backtracking alternation
-  const starCount = (pattern.match(/\*/g) || []).length;
-  if (starCount > 20) {
-    // Fall back to literal match for pathological patterns
-    return new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-  }
-
-  let escaped = '';
-  for (let i = 0; i < pattern.length; i++) {
-    const ch = pattern[i];
-    if (ch === '*') {
-      if (pattern[i + 1] === '*') {
-        if (pattern[i + 2] === '/') {
-          escaped += '(?:.*/)?';
-          i += 2;
-        } else {
-          escaped += '.*';
-          i += 1;
-        }
-      } else {
-        escaped += '[^/]*';
-      }
-    } else if (ch === '?') {
-      escaped += '[^/]';
-    } else {
-      escaped += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    }
-  }
-
-  return new RegExp(`^${escaped}$`, 'i');
-}
+// removed: globToRegex replaced by micromatch
 
 /** Directories to skip during recursive searches. */
 const IGNORE_DIRS = new Set([
@@ -361,10 +338,16 @@ async function grepWalk(
           for (let i = 0; i < lines.length; i++) {
             if (results.length >= limit) break;
             if (regex.test(lines[i])) {
-              // filepath:linenum: excerpt (1-indexed line numbers)
               const relPath = path.relative(dir, full);
-              const excerpt = lines[i].trim().slice(0, 200);
-              results.push(`${relPath}:${i + 1}: ${excerpt}`);
+              const ctxBefore = Math.max(0, i - 2);
+              const ctxAfter = Math.min(lines.length - 1, i + 2);
+              const block: string[] = [];
+              for (let j = ctxBefore; j <= ctxAfter; j++) {
+                const marker = j === i ? '>' : ' ';
+                block.push(`${relPath}:${j + 1}:${marker} ${lines[j].slice(0, 200)}`);
+              }
+              results.push(block.join('\n'));
+              i = ctxAfter;
             }
           }
         } catch {

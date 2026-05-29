@@ -168,18 +168,11 @@ class McpServerConnection {
           }
         }
       } catch (err) {
-        if (this.pending.size > 0) {
-          const protocolError = new DmossError({
-            code: ErrorCode.MCP_CONNECTION_FAILED,
-            message: `MCP server ${this.serverName} emitted malformed JSON-RPC on stdout`,
-            cause: err,
-          });
-          for (const [, pending] of this.pending) {
-            clearTimeout(pending.timer);
-            pending.reject(protocolError);
-          }
-          this.pending.clear();
-        }
+        console.warn(
+          `[mcp:stdout] MCP server "${this.serverName}" emitted non-JSON line (skipped): ${
+            trimmed.slice(0, 200)
+          } | parseError: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
   }
@@ -353,8 +346,14 @@ function mcpContentToToolContent(content: McpContentBlock[] | undefined): ToolCo
   return mapped;
 }
 
-export async function connectMcpServers(config: McpConfig): Promise<McpConnection[]> {
+export interface McpConnectionResult {
+  connections: McpConnection[];
+  failures: Array<{ serverName: string; error: Error }>;
+}
+
+export async function connectMcpServersWithFailures(config: McpConfig): Promise<McpConnectionResult> {
   const connections: McpConnection[] = [];
+  const failures: Array<{ serverName: string; error: Error }> = [];
 
   for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
     const conn = new McpServerConnection(serverName, serverConfig, serverConfig.requestTimeoutMs);
@@ -368,15 +367,28 @@ export async function connectMcpServers(config: McpConfig): Promise<McpConnectio
         close: () => conn.close(),
       });
     } catch (err) {
-      await conn.close();
-      // Close all previously successful connections before throwing
-      await Promise.allSettled(connections.map((c) => c.close()));
-      throw new DmossError({
-        code: ErrorCode.MCP_CONNECTION_FAILED,
-        message: `Failed to connect to MCP server "${serverName}": ${err instanceof Error ? err.message : String(err)}`,
+      await conn.close().catch(() => {});
+      failures.push({
+        serverName,
+        error: err instanceof Error ? err : new Error(String(err)),
       });
     }
   }
 
-  return connections;
+  return { connections, failures };
+}
+
+export async function connectMcpServers(config: McpConfig): Promise<McpConnection[]> {
+  const result = await connectMcpServersWithFailures(config);
+  if (result.failures.length > 0 && result.connections.length === 0) {
+    const first = result.failures[0];
+    throw new DmossError({
+      code: ErrorCode.MCP_CONNECTION_FAILED,
+      message: `Failed to connect to MCP server "${first.serverName}": ${first.error.message}`,
+    });
+  }
+  for (const f of result.failures) {
+    console.warn(`[mcp:connect] MCP server "${f.serverName}" failed (skipped): ${f.error.message}`);
+  }
+  return result.connections;
 }

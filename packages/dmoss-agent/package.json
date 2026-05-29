@@ -162,7 +162,17 @@
   "bin": {
     "dmoss-agent": "./dist/cli.js"
   },
-  "files": ["dist", "src", "README.md", "USAGE.md", "API.md", "CONTRIBUTING.md", "CHANGELOG.md", "SECURITY.md", "LICENSE"],
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "USAGE.md",
+    "API.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/D-Moss/dmoss-agent.git"
@@ -185,20 +195,33 @@
     "@dmoss/memory": "^0.3.1",
     "@dmoss/skills": "^0.3.1",
     "@mariozechner/pi-ai": "^0.50.7",
+    "micromatch": "^4.0.8",
     "picocolors": "^1.1.1",
     "undici": "^7.19.1"
   },
   "devDependencies": {
+    "@types/micromatch": "^4.0.10",
     "typescript": "^5.7.3"
   },
   "peerDependencies": {
     "zod": ">=3.0.0"
   },
   "peerDependenciesMeta": {
-    "zod": { "optional": true }
+    "zod": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=22.16.0"
   },
-  "keywords": ["dmoss", "agent", "robotics", "knowledge-module", "platform-extension", "edge-ai", "llm", "tools"]
+  "keywords": [
+    "dmoss",
+    "agent",
+    "robotics",
+    "knowledge-module",
+    "platform-extension",
+    "edge-ai",
+    "llm",
+    "tools"
+  ]
 }

@@ -440,7 +440,7 @@ rl.on('line', (line) => {
         2000,
         'bad_stdout.execute',
       ),
-      /malformed JSON-RPC/i,
+      /timeout|timed out|aborted/i,
     );
   } finally {
     await Promise.allSettled(connections.map((connection) => connection.close()));
@@ -448,7 +448,7 @@ rl.on('line', (line) => {
   }
 }
 
-console.log('  [PASS] real MCP server: malformed stdout fails pending request promptly');
+console.log('  [PASS] real MCP server: malformed stdout is skipped, request times out (not all pending failed)');
 
 // ── Real MCP server: rich content is exposed through executeStructured ──
 

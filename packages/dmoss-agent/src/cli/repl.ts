@@ -5,20 +5,31 @@ import type { DmossAgent } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import { MODEL, WORKSPACE } from './config.js';
 import { runOneShot } from './oneshot.js';
+import {
+  renderCliDetailHelp,
+  renderCliExamples,
+  renderCliInteractiveHelp,
+  renderCliStatus,
+  renderCliTools,
+  renderCliWelcome,
+  type CliRuntimeStatus,
+} from './onboarding.js';
 
 let currentModel = MODEL;
 
-export async function runInteractive(agent: DmossAgent, skillLearner?: SkillLearner) {
+export async function runInteractive(
+  agent: DmossAgent,
+  skillLearner?: SkillLearner,
+  runtime?: CliRuntimeStatus,
+) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stderr,
     prompt: '\n> ',
   });
 
-  console.error(`D-Moss Agent (model: ${currentModel}, workspace: ${WORKSPACE})`);
-  console.error('Progress: shows planning, tool calls, and tool results on stderr.');
-  console.error('Commands: /model <name> | /models | /detail <quiet|progress|verbose> | /memory | /skills | /quit');
-  console.error('Type your message and press Enter. Ctrl+C to exit.\n');
+  console.error(renderCliWelcome(agent, runtime));
+  console.error('');
   rl.prompt();
 
   for await (const line of rl) {
@@ -29,8 +40,32 @@ export async function runInteractive(agent: DmossAgent, skillLearner?: SkillLear
     }
     if (msg === '/quit' || msg === '/exit') break;
 
-    if (msg.startsWith('/model ')) {
-      const newModel = msg.slice(7).trim();
+    if (msg === '/help') {
+      console.error(renderCliInteractiveHelp());
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/status') {
+      console.error(renderCliStatus(agent, runtime));
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/tools') {
+      console.error(renderCliTools(agent));
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/examples') {
+      console.error(renderCliExamples(agent, runtime));
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/model' || msg.startsWith('/model ')) {
+      const newModel = msg === '/model' ? '' : msg.slice(7).trim();
       if (newModel) {
         currentModel = newModel;
         agent.config.model = newModel;
@@ -60,8 +95,7 @@ export async function runInteractive(agent: DmossAgent, skillLearner?: SkillLear
         process.env.DMOSS_CLI_DETAIL = mode;
         console.error(`[config] CLI detail set to: ${mode}`);
       } else {
-        console.error(`[config] Current CLI detail: ${process.env.DMOSS_CLI_DETAIL || 'progress'}`);
-        console.error('[config] Switch with: /detail quiet | /detail progress | /detail verbose');
+        console.error(renderCliDetailHelp());
       }
       rl.prompt();
       continue;
@@ -102,7 +136,7 @@ export async function runInteractive(agent: DmossAgent, skillLearner?: SkillLear
 
     if (msg.startsWith('/')) {
       console.error(`[help] Unknown command: ${msg}`);
-      console.error('[help] Available: /model /models /detail /memory /skills /quit');
+      console.error('[help] Available: /help /tools /status /examples /model /models /detail /memory /skills /quit');
       rl.prompt();
       continue;
     }

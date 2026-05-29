@@ -4,7 +4,7 @@
 import { execSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { resolveConfigDir, API_KEY, MODEL, WORKSPACE } from './cli/config.js';
+import { resolveConfigDir, API_KEY, MODEL, WORKSPACE, BASE_URL } from './cli/config.js';
 import { displayHelp, displayVersion } from './cli/help.js';
 import { cliProvider } from './cli/providers.js';
 import { createMemoryTools } from './cli/tools.js';
@@ -188,7 +188,18 @@ async function main() {
     if (piped.trim()) await runOneShot(agent, piped.trim(), skillLearner);
     return;
   }
-  await runInteractive(agent, skillLearner);
+  await runInteractive(agent, skillLearner, {
+    workspace: WORKSPACE,
+    runtimeDir,
+    configDir: resolveConfigDir(),
+    baseUrl: BASE_URL,
+    execBackend: process.env.DMOSS_EXEC_BACKEND || 'local',
+    dockerImage: process.env.DMOSS_DOCKER_IMAGE,
+    meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || argv.includes('--mesh'),
+    device: deviceConfig
+      ? { host: deviceConfig.host, user: deviceConfig.user, port: deviceConfig.port }
+      : null,
+  });
 }
 
 main().catch((err) => { console.error('Fatal:', err); process.exit(1); });

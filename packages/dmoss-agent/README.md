@@ -118,6 +118,16 @@ DMOSS_API_KEY=sk-xxx node packages/dmoss-agent/dist/cli.js
 
 By default the CLI prints a short progress trail to stderr: planning turns, tool calls, and redacted tool results. The final assistant answer stays on stdout so shell piping still works. Tune this with `DMOSS_CLI_DETAIL=quiet|progress|verbose`; in the interactive REPL you can also run `/detail quiet`, `/detail progress`, or `/detail verbose`.
 
+The interactive REPL starts with an onboarding panel that shows the active model, workspace, provider host, enabled capability groups, memory/skill counts, device status, and mesh status. Useful discovery commands:
+
+```
+/tools       show registered tools grouped by capability
+/status      show model, workspace, runtime, device, and tool state
+/examples    show prompts matched to the currently enabled capabilities
+/detail      explain quiet/progress/verbose output modes
+/help        show interactive commands
+```
+
 All flags also available via env vars: `DMOSS_LOG_LEVEL`, `DMOSS_LOG_JSON=1`, `DMOSS_NO_COLOR=1`.
 
 ## Quick Start

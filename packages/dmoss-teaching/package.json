@@ -24,8 +24,13 @@
   "files": ["dist", "src", "LICENSE"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/D-Moss/dmoss-teaching.git"
+    "url": "https://github.com/QiaolongLi1201/moss.git",
+    "directory": "packages/dmoss-teaching"
   },
+  "bugs": {
+    "url": "https://github.com/QiaolongLi1201/moss/issues"
+  },
+  "homepage": "https://github.com/QiaolongLi1201/moss/tree/main/packages/dmoss-teaching#readme",
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",

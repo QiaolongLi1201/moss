@@ -82,12 +82,27 @@ function providerFromChoice(choice: string): CliProviderPreset {
 }
 
 function sanitizeBaseUrl(value: string): string {
-  return value.trim().replace(/\/+$/, '').replace(/\/v1$/, '');
+  const trimmed = value.trim();
+  try {
+    const url = new URL(trimmed);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/+$/, '').replace(/\/v1$/, '');
+  } catch {
+    return trimmed.replace(/\/+$/, '').replace(/\/v1$/, '');
+  }
 }
 
 function withoutSecret(value: string): string {
   try {
-    return new URL(value).host;
+    const url = new URL(value);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/$/, '');
   } catch {
     return value || '(not configured)';
   }
@@ -161,7 +176,7 @@ export async function runSetupWizard(): Promise<void> {
   print(`Model: ${model}`);
   print(`Base URL: ${withoutSecret(baseUrl)}`);
   print('');
-  print('Run `dmoss-agent` to start the interactive agent.');
+  print('Try `dmoss-agent "帮我检查当前目录"` or run `dmoss-agent` for interactive mode.');
 }
 
 export async function runAuthLogout(): Promise<void> {

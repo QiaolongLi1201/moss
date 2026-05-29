@@ -4,6 +4,7 @@ import type { DmossAgent } from '../core/index.js';
 import type { Tool } from '../core/tools/tool-types.js';
 import { BASE_URL, resolveCliConfig, resolveConfigDir, WORKSPACE } from './config.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
+import { getPackageVersion } from './package-info.js';
 
 export interface CliDeviceStatus {
   host: string;
@@ -17,6 +18,7 @@ export interface CliRuntimeStatus {
   configDir?: string;
   baseUrl?: string;
   execBackend?: string;
+  safetyMode?: string;
   dockerImage?: string;
   meshEnabled?: boolean;
   device?: CliDeviceStatus | null;
@@ -38,6 +40,7 @@ const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage'>
   configDir: resolveConfigDir(),
   baseUrl: BASE_URL,
   execBackend: process.env.DMOSS_EXEC_BACKEND || 'local',
+  safetyMode: process.env.DMOSS_SAFETY_MODE || process.env.DMOSS_CLI_SAFETY_MODE || 'workspace-write',
   dockerImage: process.env.DMOSS_DOCKER_IMAGE,
   meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || process.argv.includes('--mesh'),
   device: null,
@@ -95,6 +98,7 @@ function classifyTool(tool: Tool): string {
   if (
     tool.name === 'read_file' ||
     tool.name === 'write_file' ||
+    tool.name === 'apply_patch' ||
     tool.name === 'list_directory' ||
     tool.name === 'search_files' ||
     tool.name === 'search_code'
@@ -132,6 +136,19 @@ function formatToolNames(tools: Tool[], limit = 6): string {
   return `${shown}, +${names.length - limit} more`;
 }
 
+function box(title: string, rows: string[]): string {
+  const content = [title, ...rows];
+  const width = Math.max(...content.map((line) => line.length), 48);
+  const border = `+${'-'.repeat(width + 2)}+`;
+  return [
+    border,
+    `| ${title.padEnd(width)} |`,
+    border,
+    ...rows.map((line) => `| ${line.padEnd(width)} |`),
+    border,
+  ].join('\n');
+}
+
 export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = {}): string {
   const rt = runtimeWithDefaults(runtime);
   const detailMode = resolveCliDetailMode();
@@ -141,31 +158,28 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const skillCount = countMarkdownFiles(path.join(rt.workspace, 'skills', 'learned'));
   const auth = resolveCliConfig();
 
-  const lines = [
-    `D-Moss Agent`,
-    `  model: ${agent.config.model}`,
-    `  workspace: ${rt.workspace}`,
-    `  detail: ${describeDetail(detailMode)}`,
-    `  provider: ${shortBaseUrl(rt.baseUrl)}`,
-    `  auth: ${auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
+  const title = `D-Moss Agent v${getPackageVersion()}`;
+  const rows = [
+    `Model: ${agent.config.model}`,
+    `Provider: ${shortBaseUrl(rt.baseUrl)}`,
+    `Workspace: ${path.basename(rt.workspace) || rt.workspace}`,
+    `Detail: ${describeDetail(detailMode)}`,
+    `Auth: ${auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing - run dmoss-agent setup'}`,
+    `Runtime: memory ${memoryCount} | learned skills ${skillCount} | tools ${tools.length}`,
+    `Device: ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}` : 'not connected - set DMOSS_DEVICE_HOST'}`,
+    `Mesh: ${rt.meshEnabled ? 'enabled' : 'disabled'}`,
     '',
-    `Capabilities now available:`,
+    `Capabilities: ${groups.length ? groups.map((g) => g.title).join(', ') : 'none'}`,
   ];
 
   for (const group of groups) {
-    lines.push(`  - ${group.title}: ${formatToolNames(group.tools)}`);
+    rows.push(`  ${group.title}: ${formatToolNames(group.tools)}`);
   }
 
-  lines.push('');
-  lines.push(`Runtime: memory ${memoryCount} | learned skills ${skillCount} | tools ${tools.length}`);
-  lines.push(
-    `Device: ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}` : 'not connected (set DMOSS_DEVICE_HOST to enable board tools)'}`,
-  );
-  lines.push(`Mesh: ${rt.meshEnabled ? 'enabled' : 'disabled'}`);
-  lines.push('');
-  lines.push('Try: /tools | /status | /examples | /detail | /help');
-  lines.push('Ask naturally, e.g. "检查板端资源并给出建议" or "分析当前工程结构".');
-  return lines.join('\n');
+  rows.push('');
+  rows.push('Try: /tools | /status | /examples | /upgrade | /help');
+  rows.push('Ask naturally, e.g. "检查板端资源并给出建议" or "分析当前工程结构".');
+  return box(title, rows);
 }
 
 export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {}): string {
@@ -187,6 +201,7 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     `  config: ${rt.configDir}`,
     `  sessions: ${sessionDir}`,
     `  detail: ${describeDetail(detailMode)}`,
+    `  safety: ${rt.safetyMode}`,
     `  exec backend: ${rt.execBackend}${rt.execBackend === 'docker' && rt.dockerImage ? ` (${rt.dockerImage})` : ''}`,
     `  memory: ${memoryCount} entries`,
     `  learned skills: ${skillCount}`,
@@ -223,6 +238,8 @@ export function renderCliExamples(agent: DmossAgent, runtime: CliRuntimeStatus =
   }
   if (rt.device && toolNames.has('device_resources')) {
     examples.push('检查板端 CPU、内存、温度和进程状态，判断是否有异常');
+  } else if (!rt.device) {
+    examples.push('连接板端：设置 DMOSS_DEVICE_HOST 后重启，再运行 /status 查看设备工具');
   }
   if (rt.device && toolNames.has('ros2_topic_list')) {
     examples.push('列出板端 ROS2 topic，并帮我判断相机或感知节点是否在线');
@@ -237,18 +254,40 @@ export function renderCliExamples(agent: DmossAgent, runtime: CliRuntimeStatus =
 export function renderCliInteractiveHelp(): string {
   return [
     '[help]',
-    '  /tools                 show registered tools grouped by capability',
-    '  /status                show model, workspace, runtime, device, and tool state',
-    '  /examples              show prompts matched to enabled capabilities',
-    '  /detail                explain current output detail mode',
-    '  /detail quiet          hide progress and tool lifecycle',
-    '  /detail progress       show thinking markers and tool lifecycle (default)',
-    '  /detail verbose        show redacted/truncated tool inputs and results',
-    '  /model <name>          switch model for this session',
-    '  /models                show model examples',
-    '  /memory                show stored long-term memories',
-    '  /skills                list learned SKILL.md files',
-    '  /quit                  exit',
+    '  Inspect',
+    '    /tools               show registered tools grouped by capability',
+    '    /status              show model, workspace, runtime, device, and tool state',
+    '    /examples            show prompts matched to enabled capabilities',
+    '    /memory              show stored long-term memories',
+    '    /skills              list learned SKILL.md files',
+    '  Configure',
+    '    /detail              explain current output detail mode',
+    '    /detail quiet        hide progress and tool lifecycle',
+    '    /detail progress     show thinking markers and tool lifecycle (default)',
+    '    /detail verbose      show redacted/truncated tool inputs and results',
+    '    /model <name>        switch model for this session',
+    '    /models              show model examples',
+    '    /upgrade             show install/update commands',
+    '  Session',
+    '    /help                show this help',
+    '    /quit                exit',
+  ].join('\n');
+}
+
+export function renderCliUpgradeHelp(): string {
+  return [
+    '[upgrade]',
+    '  Global install:',
+    '    npm i -g @rdk-moss/agent@latest',
+    '    dmoss-agent --version',
+    '',
+    '  Without global install:',
+    '    npx -y @rdk-moss/agent@latest',
+    '',
+    '  From this repository:',
+    '    npm install',
+    '    npm run build -w @rdk-moss/agent',
+    '    node packages/dmoss-agent/dist/cli.js --version',
   ].join('\n');
 }
 

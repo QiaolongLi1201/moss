@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as readline from 'node:readline';
 import type { DmossAgent } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
+import { setCliApprovalAsker } from './approval.js';
 import { MODEL, WORKSPACE } from './config.js';
 import { runOneShot } from './oneshot.js';
 import {
@@ -11,26 +12,76 @@ import {
   renderCliInteractiveHelp,
   renderCliStatus,
   renderCliTools,
+  renderCliUpgradeHelp,
   renderCliWelcome,
   type CliRuntimeStatus,
 } from './onboarding.js';
+import { getPackageVersion } from './package-info.js';
+import { startCliUpdateCheck } from './update-check.js';
 
 let currentModel = MODEL;
+
+export const INTERACTIVE_COMMANDS = [
+  '/help',
+  '/tools',
+  '/status',
+  '/examples',
+  '/model',
+  '/models',
+  '/detail',
+  '/detail quiet',
+  '/detail progress',
+  '/detail verbose',
+  '/memory',
+  '/skills',
+  '/upgrade',
+  '/quit',
+  '/exit',
+];
+
+export function completeInteractiveCommand(line: string): [string[], string] {
+  const hits = INTERACTIVE_COMMANDS.filter((cmd) => cmd.startsWith(line));
+  return [hits.length ? hits : INTERACTIVE_COMMANDS, line];
+}
 
 export async function runInteractive(
   agent: DmossAgent,
   skillLearner?: SkillLearner,
   runtime?: CliRuntimeStatus,
 ) {
+  let closed = false;
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stderr,
     prompt: '\n> ',
+    completer: completeInteractiveCommand,
   });
+  setCliApprovalAsker((question) => new Promise((resolve) => {
+    const onSigint = () => {
+      rl.off('SIGINT', onSigint);
+      resolve('');
+    };
+    rl.once('SIGINT', onSigint);
+    rl.question(question, (answer) => {
+      rl.off('SIGINT', onSigint);
+      resolve(answer);
+    });
+  }));
 
   console.error(renderCliWelcome(agent, runtime));
   console.error('');
   rl.prompt();
+  if (runtime?.configDir) {
+    startCliUpdateCheck({
+      configDir: runtime.configDir,
+      currentVersion: getPackageVersion(),
+      onNotice: (message) => {
+        if (closed) return;
+        console.error(`\n${message}`);
+        rl.prompt(true);
+      },
+    });
+  }
 
   for await (const line of rl) {
     const msg = line.trim();
@@ -60,6 +111,12 @@ export async function runInteractive(
 
     if (msg === '/examples') {
       console.error(renderCliExamples(agent, runtime));
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/upgrade') {
+      console.error(renderCliUpgradeHelp());
       rl.prompt();
       continue;
     }
@@ -136,7 +193,7 @@ export async function runInteractive(
 
     if (msg.startsWith('/')) {
       console.error(`[help] Unknown command: ${msg}`);
-      console.error('[help] Available: /help /tools /status /examples /model /models /detail /memory /skills /quit');
+      console.error('[help] Available: /help /tools /status /examples /model /models /detail /memory /skills /upgrade /quit');
       rl.prompt();
       continue;
     }
@@ -145,5 +202,7 @@ export async function runInteractive(
     rl.prompt();
   }
 
+  closed = true;
+  setCliApprovalAsker(null);
   rl.close();
 }

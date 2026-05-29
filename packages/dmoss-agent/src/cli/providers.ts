@@ -1,4 +1,4 @@
-import { API_KEY, MODEL, BASE_URL } from './config.js';
+import { API_KEY, MODEL, BASE_URL, PROVIDER } from './config.js';
 import type {
   LLMProvider,
   LLMRequestOptions,
@@ -43,13 +43,18 @@ export const cliProvider: LLMProvider = {
     opts: LLMRequestOptions,
     onEvent: (e: LLMStreamEvent) => void,
   ): Promise<LLMResponse> {
-    const isAnthropic = BASE_URL.includes('anthropic');
-    if (isAnthropic) {
+    if (PROVIDER === 'anthropic') {
       return callAnthropic(opts, onEvent);
     }
     return callOpenAI(opts, onEvent);
   },
 };
+
+function providerError(provider: string, status: number, text: string): Error {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  const preview = compact.length > 800 ? `${compact.slice(0, 800)}...` : compact;
+  return new Error(`${provider} provider returned HTTP ${status}: ${preview || '(empty response body)'}`);
+}
 
 async function callAnthropic(
   opts: LLMRequestOptions,
@@ -84,7 +89,7 @@ async function callAnthropic(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Anthropic API error ${res.status}: ${text}`);
+    throw providerError('Anthropic', res.status, text);
   }
 
   const data: AnthropicResponse = (await res.json()) as AnthropicResponse;
@@ -187,7 +192,7 @@ async function callOpenAI(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OpenAI API error ${res.status}: ${text}`);
+    throw providerError('OpenAI-compatible', res.status, text);
   }
 
   const data: OpenAIResponse = (await res.json()) as OpenAIResponse;

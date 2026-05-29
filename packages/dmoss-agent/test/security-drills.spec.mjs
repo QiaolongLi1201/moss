@@ -234,9 +234,10 @@ async function testToolMetadata() {
     listDirectoryTool,
     execTool,
     searchFilesTool,
+    applyPatchTool,
   } = await import('../dist/tools/builtin.js');
 
-  const tools = [readFileTool, writeFileTool, listDirectoryTool, execTool, searchFilesTool];
+  const tools = [readFileTool, writeFileTool, listDirectoryTool, execTool, searchFilesTool, applyPatchTool];
 
   for (const tool of tools) {
     assert.ok(
@@ -255,6 +256,7 @@ async function testToolMetadata() {
   assert.equal(searchFilesTool.metadata.sideEffectClass, 'readonly');
   assert.equal(writeFileTool.metadata.sideEffectClass, 'local_write');
   assert.equal(execTool.metadata.sideEffectClass, 'local_write');
+  assert.equal(applyPatchTool.metadata.sideEffectClass, 'local_write');
 
   // Verify plan modes
   assert.equal(readFileTool.metadata.planMode, 'allow');
@@ -262,6 +264,7 @@ async function testToolMetadata() {
   assert.equal(searchFilesTool.metadata.planMode, 'allow');
   assert.equal(writeFileTool.metadata.planMode, 'requires_user_confirmation');
   assert.equal(execTool.metadata.planMode, 'requires_user_confirmation');
+  assert.equal(applyPatchTool.metadata.planMode, 'requires_user_confirmation');
 
   console.log('  [PASS] tool metadata: all tools declared with correct classifications');
 }

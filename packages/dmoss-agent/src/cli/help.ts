@@ -1,7 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { resolveConfigDir } from './config.js';
+import { getPackageVersion } from './package-info.js';
 
 type ColorFn = (s: string) => string;
 
@@ -47,6 +46,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.green('/detail')} ${c.dim('<mode>')}   quiet | progress | verbose tool/thinking display`,
     `    ${c.green('/memory')}          show stored long-term memories`,
     `    ${c.green('/skills')}          list learned SKILL.md entries`,
+    `    ${c.green('/upgrade')}         show install/update commands`,
     `    ${c.green('/quit')}            exit`,
     '',
     `  ${c.bold('Flags')}`,
@@ -54,6 +54,9 @@ export function displayHelp(c: Colors): void {
     `    ${c.yellow('--quiet')}              only warnings & errors (level=warn)`,
     `    ${c.yellow('--log-level=')}${c.dim('<lv>')}   debug | info | warn | error`,
     `    ${c.yellow('--json')}               emit logs as JSON lines (log aggregators)`,
+    `    ${c.yellow('--read-only')}          block mutating tools`,
+    `    ${c.yellow('--workspace-write')}    allow workspace writes/exec with approval (default)`,
+    `    ${c.yellow('--full-access')}        allow device/external tools with approval`,
     `    ${c.yellow('--no-color')}           disable ANSI colors`,
     `    ${c.yellow('--help, -h')}           show this help`,
     `    ${c.yellow('--version, -v')}        show version`,
@@ -68,6 +71,8 @@ export function displayHelp(c: Colors): void {
     `    ${c.magenta('DMOSS_BASE_URL')}          ${c.dim('LLM API base URL')}`,
     `    ${c.magenta('DMOSS_WORKSPACE')}         ${c.dim('working directory (default: cwd)')}`,
     `    ${c.magenta('DMOSS_EXEC_BACKEND')}      ${c.dim('local (default) or docker')}`,
+    `    ${c.magenta('DMOSS_SAFETY_MODE')}       ${c.dim('read-only | workspace-write | full-access')}`,
+    `    ${c.magenta('DMOSS_CLI_AUTO_APPROVE')}  ${c.dim('=1 → approve allowed mutating tools without prompting')}`,
     `    ${c.magenta('DMOSS_DOCKER_IMAGE')}      ${c.dim('docker image (default: node:20-slim)')}`,
     `    ${c.magenta('DMOSS_DEVICE_HOST')}       ${c.dim('device IP/hostname (enables SSH tools)')}`,
     `    ${c.magenta('DMOSS_DEVICE_USER')}       ${c.dim('device SSH user (default: root)')}`,
@@ -109,17 +114,7 @@ export function displayHelp(c: Colors): void {
 }
 
 export function displayVersion(c: Colors): void {
-  try {
-    const pkgPath = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '..',
-      '..',
-      'package.json',
-    );
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    console.log(`${c.bold('dmoss-agent')} ${c.cyan(`v${pkg.version}`)}`);
-  } catch {
-    console.log(`${c.bold('dmoss-agent')} ${c.dim('(unknown version)')}`);
-  }
+  const version = getPackageVersion();
+  console.log(`${c.bold('dmoss-agent')} ${version === 'unknown' ? c.dim('(unknown version)') : c.cyan(`v${version}`)}`);
   process.exit(0);
 }

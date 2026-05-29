@@ -54,16 +54,26 @@ try {
 
   const status = renderAuthStatus(loadConfigFile(), {});
   assert.match(status, /apiKey: configured via config/);
+  assert.match(status, /baseUrl: https:\/\/token-plan\.cn-beijing\.maas\.aliyuncs\.com\/compatible-mode/);
   assert.doesNotMatch(status, /stored-secret/);
 
   const envStatus = renderAuthStatus(loadConfigFile(), { DASHSCOPE_API_KEY: 'env-secret' });
   assert.match(envStatus, /apiKey: configured via DASHSCOPE_API_KEY/);
   assert.doesNotMatch(envStatus, /env-secret/);
 
+  const redactedStatus = renderAuthStatus({
+    baseUrl: 'https://user:pass@example.com/compatible-mode/v1?api_key=secret',
+    apiKey: 'stored-secret',
+  }, {});
+  assert.match(redactedStatus, /baseUrl: https:\/\/example\.com\/compatible-mode\/v1/);
+  assert.doesNotMatch(redactedStatus, /user|pass|api_key|secret/);
+
   runConfigSet(['model', 'qwen-plus']);
   assert.equal(loadConfigFile().model, 'qwen-plus');
   runConfigSet(['baseUrl', 'https://example.com/v1/']);
   assert.equal(loadConfigFile().baseUrl, 'https://example.com');
+  runConfigSet(['baseUrl', 'https://user:pass@example.com/compatible-mode/v1?api_key=secret#frag']);
+  assert.equal(loadConfigFile().baseUrl, 'https://example.com/compatible-mode');
 
   console.log('[PASS] CLI setup config resolves safely');
 } finally {

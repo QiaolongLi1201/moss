@@ -242,6 +242,8 @@ export {
   listDirectoryTool,
   execTool,
   searchFilesTool,
+  searchCodeTool,
+  applyPatchTool,
 } from './tools/builtin.js';
 
 // --- Web Tools (generic http fetch, SSRF-safe, no external deps) ---

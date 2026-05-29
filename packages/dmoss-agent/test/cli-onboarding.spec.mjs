@@ -8,8 +8,10 @@ import assert from 'node:assert/strict';
 import {
   renderCliDetailHelp,
   renderCliExamples,
+  renderCliInteractiveHelp,
   renderCliStatus,
   renderCliTools,
+  renderCliUpgradeHelp,
   renderCliWelcome,
 } from '../dist/cli/onboarding.js';
 
@@ -45,8 +47,14 @@ const runtime = {
   configDir: '/tmp/dmoss-config',
   baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
   execBackend: 'local',
+  safetyMode: 'workspace-write',
   meshEnabled: true,
   device: { host: '10.64.1.10', user: 'root', port: 22 },
+};
+
+const disconnectedRuntime = {
+  ...runtime,
+  device: null,
 };
 
 const agent = createAgent([
@@ -62,12 +70,18 @@ const agent = createAgent([
 {
   const welcome = renderCliWelcome(agent, runtime);
   assert.match(welcome, /D-Moss Agent/);
-  assert.match(welcome, /model: qwen3\.7-max/);
+  assert.match(welcome, /Model: qwen3\.7-max/);
+  assert.match(welcome, /\+-+\+/);
   assert.match(welcome, /Workspace: read_file, write_file/);
   assert.match(welcome, /Device SSH: device_resources/);
   assert.match(welcome, /ROS2\/TROS: ros2_topic_list/);
   assert.match(welcome, /Mesh: enabled/);
-  assert.match(welcome, /Try: \/tools \| \/status \| \/examples/);
+  assert.match(welcome, /Try: \/tools \| \/status \| \/examples \| \/upgrade/);
+}
+
+{
+  const welcome = renderCliWelcome(agent, disconnectedRuntime);
+  assert.match(welcome, /Device: not connected - set DMOSS_DEVICE_HOST/);
 }
 
 {
@@ -85,7 +99,13 @@ const agent = createAgent([
   const status = renderCliStatus(agent, runtime);
   assert.match(status, /provider: token-plan\.cn-beijing\.maas\.aliyuncs\.com/);
   assert.match(status, /device: root@10\.64\.1\.10:22/);
+  assert.match(status, /safety: workspace-write/);
   assert.match(status, /tools: 7/);
+}
+
+{
+  const status = renderCliStatus(agent, { ...runtime, safetyMode: 'read-only' });
+  assert.match(status, /safety: read-only/);
 }
 
 {
@@ -97,11 +117,30 @@ const agent = createAgent([
 }
 
 {
+  const examples = renderCliExamples(agent, disconnectedRuntime);
+  assert.match(examples, /DMOSS_DEVICE_HOST/);
+}
+
+{
   const detail = renderCliDetailHelp();
   assert.match(detail, /quiet/);
   assert.match(detail, /progress/);
   assert.match(detail, /verbose/);
   assert.match(detail, /raw thinking is hidden/);
+}
+
+{
+  const help = renderCliInteractiveHelp();
+  assert.match(help, /Inspect/);
+  assert.match(help, /Configure/);
+  assert.match(help, /\/upgrade/);
+}
+
+{
+  const upgrade = renderCliUpgradeHelp();
+  assert.match(upgrade, /npm i -g @rdk-moss\/agent@latest/);
+  assert.match(upgrade, /npx -y @rdk-moss\/agent@latest/);
+  assert.doesNotMatch(upgrade, /API key/);
 }
 
 console.log('[PASS] CLI onboarding surfaces capabilities and controls');

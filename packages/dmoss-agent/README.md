@@ -13,6 +13,7 @@
 
 ```bash
 # Try it in 30 seconds
+npx -y @rdk-moss/agent setup
 npx -y @rdk-moss/agent "帮我检查当前目录"
 ```
 
@@ -141,6 +142,7 @@ The interactive REPL starts with an onboarding panel that shows the active model
 /status      show model, workspace, runtime, device, and tool state
 /examples    show prompts matched to the currently enabled capabilities
 /detail      explain quiet/progress/verbose output modes
+/upgrade     show install/update commands
 /help        show interactive commands
 ```
 

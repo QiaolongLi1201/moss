@@ -4,6 +4,7 @@
 import { execSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { createCliToolApprovalHook, resolveCliSafetyMode } from './cli/approval.js';
 import { resolveConfigDir, API_KEY, MODEL, WORKSPACE, BASE_URL } from './cli/config.js';
 import { displayHelp, displayVersion } from './cli/help.js';
 import { cliProvider } from './cli/providers.js';
@@ -56,6 +57,7 @@ export const c = {
 };
 
 const argv = process.argv.slice(2);
+const safetyMode = resolveCliSafetyMode(argv);
 
 function resolveCliLogLevel(): LogLevel {
   if (argv.includes('--debug')) return 'debug';
@@ -181,7 +183,10 @@ async function main() {
   const agent = new DmossAgent({
     llmProvider: cliProvider, sessionStore, model: MODEL,
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
-    hooks: { enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: WORKSPACE }) },
+    hooks: {
+      enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: WORKSPACE }),
+      onBeforeToolExec: createCliToolApprovalHook(safetyMode),
+    },
   });
   registerBuiltinTools(agent);
 
@@ -216,6 +221,7 @@ async function main() {
     configDir: resolveConfigDir(),
     baseUrl: BASE_URL,
     execBackend: process.env.DMOSS_EXEC_BACKEND || 'local',
+    safetyMode,
     dockerImage: process.env.DMOSS_DOCKER_IMAGE,
     meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || argv.includes('--mesh'),
     device: deviceConfig

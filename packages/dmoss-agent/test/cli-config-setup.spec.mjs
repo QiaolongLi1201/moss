@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+/**
+ * Run:
+ *   npm run build -w @rdk-moss/agent
+ *   node packages/dmoss-agent/test/cli-config-setup.spec.mjs
+ */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {
+  loadConfigFile,
+  resolveCliConfig,
+  saveConfigFile,
+} from '../dist/cli/config.js';
+import {
+  renderAuthStatus,
+  runConfigSet,
+} from '../dist/cli/setup.js';
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-config-'));
+const oldConfigDir = process.env.DMOSS_CONFIG_DIR;
+process.env.DMOSS_CONFIG_DIR = tmp;
+
+try {
+  saveConfigFile({
+    provider: 'qwen',
+    apiKey: 'stored-secret',
+    model: 'qwen3.7-max',
+    baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
+  }, tmp);
+
+  const stat = fs.statSync(path.join(tmp, 'config.json'));
+  if (process.platform !== 'win32') {
+    assert.equal(stat.mode & 0o777, 0o600);
+  }
+
+  const resolved = resolveCliConfig({}, loadConfigFile());
+  assert.equal(resolved.provider, 'qwen');
+  assert.equal(resolved.model, 'qwen3.7-max');
+  assert.equal(resolved.apiKey, 'stored-secret');
+  assert.equal(resolved.apiKeySource, 'config');
+
+  const envResolved = resolveCliConfig({
+    DMOSS_PROVIDER: 'openai',
+    OPENAI_API_KEY: 'env-secret',
+    DMOSS_MODEL: 'gpt-4o-mini',
+    DMOSS_BASE_URL: 'https://api.openai.com',
+  }, loadConfigFile());
+  assert.equal(envResolved.provider, 'openai');
+  assert.equal(envResolved.apiKey, 'env-secret');
+  assert.equal(envResolved.apiKeySource, 'OPENAI_API_KEY');
+  assert.equal(envResolved.modelSource, 'DMOSS_MODEL');
+
+  const status = renderAuthStatus(loadConfigFile(), {});
+  assert.match(status, /apiKey: configured via config/);
+  assert.doesNotMatch(status, /stored-secret/);
+
+  const envStatus = renderAuthStatus(loadConfigFile(), { DASHSCOPE_API_KEY: 'env-secret' });
+  assert.match(envStatus, /apiKey: configured via DASHSCOPE_API_KEY/);
+  assert.doesNotMatch(envStatus, /env-secret/);
+
+  runConfigSet(['model', 'qwen-plus']);
+  assert.equal(loadConfigFile().model, 'qwen-plus');
+  runConfigSet(['baseUrl', 'https://example.com/v1/']);
+  assert.equal(loadConfigFile().baseUrl, 'https://example.com');
+
+  console.log('[PASS] CLI setup config resolves safely');
+} finally {
+  if (oldConfigDir === undefined) delete process.env.DMOSS_CONFIG_DIR;
+  else process.env.DMOSS_CONFIG_DIR = oldConfigDir;
+  fs.rmSync(tmp, { recursive: true, force: true });
+}

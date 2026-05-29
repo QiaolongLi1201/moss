@@ -10,6 +10,14 @@ import { cliProvider } from './cli/providers.js';
 import { createMemoryTools } from './cli/tools.js';
 import { runOneShot } from './cli/oneshot.js';
 import { runInteractive } from './cli/repl.js';
+import {
+  offerSetupForInteractiveMissingConfig,
+  printMissingConfigGuidance,
+  renderAuthStatus,
+  runAuthLogout,
+  runConfigSet,
+  runSetupWizard,
+} from './cli/setup.js';
 import { DmossAgent, JsonlSessionStore, MemoryManager } from './core/index.js';
 import { configureRootLogger, type LogLevel } from './logger.js';
 import pc from 'picocolors';
@@ -75,18 +83,6 @@ if (process.env.DMOSS_TRACE === 'console' || process.env.DMOSS_TRACE === '1' || 
 if (argv.includes('--help') || argv.includes('-h')) displayHelp(c);
 if (argv.includes('--version') || argv.includes('-v')) displayVersion(c);
 
-if (!API_KEY) {
-  const configDir = resolveConfigDir();
-  console.error('Error: DMOSS_API_KEY is required.\n');
-  console.error('Set it via one of:');
-  console.error(`  1. Environment variable:  export DMOSS_API_KEY=your-key`);
-  if (process.platform === 'win32') console.error(`     PowerShell:            $env:DMOSS_API_KEY="your-key"`);
-  console.error(`  2. Config file:           ${path.join(configDir, 'config.json')}\n     { "apiKey": "your-key" }`);
-  console.error(`  3. .env file in project:  DMOSS_API_KEY=your-key`);
-  console.error(`\nAlso accepts OPENAI_API_KEY as fallback.`);
-  process.exit(1);
-}
-
 async function setupMesh(agent: DmossAgent, deviceConfig: DeviceSshConfig | null) {
   const meshPort = parseInt(process.env.DMOSS_MESH_PORT || '9090', 10);
   const meshId = process.env.DMOSS_MESH_ID || `dmoss-${Date.now()}`;
@@ -144,6 +140,33 @@ async function main() {
     try { execSync('chcp 65001', { stdio: 'ignore' }); } catch { /* best-effort UTF-8 */ }
   }
 
+  if (argv[0] === 'setup' || argv.includes('--setup')) {
+    await runSetupWizard();
+    return;
+  }
+  if (argv[0] === 'auth' && argv[1] === 'status') {
+    console.error(renderAuthStatus());
+    return;
+  }
+  if (argv[0] === 'auth' && argv[1] === 'logout') {
+    await runAuthLogout();
+    return;
+  }
+  if (argv[0] === 'config' && argv[1] === 'set') {
+    runConfigSet(argv.slice(2));
+    return;
+  }
+
+  const oneShotMessage = process.argv.slice(2).filter((a) => !a.startsWith('-')).join(' ').trim();
+  if (!API_KEY) {
+    if (process.stdin.isTTY && !oneShotMessage) {
+      await offerSetupForInteractiveMissingConfig();
+      return;
+    }
+    printMissingConfigGuidance(false);
+    process.exit(1);
+  }
+
   const runtimeDir = path.join(WORKSPACE, '.dmoss-runtime');
   const sessionStore = new JsonlSessionStore({ dir: path.join(runtimeDir, 'sessions') });
   const memoryManager = new MemoryManager(path.join(runtimeDir, 'memory'));
@@ -179,7 +202,6 @@ async function main() {
     for (const tool of createRos2Tools(deviceConfig)) agent.tools.register(tool);
   }
 
-  const oneShotMessage = process.argv.slice(2).filter((a) => !a.startsWith('-')).join(' ').trim();
   if (oneShotMessage) { await runOneShot(agent, oneShotMessage, skillLearner); return; }
 
   if (!process.stdin.isTTY) {

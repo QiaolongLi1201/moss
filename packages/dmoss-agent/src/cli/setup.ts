@@ -1,0 +1,233 @@
+import fs from 'node:fs';
+import * as readline from 'node:readline';
+import { stdin as input, stderr as output } from 'node:process';
+import {
+  loadConfigFile,
+  normalizeProvider,
+  PROVIDER_PRESETS,
+  resolveCliConfig,
+  resolveConfigPath,
+  saveConfigFile,
+  type CliProviderPreset,
+  type ConfigFile,
+} from './config.js';
+
+function print(line = ''): void {
+  output.write(`${line}\n`);
+}
+
+function question(prompt: string): Promise<string> {
+  const rl = readline.createInterface({ input, output });
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+function questionWith(rl: readline.Interface, prompt: string): Promise<string> {
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => resolve(answer.trim()));
+  });
+}
+
+function hiddenQuestion(prompt: string): Promise<string> {
+  if (!input.isTTY) return question(prompt);
+
+  return new Promise((resolve) => {
+    readline.emitKeypressEvents(input);
+    const wasRaw = input.isRaw;
+    input.setRawMode(true);
+    input.resume();
+    output.write(prompt);
+    let value = '';
+
+    function cleanup() {
+      input.off('keypress', onKeypress);
+      input.setRawMode(wasRaw);
+      output.write('\n');
+      resolve(value.trim());
+    }
+
+    function onKeypress(str: string, key: readline.Key) {
+      if (key.ctrl && key.name === 'c') {
+        output.write('\n');
+        process.exit(130);
+      }
+      if (key.name === 'return' || key.name === 'enter') {
+        cleanup();
+        return;
+      }
+      if (key.name === 'backspace') {
+        value = value.slice(0, -1);
+        return;
+      }
+      if (!key.ctrl && !key.meta && str) {
+        value += str;
+      }
+    }
+
+    input.on('keypress', onKeypress);
+  });
+}
+
+function providerFromChoice(choice: string): CliProviderPreset {
+  const normalized = choice.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'qwen' || normalized === 'aliyun') return 'qwen';
+  if (normalized === '2' || normalized === 'openai') return 'openai';
+  if (normalized === '3' || normalized === 'anthropic' || normalized === 'claude') return 'anthropic';
+  if (normalized === '4' || normalized === 'compatible' || normalized === 'openai-compatible') return 'openai-compatible';
+  return 'qwen';
+}
+
+function sanitizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '').replace(/\/v1$/, '');
+}
+
+function withoutSecret(value: string): string {
+  try {
+    return new URL(value).host;
+  } catch {
+    return value || '(not configured)';
+  }
+}
+
+export function renderAuthStatus(
+  config: ConfigFile = loadConfigFile(),
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const resolved = resolveCliConfig(env, config);
+  return [
+    '[auth]',
+    `  provider: ${resolved.provider} (${resolved.providerSource})`,
+    `  model: ${resolved.model} (${resolved.modelSource})`,
+    `  baseUrl: ${withoutSecret(resolved.baseUrl)} (${resolved.baseUrlSource})`,
+    `  apiKey: ${resolved.apiKey ? `configured via ${resolved.apiKeySource}` : 'missing'}`,
+    `  config: ${resolved.configPath}`,
+  ].join('\n');
+}
+
+export async function runSetupWizard(): Promise<void> {
+  const current = loadConfigFile();
+  print('D-Moss model setup');
+  print('');
+  print('Choose provider:');
+  print('  1. Aliyun / Qwen (recommended for RDK users)');
+  print('  2. OpenAI');
+  print('  3. Anthropic');
+  print('  4. OpenAI-compatible');
+
+  const pipedAnswers = input.isTTY ? null : fs.readFileSync(0, 'utf-8').split(/\r?\n/);
+  let answerIndex = 0;
+  const nextPipedAnswer = () => (pipedAnswers ? (pipedAnswers[answerIndex++] ?? '').trim() : '');
+
+  const rl = input.isTTY ? readline.createInterface({ input, output }) : null;
+  const providerAnswer = rl ? await questionWith(rl, 'Provider [1]: ') : nextPipedAnswer();
+  const provider = providerFromChoice(providerAnswer || '1');
+  const preset = PROVIDER_PRESETS[provider];
+
+  const defaultModel = current.model || preset.defaultModel;
+  const defaultBaseUrl = current.baseUrl || preset.defaultBaseUrl;
+  const modelAnswer = rl ? await questionWith(rl, `Model [${defaultModel}]: `) : nextPipedAnswer();
+  const model = modelAnswer || defaultModel;
+  const baseUrlAnswer = rl ? await questionWith(rl, `Base URL [${defaultBaseUrl}]: `) : nextPipedAnswer();
+  const baseUrl = sanitizeBaseUrl(baseUrlAnswer || defaultBaseUrl);
+  let apiKey: string;
+  if (input.isTTY) {
+    rl?.close();
+    apiKey = await hiddenQuestion('API key (hidden): ');
+  } else {
+    apiKey = nextPipedAnswer();
+  }
+
+  if (!apiKey) {
+    print('Setup cancelled: API key is required.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const next: ConfigFile = {
+    ...current,
+    provider,
+    model,
+    baseUrl,
+    apiKey,
+  };
+  saveConfigFile(next);
+  print('');
+  print(`Saved configuration to ${resolveConfigPath()}`);
+  print(`Provider: ${preset.displayName}`);
+  print(`Model: ${model}`);
+  print(`Base URL: ${withoutSecret(baseUrl)}`);
+  print('');
+  print('Run `dmoss-agent` to start the interactive agent.');
+}
+
+export async function runAuthLogout(): Promise<void> {
+  const current = loadConfigFile();
+  if (!current.apiKey) {
+    print('[auth] No API key is stored in the config file.');
+    return;
+  }
+  const answer = await question('Remove stored API key from dmoss config? [y/N] ');
+  if (!/^y(es)?$/i.test(answer)) {
+    print('[auth] Cancelled.');
+    return;
+  }
+  const next = { ...current };
+  delete next.apiKey;
+  saveConfigFile(next);
+  print('[auth] Stored API key removed. Model and baseUrl were preserved.');
+}
+
+export function runConfigSet(args: string[]): void {
+  const [key, ...rest] = args;
+  const value = rest.join(' ').trim();
+  if (!key || !value) {
+    print('Usage: dmoss-agent config set <provider|model|baseUrl> <value>');
+    process.exitCode = 1;
+    return;
+  }
+  const current = loadConfigFile();
+  const next = { ...current };
+  if (key === 'provider') next.provider = normalizeProvider(value);
+  else if (key === 'model') next.model = value;
+  else if (key === 'baseUrl') next.baseUrl = sanitizeBaseUrl(value);
+  else {
+    print('Supported keys: provider, model, baseUrl');
+    process.exitCode = 1;
+    return;
+  }
+  saveConfigFile(next);
+  print(`[config] ${key} updated in ${resolveConfigPath()}`);
+}
+
+export function printMissingConfigGuidance(interactive: boolean): void {
+  print('D-Moss needs a model configuration before it can run.');
+  print('');
+  print('Fast path:');
+  print('  dmoss-agent setup');
+  print('');
+  print('Script/env path:');
+  print('  export DMOSS_API_KEY=your-key');
+  print('  export DMOSS_MODEL=qwen3.7-max');
+  print('  export DMOSS_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode');
+  print('');
+  if (interactive) {
+    print('You can run setup now, then start `dmoss-agent` again.');
+  } else {
+    print('One-shot mode does not prompt, so scripts do not hang.');
+  }
+}
+
+export async function offerSetupForInteractiveMissingConfig(): Promise<void> {
+  printMissingConfigGuidance(true);
+  const answer = await question('Start setup now? [Y/n] ');
+  if (!answer || /^y(es)?$/i.test(answer)) {
+    await runSetupWizard();
+  } else {
+    print('Setup skipped. Run `dmoss-agent setup` when you are ready.');
+    process.exitCode = 1;
+  }
+}

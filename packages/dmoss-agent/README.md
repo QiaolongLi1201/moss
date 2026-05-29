@@ -98,15 +98,31 @@ git clone <this-repo>
 cd <this-repo>
 npm install                 # links workspace packages (@rdk-moss/core, @rdk-moss/agent, create-dmoss-app)
 npm run build -w @rdk-moss/agent
-# Run the CLI against a real model:
-DMOSS_API_KEY=sk-xxx node packages/dmoss-agent/dist/cli.js "check disk usage on /"
-# Or the interactive REPL:
-DMOSS_API_KEY=sk-xxx node packages/dmoss-agent/dist/cli.js
+# Configure a model once:
+node packages/dmoss-agent/dist/cli.js setup
+# Then run the interactive REPL:
+node packages/dmoss-agent/dist/cli.js
+# Or one-shot mode:
+node packages/dmoss-agent/dist/cli.js "check disk usage on /"
+```
+
+`setup` writes `~/.config/dmoss/config.json` with `0600` permissions and supports Aliyun/Qwen, OpenAI, Anthropic, and OpenAI-compatible providers. You can inspect or update the stored configuration without printing secrets:
+
+```bash
+dmoss-agent auth status
+dmoss-agent auth logout
+dmoss-agent config set model qwen3.7-max
+dmoss-agent config set baseUrl https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode
+dmoss-agent config set provider qwen
 ```
 
 ### CLI flags recap
 
 ```
+setup                   guided first-run provider/model/API-key setup
+auth status             show provider/model/key source without printing secrets
+auth logout             remove stored API key from config
+config set <key> <val>  update provider, model, or baseUrl
 --debug                 verbose logging (level=debug)
 --quiet                 only warnings & errors
 --log-level=<lv>        debug | info | warn | error

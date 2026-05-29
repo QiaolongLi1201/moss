@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DmossAgent } from '../core/index.js';
 import type { Tool } from '../core/tools/tool-types.js';
-import { BASE_URL, resolveConfigDir, WORKSPACE } from './config.js';
+import { BASE_URL, resolveCliConfig, resolveConfigDir, WORKSPACE } from './config.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
 
 export interface CliDeviceStatus {
@@ -139,6 +139,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const groups = groupTools(tools).filter((g) => g.enabled);
   const memoryCount = countJsonIndex(path.join(rt.runtimeDir, 'memory', 'index.json'));
   const skillCount = countMarkdownFiles(path.join(rt.workspace, 'skills', 'learned'));
+  const auth = resolveCliConfig();
 
   const lines = [
     `D-Moss Agent`,
@@ -146,6 +147,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
     `  workspace: ${rt.workspace}`,
     `  detail: ${describeDetail(detailMode)}`,
     `  provider: ${shortBaseUrl(rt.baseUrl)}`,
+    `  auth: ${auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
     '',
     `Capabilities now available:`,
   ];
@@ -173,11 +175,14 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
   const sessionDir = path.join(rt.runtimeDir, 'sessions');
   const detailMode = resolveCliDetailMode();
   const toolGroups = groupTools(agent.tools.getAll()).filter((g) => g.enabled);
+  const auth = resolveCliConfig();
 
   return [
     '[status]',
+    `  provider preset: ${auth.provider} (${auth.providerSource})`,
     `  model: ${agent.config.model}`,
     `  provider: ${shortBaseUrl(rt.baseUrl)}`,
+    `  apiKey: ${auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
     `  workspace: ${rt.workspace}`,
     `  config: ${rt.configDir}`,
     `  sessions: ${sessionDir}`,

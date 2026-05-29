@@ -16,7 +16,7 @@ import type { TailToolSnipConfig } from '../../context/tail-tool-snip.js';
 import type { FollowUpGuardConfig } from '../loop/follow-up-guard.js';
 import type { CompactHookRegistry } from '../loop/compact-hooks.js';
 import type { SkillLearner } from '../memory/skill-learner.js';
-import type { SkillPipeline } from '@dmoss/skills';
+import type { SkillPipeline } from '@rdk-moss/skills';
 import type { AgentHooks } from './agent-hooks.js';
 import type { ThinkingLevel } from '../../provider/pi-ai-types.js';
 import type { SteeringRule } from '../loop/steering.js';

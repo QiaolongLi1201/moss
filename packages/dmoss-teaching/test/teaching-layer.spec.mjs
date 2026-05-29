@@ -3,7 +3,7 @@
  * Self-test for normalizeTeachingDepth and createStudioTeachingHooks.
  *
  * Run:
- *   npm run build -w @dmoss/teaching
+ *   npm run build -w @rdk-moss/teaching
  *   node packages/dmoss-teaching/test/teaching-layer.spec.mjs
  */
 

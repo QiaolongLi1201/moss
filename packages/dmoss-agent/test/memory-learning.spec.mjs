@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * @dmoss/agent MemoryManager — learning scope + topic/starred (2026-05-01-memory-learning-scope-add)
+ * @rdk-moss/agent MemoryManager — learning scope + topic/starred (2026-05-01-memory-learning-scope-add)
  *
  * Run after package build:
- *   npm run build -w @dmoss/agent && node packages/dmoss-agent/test/memory-learning.spec.mjs
+ *   npm run build -w @rdk-moss/agent && node packages/dmoss-agent/test/memory-learning.spec.mjs
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

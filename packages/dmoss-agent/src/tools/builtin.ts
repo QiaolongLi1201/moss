@@ -5,7 +5,7 @@
  * Host applications can register additional tools for their specific use case.
  *
  * **Security note**: File tools enforce workspace sandbox boundaries using
- * `resolveSandboxPath` from `@dmoss/agent/safety`. The `exec` tool runs
+ * `resolveSandboxPath` from `@rdk-moss/agent/safety`. The `exec` tool runs
  * commands within the workspace cwd but does NOT restrict command content —
  * hosts should use `AgentHooks.onBeforeToolExec` to enforce approval policies.
  */

@@ -1,5 +1,5 @@
 /**
- * @dmoss/agent — D-Moss robotics agent runtime.
+ * @rdk-moss/agent — D-Moss robotics agent runtime.
  *
  * This package provides the core runtime for building AI-powered robotics agents:
  *  - Knowledge module system: register and query domain knowledge for any hardware
@@ -9,7 +9,7 @@
  *  - Prompts: robotics engineering prompts and telemetry
  *  - Utils: streaming text smoothing, trace logging, @-ref parsing
  *
- * For contracts/interfaces, see @dmoss/core.
+ * For contracts/interfaces, see @rdk-moss/core.
  */
 
 // --- Knowledge Module System ---
@@ -141,7 +141,7 @@ export {
 /**
  * @internal Lane management is an internal concurrency primitive.
  * Hosts should not depend on these — use DmossAgent's public API instead.
- * Re-exported via subpath `@dmoss/agent/core` for advanced use cases.
+ * Re-exported via subpath `@rdk-moss/agent/core` for advanced use cases.
  */
 export {
   CommandQueueRegistry,

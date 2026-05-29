@@ -1,8 +1,8 @@
 /**
- * Canonical DeviceFamily taxonomy for @dmoss/core.
+ * Canonical DeviceFamily taxonomy for @rdk-moss/core.
  *
  * Consumers (host codebases, third-party extensions) MUST import this
- * type from `@dmoss/core/contracts/device-family` to ensure type unity.
+ * type from `@rdk-moss/core/contracts/device-family` to ensure type unity.
  *
  * Helper functions like `deriveDeviceFamily()` or `familyPingFailTtlMs()`
  * live in the host codebase (e.g. `shared/device-family.ts`) since they

@@ -6,7 +6,7 @@
  * respond to AbortSignal — a hung command must be killable within 500ms.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/tools-cancel-safety.spec.mjs
  */
 

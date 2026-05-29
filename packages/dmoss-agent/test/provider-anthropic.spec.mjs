@@ -6,7 +6,7 @@
  * Verifies: streaming events, content assembly, tool_use parsing, thinking.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/provider-anthropic.spec.mjs
  */
 

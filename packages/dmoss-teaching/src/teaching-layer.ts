@@ -4,9 +4,9 @@
  */
 
 import * as crypto from "node:crypto";
-import type { LLMProvider, LLMResponse, ToolApprovalRequest, ToolApprovalDecision } from "@dmoss/agent/core";
-import type { ToolCall, ToolResult } from "@dmoss/agent/core";
-import { sanitizeSecrets } from "@dmoss/agent/safety";
+import type { LLMProvider, LLMResponse, ToolApprovalRequest, ToolApprovalDecision } from "@rdk-moss/agent/core";
+import type { ToolCall, ToolResult } from "@rdk-moss/agent/core";
+import { sanitizeSecrets } from "@rdk-moss/agent/safety";
 import { digestStudioToolCall } from "./teaching-tool-digest.js";
 
 export type TeachingDepth = "off" | "concise" | "detailed";

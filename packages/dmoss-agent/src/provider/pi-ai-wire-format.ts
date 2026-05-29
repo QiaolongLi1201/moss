@@ -132,7 +132,7 @@ export function normalizePiAiModelInfo(model: PiAiModelInfo, baseUrl?: string): 
  * Upstream pi-ai's `anthropic` provider detects `apiKey.includes("sk-ant-oat")`
  * and enters a "Claude Code compatibility" code path: it injects a Claude Code
  * identity string, rewrites tool names via `toClaudeCodeName()`, and sends a
- * `claude-code-20250219,oauth-2025-04-20` beta header. `@dmoss/agent` does not
+ * `claude-code-20250219,oauth-2025-04-20` beta header. `@rdk-moss/agent` does not
  * impersonate any third-party product on the wire, so we refuse such tokens
  * here — **before** the request ever leaves this package.
  *
@@ -145,7 +145,7 @@ export function rejectAnthropicOAuthToken(apiKey: string, api: string | undefine
   if (!looksAnthropic) return;
   if (typeof apiKey === 'string' && apiKey.includes('sk-ant-oat')) {
     throw new Error(
-      '@dmoss/agent refuses Anthropic OAuth / session tokens (sk-ant-oat*). ' +
+      '@rdk-moss/agent refuses Anthropic OAuth / session tokens (sk-ant-oat*). ' +
         'Please provide an official API key (sk-ant-api03-*) or configure an ' +
         'OpenAI-compatible gateway via DMOSS_BASE_URL. See SECURITY.md for ' +
         'the rationale ("Provider credentials & identity").',

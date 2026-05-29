@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * @dmoss/memory — memory-context-selector unit tests
+ * @rdk-moss/memory — memory-context-selector unit tests
  *
  * Run after package build:
- *   npm run build -w @dmoss/memory && node packages/dmoss-memory/test/memory-context-selector.spec.mjs
+ *   npm run build -w @rdk-moss/memory && node packages/dmoss-memory/test/memory-context-selector.spec.mjs
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

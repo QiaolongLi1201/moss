@@ -1,5 +1,5 @@
 {
-  "name": "@dmoss/memory",
+  "name": "@rdk-moss/memory",
   "version": "0.3.1",
   "private": false,
   "type": "module",
@@ -13,18 +13,16 @@
     }
   },
   "publishConfig": {
-    "access": "public",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
-      }
-    }
+    "access": "public"
   },
-  "files": ["dist", "src", "LICENSE"],
+  "files": [
+    "dist",
+    "src",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/QiaolongLi1201/moss.git",
+    "url": "git+https://github.com/QiaolongLi1201/moss.git",
     "directory": "packages/dmoss-memory"
   },
   "bugs": {
@@ -39,7 +37,7 @@
     "test": "npm run build && node ../../scripts/run-package-tests.mjs"
   },
   "dependencies": {
-    "@dmoss/core": "^0.3.1"
+    "@rdk-moss/core": "^0.3.1"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
@@ -47,5 +45,12 @@
   "engines": {
     "node": ">=22.16.0"
   },
-  "keywords": ["dmoss", "memory", "context-selector", "self-learning", "agent", "robotics"]
+  "keywords": [
+    "dmoss",
+    "memory",
+    "context-selector",
+    "self-learning",
+    "agent",
+    "robotics"
+  ]
 }

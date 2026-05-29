@@ -4,7 +4,7 @@
 
 **Goal:** Turn Moss into a contract-first, observable runtime with an authoritative verification gate, a stable host-adapter surface, and a separate dead-code removal lane that deletes only code proven to be unused.
 
-**Architecture:** Keep the current package split. Treat `@dmoss/core` as the public contract layer, `@dmoss/agent` as the runtime kernel, and `scripts/` + CI as the release gate. Make verification recursive and scenario-aware, wire observability into the main runtime path, and run dead-code cleanup as its own audit-backed lane so deletions never get mixed with feature work.
+**Architecture:** Keep the current package split. Treat `@rdk-moss/core` as the public contract layer, `@rdk-moss/agent` as the runtime kernel, and `scripts/` + CI as the release gate. Make verification recursive and scenario-aware, wire observability into the main runtime path, and run dead-code cleanup as its own audit-backed lane so deletions never get mixed with feature work.
 
 **Tech Stack:** Node 22.16+, npm workspaces, TypeScript, node:test / `.spec.mjs`, GitHub Actions, existing Moss verification scripts.
 
@@ -103,7 +103,7 @@
 - [x] **Step 2: Keep the public surface small and explicit**
 - Avoid exposing helpers that are only needed by internal wiring.
 - Preserve stable exports that hosts already depend on.
-- Status: root exports remain focused on the runtime harness; `@dmoss/agent/mesh` and `@dmoss/agent/observability` are documented as subpath-only public surfaces.
+- Status: root exports remain focused on the runtime harness; `@rdk-moss/agent/mesh` and `@rdk-moss/agent/observability` are documented as subpath-only public surfaces.
 
 ### Task 5: Delete dead / obsolete code in audit-backed batches
 

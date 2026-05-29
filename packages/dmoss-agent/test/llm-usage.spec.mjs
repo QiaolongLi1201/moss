@@ -3,7 +3,7 @@
  * LLM usage tracker — unit tests.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/llm-usage.spec.mjs
  */
 

@@ -12,7 +12,7 @@ import type {
   DeviceProfileBase,
   DocIndexEntry,
   PromptFragment,
-} from '@dmoss/core';
+} from '@rdk-moss/core';
 
 export interface RobotHubModuleMeta {
   id: string;

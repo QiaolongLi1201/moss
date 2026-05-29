@@ -30,7 +30,7 @@ const TEMPLATES = {
   }
 }
 `,
-      'index.ts': `import { DmossAgent, InMemorySessionStore, AnthropicLLMProvider } from '@dmoss/agent';
+      'index.ts': `import { DmossAgent, InMemorySessionStore, AnthropicLLMProvider } from '@rdk-moss/agent';
 
 const API_KEY = process.env.DMOSS_API_KEY || '';
 if (!API_KEY) {
@@ -47,7 +47,7 @@ const agent = new DmossAgent({
 });
 
 // Load MCP servers from mcp.json (copy mcp.json.example to mcp.json and edit)
-// import { loadMcpConfig, connectMcpServers } from '@dmoss/agent';
+// import { loadMcpConfig, connectMcpServers } from '@rdk-moss/agent';
 // const config = loadMcpConfig('./mcp.json');
 // if (config) {
 //   const connections = await connectMcpServers(config);
@@ -66,7 +66,7 @@ console.log('Agent:', result.response);
   openai: {
     description: 'Agent with OpenAI-compatible provider',
     files: {
-      'index.ts': `import { DmossAgent, InMemorySessionStore, OpenAILLMProvider } from '@dmoss/agent';
+      'index.ts': `import { DmossAgent, InMemorySessionStore, OpenAILLMProvider } from '@rdk-moss/agent';
 
 const API_KEY = process.env.OPENAI_API_KEY || process.env.DMOSS_API_KEY || '';
 const BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com';
@@ -154,8 +154,8 @@ const packageJson = {
     typecheck: 'tsc --noEmit --esModuleInterop --module ESNext --moduleResolution Bundler --target ES2022 --types node --strict --skipLibCheck index.ts',
   },
   dependencies: {
-    '@dmoss/core': '^0.3.1',
-    '@dmoss/agent': '^0.3.1',
+    '@rdk-moss/core': '^0.3.1',
+    '@rdk-moss/agent': '^0.3.1',
   },
   devDependencies: {
     '@types/node': '^22.13.10',

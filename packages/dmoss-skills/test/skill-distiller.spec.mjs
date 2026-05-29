@@ -3,7 +3,7 @@
  * Skill distiller unit tests — file system operations.
  *
  * Run:
- *   npm run build -w @dmoss/skills
+ *   npm run build -w @rdk-moss/skills
  *   node packages/dmoss-skills/test/skill-distiller.spec.mjs
  */
 

@@ -2,4 +2,4 @@ export {
   SkillLearner,
   type LearnedSkill,
   type SkillLearnerConfig,
-} from '@dmoss/skills';
+} from '@rdk-moss/skills';

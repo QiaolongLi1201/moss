@@ -4,7 +4,7 @@
  * cancellation and pre-tool safety blocking.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/dmoss-agent-run-loop-bridge-cancel-safety.spec.mjs
  */
 

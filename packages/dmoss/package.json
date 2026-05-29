@@ -1,5 +1,5 @@
 {
-  "name": "@dmoss/core",
+  "name": "@rdk-moss/core",
   "version": "0.3.1",
   "private": false,
   "type": "module",
@@ -7,7 +7,7 @@
   "description": "D-Moss: vendor-neutral robotics agent framework. Contracts for KnowledgeModule, PlatformExtension, VendorPlugin, and robotics engineering prompts.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/QiaolongLi1201/moss.git",
+    "url": "git+https://github.com/QiaolongLi1201/moss.git",
     "directory": "packages/dmoss"
   },
   "bugs": {
@@ -52,39 +52,17 @@
     }
   },
   "publishConfig": {
-    "access": "public",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
-      },
-      "./contracts/knowledge-module": {
-        "types": "./dist/contracts/knowledge-module.d.ts",
-        "import": "./dist/contracts/knowledge-module.js"
-      },
-      "./contracts/vendor-plugin": {
-        "types": "./dist/contracts/vendor-plugin.d.ts",
-        "import": "./dist/contracts/vendor-plugin.js"
-      },
-      "./contracts/platform-extension": {
-        "types": "./dist/contracts/platform-extension.d.ts",
-        "import": "./dist/contracts/platform-extension.js"
-      },
-      "./contracts/device-family": {
-        "types": "./dist/contracts/device-family.d.ts",
-        "import": "./dist/contracts/device-family.js"
-      },
-      "./contracts/host-adapter": {
-        "types": "./dist/contracts/host-adapter.d.ts",
-        "import": "./dist/contracts/host-adapter.js"
-      },
-      "./prompts/robotics": {
-        "types": "./dist/prompts/robotics-engineering-prompt.d.ts",
-        "import": "./dist/prompts/robotics-engineering-prompt.js"
-      }
-    }
+    "access": "public"
   },
-  "files": ["dist", "src", "README.md", "LICENSE", "CONTRIBUTING.md", "CHANGELOG.md", "SECURITY.md"],
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
@@ -99,5 +77,13 @@
   "engines": {
     "node": ">=22.16.0"
   },
-  "keywords": ["dmoss", "agent", "robotics", "knowledge-module", "platform-extension", "edge-ai", "iot"]
+  "keywords": [
+    "dmoss",
+    "agent",
+    "robotics",
+    "knowledge-module",
+    "platform-extension",
+    "edge-ai",
+    "iot"
+  ]
 }

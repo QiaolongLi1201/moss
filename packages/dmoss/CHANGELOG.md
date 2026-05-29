@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `@dmoss/core` will be documented in this file.
+All notable changes to `@rdk-moss/core` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -10,13 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Published package surface now includes the canonical `DeviceFamily` taxonomy at
-  `@dmoss/core/contracts/device-family`.
+  `@rdk-moss/core/contracts/device-family`.
 - Release metadata and package boundaries are aligned for the Moss verification
   gate (`npm run verify`).
 
 ### Compatibility
 
-- Backward compatible for consumers: new exports are additive and `@dmoss/core`
+- Backward compatible for consumers: new exports are additive and `@rdk-moss/core`
   remains a zero-runtime-dependency contract package.
 
 ## [0.1.0] - 2026-04-14

@@ -8,7 +8,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in `@dmoss/core`, please report it responsibly:
+If you discover a security vulnerability in `@rdk-moss/core`, please report it responsibly:
 
 1. **Do NOT** open a public GitHub issue
 2. Email the maintainers at **security@d-robotics.cc** with:
@@ -20,7 +20,7 @@ If you discover a security vulnerability in `@dmoss/core`, please report it resp
 
 ## Scope
 
-`@dmoss/core` is a pure TypeScript contract library with no runtime dependencies,
+`@rdk-moss/core` is a pure TypeScript contract library with no runtime dependencies,
 no network access, and no file system operations (except prompt string builders).
 
 Security concerns are most likely to arise in:

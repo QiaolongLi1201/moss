@@ -62,9 +62,9 @@ This target is met when:
 
 - `npm run verify` runs in CI and genuinely covers open-source boundary checks,
   workspace builds, typechecks, and all package tests.
-- `@dmoss/agent` has a single `test` entrypoint that includes the existing
+- `@rdk-moss/agent` has a single `test` entrypoint that includes the existing
   agent loop, context, tool, provider, safety, and session tests.
-- `@dmoss/memory`, `@dmoss/skills`, and `@dmoss/teaching` have focused unit
+- `@rdk-moss/memory`, `@rdk-moss/skills`, and `@rdk-moss/teaching` have focused unit
   tests for their public behavior before they are treated as release-ready
   packages.
 - Host Adapter v1 candidate compatibility checks pass for RDK Studio and at
@@ -86,8 +86,8 @@ boundary checks, workspace hygiene checks, workspace builds, typechecks, and
 recursive package tests, including nested e2e replay scenarios under package
 test directories.
 
-Host Adapter acceptance is covered by the `@dmoss/core` conformance suite and
-the `@dmoss/agent` fixture host. Both run through the package test entrypoints
+Host Adapter acceptance is covered by the `@rdk-moss/core` conformance suite and
+the `@rdk-moss/agent` fixture host. Both run through the package test entrypoints
 and therefore through the root gate.
 
 Dead-code cleanup remains a separate audit-backed lane: prove a symbol is unused
@@ -107,7 +107,7 @@ feature work.
 
 Make verification meaningful before expanding the framework.
 
-- Add unified package test scripts, starting with `@dmoss/agent`.
+- Add unified package test scripts, starting with `@rdk-moss/agent`.
 - Ensure root `npm run verify` fails when any package test fails or is missing
   unexpectedly.
 - Add CI for install, boundary checks, build, typecheck, and tests.

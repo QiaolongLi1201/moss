@@ -1,4 +1,4 @@
-# @dmoss/skills
+# @rdk-moss/skills
 
 Automatic skill distillation and learning for the Moss agent runtime.
 
@@ -13,13 +13,13 @@ Automatic skill distillation and learning for the Moss agent runtime.
 ## Installation
 
 ```bash
-npm install @dmoss/skills
+npm install @rdk-moss/skills
 ```
 
 ## Usage
 
 ```typescript
-import { SkillPipeline } from '@dmoss/skills';
+import { SkillPipeline } from '@rdk-moss/skills';
 
 const pipeline = new SkillPipeline({
   workspaceDir: './skills',

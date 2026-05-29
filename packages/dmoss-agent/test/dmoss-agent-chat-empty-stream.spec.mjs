@@ -3,7 +3,7 @@
  * Regression tests for DmossAgent.chat() stream termination semantics.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/dmoss-agent-chat-empty-stream.spec.mjs
  */
 

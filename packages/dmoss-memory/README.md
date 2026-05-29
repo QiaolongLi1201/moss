@@ -1,4 +1,4 @@
-# @dmoss/memory
+# @rdk-moss/memory
 
 Context-aware memory management for the Moss agent runtime.
 
@@ -13,13 +13,13 @@ Context-aware memory management for the Moss agent runtime.
 ## Installation
 
 ```bash
-npm install @dmoss/memory
+npm install @rdk-moss/memory
 ```
 
 ## Usage
 
 ```typescript
-import { MemoryManager } from '@dmoss/memory';
+import { MemoryManager } from '@rdk-moss/memory';
 
 const memory = new MemoryManager('./.dmoss/memory', optionalEmbeddingProvider);
 

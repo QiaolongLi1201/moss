@@ -3,7 +3,7 @@
  * Source-level regression tests for post-tool model failures.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/post-tool-source-fix.spec.mjs
  */
 

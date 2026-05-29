@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_MODEL } from '@dmoss/core';
+import { DEFAULT_MODEL } from '@rdk-moss/core';
 
 export function resolveConfigDir(): string {
   const explicit = process.env.DMOSS_CONFIG_DIR;

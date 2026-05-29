@@ -3,7 +3,7 @@
  * Self-test for pi-ai LLM provider adapter.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/pi-ai-adapter.spec.mjs
  */
 

@@ -3,7 +3,7 @@
  * Regression test for pre-aborted DmossAgent.chat calls.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/dmoss-agent-pre-aborted-chat.spec.mjs
  */
 

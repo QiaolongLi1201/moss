@@ -5,7 +5,7 @@
  */
 
 import type { StudioTeachingMetaV1 } from "./teaching-layer.js";
-import type { SkillCandidateTeachingMeta } from "@dmoss/skills";
+import type { SkillCandidateTeachingMeta } from "@rdk-moss/skills";
 import { digestStudioToolCall } from "./teaching-tool-digest.js";
 
 interface CollectedAnnotation {

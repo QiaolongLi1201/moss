@@ -203,7 +203,7 @@ function defaultSink(entry: LogEntry, json: boolean): void {
  *
  * @example
  * ```ts
- * import { createLogger } from '@dmoss/agent';
+ * import { createLogger } from '@rdk-moss/agent';
  * const log = createLogger({ scope: 'server' });
  * log.info('启动完成', { port: 8787 });
  *
@@ -263,8 +263,8 @@ export function createLogger(opts: LoggerOptions = {}): Logger {
 }
 
 /**
- * 全局共享的"根 logger"，便于未接入 DI 的调用方直接 `import { logger } from '@dmoss/agent/logger'` 使用。
- * 特别建议 library（@dmoss/agent）内部使用子 logger：`rootLogger.child('agent:tool')`；
+ * 全局共享的"根 logger"，便于未接入 DI 的调用方直接 `import { logger } from '@rdk-moss/agent/logger'` 使用。
+ * 特别建议 library（@rdk-moss/agent）内部使用子 logger：`rootLogger.child('agent:tool')`；
  * 宿主只需在启动时调一次 `configureRootLogger({...})` 即可全局生效。
  */
 let rootLogger: Logger | null = null;

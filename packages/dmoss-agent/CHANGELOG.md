@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `@dmoss/agent` will be documented in this file.
+All notable changes to `@rdk-moss/agent` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -100,7 +100,7 @@ to help identify call sites that need migration.
   through the same surface + actions pipeline as provider errors.
   Source: `2026-05-01-moss-reliability-fallback-ux` (G-5a).
 - **`runWithProviderRetry(fn, opts)`** — new exported helper from
-  `@dmoss/agent/provider`. Runs `fn`; if first call throws and the classified
+  `@rdk-moss/agent/provider`. Runs `fn`; if first call throws and the classified
   surface is `retryable === true`, sleeps a jittered 800–2000 ms and retries
   exactly **once**. Caller passes a `classify` function (typically
   `classifyProviderError`) and an optional `signal` to abort during the wait.
@@ -111,7 +111,7 @@ to help identify call sites that need migration.
   - Abort-during-wait surfaces the **original** error (not the abort reason),
     so the caller's downstream UX remains accurate.
   Source: `2026-05-01-moss-reliability-fallback-ux` (G-2).
-- **Re-exported from `@dmoss/agent/provider` root**: `classifyProviderError`,
+- **Re-exported from `@rdk-moss/agent/provider` root**: `classifyProviderError`,
   `renderProviderErrorSurface`, `sanitizeRawErrorForDetail`, plus types
   `ProviderErrorCategory`, `ProviderErrorAction`, `ProviderErrorSurface`,
   `ProviderErrorInput`. These were previously available only via deep import
@@ -162,8 +162,8 @@ to help identify call sites that need migration.
 
 ### Architecture
 
-- Core interfaces and contracts are vendor-neutral (from `@dmoss/core`)
+- Core interfaces and contracts are vendor-neutral (from `@rdk-moss/core`)
 - Some utility defaults reference host tool names (e.g. `device_exec`) — configurable via `registerToolOutputLimits()` and `registerProtectedPaths()`
-- Formal `@dmoss/core` dependency (not relative paths)
+- Formal `@rdk-moss/core` dependency (not relative paths)
 - All environment variables use `DMOSS_*` prefix
 - MIT licensed, ready for independent publication

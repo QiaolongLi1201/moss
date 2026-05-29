@@ -7,7 +7,7 @@
  * - Legacy wrapper knowledge is bridged into future DmossAgent instances.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/extensions-singleton.spec.mjs
  */
 

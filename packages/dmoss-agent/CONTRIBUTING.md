@@ -1,12 +1,12 @@
-# Contributing to `@dmoss/agent`
+# Contributing to `@rdk-moss/agent`
 
-Thank you for contributing to `@dmoss/agent`.
+Thank you for contributing to `@rdk-moss/agent`.
 
 This package is the standalone D-Moss runtime. It should remain vendor-neutral, host-agnostic, and safe to publish independently from any embedding host product.
 
 ## Scope
 
-`@dmoss/agent` owns the reusable runtime pieces:
+`@rdk-moss/agent` owns the reusable runtime pieces:
 
 - `DmossAgent`
 - `LLMProvider` abstractions
@@ -30,9 +30,9 @@ From the monorepo root:
 
 ```bash
 npm install
-npm run typecheck --workspace=@dmoss/agent
-npm run build --workspace=@dmoss/agent
-npm test --workspace=@dmoss/agent
+npm run typecheck --workspace=@rdk-moss/agent
+npm run build --workspace=@rdk-moss/agent
+npm test --workspace=@rdk-moss/agent
 ```
 
 ## Dependency and security checks (monorepo)
@@ -44,7 +44,7 @@ npm audit
 npm audit fix
 ```
 
-- **Priority**: advisories that affect **`@dmoss/agent` runtime `dependencies`** (`@dmoss/core`, `@mariozechner/pi-ai`, and any future runtime deps).
+- **Priority**: advisories that affect **`@rdk-moss/agent` runtime `dependencies`** (`@rdk-moss/core`, `@mariozechner/pi-ai`, and any future runtime deps).
 - **Lower priority**: devDependencies and transitive packages only used by the desktop shell, icons, or optional integrations — track them, but do not block OSS package releases unless they affect the published tarball.
 - If `npm audit fix` requires `--force`, discuss in a PR before upgrading (may be semver-breaking).
 
@@ -92,9 +92,9 @@ When changing exports:
 
 ## Dependency Rules
 
-`@dmoss/agent` may depend on:
+`@rdk-moss/agent` may depend on:
 
-- `@dmoss/core`
+- `@rdk-moss/core`
 - `@mariozechner/pi-ai` (bundled so **`PiAiLLMProvider`** is always resolvable from npm — **hosts are not required to use it**; the supported minimal integration is a custom **`LLMProvider`**, see package `README.md` / `API.md` and `create-dmoss-app`)
 - Node.js built-ins
 
@@ -124,9 +124,9 @@ Every meaningful runtime change should include one of:
 Before opening a PR, run:
 
 ```bash
-npm run typecheck --workspace=@dmoss/agent
-npm run build --workspace=@dmoss/agent
-npm test --workspace=@dmoss/agent
+npm run typecheck --workspace=@rdk-moss/agent
+npm run build --workspace=@rdk-moss/agent
+npm test --workspace=@rdk-moss/agent
 ```
 
 If your change touches runtime behavior, run the relevant package tests under `packages/dmoss-agent/test/`, or run the full package test script.
@@ -167,7 +167,7 @@ Before publishing a new version:
 2. Update `CHANGELOG.md`
 3. Run package typecheck, build, and tests
 4. Confirm `API.md` matches the actual export surface
-5. Publish only after `@dmoss/core` is already available at the required version
+5. Publish only after `@rdk-moss/core` is already available at the required version
 
 ## Contribution Map
 
@@ -175,11 +175,11 @@ External contributors should be able to work on D-Moss without understanding RDK
 
 | Contribution | Primary files | Notes |
 | --- | --- | --- |
-| New `KnowledgeModule` | Separate package or `packages/<platform>-knowledge/`; contracts from `@dmoss/core` | Keep hardware facts, docs, prompts, command patterns, and failure hints in the knowledge package. Register through `@dmoss/agent/knowledge`. |
-| New `Tool` | Host package for product-specific tools; `packages/dmoss-agent/src/tools/` only for generic built-ins | Tool definitions use the `Tool` contract from `@dmoss/agent/core`. Put device credentials, UI assumptions, and product routes in the host. |
+| New `KnowledgeModule` | Separate package or `packages/<platform>-knowledge/`; contracts from `@rdk-moss/core` | Keep hardware facts, docs, prompts, command patterns, and failure hints in the knowledge package. Register through `@rdk-moss/agent/knowledge`. |
+| New `Tool` | Host package for product-specific tools; `packages/dmoss-agent/src/tools/` only for generic built-ins | Tool definitions use the `Tool` contract from `@rdk-moss/agent/core`. Put device credentials, UI assumptions, and product routes in the host. |
 | New `LLMProvider` | `packages/dmoss-agent/src/provider/` for generic adapters; host package for product-specific transports | `DmossAgent` depends only on the `LLMProvider` interface. Avoid SDK-specific behavior in core loop code. |
 | New CLI capability | `packages/dmoss-agent/src/cli.ts` plus README/API updates | CLI features must work in a fresh Node project and must not require RDK Studio files or env vars. |
-| New platform extension | `packages/dmoss-agent/src/extensions/` for lifecycle helpers; contracts from `@dmoss/core` | Platform extensions should compose knowledge and optional vendor hooks without importing host code. |
+| New platform extension | `packages/dmoss-agent/src/extensions/` for lifecycle helpers; contracts from `@rdk-moss/core` | Platform extensions should compose knowledge and optional vendor hooks without importing host code. |
 | New safety policy | `packages/dmoss-agent/src/safety/` or host `AgentHooks.onBeforeToolExec` | Generic command/path/secret helpers belong in the package; product approval UX and account state belong in the host. |
 
 ## Adding a New Hardware Platform
@@ -188,10 +188,10 @@ Want to add support for a new device family (Jetson, Raspberry Pi, RISC-V, etc.)
 
 ### Step 1: Create a KnowledgeModule
 
-Implement the `KnowledgeModule` interface from `@dmoss/core`:
+Implement the `KnowledgeModule` interface from `@rdk-moss/core`:
 
 ```typescript
-import type { KnowledgeModule } from '@dmoss/core';
+import type { KnowledgeModule } from '@rdk-moss/core';
 
 export const myPlatformModule: KnowledgeModule = {
   id: 'my-platform',
@@ -222,14 +222,14 @@ Each board variant needs a complete `DeviceProfileBase` with hardware specs (SoC
 ### Step 4: Register at Startup
 
 ```typescript
-import { registerKnowledgeModule } from '@dmoss/agent/knowledge';
+import { registerKnowledgeModule } from '@rdk-moss/agent/knowledge';
 registerKnowledgeModule(myPlatformModule);
 ```
 
 ### Step 5: Test and Submit
 
 ```bash
-npm test --workspace=@dmoss/agent
+npm test --workspace=@rdk-moss/agent
 ```
 
 Use the `KnowledgeModule` skeleton above as the starting point for a new device-family contribution.

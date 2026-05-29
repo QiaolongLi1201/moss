@@ -8,7 +8,7 @@
  *  - hybridCompact uses local-only when no remote provider is configured
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/remote-compaction.spec.mjs
  */
 

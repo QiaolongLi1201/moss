@@ -7,7 +7,7 @@
   "description": "Scaffold a new D-Moss agent project in seconds",
   "repository": {
     "type": "git",
-    "url": "https://github.com/QiaolongLi1201/moss.git",
+    "url": "git+https://github.com/QiaolongLi1201/moss.git",
     "directory": "packages/create-dmoss-app"
   },
   "bugs": {
@@ -15,17 +15,28 @@
   },
   "homepage": "https://github.com/QiaolongLi1201/moss/tree/main/packages/create-dmoss-app#readme",
   "bin": {
-    "create-dmoss-app": "./index.mjs"
+    "create-dmoss-app": "index.mjs"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs"
   },
-  "files": ["index.mjs", "README.md", "CHANGELOG.md", "LICENSE"],
+  "files": [
+    "index.mjs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "publishConfig": {
     "access": "public"
   },
   "engines": {
     "node": ">=22.16.0"
   },
-  "keywords": ["dmoss", "agent", "robotics", "scaffold", "create-app"]
+  "keywords": [
+    "dmoss",
+    "agent",
+    "robotics",
+    "scaffold",
+    "create-app"
+  ]
 }

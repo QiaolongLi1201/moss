@@ -1,7 +1,7 @@
 export {
   buildRoboticsEngineeringPrompt,
   buildRoboticsEngineeringPromptQuick,
-} from '@dmoss/core';
+} from '@rdk-moss/core';
 
 export {
   hashSystemPromptForTelemetry,

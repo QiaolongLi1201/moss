@@ -18,4 +18,4 @@ export type { VendorPluginCallbacks } from './registry.js';
 export type {
   DmossPlatformExtension,
   DmossPlatformExtensionIdentities,
-} from '@dmoss/core';
+} from '@rdk-moss/core';

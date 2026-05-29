@@ -3,7 +3,7 @@
  * Focused regression tests for provider-native reasoning history roundtrip.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/reasoning-history-roundtrip.spec.mjs
  */
 

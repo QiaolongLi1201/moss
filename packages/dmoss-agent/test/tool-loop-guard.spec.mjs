@@ -3,7 +3,7 @@
  * Self-test for DmossAgent tool-loop guard.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/tool-loop-guard.spec.mjs
  *
  * The test uses a fake LLM provider and in-memory tools so it does not touch

@@ -3,7 +3,7 @@
  * detectSkillLearningIntent unit tests — pure function, no file system.
  *
  * Run:
- *   npm run build -w @dmoss/skills
+ *   npm run build -w @rdk-moss/skills
  *   node packages/dmoss-skills/test/detect-skill-learning-intent.spec.mjs
  */
 

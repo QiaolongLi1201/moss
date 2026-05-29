@@ -3,7 +3,7 @@
  * Self-test for digestStudioToolCall.
  *
  * Run:
- *   npm run build -w @dmoss/teaching
+ *   npm run build -w @rdk-moss/teaching
  *   node packages/dmoss-teaching/test/teaching-tool-digest.spec.mjs
  */
 

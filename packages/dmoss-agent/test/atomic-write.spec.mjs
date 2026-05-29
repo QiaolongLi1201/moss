@@ -3,7 +3,7 @@
  * Tests for atomicWriteFile utility.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/atomic-write.spec.mjs
  */
 

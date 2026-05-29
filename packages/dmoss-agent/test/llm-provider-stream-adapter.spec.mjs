@@ -3,7 +3,7 @@
  * Self-test for LLMProvider → pi-ai StreamFunction adapter.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/llm-provider-stream-adapter.spec.mjs
  */
 

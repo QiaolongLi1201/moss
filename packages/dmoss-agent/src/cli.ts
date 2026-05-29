@@ -15,7 +15,7 @@ import { configureRootLogger, type LogLevel } from './logger.js';
 import pc from 'picocolors';
 import { registerBuiltinTools } from './tools/builtin.js';
 import { SkillLearner } from './core/memory/skill-learner.js';
-import { SkillPipeline } from '@dmoss/skills';
+import { SkillPipeline } from '@rdk-moss/skills';
 import { WorkspaceMemory } from './core/memory/workspace-memory.js';
 import { createDockerExecTool } from './tools/docker-exec.js';
 import { createDeviceSshTools, getDeviceConfigFromEnv } from './tools/device-ssh.js';

@@ -1,6 +1,6 @@
-# @dmoss/agent API Reference
+# @rdk-moss/agent API Reference
 
-This document defines the **stable public API surface** of `@dmoss/agent`.
+This document defines the **stable public API surface** of `@rdk-moss/agent`.
 
 The source of truth is:
 
@@ -15,40 +15,40 @@ Anything a host application builds on top (HTTP servers, frontends, desktop shel
 ## Installation
 
 ```bash
-npm install @dmoss/agent @dmoss/core
+npm install @rdk-moss/agent @rdk-moss/core
 ```
 
 ## Stable Import Paths
 
 | Import path | Purpose |
 |------------|---------|
-| `@dmoss/agent` | Main entry: `DmossAgent`, knowledge helpers, safety, provider, utils |
-| `@dmoss/agent/core` | Core runtime types and lower-level APIs |
-| `@dmoss/agent/context` | Context window, truncation, compaction helpers |
-| `@dmoss/agent/provider` | Provider adapter and retry/error helpers |
-| `@dmoss/agent/safety` | Secret masking, command/path safety |
-| `@dmoss/agent/observability` | Redaction, tracing, and LLM usage helpers |
-| `@dmoss/agent/knowledge` | Knowledge registry access |
-| `@dmoss/agent/extensions` | Platform extension lifecycle |
-| `@dmoss/agent/prompts` | Prompt telemetry helpers |
-| `@dmoss/agent/skills` | Skill registry |
-| `@dmoss/agent/utils` | Text smoothing, tracing, env helpers |
-| `@dmoss/agent/channels` | Message channel bridge for external chat platforms |
-| `@dmoss/agent/tools/builtin` | Built-in filesystem/shell/search tools |
-| `@dmoss/agent/mesh` | Multi-agent mesh (HTTP + LAN discovery) |
-| `@dmoss/agent/mcp` | Model Context Protocol client for external tool servers |
+| `@rdk-moss/agent` | Main entry: `DmossAgent`, knowledge helpers, safety, provider, utils |
+| `@rdk-moss/agent/core` | Core runtime types and lower-level APIs |
+| `@rdk-moss/agent/context` | Context window, truncation, compaction helpers |
+| `@rdk-moss/agent/provider` | Provider adapter and retry/error helpers |
+| `@rdk-moss/agent/safety` | Secret masking, command/path safety |
+| `@rdk-moss/agent/observability` | Redaction, tracing, and LLM usage helpers |
+| `@rdk-moss/agent/knowledge` | Knowledge registry access |
+| `@rdk-moss/agent/extensions` | Platform extension lifecycle |
+| `@rdk-moss/agent/prompts` | Prompt telemetry helpers |
+| `@rdk-moss/agent/skills` | Skill registry |
+| `@rdk-moss/agent/utils` | Text smoothing, tracing, env helpers |
+| `@rdk-moss/agent/channels` | Message channel bridge for external chat platforms |
+| `@rdk-moss/agent/tools/builtin` | Built-in filesystem/shell/search tools |
+| `@rdk-moss/agent/mesh` | Multi-agent mesh (HTTP + LAN discovery) |
+| `@rdk-moss/agent/mcp` | Model Context Protocol client for external tool servers |
 
 ### Internal runtime helpers
 
 Some modules exist for internal runtime wiring but are not stable public entry points:
 
-- `@dmoss/agent/core/subagent-orchestrator.js` is an internal implementation detail for fan-out / pipeline orchestration. Host applications should not deep import it.
-- Observability helpers are stable from `@dmoss/agent/observability` and are also re-exported from the root `@dmoss/agent` entry (index.ts:256-278).
-- `dmossRunTrace` remains available from `@dmoss/agent/utils`, not from the root `@dmoss/agent` entry.
+- `@rdk-moss/agent/core/subagent-orchestrator.js` is an internal implementation detail for fan-out / pipeline orchestration. Host applications should not deep import it.
+- Observability helpers are stable from `@rdk-moss/agent/observability` and are also re-exported from the root `@rdk-moss/agent` entry (index.ts:256-278).
+- `dmossRunTrace` remains available from `@rdk-moss/agent/utils`, not from the root `@rdk-moss/agent` entry.
 
 ## API stability labels
 
-These labels describe **semver intent** for `@dmoss/agent` **only** (not any embedding host application).
+These labels describe **semver intent** for `@rdk-moss/agent` **only** (not any embedding host application).
 
 | Label | Meaning |
 |-------|---------|
@@ -56,7 +56,7 @@ These labels describe **semver intent** for `@dmoss/agent` **only** (not any emb
 | **Experimental** | May change in a minor release. Today this is reserved for features explicitly called out in `CHANGELOG.md` as experimental; if none are listed, treat all documented exports as **Stable**. |
 | **Internal** | Anything not re-exported from the supported entry points (e.g. deep imports into `src/...` paths, or host code under `server/`). **Do not rely on these.** |
 
-**Practical rule:** import only from documented paths in the table above; run `npm test --workspace=@dmoss/agent` when adding exports.
+**Practical rule:** import only from documented paths in the table above; run `npm test --workspace=@rdk-moss/agent` when adding exports.
 
 ## Main Runtime API
 
@@ -65,8 +65,8 @@ These labels describe **semver intent** for `@dmoss/agent` **only** (not any emb
 The primary runtime class.
 
 ```ts
-import { DmossAgent, InMemorySessionStore } from '@dmoss/agent'
-import type { LLMProvider } from '@dmoss/agent'
+import { DmossAgent, InMemorySessionStore } from '@rdk-moss/agent'
+import type { LLMProvider } from '@rdk-moss/agent'
 
 const agent = new DmossAgent({
   llmProvider,
@@ -127,7 +127,7 @@ Returned by `chat()` and emitted by `streamChat()` on `done`:
 
 Goal Mode is a host-neutral runtime capability for a session/thread. `DmossAgent` stores the current goal in the configured `SessionStore` as an internal checkpoint message and injects active or paused goal context into the system prompt during `chat()` / `streamChat()`.
 
-The runtime does **not** start automatic background work, change host approval policy, or bind to UI. Hosts own command routing, UI controls, scheduling, and any autonomous execution loop. `@dmoss/agent/goal` provides an optional `/goal` command adapter so hosts can route commands without duplicating Goal Mode semantics.
+The runtime does **not** start automatic background work, change host approval policy, or bind to UI. Hosts own command routing, UI controls, scheduling, and any autonomous execution loop. `@rdk-moss/agent/goal` provides an optional `/goal` command adapter so hosts can route commands without duplicating Goal Mode semantics.
 
 | Method | Purpose |
 |--------|---------|
@@ -197,7 +197,7 @@ These are **provider-native** streaming events such as `message_delta`, `content
 
 ### 3. `MiniAgentEvent`
 
-Available from `@dmoss/agent/core`. This is a lower-level internal runtime event union used by the agent loop and advanced hosts.
+Available from `@rdk-moss/agent/core`. This is a lower-level internal runtime event union used by the agent loop and advanced hosts.
 
 Typical examples:
 
@@ -233,7 +233,7 @@ Host lifecycle extension points:
 Example:
 
 ```ts
-import type { AgentHooks } from '@dmoss/agent'
+import type { AgentHooks } from '@rdk-moss/agent'
 
 const hooks: AgentHooks = {
   onBeforeToolExec: async (request) => {
@@ -329,10 +329,10 @@ interface LLMProvider {
 
 `PiAiLLMProvider` is an **optional** bridge for hosts that already integrate **`@mariozechner/pi-ai`**. You do **not** need to import or construct it unless you choose that stack.
 
-The `@dmoss/agent` package **depends on** `@mariozechner/pi-ai` at install time so this adapter is always resolvable from npm; your application can still use **only** a custom `LLMProvider` and never reference `PiAiLLMProvider`.
+The `@rdk-moss/agent` package **depends on** `@mariozechner/pi-ai` at install time so this adapter is always resolvable from npm; your application can still use **only** a custom `LLMProvider` and never reference `PiAiLLMProvider`.
 
 ```ts
-import { PiAiLLMProvider } from '@dmoss/agent'
+import { PiAiLLMProvider } from '@rdk-moss/agent'
 ```
 
 ## Session API
@@ -344,7 +344,7 @@ Built-in stores:
 
 Goal Mode uses the existing `SessionStore` message stream. No new `SessionStore` methods are required; the runtime writes and strips its internal goal checkpoint messages before sending chat history to the model.
 
-Session helpers available from `@dmoss/agent/core`:
+Session helpers available from `@rdk-moss/agent/core`:
 
 - `resolveSessionKey()`
 - `normalizeAgentId()`
@@ -374,16 +374,16 @@ Platform extension functions:
 
 ## Host registration APIs (harness tuning)
 
-Call these **once at startup** in your host application so product-specific tool names and limits are wired into the harness without forking `@dmoss/agent`:
+Call these **once at startup** in your host application so product-specific tool names and limits are wired into the harness without forking `@rdk-moss/agent`:
 
 | Function | Module | Purpose |
 |----------|--------|---------|
-| `registerProtectedPaths()` | `@dmoss/agent` / `@dmoss/agent/safety` | Extra paths that must not be read/written by tools |
-| `registerToolOutputLimits()` | `@dmoss/agent/context` | Per-tool output truncation caps |
-| `setOpenUrlMarkers()` | `@dmoss/agent/core` | Success/failure substrings in open-URL tool results (for `web_fetch` suppression) |
-| `registerNonMainChannelPrefixes()` | `@dmoss/agent/context` | Channel prefixes for non-main sessions |
-| `registerSpawnToolExtensions()` | `@dmoss/agent/core` | Extra tool names allowed for sub-agent spawns |
-| `setVendorPluginCallbacks()` | `@dmoss/agent` | Deprecated process-scoped vendor plugin lifecycle hooks |
+| `registerProtectedPaths()` | `@rdk-moss/agent` / `@rdk-moss/agent/safety` | Extra paths that must not be read/written by tools |
+| `registerToolOutputLimits()` | `@rdk-moss/agent/context` | Per-tool output truncation caps |
+| `setOpenUrlMarkers()` | `@rdk-moss/agent/core` | Success/failure substrings in open-URL tool results (for `web_fetch` suppression) |
+| `registerNonMainChannelPrefixes()` | `@rdk-moss/agent/context` | Channel prefixes for non-main sessions |
+| `registerSpawnToolExtensions()` | `@rdk-moss/agent/core` | Extra tool names allowed for sub-agent spawns |
+| `setVendorPluginCallbacks()` | `@rdk-moss/agent` | Deprecated process-scoped vendor plugin lifecycle hooks |
 
 For new integrations, prefer `agent.extensions.setVendorPluginCallbacks(...)` on the specific `DmossAgent` instance. The free function remains for legacy startup bridges and writes to the deprecated process-scoped extension singleton.
 
@@ -391,7 +391,7 @@ Idempotent replay mutability is declared on each `Tool` through `metadata.sideEf
 
 ## Safety API
 
-Exported from `@dmoss/agent/safety` (a subset is also re-exported from the root package):
+Exported from `@rdk-moss/agent/safety` (a subset is also re-exported from the root package):
 
 - `sanitizeSecrets()`
 - `containsSecrets()`
@@ -401,12 +401,12 @@ Exported from `@dmoss/agent/safety` (a subset is also re-exported from the root 
 - `matchTextApproval()`
 - `classifyFileKind()`
 - `stripShellPrefixBeforeHeredoc()`
-- `resolveSandboxPath()` — **only from `@dmoss/agent/safety`**
-- `assertSandboxPath()` — **only from `@dmoss/agent/safety`**
+- `resolveSandboxPath()` — **only from `@rdk-moss/agent/safety`**
+- `assertSandboxPath()` — **only from `@rdk-moss/agent/safety`**
 
 ## Agent Mesh
 
-Exported from `@dmoss/agent/mesh`:
+Exported from `@rdk-moss/agent/mesh`:
 
 - `AgentMesh` — multi-agent peer discovery and communication
 - `createMeshTools()` — create mesh-backed tools for agent collaboration
@@ -417,7 +417,7 @@ Exported from `@dmoss/agent/mesh`:
 
 ## Observability API
 
-Exported from `@dmoss/agent/observability`:
+Exported from `@rdk-moss/agent/observability`:
 
 - `redactSensitiveData()` and `parseTelemetryAllow()` — redact prompts, credentials, IPs, and file-like payloads before telemetry leaves the runtime
 - `setTracer()`, `getTracer()`, `withSpan()` — install and use a host-owned tracing bridge
@@ -427,7 +427,7 @@ Exported from `@dmoss/agent/observability`:
 
 ## Context API
 
-Exported from `@dmoss/agent/context`:
+Exported from `@rdk-moss/agent/context`:
 
 - `resolveContextWindowInfo()`
 - `evaluateContextWindowGuard()`
@@ -438,7 +438,7 @@ Exported from `@dmoss/agent/context`:
 
 ## Built-in Tools
 
-Exported from `@dmoss/agent/tools/builtin`:
+Exported from `@rdk-moss/agent/tools/builtin`:
 
 - `readFileTool`
 - `writeFileTool`
@@ -453,7 +453,7 @@ These are useful for minimal standalone hosts and CLI prototypes.
 
 ### Web Fetch Tool
 
-Exported from `@dmoss/agent` (root):
+Exported from `@rdk-moss/agent` (root):
 
 - `createWebFetchTool(opts?: WebFetchOptions): Tool`
 
@@ -461,7 +461,7 @@ HTTP(S) fetch tool with SSRF protection, size limits, and HTML-to-text cleanup.
 
 ## Channels
 
-Exported from `@dmoss/agent` and `@dmoss/agent/channels`:
+Exported from `@rdk-moss/agent` and `@rdk-moss/agent/channels`:
 
 - `bridgeAgentToChannel(agent, channel, options?)`
 - Types: `BridgeAgentToChannelOptions`, `ChannelMessage`, `ChannelResponse`, `MessageChannel`
@@ -470,7 +470,7 @@ Exported from `@dmoss/agent` and `@dmoss/agent/channels`:
 
 ## Provider stream errors (implementation note)
 
-`PiAiLLMProvider`（`@dmoss/agent/provider`）在 pi-ai 流式 `type=error` 且缺少可见 `content`、仅带 `errorMessage` 时，会把它作为 provider/runtime 错误抛出，不能写入 assistant `text` block。宿主应在错误路径用 `src/provider/error-classify.ts`（`classifyProviderError`、`renderProviderErrorSurface`、`sanitizeRawErrorForDetail`）生成结构化错误 UI 或渠道 fallback，避免把“模型暂时不可用”归档成正常回答。
+`PiAiLLMProvider`（`@rdk-moss/agent/provider`）在 pi-ai 流式 `type=error` 且缺少可见 `content`、仅带 `errorMessage` 时，会把它作为 provider/runtime 错误抛出，不能写入 assistant `text` block。宿主应在错误路径用 `src/provider/error-classify.ts`（`classifyProviderError`、`renderProviderErrorSurface`、`sanitizeRawErrorForDetail`）生成结构化错误 UI 或渠道 fallback，避免把“模型暂时不可用”归档成正常回答。
 
 示例（宿主侧应通过正常 `streamChat` 消费结果，而非直接调用下列 API）：
 
@@ -492,13 +492,13 @@ if (!surface.silent) {
 
 ## Additional Root Exports
 
-The following are also re-exported from the root `@dmoss/agent` entry (index.ts):
+The following are also re-exported from the root `@rdk-moss/agent` entry (index.ts):
 
 ### Built-in LLM Providers (native fetch, no SDK)
 
 ```ts
-import { AnthropicLLMProvider, OpenAILLMProvider } from '@dmoss/agent'
-import type { AnthropicLLMProviderConfig, OpenAILLMProviderConfig } from '@dmoss/agent'
+import { AnthropicLLMProvider, OpenAILLMProvider } from '@rdk-moss/agent'
+import type { AnthropicLLMProviderConfig, OpenAILLMProviderConfig } from '@rdk-moss/agent'
 ```
 
 - `AnthropicLLMProvider` — native Anthropic API adapter (index.ts:180-181)
@@ -507,8 +507,8 @@ import type { AnthropicLLMProviderConfig, OpenAILLMProviderConfig } from '@dmoss
 ### MCP (Model Context Protocol client)
 
 ```ts
-import { loadMcpConfig, connectMcpServers } from '@dmoss/agent'
-import type { McpServerConfig, McpConfig, McpTool, McpConnection } from '@dmoss/agent'
+import { loadMcpConfig, connectMcpServers } from '@rdk-moss/agent'
+import type { McpServerConfig, McpConfig, McpTool, McpConnection } from '@rdk-moss/agent'
 ```
 
 - `loadMcpConfig()` — load MCP server configuration from file (index.ts:186)
@@ -517,8 +517,8 @@ import type { McpServerConfig, McpConfig, McpTool, McpConnection } from '@dmoss/
 ### ToolHookRegistry
 
 ```ts
-import { ToolHookRegistry } from '@dmoss/agent'
-import type { PreToolUseHook, PostToolUseHook, PostToolUseFailureHook, PreToolUseDecision } from '@dmoss/agent'
+import { ToolHookRegistry } from '@rdk-moss/agent'
+import type { PreToolUseHook, PostToolUseHook, PostToolUseFailureHook, PreToolUseDecision } from '@rdk-moss/agent'
 ```
 
 - `ToolHookRegistry` — pre/post tool execution hook pipeline (index.ts:281)
@@ -526,8 +526,8 @@ import type { PreToolUseHook, PostToolUseHook, PostToolUseFailureHook, PreToolUs
 ### Logger
 
 ```ts
-import { createLogger, configureRootLogger, getRootLogger, redactSensitive } from '@dmoss/agent'
-import type { LogLevel, LogEntry, Logger, LoggerOptions } from '@dmoss/agent'
+import { createLogger, configureRootLogger, getRootLogger, redactSensitive } from '@rdk-moss/agent'
+import type { LogLevel, LogEntry, Logger, LoggerOptions } from '@rdk-moss/agent'
 ```
 
 Unified logging API aligned with `docs/logging.md` (index.ts:232-241).
@@ -535,8 +535,8 @@ Unified logging API aligned with `docs/logging.md` (index.ts:232-241).
 ### DmossError and ErrorCode
 
 ```ts
-import { ErrorCode, DmossError, isDmossError, throwDmoss, wrapAsDmoss, formatDmossError, isDmossErrorRecoverable } from '@dmoss/agent'
-import type { DmossErrorDetails } from '@dmoss/agent'
+import { ErrorCode, DmossError, isDmossError, throwDmoss, wrapAsDmoss, formatDmossError, isDmossErrorRecoverable } from '@rdk-moss/agent'
+import type { DmossErrorDetails } from '@rdk-moss/agent'
 ```
 
 Actionable error classification API aligned with `docs/logging.md` (index.ts:244-253).

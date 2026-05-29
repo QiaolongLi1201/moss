@@ -4,7 +4,7 @@
  * tool loop guard, idempotent replay, and redundant web_fetch suppression.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/dmoss-agent-run-loop-bridge-tool-guards.spec.mjs
  */
 

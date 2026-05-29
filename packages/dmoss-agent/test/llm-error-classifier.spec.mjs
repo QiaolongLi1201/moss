@@ -3,7 +3,7 @@
  * Self-test for LLM error classification used by runAgentLoop retry decisions.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/llm-error-classifier.spec.mjs
  */
 

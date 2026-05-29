@@ -21,8 +21,8 @@ export type {
   PromptFragment,
   CommandPattern,
   FailureHint,
-} from '@dmoss/core';
-export type { DeviceFamily } from '@dmoss/core';
+} from '@rdk-moss/core';
+export type { DeviceFamily } from '@rdk-moss/core';
 
 // Robot Hub (user-defined knowledge modules)
 export {

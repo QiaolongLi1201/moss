@@ -3,7 +3,7 @@
  * Apply Patch core self-test: parser + update applier.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/apply-patch-core.spec.mjs
  */
 

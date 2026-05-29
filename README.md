@@ -16,11 +16,11 @@ from a product shell.
 
 | Package | Role |
 | --- | --- |
-| `@dmoss/core` | Public contracts, platform extension types, Host Adapter contract, and robotics prompts |
-| `@dmoss/agent` | Agent runtime, tool loop, context management, safety helpers, skills, and provider adapters |
-| `@dmoss/memory` | Context-aware memory selection and memory draft helpers |
-| `@dmoss/skills` | Skill learning, validation, scoring, and promotion helpers |
-| `@dmoss/teaching` | Teach-while-solve annotations and tool digest helpers |
+| `@rdk-moss/core` | Public contracts, platform extension types, Host Adapter contract, and robotics prompts |
+| `@rdk-moss/agent` | Agent runtime, tool loop, context management, safety helpers, skills, and provider adapters |
+| `@rdk-moss/memory` | Context-aware memory selection and memory draft helpers |
+| `@rdk-moss/skills` | Skill learning, validation, scoring, and promotion helpers |
+| `@rdk-moss/teaching` | Teach-while-solve annotations and tool digest helpers |
 | `create-dmoss-app` | Minimal project scaffolding for external Moss users |
 
 RDK Studio is one host for Moss. It is not part of this repository.
@@ -59,7 +59,7 @@ import {
   MOSS_HOST_ADAPTER_CONTRACT_VERSION,
   evaluateMossHostCompatibility,
   type MossHostRuntimeManifest,
-} from '@dmoss/core/contracts/host-adapter';
+} from '@rdk-moss/core/contracts/host-adapter';
 ```
 
 A host declares:

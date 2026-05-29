@@ -1,5 +1,5 @@
 {
-  "name": "@dmoss/agent",
+  "name": "@rdk-moss/agent",
   "version": "0.3.1",
   "private": false,
   "type": "module",
@@ -88,79 +88,10 @@
     }
   },
   "publishConfig": {
-    "access": "public",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
-      },
-      "./knowledge": {
-        "types": "./dist/knowledge/index.d.ts",
-        "import": "./dist/knowledge/index.js"
-      },
-      "./extensions": {
-        "types": "./dist/extensions/index.d.ts",
-        "import": "./dist/extensions/index.js"
-      },
-      "./safety": {
-        "types": "./dist/safety/index.d.ts",
-        "import": "./dist/safety/index.js"
-      },
-      "./channels": {
-        "types": "./dist/channels/index.d.ts",
-        "import": "./dist/channels/index.js"
-      },
-      "./prompts": {
-        "types": "./dist/prompts/index.d.ts",
-        "import": "./dist/prompts/index.js"
-      },
-      "./skills": {
-        "types": "./dist/skills/index.d.ts",
-        "import": "./dist/skills/index.js"
-      },
-      "./core": {
-        "types": "./dist/core/index.d.ts",
-        "import": "./dist/core/index.js"
-      },
-      "./goal": {
-        "types": "./dist/goal.d.ts",
-        "import": "./dist/goal.js"
-      },
-      "./utils": {
-        "types": "./dist/utils/index.d.ts",
-        "import": "./dist/utils/index.js"
-      },
-      "./context": {
-        "types": "./dist/context/index.d.ts",
-        "import": "./dist/context/index.js"
-      },
-      "./provider": {
-        "types": "./dist/provider/index.d.ts",
-        "import": "./dist/provider/index.js"
-      },
-      "./tools/builtin": {
-        "types": "./dist/tools/builtin.d.ts",
-        "import": "./dist/tools/builtin.js"
-      },
-      "./mesh": {
-        "types": "./dist/mesh/index.d.ts",
-        "import": "./dist/mesh/index.js"
-      },
-      "./observability": {
-        "types": "./dist/observability/index.d.ts",
-        "import": "./dist/observability/index.js"
-      },
-      "./mcp": {
-        "types": "./dist/mcp/index.d.ts",
-        "import": "./dist/mcp/index.js"
-      }
-    },
-    "bin": {
-      "dmoss-agent": "./dist/cli.js"
-    }
+    "access": "public"
   },
   "bin": {
-    "dmoss-agent": "./dist/cli.js"
+    "dmoss-agent": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -175,7 +106,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/QiaolongLi1201/moss.git",
+    "url": "git+https://github.com/QiaolongLi1201/moss.git",
     "directory": "packages/dmoss-agent"
   },
   "bugs": {
@@ -192,10 +123,10 @@
     "docs": "typedoc --out docs-api src/index.ts src/core/index.ts src/knowledge/index.ts --tsconfig tsconfig.build.json"
   },
   "dependencies": {
-    "@dmoss/core": "^0.3.1",
-    "@dmoss/memory": "^0.3.1",
-    "@dmoss/skills": "^0.3.1",
     "@mariozechner/pi-ai": "^0.50.7",
+    "@rdk-moss/core": "^0.3.1",
+    "@rdk-moss/memory": "^0.3.1",
+    "@rdk-moss/skills": "^0.3.1",
     "micromatch": "^4.0.8",
     "picocolors": "^1.1.1",
     "undici": "^7.19.1"

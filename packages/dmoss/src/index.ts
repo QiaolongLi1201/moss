@@ -1,5 +1,5 @@
 /**
- * @dmoss/core — vendor-neutral contracts and robotics prompts for the D-Moss Agent framework.
+ * @rdk-moss/core — vendor-neutral contracts and robotics prompts for the D-Moss Agent framework.
  *
  * This package is the open-source kernel of D-Moss. It contains:
  *  - KnowledgeModule: pluggable domain knowledge for any hardware platform

@@ -6,7 +6,7 @@
  * Verifies: streaming events, content assembly, tool_calls parsing.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/provider-openai.spec.mjs
  */
 

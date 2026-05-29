@@ -52,7 +52,7 @@ bridge for startup wiring, not as the live registry for existing agents.
 
 **Before:**
 ```typescript
-import { registerKnowledgeModule } from '@dmoss/agent';
+import { registerKnowledgeModule } from '@rdk-moss/agent';
 registerKnowledgeModule(myModule);
 ```
 
@@ -67,7 +67,7 @@ agent.registerKnowledge(myModule);
 
 **Before:**
 ```typescript
-import { unregisterKnowledgeModule } from '@dmoss/agent';
+import { unregisterKnowledgeModule } from '@rdk-moss/agent';
 unregisterKnowledgeModule('my-module-id');
 ```
 
@@ -80,7 +80,7 @@ agent.knowledge.unregister('my-module-id');
 
 **Before:**
 ```typescript
-import { getKnowledgeModule } from '@dmoss/agent';
+import { getKnowledgeModule } from '@rdk-moss/agent';
 const mod = getKnowledgeModule('my-module-id');
 ```
 
@@ -93,7 +93,7 @@ const mod = agent.knowledge.get('my-module-id');
 
 **Before:**
 ```typescript
-import { getAllKnowledgeModules } from '@dmoss/agent';
+import { getAllKnowledgeModules } from '@rdk-moss/agent';
 const modules = getAllKnowledgeModules();
 ```
 
@@ -106,7 +106,7 @@ const modules = agent.knowledge.getAll();
 
 **Before:**
 ```typescript
-import { findModuleForPlatform } from '@dmoss/agent';
+import { findModuleForPlatform } from '@rdk-moss/agent';
 const mod = findModuleForPlatform('rdk-x3');
 ```
 
@@ -119,7 +119,7 @@ const mod = agent.knowledge.findForPlatform('rdk-x3');
 
 **Before:**
 ```typescript
-import { findModuleForFamily } from '@dmoss/agent';
+import { findModuleForFamily } from '@rdk-moss/agent';
 const mod = findModuleForFamily('rdk-x3');
 ```
 
@@ -132,7 +132,7 @@ const mod = agent.knowledge.findForFamily('rdk-x3');
 
 **Before:**
 ```typescript
-import { getAllDeviceProfiles } from '@dmoss/agent';
+import { getAllDeviceProfiles } from '@rdk-moss/agent';
 const profiles = getAllDeviceProfiles();
 ```
 
@@ -145,7 +145,7 @@ const profiles = agent.knowledge.getAllDeviceProfiles();
 
 **Before:**
 ```typescript
-import { getAllDocEntries } from '@dmoss/agent';
+import { getAllDocEntries } from '@rdk-moss/agent';
 const entries = getAllDocEntries();
 ```
 
@@ -158,7 +158,7 @@ const entries = agent.knowledge.getAllDocEntries();
 
 **Before:**
 ```typescript
-import { getAllPromptFragments } from '@dmoss/agent';
+import { getAllPromptFragments } from '@rdk-moss/agent';
 const fragments = getAllPromptFragments({ tier: 'base', mode: 'interactive' });
 ```
 
@@ -171,7 +171,7 @@ const fragments = agent.knowledge.getAllPromptFragments({ tier: 'base', mode: 'i
 
 **Before:**
 ```typescript
-import { getAllCommandPatterns } from '@dmoss/agent';
+import { getAllCommandPatterns } from '@rdk-moss/agent';
 const patterns = getAllCommandPatterns();
 ```
 
@@ -184,7 +184,7 @@ const patterns = agent.knowledge.getAllCommandPatterns();
 
 **Before:**
 ```typescript
-import { getAllFailureHints } from '@dmoss/agent';
+import { getAllFailureHints } from '@rdk-moss/agent';
 const hints = getAllFailureHints();
 ```
 
@@ -197,7 +197,7 @@ const hints = agent.knowledge.getAllFailureHints();
 
 **Before:**
 ```typescript
-import { getAggregatedEcosystemPrompt } from '@dmoss/agent';
+import { getAggregatedEcosystemPrompt } from '@rdk-moss/agent';
 const prompt = getAggregatedEcosystemPrompt();
 ```
 
@@ -214,7 +214,7 @@ const prompt = agent.knowledge.getAggregatedEcosystemPrompt();
 
 **Before:**
 ```typescript
-import { setVendorPluginCallbacks } from '@dmoss/agent';
+import { setVendorPluginCallbacks } from '@rdk-moss/agent';
 setVendorPluginCallbacks({
   register: (plugin) => { /* ... */ },
   unregister: (id) => { /* ... */ },
@@ -235,7 +235,7 @@ agent.extensions.setVendorPluginCallbacks({
 
 **Before:**
 ```typescript
-import { setKnowledgeRegistryForExtensions } from '@dmoss/agent';
+import { setKnowledgeRegistryForExtensions } from '@rdk-moss/agent';
 setKnowledgeRegistryForExtensions(myRegistry);
 ```
 
@@ -250,7 +250,7 @@ agent.extensions.setKnowledgeRegistry(myRegistry);
 
 **Before:**
 ```typescript
-import { applyPlatformExtension } from '@dmoss/agent';
+import { applyPlatformExtension } from '@rdk-moss/agent';
 applyPlatformExtension(myExtension);
 ```
 
@@ -263,7 +263,7 @@ agent.extensions.apply(myExtension);
 
 **Before:**
 ```typescript
-import { applyPlatformExtensionForce } from '@dmoss/agent';
+import { applyPlatformExtensionForce } from '@rdk-moss/agent';
 applyPlatformExtensionForce(myExtension);
 ```
 
@@ -276,7 +276,7 @@ agent.extensions.applyForce(myExtension);
 
 **Before:**
 ```typescript
-import { syncPlatformExtensionsAtStartup } from '@dmoss/agent';
+import { syncPlatformExtensionsAtStartup } from '@rdk-moss/agent';
 syncPlatformExtensionsAtStartup([extFactoryA, extFactoryB]);
 ```
 
@@ -289,7 +289,7 @@ agent.extensions.syncAtStartup([extFactoryA, extFactoryB]);
 
 **Before:**
 ```typescript
-import { getRegisteredPlatformExtensions } from '@dmoss/agent';
+import { getRegisteredPlatformExtensions } from '@rdk-moss/agent';
 const exts = getRegisteredPlatformExtensions();
 ```
 
@@ -302,7 +302,7 @@ const exts = agent.extensions.getExtensions();
 
 **Before:**
 ```typescript
-import { setRegisteredPlatformExtensionsSnapshot } from '@dmoss/agent';
+import { setRegisteredPlatformExtensionsSnapshot } from '@rdk-moss/agent';
 setRegisteredPlatformExtensionsSnapshot(extensions);
 ```
 
@@ -315,7 +315,7 @@ agent.extensions.setExtensionsSnapshot(extensions);
 
 **Before:**
 ```typescript
-import { resetPlatformExtensionRegistryForTests } from '@dmoss/agent';
+import { resetPlatformExtensionRegistryForTests } from '@rdk-moss/agent';
 resetPlatformExtensionRegistryForTests();
 ```
 
@@ -328,7 +328,7 @@ agent.extensions.reset();
 
 **Before:**
 ```typescript
-import { listAppliedPlatformExtensionState } from '@dmoss/agent';
+import { listAppliedPlatformExtensionState } from '@rdk-moss/agent';
 const state = listAppliedPlatformExtensionState();
 ```
 

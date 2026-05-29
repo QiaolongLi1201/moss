@@ -7,7 +7,7 @@
  * conversations without depending on a live model or network.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/conversation-api-multiturn.spec.mjs
  */
 

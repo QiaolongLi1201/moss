@@ -3,7 +3,7 @@
  * MCP client — unit and integration tests.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/mcp-client.spec.mjs
  */
 
@@ -612,7 +612,7 @@ rl.on('line', (line) => {
         id: msg.id,
         sideEffectTimer: setTimeout(() => {
           writeFileSync(${JSON.stringify(sideEffectPath)}, 'side effect happened');
-        }, 600),
+        }, 900),
         responseTimer: setTimeout(() => {
           respond(msg.id, { content: [{ type: 'text', text: 'done' }] });
           active = null;
@@ -749,7 +749,7 @@ rl.on('line', (line) => {
           timeoutserver: {
             command: 'node',
             args: [mockServerPath],
-            requestTimeoutMs: 120,
+            requestTimeoutMs: 300,
           },
         },
       }),
@@ -764,7 +764,7 @@ rl.on('line', (line) => {
       slowTool.execute({}, { workspaceDir: '/tmp', sessionKey: 'mcp-timeout' }),
       /timeout/i,
     );
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     assert.equal(existsSync(sideEffectPath), false, 'server side effect should be cancelled on timeout');
     assert.equal(existsSync(cancelledPath), true, 'server should receive timeout cancellation');

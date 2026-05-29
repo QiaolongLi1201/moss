@@ -1,10 +1,10 @@
-# @dmoss/agent
+# @rdk-moss/agent
 
 > **An AI agent runtime built for robotics and edge devices.**
 > Pluggable LLMs, LAN-native Agent Mesh, framework-level tool-call self-healing, Chinese-first UX.
 
 <p align="center">
-  <a href="#install"><img src="https://img.shields.io/npm/v/@dmoss/agent?logo=npm&color=ff6b00" alt="npm" /></a>
+  <a href="#install"><img src="https://img.shields.io/npm/v/@rdk-moss/agent?logo=npm&color=ff6b00" alt="npm" /></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522.16-brightgreen?logo=node.js&logoColor=white" alt="node >= 22.16" />
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT" />
   <img src="https://img.shields.io/badge/tests-200%2B%20passing-brightgreen" alt="tests" />
@@ -13,7 +13,7 @@
 
 ```bash
 # Try it in 30 seconds
-npx -y @dmoss/agent "帮我检查当前目录"
+npx -y @rdk-moss/agent "帮我检查当前目录"
 ```
 
 ## Why D-Moss
@@ -36,17 +36,17 @@ Build AI-powered developer tools for any robotics platform with pluggable knowle
 
 **D-Moss is not “just an LLM wrapper”.** These packages ship a **reusable robotics Agent harness**: the tool loop, context governance (pruning / compaction), safety and approval hooks, session persistence, structured errors and retries, and pluggable `KnowledgeModule`s — so your application can focus on devices, UX, and policies.
 
-| In `@dmoss/core` + `@dmoss/agent` | Outside the stable `@dmoss/*` API (host / product) |
+| In `@rdk-moss/core` + `@rdk-moss/agent` | Outside the stable `@rdk-moss/*` API (host / product) |
 |-----------------------------------|-----------------------------------------------------|
 | Contracts, `DmossAgent`, `ToolRegistry`, hooks | HTTP/Socket APIs, desktop UI, SSH |
 | Pruning, compaction, token budgeting | Your own installers, fleet routing, dashboards |
 | `LLMProvider` (host implements; **recommended minimum integration**) | Your model transport (REST, WebSocket, local inference, etc.) |
 | Optional `PiAiLLMProvider` (bridges `@mariozechner/pi-ai` → `LLMProvider`) | Use only if you already build on pi-ai streams; otherwise skip in **your** code |
 | Safety helpers, protected paths (host registers paths) | Concrete device tools and deployment scripts |
-| Default robotics/domain prompts from `@dmoss/core` (tunable via `DmossAgent` config) | Product-specific prompts wired in `server/dmoss/*` (host) |
+| Default robotics/domain prompts from `@rdk-moss/core` (tunable via `DmossAgent` config) | Product-specific prompts wired in `server/dmoss/*` (host) |
 | Goal Mode runtime: goal state, agent methods, prompt injection | CLI slash commands, UI controls, approval policy, background execution |
-| Observability helpers for tracing, usage logging, and redaction via `@dmoss/agent/observability` | Host-owned telemetry pipeline and exporters |
-| Mesh event bus and orchestration helpers via `@dmoss/agent/mesh` | Ad hoc text parsing for child runs and peer events |
+| Observability helpers for tracing, usage logging, and redaction via `@rdk-moss/agent/observability` | Host-owned telemetry pipeline and exporters |
+| Mesh event bus and orchestration helpers via `@rdk-moss/agent/mesh` | Ad hoc text parsing for child runs and peer events |
 
 The open-source boundary is clean: `packages/dmoss/` + `packages/dmoss-agent/` in this monorepo are the stable public packages. Anything a host application builds on top (HTTP servers, desktop shells, SSH bridges, etc.) is the host's concern and not part of this package's public API.
 
@@ -55,19 +55,19 @@ The open-source boundary is clean: `packages/dmoss/` + `packages/dmoss-agent/` i
 ### LLM integration: minimal path vs optional `pi-ai`
 
 - **What you must implement:** `LLMProvider` — the only contract `DmossAgent` needs to call a model. **For the smallest integration surface and full control over HTTP/SDKs**, implement it yourself (often with **`fetch()` only**; no Anthropic/OpenAI SDK required). See the `LLMProvider` section in [`API.md`](./API.md) for the interface and a minimal implementation pattern.
-- **What is optional:** **`PiAiLLMProvider`** — a convenience adapter for hosts that already use **`@mariozechner/pi-ai`** streaming. You do **not** need to use it to ship a product on `@dmoss/agent`.
-- **npm note:** `@dmoss/agent` currently **declares** `@mariozechner/pi-ai` as a runtime dependency so this adapter is always available when installed from npm. Your **application code** can still follow the minimal path by supplying only a custom `LLMProvider` and never importing `PiAiLLMProvider`. (A future optional split into `@dmoss/agent-pi-ai` would be a semver/major packaging decision.)
+- **What is optional:** **`PiAiLLMProvider`** — a convenience adapter for hosts that already use **`@mariozechner/pi-ai`** streaming. You do **not** need to use it to ship a product on `@rdk-moss/agent`.
+- **npm note:** `@rdk-moss/agent` currently **declares** `@mariozechner/pi-ai` as a runtime dependency so this adapter is always available when installed from npm. Your **application code** can still follow the minimal path by supplying only a custom `LLMProvider` and never importing `PiAiLLMProvider`. (A future optional split into `@rdk-moss/agent-pi-ai` would be a semver/major packaging decision.)
 
 ## Install
 
 ```bash
-npm install @dmoss/agent@latest @dmoss/core@latest
+npm install @rdk-moss/agent@latest @rdk-moss/core@latest
 ```
 
 Requires **Node ≥ 22.16** (see `engines` in `package.json`). One-off CLI tryout:
 
 ```bash
-npx -y @dmoss/agent --help
+npx -y @rdk-moss/agent --help
 ```
 
 ### Path 2 — Local tarballs (maintainers / CI)
@@ -75,8 +75,8 @@ npx -y @dmoss/agent --help
 From the monorepo root:
 
 ```bash
-npm pack --workspace=@dmoss/core
-npm pack --workspace=@dmoss/agent
+npm pack --workspace=@rdk-moss/core
+npm pack --workspace=@rdk-moss/agent
 ```
 
 Install the generated `.tgz` files in a downstream project:
@@ -96,8 +96,8 @@ npx -y ./dmoss-agent-*.tgz --help
 ```bash
 git clone <this-repo>
 cd <this-repo>
-npm install                 # links workspace packages (@dmoss/core, @dmoss/agent, create-dmoss-app)
-npm run build -w @dmoss/agent
+npm install                 # links workspace packages (@rdk-moss/core, @rdk-moss/agent, create-dmoss-app)
+npm run build -w @rdk-moss/agent
 # Run the CLI against a real model:
 DMOSS_API_KEY=sk-xxx node packages/dmoss-agent/dist/cli.js "check disk usage on /"
 # Or the interactive REPL:
@@ -121,8 +121,8 @@ All flags also available via env vars: `DMOSS_LOG_LEVEL`, `DMOSS_LOG_JSON=1`, `D
 ## Quick Start
 
 ```typescript
-import { DmossAgent, InMemorySessionStore } from '@dmoss/agent';
-import type { LLMProvider, AgentHooks } from '@dmoss/agent';
+import { DmossAgent, InMemorySessionStore } from '@rdk-moss/agent';
+import type { LLMProvider, AgentHooks } from '@rdk-moss/agent';
 
 // 1. Implement your LLM provider (Anthropic, OpenAI, etc.)
 const myProvider: LLMProvider = { /* ... */ };
@@ -139,7 +139,7 @@ const agent = new DmossAgent({
 });
 
 // 3. Register knowledge for your hardware
-import type { KnowledgeModule } from '@dmoss/core';
+import type { KnowledgeModule } from '@rdk-moss/core';
 const myKnowledge: KnowledgeModule = { /* ... */ };
 agent.registerKnowledge(myKnowledge);
 
@@ -161,8 +161,8 @@ console.log(result.response);
 ## Architecture
 
 ```
-@dmoss/core      → Contracts (KnowledgeModule, PlatformExtension, VendorPlugin, etc.)
-@dmoss/agent     → Runtime (this package)
+@rdk-moss/core      → Contracts (KnowledgeModule, PlatformExtension, VendorPlugin, etc.)
+@rdk-moss/agent     → Runtime (this package)
   ├── DmossAgent         — Central orchestrator (chat loop, tool execution, hooks)
   ├── ToolRegistry       — Pluggable tool registration and discovery
   ├── Knowledge Registry — Domain knowledge aggregation from all modules
@@ -273,7 +273,7 @@ const hooks: AgentHooks = {
 
 D-Moss provides **thread-level goal tracking** without autonomous background execution. The runtime stores one goal per session in the configured `SessionStore` and injects active or paused goal context into the system prompt during chat turns.
 
-For host integrations that want a thin command router, `@dmoss/agent/goal` exposes a stable `/goal` adapter with `isGoalCommand()`, `parseGoalCommand()`, `executeGoalCommand()`, and `handleGoalCommand()`. Results are structured, so hosts can echo `message` now and map `action`/`event` into UI or observability later.
+For host integrations that want a thin command router, `@rdk-moss/agent/goal` exposes a stable `/goal` adapter with `isGoalCommand()`, `parseGoalCommand()`, `executeGoalCommand()`, and `handleGoalCommand()`. Results are structured, so hosts can echo `message` now and map `action`/`event` into UI or observability later.
 
 ```typescript
 // Host sets the goal; the runtime stores it in session state.
@@ -289,14 +289,14 @@ await agent.completeGoal('session-1', 'verified in CI');
 await agent.clearGoal('session-1');
 ```
 
-Goals are bound to the exact `sessionKey` passed in by the host. Subagents, mesh peer queries, and external channel sessions should use their own session keys unless the host explicitly wants goal inheritance. Hosts own the product behavior around this API: routing, UI controls, approval workflows, and any background execution loop. `@dmoss/agent` only stores the goal and surfaces it to the model as runtime guidance.
+Goals are bound to the exact `sessionKey` passed in by the host. Subagents, mesh peer queries, and external channel sessions should use their own session keys unless the host explicitly wants goal inheritance. Hosts own the product behavior around this API: routing, UI controls, approval workflows, and any background execution loop. `@rdk-moss/agent` only stores the goal and surfaces it to the model as runtime guidance.
 
 ## Adding a New Hardware Platform
 
-Implement the `KnowledgeModule` interface from `@dmoss/core` for your hardware platform.
+Implement the `KnowledgeModule` interface from `@rdk-moss/core` for your hardware platform.
 
 ```typescript
-import type { KnowledgeModule } from '@dmoss/core';
+import type { KnowledgeModule } from '@rdk-moss/core';
 
 const jetsonKnowledge: KnowledgeModule = {
   id: 'jetson',
@@ -318,7 +318,7 @@ agent.registerKnowledge(jetsonKnowledge);
 ## Known Limitations
 
 - **`LLMProvider` vs `pi-ai`:** The harness is built around **`LLMProvider`**. **`PiAiLLMProvider` + `@mariozechner/pi-ai` are optional** — use them only if you want the pre-built pi-ai bridge; otherwise prefer a **self-hosted `LLMProvider`** for minimal behavioral dependency (see [`API.md`](./API.md) for the interface).
-- **Robotics prompt injected by default**: `DmossAgent.buildSystemPrompt()` includes the robotics engineering prompt from `@dmoss/core` unless opted out. Non-robotics hosts can set `domainPrompt: false` to skip it, or provide a custom `domainPrompt: () => string` to replace it with domain-specific guidance.
+- **Robotics prompt injected by default**: `DmossAgent.buildSystemPrompt()` includes the robotics engineering prompt from `@rdk-moss/core` unless opted out. Non-robotics hosts can set `domainPrompt: false` to skip it, or provide a custom `domainPrompt: () => string` to replace it with domain-specific guidance.
 - **Vendor plugin callbacks**: new hosts should call `agent.extensions.setVendorPluginCallbacks()` before `agent.extensions.apply()` to keep vendor plugins scoped to one agent. Legacy hosts may still use the process-scoped `setVendorPluginCallbacks()` / `applyPlatformExtension()` wrappers during migration.
 - **Publishing**: The Moss stack is prepared as publishable npm workspaces. Before a release, run `npm run verify` from the repo root; it covers OSS boundary checks, workspace hygiene, workspace builds, typechecks, and package tests. Use the release checklist for host consumption validation.
 
@@ -331,13 +331,13 @@ agent.registerKnowledge(jetsonKnowledge);
 
 ## API Stability
 
-The stable open-source surface of `@dmoss/agent` is the package export map defined in `package.json` and documented in [API.md](./API.md).
+The stable open-source surface of `@rdk-moss/agent` is the package export map defined in `package.json` and documented in [API.md](./API.md).
 
 Host-level routes and product integrations belong to the embedding application and should not be treated as the public API of this package.
 
 ### `@internal` symbols
 
-Some exports are marked with `/** @internal */` JSDoc comments. These are **implementation details** that are exported only for internal use within the `@dmoss/*` package family. They are **not part of the stable public API** and may change or be removed in any release (including patch releases) without notice or migration path.
+Some exports are marked with `/** @internal */` JSDoc comments. These are **implementation details** that are exported only for internal use within the `@rdk-moss/*` package family. They are **not part of the stable public API** and may change or be removed in any release (including patch releases) without notice or migration path.
 
 If you depend on an `@internal` symbol, you are opting out of semver protections. Prefer the documented public API surface in [API.md](./API.md).
 

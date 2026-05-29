@@ -18,7 +18,7 @@ D-Moss Agent is a vendor-neutral, open-source framework for building AI-powered 
 │  └─────────────────────┬──────────────────────────────────┘  │
 │                        │ extends / consumes                   │
 │  ┌─────────────────────▼──────────────────────────────────┐  │
-│  │  @dmoss/agent (this package)                           │  │
+│  │  @rdk-moss/agent (this package)                           │  │
 │  │  • DmossAgent: chat() + streamChat()                   │  │
 │  │  • ToolRegistry: register/discover tools               │  │
 │  │  • KnowledgeModule: pluggable domain knowledge         │  │
@@ -28,7 +28,7 @@ D-Moss Agent is a vendor-neutral, open-source framework for building AI-powered 
 │  └─────────────────────┬──────────────────────────────────┘  │
 │                        │ depends on                           │
 │  ┌─────────────────────▼──────────────────────────────────┐  │
-│  │  @dmoss/core                                           │  │
+│  │  @rdk-moss/core                                           │  │
 │  │  • Contracts: KnowledgeModule, PlatformExtension       │  │
 │  │  • Robotics engineering prompts (vendor-neutral)       │  │
 │  └────────────────────────────────────────────────────────┘  │
@@ -40,21 +40,21 @@ D-Moss Agent is a vendor-neutral, open-source framework for building AI-powered 
 ### 1. Install
 
 ```bash
-npm install @dmoss/agent @dmoss/core
+npm install @rdk-moss/agent @rdk-moss/core
 ```
 
 ### LLM backends: minimal path vs optional `pi-ai`
 
 - **Recommended for new integrations:** implement **`LLMProvider`** yourself (e.g. with `fetch()` to Anthropic, OpenAI-compatible, or local servers). This is the **smallest behavioral dependency** — you never have to touch `@mariozechner/pi-ai` in your code. The `create-dmoss-app` package can scaffold minimal and OpenAI-compatible starter projects.
-- **Optional:** **`PiAiLLMProvider`** — import from `@dmoss/agent` / `@dmoss/agent/provider` only if you already standardize on **pi-ai** streams inside your host. It is **not** required to use `DmossAgent`.
+- **Optional:** **`PiAiLLMProvider`** — import from `@rdk-moss/agent` / `@rdk-moss/agent/provider` only if you already standardize on **pi-ai** streams inside your host. It is **not** required to use `DmossAgent`.
 
-> **npm install note:** `@dmoss/agent` lists `@mariozechner/pi-ai` as a runtime dependency so `PiAiLLMProvider` is always available to consumers who want it. That does **not** force your code path to use pi-ai — supply any `LLMProvider` implementation you prefer.
+> **npm install note:** `@rdk-moss/agent` lists `@mariozechner/pi-ai` as a runtime dependency so `PiAiLLMProvider` is always available to consumers who want it. That does **not** force your code path to use pi-ai — supply any `LLMProvider` implementation you prefer.
 
 ### 2. Create an Agent
 
 ```typescript
-import { DmossAgent, InMemorySessionStore } from '@dmoss/agent';
-import type { LLMProvider } from '@dmoss/agent';
+import { DmossAgent, InMemorySessionStore } from '@rdk-moss/agent';
+import type { LLMProvider } from '@rdk-moss/agent';
 
 // Implement your LLM provider (Anthropic, OpenAI, etc.)
 const myProvider: LLMProvider = {
@@ -98,7 +98,7 @@ agent.tools.register({
 ### 4. Register Knowledge Module
 
 ```typescript
-import type { KnowledgeModule } from '@dmoss/core';
+import type { KnowledgeModule } from '@rdk-moss/core';
 
 const myKnowledge: KnowledgeModule = {
   id: 'jetson',
@@ -208,7 +208,7 @@ for await (const event of agent.streamChat('session-1', 'Deploy the model')) {
 Register product-specific paths that should never be deleted:
 
 ```typescript
-import { registerProtectedPaths } from '@dmoss/agent/safety';
+import { registerProtectedPaths } from '@rdk-moss/agent/safety';
 
 registerProtectedPaths(['/my-product', '/my-config', '/jetpack']);
 ```
@@ -218,7 +218,7 @@ registerProtectedPaths(['/my-product', '/my-config', '/jetpack']);
 Register custom truncation limits for your tools:
 
 ```typescript
-import { registerToolOutputLimits } from '@dmoss/agent/context';
+import { registerToolOutputLimits } from '@rdk-moss/agent/context';
 
 registerToolOutputLimits({
   my_custom_tool: 20_000,
@@ -268,8 +268,8 @@ const hooks: AgentHooks = {
 For products that need additional features (events, memory, etc.), extend DmossAgent:
 
 ```typescript
-import { DmossAgent } from '@dmoss/agent';
-import type { DmossAgentConfig, ChatResult, ChatOptions } from '@dmoss/agent';
+import { DmossAgent } from '@rdk-moss/agent';
+import type { DmossAgentConfig, ChatResult, ChatOptions } from '@rdk-moss/agent';
 
 class MyProductAgent extends DmossAgent {
   private listeners: Array<(event: any) => void> = [];
@@ -300,8 +300,8 @@ class MyProductAgent extends DmossAgent {
 
 | Package | Description | Open Source |
 |---------|-------------|------------|
-| `@dmoss/core` | Contracts (KnowledgeModule, PlatformExtension) | ✅ MIT |
-| `@dmoss/agent` | Runtime (DmossAgent, ToolRegistry, Context, Safety) | ✅ MIT |
+| `@rdk-moss/core` | Contracts (KnowledgeModule, PlatformExtension) | ✅ MIT |
+| `@rdk-moss/agent` | Runtime (DmossAgent, ToolRegistry, Context, Safety) | ✅ MIT |
 | Your knowledge module | Hardware-specific device knowledge | Product-specific |
 
 ## License

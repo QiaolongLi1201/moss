@@ -8,7 +8,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security issue in `@dmoss/agent`, please report it responsibly:
+If you discover a security issue in `@rdk-moss/agent`, please report it responsibly:
 
 1. **Do not** open a public issue first
 2. Email **security@d-robotics.cc** with:
@@ -21,7 +21,7 @@ If you discover a security issue in `@dmoss/agent`, please report it responsibly
 
 ## Security Scope
 
-`@dmoss/agent` is a runtime package, so its security scope is broader than `@dmoss/core`.
+`@rdk-moss/agent` is a runtime package, so its security scope is broader than `@rdk-moss/core`.
 
 Areas of particular concern include:
 
@@ -34,17 +34,17 @@ Areas of particular concern include:
 
 ## Dependency hygiene (monorepo)
 
-The `@dmoss/agent` package itself has a small dependency footprint (`@dmoss/core`, `@mariozechner/pi-ai`, `picocolors`). **`pi-ai` backs the optional `PiAiLLMProvider` adapter**; hosts can still integrate with **only** a custom `LLMProvider` and never call pi-ai APIs (see `README.md` / `API.md`). When this package is embedded in a larger host monorepo, run `npm audit` periodically and apply `npm audit fix` where semver allows. Treat production `dependencies` of `@dmoss/agent` as the highest priority when triaging. Overrides in the root `package.json` may pin transitive fixes when upstream packages lag.
+The `@rdk-moss/agent` package itself has a small dependency footprint (`@rdk-moss/core`, `@mariozechner/pi-ai`, `picocolors`). **`pi-ai` backs the optional `PiAiLLMProvider` adapter**; hosts can still integrate with **only** a custom `LLMProvider` and never call pi-ai APIs (see `README.md` / `API.md`). When this package is embedded in a larger host monorepo, run `npm audit` periodically and apply `npm audit fix` where semver allows. Treat production `dependencies` of `@rdk-moss/agent` as the highest priority when triaging. Overrides in the root `package.json` may pin transitive fixes when upstream packages lag.
 
 ### Triaging a large `npm audit` report
 
-It is normal for large host trees to report many findings (Electron, desktop packagers, vendor-specific SDKs). For **OSS consumers of `@dmoss/agent` alone**, the relevant question is: *does the published package tarball pull in the vulnerable package at install time?* Use:
+It is normal for large host trees to report many findings (Electron, desktop packagers, vendor-specific SDKs). For **OSS consumers of `@rdk-moss/agent` alone**, the relevant question is: *does the published package tarball pull in the vulnerable package at install time?* Use:
 
 ```bash
-npm pack --workspace=@dmoss/agent --dry-run
+npm pack --workspace=@rdk-moss/agent --dry-run
 ```
 
-and inspect dependency paths if needed. Prefer fixes that upgrade **runtime** deps of `@dmoss/agent`; document accepted risk for unrelated monorepo-only chains in release notes when publishing.
+and inspect dependency paths if needed. Prefer fixes that upgrade **runtime** deps of `@rdk-moss/agent`; document accepted risk for unrelated monorepo-only chains in release notes when publishing.
 
 ## Out of Scope
 
@@ -54,7 +54,7 @@ The following are generally out of scope for this package unless the bug is caus
 - host-application HTTP routes
 - desktop packaging or sandbox issues of an embedding host
 - third-party LLM provider outages or credential compromises outside the package
-- device-side command risk introduced by a host tool that is not part of `@dmoss/agent`
+- device-side command risk introduced by a host tool that is not part of `@rdk-moss/agent`
 
 ## Hardening Expectations
 

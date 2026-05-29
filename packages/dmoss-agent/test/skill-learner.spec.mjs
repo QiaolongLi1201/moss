@@ -3,7 +3,7 @@
  * SkillLearner self-test: confidence scoring, dedup, and pattern detection.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/skill-learner.spec.mjs
  */
 

@@ -3,7 +3,7 @@
  * Skill validation unit tests — pure functions, no file system.
  *
  * Run:
- *   npm run build -w @dmoss/skills
+ *   npm run build -w @rdk-moss/skills
  *   node packages/dmoss-skills/test/skill-validation.spec.mjs
  */
 

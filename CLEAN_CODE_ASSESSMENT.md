@@ -29,7 +29,7 @@
 | **C2** | 唯一内置 LLM provider 是私有 `pi-ai`；外部用户无法开箱用 OpenAI/Anthropic | Style + Contrari一致 VERIFIED；create-dmoss-app minimal 模板手写 fetch 印证缺口 | **P0** | `packages/dmoss-agent/src/provider/` 仅含 `pi-ai-*`；`create-dmoss-app/index.mjs` minimal 模板手写 Anthropic fetch |
 | **C3** | 无 ESLint/Prettier，lint 不在 verify | Style VERIFIED：零配置文件，devDeps 仅含 typescript | **P1** ckage.json` scripts；workspace 根目录无 `.eslintrc*` |
 | **C4** | `dmoss-memory / dmoss-skills / dmoss-teaching` 三 package 无 README + 0% TSDoc | Doc VERIFIED（主线复核 `ls` 确认） | **P1** | 三目录均无 `README.md`；三 `src/index.ts` 各 0 docstring |
-| **C5** | observability subpath 存在但主 barrel 未导出 + create-dmoss-app 无 tracing 示例 | Doc PARTIALLY VERIFIED：subpath import 可行但宿主"看不到"，模板未演示 | **P1** | `src/index.ts` 无 observability 字眼；`@dmoss/agent/observability` 只在 `package.json exports` |
+| **C5** | observability subpath 存在但主 barrel 未导出 + create-dmoss-app 无 tracing 示例 | Doc PARTIALLY VERIFIED：subpath import 可行但宿主"看不到"，模板未演示 | **P1** | `src/index.ts` 无 observability 字眼；`@rdk-moss/agent/observability` 只在 `package.json exports` |
 | **C6** | `ToolHookRegiook 类型未从主 barrel 导出，新手"看不见" | Style 间接证实（`export *` 桶文件扩散但主 barrel 精选） | **P1** | `src/index.ts` 无 `ToolHookRegistry` |
 | **C7** | `as unknown as X` 类型逃逸 20+ 处（含 6 处集中在 dmoss-agent.ts） | Style VERIFIED 并加重：发现 `dmoss-agent-types.ts:234,238,242` 三条 cast 辅助函数固化了类型逃逸 | **P1** | `dmoss-agent.ts:353-356,368,495,498,733`；`dmoss-agent-types.ts:234,238,242` |
 | **C8** | `compactHistoryIfNeeded` 单函数 ~186 行，分支复杂 | Dead-code agent CHALLENGED 文件整体规模，但确认该函数应拆 | **P2** | `compaction.ts:544-730` |
@@ -145,7 +145,7 @@
 
 > **P1-7 后续说明**：dmoss-agent-types.ts 的三个 cast helper 已消除，但 dmoss-agent.ts 中仍有 ~16 处 `as unknown as` 类型逃逸（集中在 SessionStore 边界）。这些需要先决策 SessionStore 泛型化 vs adapter 函数方案，**不允许批量 sed 替换**。每项 cast 必须满足：(1) 紧跟 runtime 类型校验，或 (2) 注释说明为什么编译器看不到这个关系。需要单独 RFC。
 | **P1-8** | 把 deprecated 全家桶的 JSDoc 改成 `@deprecated since 0.x, removal target 1.0`，并在 CHANGELOG 加迁移指引（C15） ✅ | `knowledge/registry.ts`、`extensions/registry.ts` |
-| **P1-9** | 加 MCP client 支持（mcp.json 读取 + tool 注册桥接）—— code agent 框架 2025 年标配 ✅ | 新 subpath `@dmoss/agent/mcp` |
+| **P1-9** | 加 MCP client 支持（mcp.json 读取 + tool 注册桥接）—— code agent 框架 2025 年标配 ✅ | 新 subpath `@rdk-moss/agent/mcp` |
 
 ---
 
@@ -159,7 +159,7 @@
 | **P2-7** | `formatToolStep` 改名 `formatToolStepForPrompt` / `formatToolStepForDistill`（C12） ✅ | dmoss-skills 两文件 |
 | **P2-8** | device tools 的 `catch (err: any)` 走 `wrapAsDmoss` 体系（C13） ✅ | `device-ssh.ts` 等 |
 | **P2-9** | `src/core/index.ts` 从 `export *` 改成显式命名 re-export（C14） ✅ | `src/core/index.ts` |
-| **P2-10** | `@internal` 符号迁移到 `@dmoss/agent/core` subpath，或在 README 顶部明确"@internal 不受 semver 保护"（C17） ✅ | `src/index.ts` |
+| **P2-10** | `@internal` 符号迁移到 `@rdk-moss/agent/core` subpath，或在 README 顶部明确"@internal 不受 semver 保护"（C17） ✅ | `src/index.ts` |
 
 ---
 

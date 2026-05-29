@@ -5,7 +5,7 @@
  *   - Zero dependency beyond `fetch` (Node 18+).
  *   - Safe-by-default: HTTP(S) only, size cap, timeout, optional private-IP block.
  *   - HTML → readable text via a minimal cleaner (strips <script> / <style> and tags).
- *   - Logs via `@dmoss/agent/logger` (scope: `tool:web-fetch`) with sensitive-field redaction.
+ *   - Logs via `@rdk-moss/agent/logger` (scope: `tool:web-fetch`) with sensitive-field redaction.
  *
  * Intentionally **not**:
  *   - A browser / JS renderer (use `playwright` elsewhere if needed).

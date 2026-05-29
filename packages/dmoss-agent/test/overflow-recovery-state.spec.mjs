@@ -3,7 +3,7 @@
  * Self-test for overflow recovery state transitions.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/overflow-recovery-state.spec.mjs
  */
 

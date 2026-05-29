@@ -99,7 +99,7 @@
 ### A.3 最小 CLI 宿主（fixture host）
 
 - 不是 `create-dmoss-app` 完整脚手架——先做一个 fixture 级别的 host
-- 仅依赖 `@dmoss/agent` + `@dmoss/core`，不引 RDK Studio 代码
+- 仅依赖 `@rdk-moss/agent` + `@rdk-moss/core`，不引 RDK Studio 代码
 - 目标：能用它跑通一轮 agent 对话 = 合约合格
 - 产出：mock LLM provider + mock session store + mock tool set
 
@@ -240,7 +240,7 @@ Mock: 固定 knowledge base
   - 矩阵测试：macOS (arm64) + Linux (x64)
   - `npm run verify` → lint → typecheck → unit → integration → e2e smoke
 - `npm version` + 自动化 changelog 生成（from conventional commits）
-- npm publish 灰度：先 `@dmoss/core` → 等 CI 绿 → `@dmoss/agent` → 其他包
+- npm publish 灰度：先 `@rdk-moss/core` → 等 CI 绿 → `@rdk-moss/agent` → 其他包
 
 ---
 

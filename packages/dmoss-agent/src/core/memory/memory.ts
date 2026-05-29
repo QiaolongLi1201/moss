@@ -12,4 +12,4 @@ export {
   type MemorySource,
   type MemoryWriteValidation,
   type SelfLearningMemoryDraft,
-} from '@dmoss/memory';
+} from '@rdk-moss/memory';

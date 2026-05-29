@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * @dmoss/memory — self-learning-memory draft generation unit tests
+ * @rdk-moss/memory — self-learning-memory draft generation unit tests
  *
  * Run after package build:
- *   npm run build -w @dmoss/memory && node packages/dmoss-memory/test/self-learning-memory.spec.mjs
+ *   npm run build -w @rdk-moss/memory && node packages/dmoss-memory/test/self-learning-memory.spec.mjs
  */
 import assert from 'node:assert/strict';
 import { fileURLToPath, pathToFileURL } from 'node:url';

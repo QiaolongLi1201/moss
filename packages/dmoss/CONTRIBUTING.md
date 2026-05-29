@@ -1,6 +1,6 @@
 # Contributing to D-Moss
 
-Thank you for your interest in contributing to D-Moss! This document provides guidelines for contributing to the `@dmoss/core` package.
+Thank you for your interest in contributing to D-Moss! This document provides guidelines for contributing to the `@rdk-moss/core` package.
 
 ## Development Setup
 
@@ -89,7 +89,7 @@ docs: update KnowledgeModule JSDoc
 
 ## Dependency Rules
 
-**CRITICAL**: `@dmoss/core` must have **zero** imports from:
+**CRITICAL**: `@rdk-moss/core` must have **zero** imports from:
 - `server/` (host application)
 - `src/` (frontend)
 - `electron/` (desktop shell)
@@ -99,7 +99,7 @@ This ensures the package can be published and consumed standalone.
 
 ## Security and `npm audit` (monorepo)
 
-From the repo root, run `npm audit` / `npm audit fix` when preparing changes. `@dmoss/core` has **zero runtime dependencies**; most audit noise comes from other parts of the monorepo. Prioritize findings that would affect the **published** `@dmoss/core` tarball. See `SECURITY.md`.
+From the repo root, run `npm audit` / `npm audit fix` when preparing changes. `@rdk-moss/core` has **zero runtime dependencies**; most audit noise comes from other parts of the monorepo. Prioritize findings that would affect the **published** `@rdk-moss/core` tarball. See `SECURITY.md`.
 
 ## Releasing
 

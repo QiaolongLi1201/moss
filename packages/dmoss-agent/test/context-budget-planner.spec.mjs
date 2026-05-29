@@ -3,7 +3,7 @@
  * Self-test for ContextBudgetPlanner.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/context-budget-planner.spec.mjs
  */
 

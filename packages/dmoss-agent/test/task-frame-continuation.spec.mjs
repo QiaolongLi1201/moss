@@ -3,7 +3,7 @@
  * Working Context / Task Frame continuation tests.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/task-frame-continuation.spec.mjs
  */
 

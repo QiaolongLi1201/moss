@@ -3,7 +3,7 @@
  * Regression tests for channel bridge chat timeouts.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/channel-bridge-timeout.spec.mjs
  */
 

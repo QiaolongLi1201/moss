@@ -29,7 +29,7 @@ const fixtureManifest = {
   moss: {
     version: '0.3.1',
     packages: [
-      { name: '@dmoss/core', version: '0.3.1', stability: 'stable' },
+      { name: '@rdk-moss/core', version: '0.3.1', stability: 'stable' },
     ],
   },
   capabilities: [

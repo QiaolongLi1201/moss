@@ -6,17 +6,17 @@
 ## 解耦进度
 
 ### 已完成
-- ✅ `@dmoss/agent` 包无 RDK/OpenClaw 品牌硬编码（品牌中立）
-- ✅ `@dmoss/agent` 通过 `@dmoss/core` 正式包依赖（非相对路径）
+- ✅ `@rdk-moss/agent` 包无 RDK/OpenClaw 品牌硬编码（品牌中立）
+- ✅ `@rdk-moss/agent` 通过 `@rdk-moss/core` 正式包依赖（非相对路径）
 - ✅ 受保护路径、工具截断阈值等可由宿主通过 `registerProtectedPaths()` / `registerToolOutputLimits()` 注入
 - ✅ 环境变量统一使用 `DMOSS_*` 前缀（移除 `RDKCLAW_*` 回退）
 - ✅ 所有 "对应 OpenClaw" 历史注释已清理
 - ✅ Studio 侧通过 `dmoss-agent-bridge.ts` 的 `initStudioDmossBridge()` 统一注册 RDK 特有配置
-- ✅ `inline-thinking-stream.ts` 迁移到 `@dmoss/agent/core`
-- ✅ `sandbox-paths.ts` 迁移到 `@dmoss/agent/safety`
-- ✅ `context-window-guard.ts` 迁移到 `@dmoss/agent/context`
-- ✅ `shell-soft-failure-hint.ts` 迁移到 `@dmoss/agent/safety`
-- ✅ `server/dmoss/` → `server/agent/` 交叉引用中已迁移模块改用 `@dmoss/agent` 包路径
+- ✅ `inline-thinking-stream.ts` 迁移到 `@rdk-moss/agent/core`
+- ✅ `sandbox-paths.ts` 迁移到 `@rdk-moss/agent/safety`
+- ✅ `context-window-guard.ts` 迁移到 `@rdk-moss/agent/context`
+- ✅ `shell-soft-failure-hint.ts` 迁移到 `@rdk-moss/agent/safety`
+- ✅ `server/dmoss/` → `server/agent/` 交叉引用中已迁移模块改用 `@rdk-moss/agent` 包路径
 
 - ✅ `PiAiLLMProvider` 适配器（pi-ai → LLMProvider 接口），可独立使用 DmossAgent
 - ✅ `JsonlSessionStore` 持久化实现（JSONL 文件存储）
@@ -67,7 +67,7 @@
 | `spawn-profile.ts` | 🏠 | — | Studio 子代理配置（保留在宿主） |
 | `tools/types.ts` | ✅ | `core/tool-types.ts` | 工具类型（通用部分） |
 | `tools/abort.ts` | ✅ | `core/abort.ts` | AbortController 工具 |
-| `plugins/dmoss-plugin-types.ts` | ✅ | _(in @dmoss/core)_ | 已通过 re-export |
+| `plugins/dmoss-plugin-types.ts` | ✅ | _(in @rdk-moss/core)_ | 已通过 re-export |
 | `sandbox-paths.ts` | ✅ | `safety/sandbox-paths.ts` | 沙箱路径校验 |
 | `session-key.ts` | ✅ | `core/session-key.ts` | 会话 Key 生成 |
 
@@ -101,7 +101,7 @@
 | `at-ref-parser.ts` | ✅ | @引用解析 |
 | `skills/registry.ts` | ✅ | 技能注册表 |
 | `shell-soft-failure-hint.ts` | ✅ | Shell 软失败提示 |
-| `robotics-engineering-prompt.ts` | ✅ | 已迁移到 `@dmoss/agent/prompts` |
+| `robotics-engineering-prompt.ts` | ✅ | 已迁移到 `@rdk-moss/agent/prompts` |
 | `system-prompt-layers.ts` | 🏠 | 提示分层（Studio 特有） |
 | `types.ts` | 🏠 | 请求/附件/策略类型（Studio 特有） |
 
@@ -110,7 +110,7 @@
 | 文件 | 说明 |
 |------|------|
 | `app.ts` | Studio 编排器（消费 DmossAgent） |
-| `open-web-intent.ts` | 打开网页意图与 `studio_open_url` 提示路由（宿主能力，非 `@dmoss/agent`） |
+| `open-web-intent.ts` | 打开网页意图与 `studio_open_url` 提示路由（宿主能力，非 `@rdk-moss/agent`） |
 | `system-prompt-builder.ts` | Studio 专有提示内容 |
 | `tool-contract-prompt.ts` | Studio 工具描述 |
 | `notification-hub.ts` | Socket.IO 推送 |
@@ -133,10 +133,10 @@
 | 文件 | 状态 |
 |------|------|
 | `registry.ts` | ✅ |
-| `types.ts` | ✅ (re-export from @dmoss/core) |
+| `types.ts` | ✅ (re-export from @rdk-moss/core) |
 | `index.ts` | 🏠 Studio（编排入口，调用 bootstrap + robot-hub 加载） |
-| `robot-hub-store.ts` | 🏠 Studio（文件系统持久层，依赖 `resolveDataDir()`；类型已从 `@dmoss/agent/knowledge` 导入） |
-| `robot-hub-types.ts` | ✅ 已迁移至 `@dmoss/agent/knowledge/robot-hub-types.ts`（Studio 侧为 re-export） |
+| `robot-hub-store.ts` | 🏠 Studio（文件系统持久层，依赖 `resolveDataDir()`；类型已从 `@rdk-moss/agent/knowledge` 导入） |
+| `robot-hub-types.ts` | ✅ 已迁移至 `@rdk-moss/agent/knowledge/robot-hub-types.ts`（Studio 侧为 re-export） |
 
 ## `server/dmoss-extensions/` → D-Moss（框架部分）
 
@@ -155,7 +155,7 @@
 
 ## 宿主集成 API
 
-当 `@dmoss/agent` 作为独立开源包时，宿主（如 RDK Studio）通过以下 API 注入产品特有配置：
+当 `@rdk-moss/agent` 作为独立开源包时，宿主（如 RDK Studio）通过以下 API 注入产品特有配置：
 
 | API | 用途 | Studio 调用位置 |
 |-----|------|----------------|
@@ -169,4 +169,4 @@
 | `registerKnowledgeModule(mod)` | 注册领域知识模块 | `register-rdk-studio-module.ts` |
 | `syncPlatformExtensionsAtStartup()` | 启动时同步平台扩展 | `bootstrap.ts` |
 
-核心 Agent 运行时已基本完成迁移。剩余 🏠 标记文件属于 Studio 产品层，不随 `@dmoss/agent` 发布。
+核心 Agent 运行时已基本完成迁移。剩余 🏠 标记文件属于 Studio 产品层，不随 `@rdk-moss/agent` 发布。

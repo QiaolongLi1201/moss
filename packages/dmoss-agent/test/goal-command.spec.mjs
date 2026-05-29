@@ -3,7 +3,7 @@
  * Goal command adapter regression test.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/goal-command.spec.mjs
  */
 

@@ -12,7 +12,7 @@
  * executes tool calls, and the final event is 'done'.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/e2e/e2e-scenarios.spec.mjs
  */
 

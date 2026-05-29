@@ -9,8 +9,8 @@
  * delegate to a shared singleton instance.
  */
 
-import type { DmossVendorPlugin } from '@dmoss/core';
-import type { DmossPlatformExtension } from '@dmoss/core';
+import type { DmossVendorPlugin } from '@rdk-moss/core';
+import type { DmossPlatformExtension } from '@rdk-moss/core';
 import type { KnowledgeRegistry } from '../knowledge/registry.js';
 import {
   bridgeGlobalKnowledgeModuleForExtension,

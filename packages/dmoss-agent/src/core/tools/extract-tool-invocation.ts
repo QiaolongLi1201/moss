@@ -16,7 +16,7 @@
  *   3. **可扩展**：额外支持一个 per-tool 的「参数别名」映射（如 `url -> 链接/地址/url`）——从 schema 的
  *      `description` 里抽取，无需宿主单独配置。
  *
- * 此模块纯文本解析，零 I/O、无宿主依赖，便于在 @dmoss/agent vendor-neutral 约束下保留通用性。
+ * 此模块纯文本解析，零 I/O、无宿主依赖，便于在 @rdk-moss/agent vendor-neutral 约束下保留通用性。
  */
 
 import type { Tool } from './tool-types.js';

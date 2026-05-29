@@ -4,7 +4,7 @@
  * 时不应把对话历史剪到「几乎只剩当前一条」。
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/pruning-min-history-budget.spec.mjs
  */
 

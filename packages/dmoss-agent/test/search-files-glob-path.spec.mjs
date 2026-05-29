@@ -3,7 +3,7 @@
  * Regression tests for search_files path-aware glob matching.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/search-files-glob-path.spec.mjs
  */
 

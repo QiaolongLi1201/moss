@@ -1,4 +1,4 @@
-# @dmoss/teaching
+# @rdk-moss/teaching
 
 Teach-while-solve annotation layer for the Moss agent runtime.
 
@@ -13,13 +13,13 @@ Teach-while-solve annotation layer for the Moss agent runtime.
 ## Installation
 
 ```bash
-npm install @dmoss/teaching
+npm install @rdk-moss/teaching
 ```
 
 ## Usage
 
 ```typescript
-import { createStudioTeachingHooks } from '@dmoss/teaching';
+import { createStudioTeachingHooks } from '@rdk-moss/teaching';
 
 const { onBeforeToolExec, onToolResult } = createStudioTeachingHooks({
   depth: 'concise', // 'off' | 'concise' | 'detailed'

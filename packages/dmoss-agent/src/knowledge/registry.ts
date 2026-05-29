@@ -17,8 +17,8 @@ import type {
   PromptFragment,
   CommandPattern,
   FailureHint,
-} from '@dmoss/core';
-import type { DeviceFamily } from '@dmoss/core';
+} from '@rdk-moss/core';
+import type { DeviceFamily } from '@rdk-moss/core';
 import { getRootLogger } from '../logger.js';
 
 const log = getRootLogger().child('agent:knowledge');

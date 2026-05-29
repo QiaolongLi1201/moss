@@ -3,7 +3,7 @@
 ## Architecture Overview
 
 ```
-@dmoss/core               ← Zero dependencies, publishable standalone
+@rdk-moss/core               ← Zero dependencies, publishable standalone
        ↑ implements contracts
 Host Application
   ├── server/dmoss-extensions/    ← PlatformExtension host bindings
@@ -18,19 +18,19 @@ Knowledge Packages (parallel, not nested)
 
 ## Dependency Direction (must be followed)
 
-1. **@dmoss/core** → has NO imports from `server/`, `src/`, `electron/`, or any host code
-2. **Host** → imports contracts from `@dmoss/core`; implements `DmossPlatformExtension`, registers `KnowledgeModule`
-3. **Knowledge packages** → import types from `@dmoss/core`; do NOT import from `server/` or other host code
+1. **@rdk-moss/core** → has NO imports from `server/`, `src/`, `electron/`, or any host code
+2. **Host** → imports contracts from `@rdk-moss/core`; implements `DmossPlatformExtension`, registers `KnowledgeModule`
+3. **Knowledge packages** → import types from `@rdk-moss/core`; do NOT import from `server/` or other host code
 4. **Knowledge packages** → do NOT import from each other
 
-## How the Host Consumes @dmoss/core
+## How the Host Consumes @rdk-moss/core
 
 ### 1. Bind Generic Types to Host Tool
 
 ```typescript
 // server/agent/plugins/dmoss-plugin-types.ts
 import type { Tool } from '../tools/types.js';
-import type { DmossVendorPlugin } from '@dmoss/core';
+import type { DmossVendorPlugin } from '@rdk-moss/core';
 
 export type DMossVendorPlugin = DmossVendorPlugin<Tool>;
 ```
@@ -39,7 +39,7 @@ export type DMossVendorPlugin = DmossVendorPlugin<Tool>;
 
 ```typescript
 // server/dmoss-extensions/builtins/my-platform-extension.ts
-import type { DmossPlatformExtension } from '@dmoss/core';
+import type { DmossPlatformExtension } from '@rdk-moss/core';
 import type { Tool } from '../../agent/tools/types.js';
 
 export function createMyPlatformExtension(): DmossPlatformExtension<Tool> {
@@ -70,10 +70,10 @@ const BUILTIN_EXTENSION_FACTORIES = [
 
 ## Splitting to a Separate Repository
 
-When publishing `@dmoss/core` as a standalone npm package:
+When publishing `@rdk-moss/core` as a standalone npm package:
 
 - [ ] Copy `packages/dmoss/` to a new repository
 - [ ] Verify `npm run build` produces valid `dist/` output
-- [ ] Update host imports from relative paths to `import '@dmoss/core'`
-- [ ] Confirm no circular dependencies: `@dmoss/core` depends on nothing
+- [ ] Update host imports from relative paths to `import '@rdk-moss/core'`
+- [ ] Confirm no circular dependencies: `@rdk-moss/core` depends on nothing
 - [ ] Publish to npm with `npm publish`

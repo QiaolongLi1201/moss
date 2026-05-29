@@ -4,7 +4,7 @@
  * does not split tool_use/tool_result pairs.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/overflow-truncation-pairs.spec.mjs
  */
 

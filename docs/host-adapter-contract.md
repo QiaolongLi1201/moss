@@ -5,7 +5,7 @@ such as RDK Studio should keep credentials, UI, native integrations, and
 device-specific code outside of Moss, then expose them through a narrow host
 adapter.
 
-The public contract lives in `@dmoss/core/contracts/host-adapter`.
+The public contract lives in `@rdk-moss/core/contracts/host-adapter`.
 
 ## Ownership
 
@@ -41,7 +41,7 @@ import {
   MOSS_HOST_ADAPTER_CONTRACT_VERSION,
   evaluateMossHostCompatibility,
   type MossHostRuntimeManifest,
-} from '@dmoss/core/contracts/host-adapter';
+} from '@rdk-moss/core/contracts/host-adapter';
 
 const manifest: MossHostRuntimeManifest = {
   schema: 'moss_host_adapter.v1',
@@ -49,7 +49,7 @@ const manifest: MossHostRuntimeManifest = {
   host: { id: 'example-host', name: 'Example Host', version: '1.2.0' },
   moss: {
     version: '0.3.1',
-    packages: [{ name: '@dmoss/core', version: '0.3.1', stability: 'stable' }],
+    packages: [{ name: '@rdk-moss/core', version: '0.3.1', stability: 'stable' }],
   },
   capabilities: [
     {

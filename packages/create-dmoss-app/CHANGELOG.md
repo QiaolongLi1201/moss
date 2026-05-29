@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Generated projects now depend on the current Moss package ranges:
-  `@dmoss/core@^0.3.1` and `@dmoss/agent@^0.3.1`.
+  `@rdk-moss/core@^0.3.1` and `@rdk-moss/agent@^0.3.1`.
 - Scaffold version ranges are verified by `publish:dmoss:lint` and the consumer
   smoke.
 

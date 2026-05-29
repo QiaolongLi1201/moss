@@ -2,4 +2,4 @@ export {
   WorkspaceMemory,
   type WorkspaceMemoryConfig,
   type WorkspaceMemoryContext,
-} from '@dmoss/memory';
+} from '@rdk-moss/memory';

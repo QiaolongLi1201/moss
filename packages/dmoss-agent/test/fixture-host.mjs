@@ -6,7 +6,7 @@
  * mock agent conversation — mock LLM, mock session store, manifest validation.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/fixture-host.mjs
  */
 
@@ -167,8 +167,8 @@ const manifest = {
   moss: {
     version: '0.3.1',
     packages: [
-      { name: '@dmoss/core', version: '0.3.1', stability: 'stable' },
-      { name: '@dmoss/agent', version: '0.3.1', stability: 'stable' },
+      { name: '@rdk-moss/core', version: '0.3.1', stability: 'stable' },
+      { name: '@rdk-moss/agent', version: '0.3.1', stability: 'stable' },
     ],
   },
   capabilities: [

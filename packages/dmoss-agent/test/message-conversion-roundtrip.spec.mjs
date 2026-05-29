@@ -7,7 +7,7 @@
  * tool_result, thinking, and edge cases.
  *
  * Run:
- *   npm run build -w @dmoss/agent
+ *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/message-conversion-roundtrip.spec.mjs
  */
 

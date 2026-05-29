@@ -21,8 +21,8 @@ const log = getRootLogger().child('agent');
 import { ToolRegistry } from '../tools/tool-registry.js';
 import type { AgentHooks } from './agent-hooks.js';
 import { KnowledgeRegistry, drainPendingGlobalModules } from '../../knowledge/registry.js';
-import { buildRoboticsEngineeringPrompt, DEFAULT_MODEL } from '@dmoss/core';
-import type { KnowledgeModule } from '@dmoss/core';
+import { buildRoboticsEngineeringPrompt, DEFAULT_MODEL } from '@rdk-moss/core';
+import type { KnowledgeModule } from '@rdk-moss/core';
 import {
   compactHistoryIfNeeded,
   type SummarizeFn,

@@ -116,6 +116,8 @@ DMOSS_API_KEY=sk-xxx node packages/dmoss-agent/dist/cli.js
 --version, -v           show version
 ```
 
+By default the CLI prints a short progress trail to stderr: planning turns, tool calls, and redacted tool results. The final assistant answer stays on stdout so shell piping still works. Tune this with `DMOSS_CLI_DETAIL=quiet|progress|verbose`; in the interactive REPL you can also run `/detail quiet`, `/detail progress`, or `/detail verbose`.
+
 All flags also available via env vars: `DMOSS_LOG_LEVEL`, `DMOSS_LOG_JSON=1`, `DMOSS_NO_COLOR=1`.
 
 ## Quick Start

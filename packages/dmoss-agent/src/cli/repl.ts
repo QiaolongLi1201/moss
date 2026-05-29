@@ -16,7 +16,8 @@ export async function runInteractive(agent: DmossAgent, skillLearner?: SkillLear
   });
 
   console.error(`D-Moss Agent (model: ${currentModel}, workspace: ${WORKSPACE})`);
-  console.error('Commands: /model <name> | /models | /memory | /skills | /quit');
+  console.error('Progress: shows planning, tool calls, and tool results on stderr.');
+  console.error('Commands: /model <name> | /models | /detail <quiet|progress|verbose> | /memory | /skills | /quit');
   console.error('Type your message and press Enter. Ctrl+C to exit.\n');
   rl.prompt();
 
@@ -49,6 +50,19 @@ export async function runInteractive(agent: DmossAgent, skillLearner?: SkillLear
       console.error('  /model claude-sonnet-4-20250514');
       console.error('  /model qwen-plus');
       console.error('  /model deepseek-chat');
+      rl.prompt();
+      continue;
+    }
+
+    if (msg.startsWith('/detail')) {
+      const mode = msg.slice('/detail'.length).trim().toLowerCase();
+      if (mode === 'quiet' || mode === 'progress' || mode === 'verbose') {
+        process.env.DMOSS_CLI_DETAIL = mode;
+        console.error(`[config] CLI detail set to: ${mode}`);
+      } else {
+        console.error(`[config] Current CLI detail: ${process.env.DMOSS_CLI_DETAIL || 'progress'}`);
+        console.error('[config] Switch with: /detail quiet | /detail progress | /detail verbose');
+      }
       rl.prompt();
       continue;
     }
@@ -88,7 +102,7 @@ export async function runInteractive(agent: DmossAgent, skillLearner?: SkillLear
 
     if (msg.startsWith('/')) {
       console.error(`[help] Unknown command: ${msg}`);
-      console.error('[help] Available: /model /models /memory /skills /quit');
+      console.error('[help] Available: /model /models /detail /memory /skills /quit');
       rl.prompt();
       continue;
     }

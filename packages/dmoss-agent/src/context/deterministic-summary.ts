@@ -49,8 +49,13 @@ function fallbackMessageNote(message: Message, index: number): string {
     }
     if (block.type === "tool_result") {
       const body = sanitizeSecrets(truncateMiddle(block.content ?? "", 520));
+      const statusTag = block.aborted?.by
+        ? ` aborted:${block.aborted.by}`
+        : block.is_error
+          ? " error"
+          : "";
       parts.push(
-        `tool_result ${block.name ?? "tool"}${block.is_error ? " error" : ""}: ${JSON.stringify(body)}`,
+        `tool_result ${block.name ?? "tool"}${statusTag}: ${JSON.stringify(body)}`,
       );
     }
   }

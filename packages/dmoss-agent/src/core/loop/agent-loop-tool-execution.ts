@@ -210,6 +210,9 @@ export async function executeAgentLoopToolCalls(
       name: call.name,
       content: truncatedResult,
       is_error: isError,
+      ...(outcome.kind === 'completed' && outcome.aborted
+        ? { aborted: outcome.aborted }
+        : {}),
       ...(structuredContent ? { structuredContent } : {}),
     });
   };

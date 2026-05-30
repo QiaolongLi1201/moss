@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   createCompactionSummaryMessage,
+  type ContentBlock,
   type Message,
 } from "../core/session/session-jsonl.js";
 import {
@@ -242,6 +243,11 @@ function extractUserText(content: Message["content"]): string {
     .join("");
 }
 
+function toolResultSummaryLabel(block: ContentBlock): string {
+  const suffix = block.aborted?.by ? ` aborted:${block.aborted.by}` : "";
+  return `[Tool result${suffix}]`;
+}
+
 function serializeConversation(messages: Message[]): string {
   const parts: string[] = [];
   for (const msg of messages) {
@@ -251,12 +257,11 @@ function serializeConversation(messages: Message[]): string {
         parts.push(`[User]: ${text}`);
       }
       if (Array.isArray(msg.content)) {
-        const toolResults = msg.content
-          .filter((block) => block.type === "tool_result")
-          .map((block) => block.content ?? "")
-          .filter(Boolean);
-        for (const result of toolResults) {
-          parts.push(`[Tool result]: ${result}`);
+        for (const block of msg.content) {
+          if (block.type !== "tool_result") continue;
+          const result = block.content ?? "";
+          if (!result) continue;
+          parts.push(`${toolResultSummaryLabel(block)}: ${result}`);
         }
       }
       continue;

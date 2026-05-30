@@ -26,7 +26,9 @@ const REQUIRED_FIELDS = [
 
 const RISK_VALUES = ['low', 'medium', 'high'] as const;
 const DELEGATE_VALUES = ['local', 'board', 'hybrid', 'collaborative'] as const;
-const APPROVAL_VALUES = ['none', 'auto', 'confirm'] as const;
+const APPROVAL_VALUES = ['none', 'confirm', 'strict'] as const;
+/** Legacy alias accepted with a warning so old user-authored / external skills keep loading. */
+const APPROVAL_LEGACY_ALIASES = ['auto'] as const;
 
 const CAMEL_TO_KEBAB: Record<string, string> = {
   disableModelInvocation: 'disable-model-invocation',
@@ -169,7 +171,11 @@ export function validateSkillContent(content: string): SkillValidationResult {
     errors.push(`delegate_preference 值无效: "${fm.delegate_preference}"，应为 ${DELEGATE_VALUES.join(' | ')}`);
   }
   if (fm.approval_level && !APPROVAL_VALUES.includes(fm.approval_level as typeof APPROVAL_VALUES[number])) {
-    errors.push(`approval_level 值无效: "${fm.approval_level}"，应为 ${APPROVAL_VALUES.join(' | ')}`);
+    if ((APPROVAL_LEGACY_ALIASES as readonly string[]).includes(fm.approval_level)) {
+      warnings.push(`approval_level "${fm.approval_level}" 为遗留别名，建议改为 "confirm"`);
+    } else {
+      errors.push(`approval_level 值无效: "${fm.approval_level}"，应为 ${APPROVAL_VALUES.join(' | ')}`);
+    }
   }
 
   // Trigger presence

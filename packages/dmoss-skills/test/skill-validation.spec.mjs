@@ -202,6 +202,59 @@ category: Conversation
   console.log('  [PASS] invalid approval_level is rejected');
 }
 
+{
+  const md = `---
+name: test-skill
+description: A valid skill description that is long enough to pass.
+version: 1.0.0
+trigger: test, skill
+risk: high
+permissions: workspace_read,device_exec
+delegate_preference: board
+requires_board: true
+approval_level: strict
+cooldown_seconds: 0
+scheduler_template: none
+category: Conversation
+---
+
+# Test Skill
+
+## 执行流程
+1. Step one with enough content to pass body check.
+`;
+  const result = validateSkillContent(md);
+  assert.equal(result.valid, true, `expected strict approval to pass, got errors: ${JSON.stringify(result.errors)}`);
+  console.log('  [PASS] strict approval level is accepted');
+}
+
+{
+  const md = `---
+name: test-skill
+description: A valid skill description that is long enough to pass.
+version: 1.0.0
+trigger: test, skill
+risk: medium
+permissions: workspace_read,device_exec
+delegate_preference: board
+requires_board: true
+approval_level: auto
+cooldown_seconds: 0
+scheduler_template: none
+category: Conversation
+---
+
+# Test Skill
+
+## 执行流程
+1. Step one with enough content to pass body check.
+`;
+  const result = validateSkillContent(md);
+  assert.equal(result.valid, true, `expected legacy auto approval to warn, got errors: ${JSON.stringify(result.errors)}`);
+  assert.ok(result.warnings.some(e => e.includes('approval_level') && e.includes('遗留别名') && e.includes('confirm')));
+  console.log('  [PASS] legacy auto approval level is accepted with warning');
+}
+
 // ─── validateSkillContent: camelCase warnings ─────────────────────
 
 {

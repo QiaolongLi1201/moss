@@ -466,6 +466,7 @@ export function shouldTriggerCompaction(params: {
   settings?: Partial<CompactionSettings>;
   systemPrompt?: string;
   charsPerTokenUnit?: number;
+  includeThinking?: boolean;
 }): boolean {
   const settings = {
     ...DEFAULT_COMPACTION_SETTINGS,
@@ -479,8 +480,9 @@ export function shouldTriggerCompaction(params: {
           systemPrompt: params.systemPrompt,
           charsPerTokenUnit: params.charsPerTokenUnit,
           effectiveContextWindowTokens: params.contextWindowTokens,
+          includeThinking: params.includeThinking,
         })
-      : estimateMessagesTokens(params.messages);
+      : estimateMessagesTokens(params.messages, { includeThinking: params.includeThinking });
   return totalTokens > params.contextWindowTokens - settings.reserveTokens;
 }
 
@@ -488,11 +490,12 @@ export function shouldProactiveCompact(params: {
   messages: Message[];
   contextWindowTokens: number;
   settings?: Partial<CompactionSettings>;
+  includeThinking?: boolean;
 }): boolean {
   const settings = { ...DEFAULT_COMPACTION_SETTINGS, ...params.settings };
   if (!settings.enabled) return false;
 
-  const totalTokens = estimateMessagesTokens(params.messages);
+  const totalTokens = estimateMessagesTokens(params.messages, { includeThinking: params.includeThinking });
   const usageRatio = totalTokens / params.contextWindowTokens;
 
   if (usageRatio < 0.6) return false;
@@ -596,6 +599,7 @@ export async function compactHistoryIfNeeded(params: {
   forceCompaction?: boolean;
   remoteCompactProvider?: RemoteCompactProvider;
   customInstructions?: string;
+  includeThinking?: boolean;
   /** M3: Optional workspace directory for file ops scope isolation. */
   workspaceDir?: string;
 }): Promise<{
@@ -605,7 +609,8 @@ export async function compactHistoryIfNeeded(params: {
   degraded?: boolean;
 }> {
   const charsPerUnitBase = Math.max(1, params.charsPerTokenUnit ?? CHARS_PER_TOKEN_ESTIMATE);
-  const rawTotalChars = estimateMessagesChars(params.messages) + (params.systemPrompt?.length ?? 0);
+  const estimateOptions = { includeThinking: params.includeThinking };
+  const rawTotalChars = estimateMessagesChars(params.messages, estimateOptions) + (params.systemPrompt?.length ?? 0);
   const pruneCharsPerUnit =
     rawTotalChars / params.contextWindowTokens >= 0.85 ? 1 : charsPerUnitBase;
   const systemPromptTokens = params.systemPrompt
@@ -615,6 +620,7 @@ export async function compactHistoryIfNeeded(params: {
           systemPrompt: params.systemPrompt,
           charsPerTokenUnit: pruneCharsPerUnit,
           effectiveContextWindowTokens: params.contextWindowTokens,
+          includeThinking: params.includeThinking,
         }),
       )
     : undefined;
@@ -624,6 +630,7 @@ export async function compactHistoryIfNeeded(params: {
     contextWindowTokens: params.contextWindowTokens,
     systemPromptTokens,
     charsPerTokenUnit: pruneCharsPerUnit,
+    includeThinking: params.includeThinking,
     settings: params.pruningSettings,
   });
   const priorCompactionSummaries = params.messages
@@ -656,6 +663,7 @@ export async function compactHistoryIfNeeded(params: {
       settings: params.compactionSettings,
       systemPrompt: params.systemPrompt,
       charsPerTokenUnit: charsPerUnitBase,
+      includeThinking: params.includeThinking,
     });
 
   if (!shouldCompact) {
@@ -663,7 +671,7 @@ export async function compactHistoryIfNeeded(params: {
   }
 
   if (pruneResult.droppedMessages.length === 0) {
-    const totalTokens = estimateMessagesTokens(params.messages);
+    const totalTokens = estimateMessagesTokens(params.messages, estimateOptions);
     const threshold = params.contextWindowTokens * 0.7;
     if (!params.forceCompaction && totalTokens <= threshold) {
       return { pruneResult };

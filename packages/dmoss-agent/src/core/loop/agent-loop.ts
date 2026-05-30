@@ -50,6 +50,7 @@ import { createInitialLoopState, resetIterationState } from './agent-loop-state.
 import type { SteeringContext } from './steering.js';
 import {
   prepareTurnContext,
+  shouldIncludeThinkingInBudget,
 } from './agent-loop-context-prep.js';
 import {
   executeLlmTurn,
@@ -247,7 +248,10 @@ export function runAgentLoop(
         consecutiveToolErrors: state.toolExecutionMetrics.consecutiveToolErrors,
         totalToolCalls: state.toolExecutionMetrics.totalToolCalls,
         contextUsageRatio: effCtx > 0
-          ? estimateMessagesChars(currentMessages) / (effCtx * resolveContextCharsPerTokenUnit())
+          ? estimateMessagesChars(
+              currentMessages,
+              { includeThinking: shouldIncludeThinkingInBudget(currentMessages, modelDef) },
+            ) / (effCtx * resolveContextCharsPerTokenUnit())
           : 0,
         sessionKey,
       };

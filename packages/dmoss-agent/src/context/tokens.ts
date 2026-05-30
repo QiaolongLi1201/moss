@@ -2,6 +2,14 @@ import type { ContentBlock, Message } from "../core/session/session-jsonl.js";
 
 export const CHARS_PER_TOKEN_ESTIMATE = 4;
 
+export type TokenEstimateOptions = {
+  /**
+   * Count provider-native assistant reasoning history. Set this only when the
+   * next provider payload will round-trip Message.thinking.
+   */
+  includeThinking?: boolean;
+};
+
 /**
  * CJK character detection via charCode ranges — avoids per-character regex
  * overhead. Token estimation is called on every message in the context window,
@@ -59,34 +67,45 @@ function estimateBlockTokens(block: ContentBlock): number {
   return Math.max(1, Math.ceil(estimateBlockChars(block) / CHARS_PER_TOKEN_ESTIMATE));
 }
 
-export function estimateMessageChars(message: Message): number {
+function joinedAssistantThinking(message: Message, options?: TokenEstimateOptions): string {
+  if (!options?.includeThinking || message.role !== "assistant") return "";
+  if (!Array.isArray(message.thinking) || message.thinking.length === 0) return "";
+  return message.thinking
+    .filter((chunk) => typeof chunk === "string" && chunk.length > 0)
+    .join("\n\n")
+    .trim();
+}
+
+export function estimateMessageChars(message: Message, options?: TokenEstimateOptions): number {
+  const thinkingChars = joinedAssistantThinking(message, options).length;
   if (typeof message.content === "string") {
-    return message.content.length;
+    return message.content.length + thinkingChars;
   }
   let total = 0;
   for (const block of message.content) {
     total += estimateBlockChars(block);
   }
-  return total;
+  return total + thinkingChars;
 }
 
-export function estimateMessagesChars(messages: Message[]): number {
-  return messages.reduce((sum, msg) => sum + estimateMessageChars(msg), 0);
+export function estimateMessagesChars(messages: Message[], options?: TokenEstimateOptions): number {
+  return messages.reduce((sum, msg) => sum + estimateMessageChars(msg, options), 0);
 }
 
-export function estimateMessageTokens(message: Message): number {
+export function estimateMessageTokens(message: Message, options?: TokenEstimateOptions): number {
+  const thinkingTokens = estimateTokensForText(joinedAssistantThinking(message, options));
   if (typeof message.content === "string") {
-    return Math.max(1, estimateTokensForText(message.content));
+    return Math.max(1, estimateTokensForText(message.content) + thinkingTokens);
   }
   let total = 0;
   for (const block of message.content) {
     total += estimateBlockTokens(block);
   }
-  return Math.max(1, total);
+  return Math.max(1, total + thinkingTokens);
 }
 
-export function estimateMessagesTokens(messages: Message[]): number {
-  return messages.reduce((sum, msg) => sum + estimateMessageTokens(msg), 0);
+export function estimateMessagesTokens(messages: Message[], options?: TokenEstimateOptions): number {
+  return messages.reduce((sum, msg) => sum + estimateMessageTokens(msg, options), 0);
 }
 
 /**
@@ -115,11 +134,14 @@ export function estimatePromptUnitsForContextWindow(params: {
   systemPrompt: string;
   charsPerTokenUnit: number;
   effectiveContextWindowTokens?: number;
+  includeThinking?: boolean;
 }): number {
   const estTokens =
-    estimateMessagesTokens(params.messages) + estimateTokensForText(params.systemPrompt);
+    estimateMessagesTokens(params.messages, { includeThinking: params.includeThinking }) +
+    estimateTokensForText(params.systemPrompt);
   const rawChars =
-    estimateMessagesChars(params.messages) + (params.systemPrompt?.length ?? 0);
+    estimateMessagesChars(params.messages, { includeThinking: params.includeThinking }) +
+    (params.systemPrompt?.length ?? 0);
   const unit = Math.max(1, params.charsPerTokenUnit);
   const fromChars = rawChars / unit;
   let score = Math.max(estTokens, fromChars);

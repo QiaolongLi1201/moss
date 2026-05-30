@@ -42,6 +42,24 @@ const log = getRootLogger().child('agent:context-prep');
 
 // ─── Existing pure helpers ─────────────────────────────────────────
 
+function modelRoundTripsThinkingHistory(modelDef: Model<any>): boolean {
+  const reasoning = (modelDef as { reasoning?: unknown }).reasoning;
+  return reasoning !== undefined && reasoning !== null && reasoning !== false && reasoning !== '';
+}
+
+export function shouldIncludeThinkingInBudget(
+  currentMessages: Message[],
+  modelDef: Model<any>,
+): boolean {
+  return (
+    modelRoundTripsThinkingHistory(modelDef) ||
+    (
+      shouldSuppressReasoningForToolFollowUpRound(currentMessages) &&
+      hasAssistantThinkingHistory(currentMessages)
+    )
+  );
+}
+
 export interface ProviderToolDeclaration {
   name: string;
   description: string;
@@ -190,6 +208,7 @@ export async function prepareTurnContext(
   let { previousPrefixSnapshot, previousToolNames } = params;
   const prefixDebugEnabled = params.prefixDebugEnabled;
   const pendingToolResultFollowUp = lastMessageEndsWithToolResult(currentMessages);
+  const includeThinkingInBudget = shouldIncludeThinkingInBudget(currentMessages, modelDef);
 
   // ===== Per-turn context management =====
   const estPromptTokens = estimatePromptUnitsForContextWindow({
@@ -197,6 +216,7 @@ export async function prepareTurnContext(
     systemPrompt,
     charsPerTokenUnit: charsPerUnit,
     effectiveContextWindowTokens: effectiveContextTokens,
+    includeThinking: includeThinkingInBudget,
   });
   {
     const ctxMgmt = runPerTurnContextManagement({
@@ -216,8 +236,11 @@ export async function prepareTurnContext(
     systemPrompt,
     charsPerTokenUnit: charsPerUnit,
     effectiveContextWindowTokens: effectiveContextTokens,
+    includeThinking: includeThinkingInBudget,
   });
-  const rawTotalChars = estimateMessagesChars(currentMessages) + systemPrompt.length;
+  const rawTotalChars =
+    estimateMessagesChars(currentMessages, { includeThinking: includeThinkingInBudget }) +
+    systemPrompt.length;
   const pruneCharsPerUnit =
     rawTotalChars / effectiveContextTokens >= 0.85 ? 1 : charsPerUnit;
   const systemPromptUnitsForPrune = Math.ceil(
@@ -226,6 +249,7 @@ export async function prepareTurnContext(
       systemPrompt,
       charsPerTokenUnit: pruneCharsPerUnit,
       effectiveContextWindowTokens: effectiveContextTokens,
+      includeThinking: includeThinkingInBudget,
     }),
   );
 
@@ -250,6 +274,7 @@ export async function prepareTurnContext(
           contextWindowTokens: effectiveContextTokens,
           systemPrompt,
           charsPerTokenUnit: charsPerUnit,
+          includeThinking: includeThinkingInBudget,
         })))
   ) {
     state.proactiveCompactionAttempted = true;
@@ -271,6 +296,7 @@ export async function prepareTurnContext(
       push,
       onWarn: (message, meta) => log.warn(message, meta),
       abortSignal,
+      includeThinking: includeThinkingInBudget,
     });
     const decision = applyCompactionOutcomeToState(compaction, state);
     if (decision !== 'continue') {
@@ -301,6 +327,7 @@ export async function prepareTurnContext(
         contextWindowTokens: effectiveContextTokens,
         systemPromptTokens: systemPromptUnitsForPrune,
         charsPerTokenUnit: pruneCharsPerUnit,
+        includeThinking: includeThinkingInBudget,
         settings: pruningSettings,
       });
   if (
@@ -321,6 +348,7 @@ export async function prepareTurnContext(
       push,
       onWarn: (message, meta) => log.warn(message, meta),
       abortSignal,
+      includeThinking: includeThinkingInBudget,
     });
     const decision = applyCompactionOutcomeToState(compaction, state);
     if (decision !== 'continue') {

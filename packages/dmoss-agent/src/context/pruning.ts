@@ -349,12 +349,13 @@ function applyHardClear(
   settings: ContextPruningSettings,
   isPrunable: (toolName: string) => boolean,
   charWindow: number,
+  estimateOptions?: { includeThinking?: boolean },
 ): { messages: Message[]; hardClearedToolResults: number } {
   if (!settings.hardClear.enabled) {
     return { messages, hardClearedToolResults: 0 };
   }
 
-  let totalChars = estimateMessagesChars(messages);
+  let totalChars = estimateMessagesChars(messages, estimateOptions);
   const ratio = totalChars / charWindow;
 
   // 仅在超过 hardClearRatio 时触发
@@ -444,12 +445,16 @@ function findAssistantCutoffIndex(messages: Message[], keepLastAssistants: numbe
  *
  * 保留尽可能多的最近消息，直到超出 budget
  */
-function sliceWithinBudget(messages: Message[], budgetChars: number): Message[] {
+function sliceWithinBudget(
+  messages: Message[],
+  budgetChars: number,
+  estimateOptions?: { includeThinking?: boolean },
+): Message[] {
   const kept: Message[] = [];
   let used = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    const chars = estimateMessageChars(msg);
+    const chars = estimateMessageChars(msg, estimateOptions);
     if (used + chars > budgetChars && kept.length > 0) break;
     kept.push(msg);
     used += chars;
@@ -543,9 +548,12 @@ export function pruneContextMessages(params: {
   systemPromptTokens?: number;
   /** 与 estimatePromptUnitsForContextWindow / DMOSS_CONTEXT_CHARS_PER_TOKEN_UNIT 对齐，默认 4 */
   charsPerTokenUnit?: number;
+  /** Count assistant thinking only when the next provider payload round-trips it. */
+  includeThinking?: boolean;
   settings?: Partial<ContextPruningSettings>;
 }): PruneResult {
   const settings = resolvePruningSettings(params.settings);
+  const estimateOptions = { includeThinking: params.includeThinking };
 
   const contextWindowTokensAll = Math.max(1, Math.floor(params.contextWindowTokens));
   const systemTokensRaw = Math.max(0, params.systemPromptTokens ?? 0);
@@ -575,7 +583,7 @@ export function pruneContextMessages(params: {
   let hardClearedToolResults = 0;
 
   // Layer 1: Soft Trim — 比例超过 softTrimRatio 时触发
-  const totalChars = estimateMessagesChars(current);
+  const totalChars = estimateMessagesChars(current, estimateOptions);
   const ratio = totalChars / charWindow;
   if (ratio > settings.softTrimRatio) {
     const trimResult = applySoftTrim(current, settings, isPrunable);
@@ -584,16 +592,16 @@ export function pruneContextMessages(params: {
   }
 
   // Layer 2: Hard Clear — soft trim 后仍超标时触发
-  const afterSoftTrimChars = estimateMessagesChars(current);
+  const afterSoftTrimChars = estimateMessagesChars(current, estimateOptions);
   const afterSoftTrimRatio = afterSoftTrimChars / charWindow;
   if (afterSoftTrimRatio > settings.hardClearRatio) {
-    const clearResult = applyHardClear(current, settings, isPrunable, charWindow);
+    const clearResult = applyHardClear(current, settings, isPrunable, charWindow, estimateOptions);
     current = clearResult.messages;
     hardClearedToolResults = clearResult.hardClearedToolResults;
   }
 
   // Layer 3: Message Drop — 超出 history budget 时丢弃旧消息
-  const afterClearChars = estimateMessagesChars(current);
+  const afterClearChars = estimateMessagesChars(current, estimateOptions);
   if (afterClearChars <= budgetChars) {
     return {
       messages: current,
@@ -610,23 +618,23 @@ export function pruneContextMessages(params: {
   const cutoffIndex = findAssistantCutoffIndex(current, settings.keepLastAssistants);
   const protectedIndex = cutoffIndex ?? 0;
   const protectedMessages = current.slice(protectedIndex);
-  const protectedChars = estimateMessagesChars(protectedMessages);
+  const protectedChars = estimateMessagesChars(protectedMessages, estimateOptions);
 
   let kept: Message[];
   if (protectedChars > budgetChars) {
-    kept = sliceWithinBudget(current, budgetChars);
+    kept = sliceWithinBudget(current, budgetChars, estimateOptions);
   } else {
     kept = [...protectedMessages];
     let remaining = budgetChars - protectedChars;
     for (let i = protectedIndex - 1; i >= 0; i--) {
       const msg = current[i];
-      const msgChars = estimateMessageChars(msg);
+      const msgChars = estimateMessageChars(msg, estimateOptions);
       if (msgChars > remaining) break;
       kept.unshift(msg);
       remaining -= msgChars;
     }
     if (kept.length === 0) {
-      kept = sliceWithinBudget(current, budgetChars);
+      kept = sliceWithinBudget(current, budgetChars, estimateOptions);
     }
   }
   kept = protectLatestCompactionSummary(current, kept);
@@ -634,7 +642,7 @@ export function pruneContextMessages(params: {
 
   const keptSet = new Set(kept);
   const droppedMessages = current.filter((msg) => !keptSet.has(msg));
-  const keptChars = estimateMessagesChars(kept);
+  const keptChars = estimateMessagesChars(kept, estimateOptions);
   const droppedChars = Math.max(0, afterClearChars - keptChars);
 
   return {

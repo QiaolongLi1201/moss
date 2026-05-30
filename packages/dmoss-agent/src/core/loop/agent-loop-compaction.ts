@@ -14,6 +14,7 @@ export interface AgentLoopPrepareCompaction {
     sessionKey: string;
     runId: string;
     forceCompaction?: boolean;
+    includeThinking?: boolean;
     abortSignal?: AbortSignal;
   }): Promise<{
     summary?: string;
@@ -43,6 +44,8 @@ interface CompactionCoreParams {
   abortSignal?: AbortSignal;
   /** Passed to prepareCompaction. */
   forceCompaction?: boolean;
+  /** Count assistant thinking when the provider payload round-trips it. */
+  includeThinking?: boolean;
   /** Hook event reason. */
   hookReason: 'proactive' | 'overflow';
   /** Compute saved stats for the context_action event. */
@@ -69,6 +72,7 @@ async function runCompactionCore(
     onWarn,
     abortSignal,
     forceCompaction,
+    includeThinking,
     hookReason,
     computeStats,
     errorLabel,
@@ -87,6 +91,7 @@ async function runCompactionCore(
       sessionKey,
       runId,
       forceCompaction,
+      includeThinking,
       abortSignal,
     });
 
@@ -176,6 +181,7 @@ export async function runProactiveWindowCompaction(params: {
   push: (event: MiniAgentEvent) => void;
   onWarn?: (message: string, meta: Record<string, unknown>) => void;
   abortSignal?: AbortSignal;
+  includeThinking?: boolean;
 }): Promise<AgentLoopCompactionOutcome> {
   const { rawTotalChars, promptUnitsForWindow } = params;
   return runCompactionCore({
@@ -205,6 +211,7 @@ export async function runPromptPruneCompaction(params: {
   push: (event: MiniAgentEvent) => void;
   onWarn?: (message: string, meta: Record<string, unknown>) => void;
   abortSignal?: AbortSignal;
+  includeThinking?: boolean;
 }): Promise<AgentLoopCompactionOutcome> {
   const { droppedMessagesForStats } = params;
   return runCompactionCore({

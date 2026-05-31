@@ -150,6 +150,28 @@ const fixtureManifest = {
       resultSurface: 'timeline_summary',
     },
   ],
+  toolSurfaces: [
+    {
+      kind: 'board_device',
+      summary: 'Board shell, file, camera, and deployment operations for a selected device.',
+      readiness: ['device_selected', 'device_reachable', 'approval_required'],
+      progressMode: 'event_sink',
+      primaryTools: ['device_exec', 'device_file_read'],
+      healthTools: ['device_list_all'],
+      fallbackSurfaces: ['openclaw_channel'],
+      resultSurfaces: ['terminal_output', 'timeline_summary'],
+    },
+    {
+      kind: 'openclaw_channel',
+      summary: 'Board-side OpenClaw gateway used as a reusable execution backplane.',
+      readiness: ['device_selected', 'device_reachable', 'openclaw_gateway_ready'],
+      progressMode: 'streaming',
+      primaryTools: ['board_openclaw_status'],
+      healthTools: ['board_openclaw_status'],
+      fallbackSurfaces: ['board_device'],
+      resultSurfaces: ['timeline_summary'],
+    },
+  ],
   eventSinks: [
     {
       id: 'main-sink',
@@ -292,6 +314,8 @@ total++;
   assert.equal(result.compatible, true);
   assert.equal(result.reasons.length, 0);
   assert.equal(result.missingCapabilities.length, 0);
+  assert.equal(result.missingToolSurfaces.length, 0);
+  assert.equal(result.missingToolSurfaceDetails.length, 0);
   assert.equal(result.missingEventSchemas.length, 0);
   assert.equal(result.missingProviderFamilies.length, 0);
   console.log('  [PASS] ok when all requirements satisfied');
@@ -577,7 +601,62 @@ total++;
   assert.equal(result.status, 'ok');
   assert.equal(result.compatible, true);
   assert.deepEqual(result.missingToolSurfaces, []);
+  assert.deepEqual(result.missingToolSurfaceDetails, []);
   console.log('  [PASS] required tool surfaces pass when declared by tools');
+  passed++;
+}
+
+/* ---- Test 28: invalid surface detail readiness is rejected ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    toolSurfaces: [
+      {
+        ...fixtureManifest.toolSurfaces[0],
+        readiness: ['magic_ready'],
+      },
+    ],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('readiness'));
+  console.log('  [PASS] invalid tool surface readiness is rejected');
+  passed++;
+}
+
+/* ---- Test 29: missing_capability — required surface details absent ---- */
+
+total++;
+{
+  const manifestWithoutBoardSurfaceDetails = {
+    ...fixtureManifest,
+    toolSurfaces: fixtureManifest.toolSurfaces.filter((surface) => surface.kind !== 'board_device'),
+  };
+  const result = evaluateMossHostCompatibility(manifestWithoutBoardSurfaceDetails, {
+    requiredToolSurfaceDetails: ['board_device'],
+  });
+  assert.equal(result.status, 'missing_capability');
+  assert.equal(result.compatible, false);
+  assert.deepEqual(result.missingToolSurfaceDetails, ['board_device']);
+  assert.ok(result.reasons[0].includes('missing host tool surface details'));
+  console.log('  [PASS] missing_capability when required surface details absent');
+  passed++;
+}
+
+/* ---- Test 30: required surface details pass when manifest declares them ---- */
+
+total++;
+{
+  const result = evaluateMossHostCompatibility(fixtureManifest, {
+    requiredToolSurfaceDetails: ['board_device', 'openclaw_channel'],
+  });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.compatible, true);
+  assert.deepEqual(result.missingToolSurfaceDetails, []);
+  console.log('  [PASS] required surface details pass when declared');
   passed++;
 }
 

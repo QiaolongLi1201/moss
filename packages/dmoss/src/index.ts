@@ -43,6 +43,8 @@ export type { DeviceFamily } from './contracts/device-family.js';
 export {
   MOSS_HOST_ADAPTER_CONTRACT_VERSION,
   MOSS_HOST_TOOL_RESULT_SURFACES,
+  MOSS_HOST_TOOL_SURFACE_PROGRESS_MODES,
+  MOSS_HOST_TOOL_SURFACE_READINESS_SIGNALS,
   MOSS_HOST_TOOL_SURFACE_KINDS,
   evaluateMossHostCompatibility,
 } from './contracts/host-adapter.js';
@@ -61,6 +63,9 @@ export type {
   MossHostRuntimeManifest,
   MossHostToolResultSurface,
   MossHostToolRef,
+  MossHostToolSurfaceProgressMode,
+  MossHostToolSurfaceReadinessSignal,
+  MossHostToolSurfaceRef,
   MossHostToolSurfaceKind,
 } from './contracts/host-adapter.js';
 

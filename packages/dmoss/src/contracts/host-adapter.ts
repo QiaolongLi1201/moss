@@ -75,6 +75,43 @@ export const MOSS_HOST_TOOL_RESULT_SURFACES = [
 
 export type MossHostToolResultSurface = (typeof MOSS_HOST_TOOL_RESULT_SURFACES)[number];
 
+export const MOSS_HOST_TOOL_SURFACE_PROGRESS_MODES = [
+  'none',
+  'event_sink',
+  'streaming',
+  'background_task',
+] as const;
+
+export type MossHostToolSurfaceProgressMode =
+  (typeof MOSS_HOST_TOOL_SURFACE_PROGRESS_MODES)[number];
+
+export const MOSS_HOST_TOOL_SURFACE_READINESS_SIGNALS = [
+  'always_available',
+  'workspace_selected',
+  'network_enabled',
+  'attachment_context',
+  'channel_configured',
+  'device_selected',
+  'device_reachable',
+  'robotics_runtime_detected',
+  'openclaw_gateway_ready',
+  'approval_required',
+] as const;
+
+export type MossHostToolSurfaceReadinessSignal =
+  (typeof MOSS_HOST_TOOL_SURFACE_READINESS_SIGNALS)[number];
+
+export interface MossHostToolSurfaceRef {
+  kind: MossHostToolSurfaceKind;
+  summary: string;
+  readiness: readonly MossHostToolSurfaceReadinessSignal[];
+  progressMode: MossHostToolSurfaceProgressMode;
+  primaryTools: readonly string[];
+  healthTools?: readonly string[];
+  fallbackSurfaces?: readonly MossHostToolSurfaceKind[];
+  resultSurfaces?: readonly MossHostToolResultSurface[];
+}
+
 export interface MossHostToolRef {
   name: string;
   boundaryId: string;
@@ -149,6 +186,16 @@ export interface MossHostRuntimeManifest {
   };
   capabilities: readonly MossHostCapabilityRef[];
   providers: readonly MossHostProviderRef[];
+  /**
+   * Optional user-visible capability surface inventory.
+   *
+   * `tools[].surface` proves individual tools are classified. `toolSurfaces`
+   * describes the operational contract for each surface: what must be ready,
+   * how progress is surfaced, which tools are primary or health checks, and
+   * which fallback surfaces are reasonable. Hosts should fill this from real
+   * product capabilities rather than copying another product's feature list.
+   */
+  toolSurfaces?: readonly MossHostToolSurfaceRef[];
   tools: readonly MossHostToolRef[];
   eventSinks: readonly MossHostEventSinkRef[];
   /**
@@ -198,6 +245,7 @@ export interface MossHostCompatibilityRequirement {
   maxContractVersion?: MossHostAdapterContractVersion;
   requiredCapabilities?: readonly MossHostCapabilityKind[];
   requiredToolSurfaces?: readonly MossHostToolSurfaceKind[];
+  requiredToolSurfaceDetails?: readonly MossHostToolSurfaceKind[];
   requiredEventSchemas?: readonly string[];
   requiredProviderFamilies?: readonly string[];
 }
@@ -217,6 +265,7 @@ export interface MossHostCompatibilityReport {
   reasons: readonly string[];
   missingCapabilities: readonly MossHostCapabilityKind[];
   missingToolSurfaces: readonly MossHostToolSurfaceKind[];
+  missingToolSurfaceDetails: readonly MossHostToolSurfaceKind[];
   missingEventSchemas: readonly string[];
   missingProviderFamilies: readonly string[];
 }
@@ -329,6 +378,56 @@ function validateMossHostManifestShape(manifest: unknown): string | null {
     }
   }
 
+  if (manifest.toolSurfaces !== undefined) {
+    if (!Array.isArray(manifest.toolSurfaces)) {
+      return 'manifest.toolSurfaces must be an array when present';
+    }
+    for (const surface of manifest.toolSurfaces) {
+      if (!isRecord(surface)) {
+        return 'manifest.toolSurfaces must be an array of surface records';
+      }
+      if (!isOneOf(surface.kind, MOSS_HOST_TOOL_SURFACE_KINDS)) {
+        return 'manifest.toolSurfaces[].kind must be a known tool surface';
+      }
+      if (typeof surface.summary !== 'string') {
+        return 'manifest.toolSurfaces[].summary must be a string';
+      }
+      if (
+        !Array.isArray(surface.readiness) ||
+        !surface.readiness.every((item) => isOneOf(item, MOSS_HOST_TOOL_SURFACE_READINESS_SIGNALS))
+      ) {
+        return 'manifest.toolSurfaces[].readiness must contain known readiness signals';
+      }
+      if (!isOneOf(surface.progressMode, MOSS_HOST_TOOL_SURFACE_PROGRESS_MODES)) {
+        return 'manifest.toolSurfaces[].progressMode must be a known progress mode';
+      }
+      if (!isStringArray(surface.primaryTools)) {
+        return 'manifest.toolSurfaces[].primaryTools must be a string array';
+      }
+      if (surface.healthTools !== undefined && !isStringArray(surface.healthTools)) {
+        return 'manifest.toolSurfaces[].healthTools must be a string array';
+      }
+      if (
+        surface.fallbackSurfaces !== undefined &&
+        (
+          !Array.isArray(surface.fallbackSurfaces) ||
+          !surface.fallbackSurfaces.every((item) => isOneOf(item, MOSS_HOST_TOOL_SURFACE_KINDS))
+        )
+      ) {
+        return 'manifest.toolSurfaces[].fallbackSurfaces must contain known tool surfaces';
+      }
+      if (
+        surface.resultSurfaces !== undefined &&
+        (
+          !Array.isArray(surface.resultSurfaces) ||
+          !surface.resultSurfaces.every((item) => isOneOf(item, MOSS_HOST_TOOL_RESULT_SURFACES))
+        )
+      ) {
+        return 'manifest.toolSurfaces[].resultSurfaces must contain known result surfaces';
+      }
+    }
+  }
+
   if (!Array.isArray(manifest.eventSinks)) return 'manifest.eventSinks must be an array';
   if (
     manifest.eventSinks.some(
@@ -370,6 +469,7 @@ function emptyFailureReport(
     reasons,
     missingCapabilities: [],
     missingToolSurfaces: [],
+    missingToolSurfaceDetails: [],
     missingEventSchemas: [],
     missingProviderFamilies: [],
   };
@@ -431,6 +531,7 @@ export function evaluateMossHostCompatibility(
       reasons,
       missingCapabilities: [],
       missingToolSurfaces: [],
+      missingToolSurfaceDetails: [],
       missingEventSchemas: [],
       missingProviderFamilies: [],
     };
@@ -450,6 +551,7 @@ export function evaluateMossHostCompatibility(
       reasons,
       missingCapabilities,
       missingToolSurfaces: [],
+      missingToolSurfaceDetails: [],
       missingEventSchemas: [],
       missingProviderFamilies: [],
     };
@@ -469,6 +571,27 @@ export function evaluateMossHostCompatibility(
       reasons,
       missingCapabilities: [],
       missingToolSurfaces,
+      missingToolSurfaceDetails: [],
+      missingEventSchemas: [],
+      missingProviderFamilies: [],
+    };
+  }
+
+  const toolSurfaceDetails = new Set(
+    (runtimeManifest.toolSurfaces ?? []).map((surface) => surface.kind),
+  );
+  const missingToolSurfaceDetails = (requirement.requiredToolSurfaceDetails ?? []).filter(
+    (surface) => !toolSurfaceDetails.has(surface),
+  );
+  if (missingToolSurfaceDetails.length > 0) {
+    reasons.push(`missing host tool surface details: ${missingToolSurfaceDetails.join(', ')}`);
+    return {
+      compatible: false,
+      status: 'missing_capability',
+      reasons,
+      missingCapabilities: [],
+      missingToolSurfaces: [],
+      missingToolSurfaceDetails,
       missingEventSchemas: [],
       missingProviderFamilies: [],
     };
@@ -486,6 +609,7 @@ export function evaluateMossHostCompatibility(
       reasons,
       missingCapabilities: [],
       missingToolSurfaces: [],
+      missingToolSurfaceDetails: [],
       missingEventSchemas,
       missingProviderFamilies: [],
     };
@@ -505,6 +629,7 @@ export function evaluateMossHostCompatibility(
       reasons,
       missingCapabilities: [],
       missingToolSurfaces: [],
+      missingToolSurfaceDetails: [],
       missingEventSchemas: [],
       missingProviderFamilies,
     };
@@ -516,6 +641,7 @@ export function evaluateMossHostCompatibility(
     reasons,
     missingCapabilities: [],
     missingToolSurfaces: [],
+    missingToolSurfaceDetails: [],
     missingEventSchemas: [],
     missingProviderFamilies: [],
   };

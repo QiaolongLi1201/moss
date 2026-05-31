@@ -130,10 +130,9 @@ export interface MossHostToolRef {
    * User-visible capability surface this tool contributes to.
    *
    * This is intentionally optional for backward compatibility with Host Adapter
-   * v1 manifests. New hosts should set it so Moss can evaluate OpenClaw-style
-   * capability coverage at the level users feel: desktop, board, browser,
-   * attachments, channels, background tasks, memory/skills, and OpenClaw
-   * channel backplanes.
+   * v1 manifests. New hosts should set it so Moss can evaluate capability
+   * coverage at the level users feel: desktop, board, browser, attachments,
+   * channels, background tasks, memory/skills, and channel backplanes.
    */
   surface?: MossHostToolSurfaceKind;
   /** Presentation surface the host uses for this tool result/progress. */

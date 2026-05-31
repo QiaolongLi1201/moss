@@ -154,8 +154,8 @@ const packageJson = {
     typecheck: 'tsc --noEmit --esModuleInterop --module ESNext --moduleResolution Bundler --target ES2022 --types node --strict --skipLibCheck index.ts',
   },
   dependencies: {
-    '@rdk-moss/core': '^0.3.1',
-    '@rdk-moss/agent': '^0.3.1',
+    '@rdk-moss/core': '^0.3.2',
+    '@rdk-moss/agent': '^0.3.5',
   },
   devDependencies: {
     '@types/node': '^22.13.10',

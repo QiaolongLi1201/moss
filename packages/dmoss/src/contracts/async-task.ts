@@ -2,9 +2,9 @@
  * Host-neutral async task contract for long-running Moss work.
  *
  * This deliberately models the lifecycle before any product-specific execution
- * backend is wired in. RDK Studio can later adapt `sessions_spawn`, OpenClaw,
- * board jobs, or host background tasks to this contract without making Moss
- * import Studio or OpenClaw runtime code.
+ * backend is wired in. Hosts can adapt subagents, board jobs, channel
+ * backplanes, or background tasks to this contract without making Moss import
+ * product-specific runtime code.
  */
 
 export type MossAsyncTaskStatus =

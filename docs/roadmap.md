@@ -26,6 +26,9 @@ every robotics product:
   audit events, deterministic input normalization, and replay protections.
 - Context engineering for pruning, compaction, summary checkpoints, tool result
   management, and long-task continuity.
+- Board-agent convergence primitives for async child task handles, child status,
+  idempotent completion handoff, cancellation, and board-channel adaptation.
+  See [Moss Board-Agent Convergence Goal](board-agent-convergence.md).
 - Knowledge, memory, skills, and teaching primitives that are explainable,
   testable, optional, and host-controlled.
 - Open-source boundary governance so public Moss packages do not absorb
@@ -98,8 +101,8 @@ before deleting it.
 
 The next optimization target is stable host integration with an observable
 runtime and a dead-code-free public surface. Keep Host Adapter, telemetry, mesh
-events, and public exports contract-first; keep deletion work isolated from
-feature work.
+events, async board-agent convergence, and public exports contract-first; keep
+deletion work isolated from feature work.
 
 ## Phases
 

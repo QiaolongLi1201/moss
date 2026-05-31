@@ -124,7 +124,7 @@
   },
   "dependencies": {
     "@mariozechner/pi-ai": "^0.50.7",
-    "@rdk-moss/core": "^0.3.1",
+    "@rdk-moss/core": "^0.3.2",
     "@rdk-moss/memory": "^0.3.1",
     "@rdk-moss/skills": "^0.3.1",
     "micromatch": "^4.0.8",

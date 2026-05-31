@@ -13,6 +13,8 @@
 import assert from 'node:assert/strict';
 import {
   MOSS_HOST_ADAPTER_CONTRACT_VERSION,
+  MOSS_HOST_TOOL_RESULT_SURFACES,
+  MOSS_HOST_TOOL_SURFACE_KINDS,
   evaluateMossHostCompatibility,
 } from '../dist/contracts/host-adapter.js';
 
@@ -27,9 +29,9 @@ const fixtureManifest = {
     version: '2.0.0',
   },
   moss: {
-    version: '0.3.1',
+    version: '0.3.2',
     packages: [
-      { name: '@rdk-moss/core', version: '0.3.1', stability: 'stable' },
+      { name: '@rdk-moss/core', version: '0.3.2', stability: 'stable' },
     ],
   },
   capabilities: [
@@ -63,6 +65,89 @@ const fixtureManifest = {
       sideEffectClass: 'readonly',
       approval: 'not_required',
       source: 'host',
+      surface: 'computer_workspace',
+      resultSurface: 'assistant_text',
+    },
+    {
+      name: 'shell_exec',
+      boundaryId: 'shell',
+      sideEffectClass: 'local_write',
+      approval: 'execute_audit',
+      source: 'host',
+      surface: 'computer_shell',
+      resultSurface: 'terminal_output',
+    },
+    {
+      name: 'web_fetch',
+      boundaryId: 'web',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'browser_web',
+      resultSurface: 'assistant_text',
+    },
+    {
+      name: 'device_exec',
+      boundaryId: 'device',
+      sideEffectClass: 'device_mutation',
+      approval: 'execute_audit',
+      source: 'host',
+      surface: 'board_device',
+      resultSurface: 'terminal_output',
+    },
+    {
+      name: 'ros_topics',
+      boundaryId: 'ros',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'robotics_runtime',
+      resultSurface: 'timeline_summary',
+    },
+    {
+      name: 'read_attachment',
+      boundaryId: 'attachment',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'attachment_media',
+      resultSurface: 'media_or_file',
+    },
+    {
+      name: 'send_channel_message',
+      boundaryId: 'channel',
+      sideEffectClass: 'external_message',
+      approval: 'execute_audit',
+      source: 'host',
+      surface: 'channel_messaging',
+      resultSurface: 'channel_delivery',
+    },
+    {
+      name: 'sessions_spawn',
+      boundaryId: 'subagent',
+      sideEffectClass: 'subagent',
+      approval: 'plan_audit',
+      source: 'moss',
+      surface: 'task_subagent',
+      resultSurface: 'background_task',
+    },
+    {
+      name: 'memory_search',
+      boundaryId: 'memory',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'moss',
+      surface: 'memory_skill',
+      resultSurface: 'assistant_text',
+    },
+    {
+      name: 'board_openclaw_status',
+      boundaryId: 'openclaw',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'openclaw_channel',
+      resultSurface: 'timeline_summary',
     },
   ],
   eventSinks: [
@@ -89,7 +174,36 @@ total++;
   passed++;
 }
 
-/* ---- Test 2: contract_mismatch — manifest.contractVersion != requirement ---- */
+/* ---- Test 2: host tool surface constants expose the OpenClaw coverage taxonomy ---- */
+
+total++;
+{
+  assert.deepEqual([...MOSS_HOST_TOOL_SURFACE_KINDS], [
+    'computer_workspace',
+    'computer_shell',
+    'browser_web',
+    'attachment_media',
+    'board_device',
+    'robotics_runtime',
+    'channel_messaging',
+    'task_subagent',
+    'memory_skill',
+    'openclaw_channel',
+  ]);
+  assert.deepEqual([...MOSS_HOST_TOOL_RESULT_SURFACES], [
+    'assistant_text',
+    'timeline_summary',
+    'terminal_output',
+    'artifact',
+    'media_or_file',
+    'channel_delivery',
+    'background_task',
+  ]);
+  console.log('  [PASS] host tool surface constants expose the OpenClaw coverage taxonomy');
+  passed++;
+}
+
+/* ---- Test 3: contract_mismatch — manifest.contractVersion != requirement ---- */
 
 total++;
 {
@@ -106,7 +220,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 3: host_version_incompatible — host older than minHostVersion ---- */
+/* ---- Test 4: host_version_incompatible — host older than minHostVersion ---- */
 
 total++;
 {
@@ -122,7 +236,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 4: missing_capability — required capability not in manifest ---- */
+/* ---- Test 5: missing_capability — required capability not in manifest ---- */
 
 total++;
 {
@@ -136,7 +250,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 5: missing_event_schema — required schema not in manifest ---- */
+/* ---- Test 6: missing_event_schema — required schema not in manifest ---- */
 
 total++;
 {
@@ -150,7 +264,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 6: missing_provider_family — required family not in manifest ---- */
+/* ---- Test 7: missing_provider_family — required family not in manifest ---- */
 
 total++;
 {
@@ -164,7 +278,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 7: ok — all checks pass with fully populated fixture ---- */
+/* ---- Test 8: ok — all checks pass with fully populated fixture ---- */
 
 total++;
 {
@@ -184,7 +298,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 8: empty requirement always passes ---- */
+/* ---- Test 9: empty requirement always passes ---- */
 
 total++;
 {
@@ -195,7 +309,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 9: semver — "2.0.0" >= "1.5.0" passes ---- */
+/* ---- Test 10: semver — "2.0.0" >= "1.5.0" passes ---- */
 
 total++;
 {
@@ -206,7 +320,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 10: semver — "1.0.0" >= "2.0.0" fails ---- */
+/* ---- Test 11: semver — "1.0.0" >= "2.0.0" fails ---- */
 
 total++;
 {
@@ -221,7 +335,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 11: extra capabilities beyond requirement still pass ---- */
+/* ---- Test 12: extra capabilities beyond requirement still pass ---- */
 
 total++;
 {
@@ -234,7 +348,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 12: multiple missing items reported in one result ---- */
+/* ---- Test 13: multiple missing items reported in one result ---- */
 
 total++;
 {
@@ -250,7 +364,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 13: event version equal to minHostVersion passes (edge) ---- */
+/* ---- Test 14: event version equal to minHostVersion passes (edge) ---- */
 
 total++;
 {
@@ -261,7 +375,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 14: partial provider family match still reports missing ---- */
+/* ---- Test 15: partial provider family match still reports missing ---- */
 
 total++;
 {
@@ -275,7 +389,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 15: contract_mismatch takes priority over other failures ---- */
+/* ---- Test 16: contract_mismatch takes priority over other failures ---- */
 
 total++;
 {
@@ -296,7 +410,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 16: default contractVersion in requirement uses current constant ---- */
+/* ---- Test 17: default contractVersion in requirement uses current constant ---- */
 
 total++;
 {
@@ -307,7 +421,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 17: contract version range accepts an in-range manifest ---- */
+/* ---- Test 18: contract version range accepts an in-range manifest ---- */
 
 total++;
 {
@@ -322,7 +436,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 18: contract version range rejects an out-of-range manifest ---- */
+/* ---- Test 19: contract version range rejects an out-of-range manifest ---- */
 
 total++;
 {
@@ -338,7 +452,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 19: exact contractVersion keeps priority over range fields ---- */
+/* ---- Test 20: exact contractVersion keeps priority over range fields ---- */
 
 total++;
 {
@@ -354,7 +468,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 20: invalid manifest shape is reported before compatibility checks ---- */
+/* ---- Test 21: invalid manifest shape is reported before compatibility checks ---- */
 
 total++;
 {
@@ -370,7 +484,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 21: invalid nested provider record is also rejected ---- */
+/* ---- Test 22: invalid nested provider record is also rejected ---- */
 
 total++;
 {
@@ -383,6 +497,87 @@ total++;
   assert.equal(result.compatible, false);
   assert.ok(result.reasons[0].includes('providers'));
   console.log('  [PASS] invalid nested provider record returns invalid_manifest');
+  passed++;
+}
+
+/* ---- Test 23: legacy tools without optional surfaces remain compatible ---- */
+
+total++;
+{
+  const legacyManifest = {
+    ...fixtureManifest,
+    tools: fixtureManifest.tools.map(({ surface, resultSurface, ...tool }) => tool),
+  };
+  const result = evaluateMossHostCompatibility(legacyManifest);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.compatible, true);
+  console.log('  [PASS] legacy tools without optional surfaces remain compatible');
+  passed++;
+}
+
+/* ---- Test 24: invalid tool surface is rejected as invalid manifest ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    tools: [{ ...fixtureManifest.tools[0], surface: 'desktop_magic' }],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('surface'));
+  console.log('  [PASS] invalid tool surface is rejected as invalid manifest');
+  passed++;
+}
+
+/* ---- Test 25: invalid result surface is rejected as invalid manifest ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    tools: [{ ...fixtureManifest.tools[0], resultSurface: 'floating_panel' }],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('resultSurface'));
+  console.log('  [PASS] invalid result surface is rejected as invalid manifest');
+  passed++;
+}
+
+/* ---- Test 26: missing_capability — required tool surface absent ---- */
+
+total++;
+{
+  const manifestWithoutAttachmentSurface = {
+    ...fixtureManifest,
+    tools: fixtureManifest.tools.filter((tool) => tool.surface !== 'attachment_media'),
+  };
+  const result = evaluateMossHostCompatibility(manifestWithoutAttachmentSurface, {
+    requiredToolSurfaces: ['attachment_media'],
+  });
+  assert.equal(result.status, 'missing_capability');
+  assert.equal(result.compatible, false);
+  assert.deepEqual(result.missingCapabilities, []);
+  assert.deepEqual(result.missingToolSurfaces, ['attachment_media']);
+  assert.ok(result.reasons[0].includes('missing host tool surfaces'));
+  console.log('  [PASS] missing_capability when required tool surfaces absent');
+  passed++;
+}
+
+/* ---- Test 27: required tool surfaces pass when manifest tools declare them ---- */
+
+total++;
+{
+  const result = evaluateMossHostCompatibility(fixtureManifest, {
+    requiredToolSurfaces: [...MOSS_HOST_TOOL_SURFACE_KINDS],
+  });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.compatible, true);
+  assert.deepEqual(result.missingToolSurfaces, []);
+  console.log('  [PASS] required tool surfaces pass when declared by tools');
   passed++;
 }
 

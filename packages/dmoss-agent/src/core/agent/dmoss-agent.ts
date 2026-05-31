@@ -24,6 +24,10 @@ import { KnowledgeRegistry, drainPendingGlobalModules } from '../../knowledge/re
 import { buildRoboticsEngineeringPrompt, DEFAULT_MODEL } from '@rdk-moss/core';
 import type { KnowledgeModule } from '@rdk-moss/core';
 import {
+  createInMemoryMossAsyncTaskRegistry,
+  type MossAsyncTaskRegistry,
+} from '@rdk-moss/core/contracts/async-task';
+import {
   compactHistoryIfNeeded,
   type SummarizeFn,
 } from '../../context/compaction.js';
@@ -158,6 +162,7 @@ export class DmossAgent {
   readonly extensions: PlatformExtensionRegistry;
   readonly commandQueues: CommandQueueRegistry;
   readonly spawnRegistry: SpawnProfileRegistry;
+  readonly asyncTasks: MossAsyncTaskRegistry;
 
   /** Instance-scoped knowledge registry — isolates modules per agent. */
   private readonly knowledge = new KnowledgeRegistry();
@@ -176,6 +181,7 @@ export class DmossAgent {
     this.extensions = createAgentExtensionRegistryFromDefaults();
     this.commandQueues = new CommandQueueRegistry();
     this.spawnRegistry = createSpawnProfileRegistryFromDefaults();
+    this.asyncTasks = createInMemoryMossAsyncTaskRegistry();
     this.toolHooks = new ToolHookRegistry();
     this.toolHooks.registerPost(createSecretSanitizerHook(sanitizeSecrets));
     setTraceRedactor(sanitizeSecrets);
@@ -447,8 +453,10 @@ export class DmossAgent {
 
     const toolCtx: ToolContext = {
       workspaceDir: process.cwd(),
+      runId,
       sessionKey,
       abortSignal,
+      asyncTaskRegistry: this.asyncTasks,
     };
 
     const adapter = createDmossAgentLoopEventAdapter({
@@ -518,7 +526,7 @@ export class DmossAgent {
           maxTurns: params.maxTurns ?? 10,
           timeoutMs: 120_000,
         },
-        abortSignal,
+        params.abortSignal ?? abortSignal,
       );
       return {
         runId: result.runId,

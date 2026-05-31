@@ -1,6 +1,6 @@
 {
   "name": "@rdk-moss/core",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -44,6 +44,11 @@
       "types": "./dist/contracts/host-adapter.d.ts",
       "import": "./dist/contracts/host-adapter.js",
       "default": "./dist/contracts/host-adapter.js"
+    },
+    "./contracts/async-task": {
+      "types": "./dist/contracts/async-task.d.ts",
+      "import": "./dist/contracts/async-task.js",
+      "default": "./dist/contracts/async-task.js"
     },
     "./prompts/robotics": {
       "types": "./dist/prompts/robotics-engineering-prompt.d.ts",

@@ -48,8 +48,8 @@ const manifest: MossHostRuntimeManifest = {
   contractVersion: MOSS_HOST_ADAPTER_CONTRACT_VERSION,
   host: { id: 'example-host', name: 'Example Host', version: '1.2.0' },
   moss: {
-    version: '0.3.1',
-    packages: [{ name: '@rdk-moss/core', version: '0.3.1', stability: 'stable' }],
+    version: '0.3.2',
+    packages: [{ name: '@rdk-moss/core', version: '0.3.2', stability: 'stable' }],
   },
   capabilities: [
     {
@@ -123,6 +123,33 @@ not_required, plan_audit, execute_audit
 ```
 readonly, local_write, device_mutation, credential, external_message,
 memory_write, runtime_state, subagent
+```
+
+### Tool Surfaces (10)
+
+Host Adapter v1 now has an optional `tools[].surface` field so Moss can evaluate
+OpenClaw-style capability coverage at the level users experience. This is
+backward compatible: older manifests without `surface` still validate, while
+newer Moss requirements can ask for specific surfaces through
+`requiredToolSurfaces`. When a host does provide `surface`, the value must be
+one of the known strings below; unknown strings make the manifest invalid so a
+misspelled capability does not degrade into a vague missing-capability report.
+
+```
+computer_workspace, computer_shell, browser_web, attachment_media,
+board_device, robotics_runtime, channel_messaging, task_subagent,
+memory_skill, openclaw_channel
+```
+
+### Result Surfaces (7)
+
+The optional `tools[].resultSurface` field describes how the host presents tool
+progress/results to users. When present, it must be one of the known strings
+below.
+
+```
+assistant_text, timeline_summary, terminal_output, artifact, media_or_file,
+channel_delivery, background_task
 ```
 
 ### Semver Handling

@@ -15,7 +15,8 @@
  */
 
 import assert from 'node:assert/strict';
-import { createSubagentTool } from '../dist/tools/create-subagent.js';
+import { createInMemoryMossAsyncTaskRegistry } from '@rdk-moss/core/contracts/async-task';
+import { createSubagentTool, subagentStatusTool } from '../dist/tools/create-subagent.js';
 import {
   SpawnProfileRegistry,
   resolveSpawnToolSet,
@@ -84,7 +85,122 @@ import {
   console.log('  [PASS] tool handles sub-agent failure correctly');
 }
 
-// ── Test 4: resolveSpawnToolSet filters by scope ──
+// ── Test 4: background mode rejects when async task registry is missing ──
+{
+  const ctx = {
+    workspaceDir: '/tmp',
+    sessionKey: 'test',
+    spawnSubagent: async () => ({
+      runId: 'unused',
+      sessionKey: 'unused',
+      summary: 'unused',
+      success: true,
+    }),
+  };
+
+  const result = await createSubagentTool.execute({ task: 'background task', background: true }, ctx);
+  assert.ok(result.includes('background sub-agent tasks are not available'), result);
+  console.log('  [PASS] background mode rejects when async task registry is missing');
+}
+
+// ── Test 5: Tool can start a background sub-agent via async task registry ──
+{
+  const registry = createInMemoryMossAsyncTaskRegistry();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let capturedParams = null;
+  const ctx = {
+    workspaceDir: '/tmp',
+    runId: 'parent-run',
+    sessionKey: 'test',
+    asyncTaskRegistry: registry,
+    spawnSubagent: async (params) => {
+      capturedParams = params;
+      await gate;
+      return {
+        runId: 'child-run',
+        sessionKey: 'subagent:child-run',
+        summary: 'background complete',
+        success: true,
+      };
+    },
+  };
+
+  const result = await createSubagentTool.execute(
+    { task: 'background explore', scope: 'explore', maxTurns: 3, background: true },
+    ctx,
+  );
+  assert.ok(result.includes('STARTED'), result);
+  const taskId = result.match(/\[Sub-agent task ([^\]]+)\]/)?.[1];
+  assert.ok(taskId, `expected task id in result: ${result}`);
+  assert.equal(registry.status(taskId)?.status, 'running');
+  assert.equal(capturedParams.scope, 'explore');
+  assert.equal(capturedParams.maxTurns, 3);
+  assert.ok(capturedParams.abortSignal instanceof AbortSignal);
+  release();
+  const completion = await registry.wait(taskId);
+  assert.equal(completion.status, 'completed');
+  assert.equal(completion.summary, 'background complete');
+  assert.deepEqual(completion.data, {
+    runId: 'child-run',
+    sessionKey: 'subagent:child-run',
+  });
+  console.log('  [PASS] background mode returns a handle and records final completion');
+}
+
+// ── Test 6: subagent_status checks and waits for background completion ──
+{
+  const registry = createInMemoryMossAsyncTaskRegistry();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const ctx = {
+    workspaceDir: '/tmp',
+    runId: 'parent-run-status',
+    sessionKey: 'test',
+    asyncTaskRegistry: registry,
+    spawnSubagent: async () => {
+      await gate;
+      return {
+        runId: 'child-status',
+        sessionKey: 'subagent:child-status',
+        summary: 'status complete',
+        success: true,
+      };
+    },
+  };
+
+  const started = await createSubagentTool.execute({ task: 'status task', background: true }, ctx);
+  const taskId = started.match(/\[Sub-agent task ([^\]]+)\]/)?.[1];
+  assert.ok(taskId, `expected task id in result: ${started}`);
+  const snapshot = await subagentStatusTool.execute({ taskId }, ctx);
+  assert.ok(snapshot.includes('RUNNING'), snapshot);
+  release();
+  const waited = await subagentStatusTool.execute({ taskId, wait: true }, ctx);
+  assert.ok(waited.includes('SUCCESS'), waited);
+  assert.ok(waited.includes('status complete'), waited);
+  const lateRead = await subagentStatusTool.execute({ taskId }, ctx);
+  assert.ok(lateRead.includes('status: completed'), lateRead);
+  console.log('  [PASS] subagent_status checks and waits for background completion');
+}
+
+// ── Test 7: subagent_status handles missing registry and unknown tasks ──
+{
+  const missingRegistry = await subagentStatusTool.execute(
+    { taskId: 'missing' },
+    { workspaceDir: '/tmp', sessionKey: 'test' },
+  );
+  assert.ok(missingRegistry.includes('not available'), missingRegistry);
+
+  const registry = createInMemoryMossAsyncTaskRegistry();
+  const unknownTask = await subagentStatusTool.execute(
+    { taskId: 'unknown' },
+    { workspaceDir: '/tmp', sessionKey: 'test', asyncTaskRegistry: registry },
+  );
+  assert.ok(unknownTask.includes('not found'), unknownTask);
+  console.log('  [PASS] subagent_status reports missing registry and unknown task ids');
+}
+
+// ── Test 8: resolveSpawnToolSet filters by scope ──
 {
   const exploreTools = resolveSpawnToolSet('explore');
   assert.ok(exploreTools, 'explore scope should return a tool set');
@@ -105,7 +221,7 @@ import {
   console.log('  [PASS] resolveSpawnToolSet filters correctly by scope');
 }
 
-// ── Test 5: SpawnProfileRegistry isolates host extensions per agent ──
+// ── Test 9: SpawnProfileRegistry isolates host extensions per agent ──
 {
   const registryA = new SpawnProfileRegistry();
   registryA.registerSpawnToolExtensions({ explore: ['host_a_status'] });
@@ -122,7 +238,7 @@ import {
   console.log('  [PASS] SpawnProfileRegistry isolates host extensions per instance');
 }
 
-// ── Test 6: buildSubagentPromptAddon injects scope constraints ──
+// ── Test 10: buildSubagentPromptAddon injects scope constraints ──
 {
   const exploreAddon = buildSubagentPromptAddon('explore');
   assert.ok(exploreAddon.length > 0, 'explore addon should not be empty');
@@ -146,7 +262,7 @@ import {
   console.log('  [PASS] buildSubagentPromptAddon injects correct constraints per scope');
 }
 
-// ── Test 7: Tool defaults scope to "full" and maxTurns to 10 ──
+// ── Test 11: Tool defaults scope to "full" and maxTurns to 10 ──
 {
   let capturedParams = null;
   const ctx = {
@@ -164,19 +280,25 @@ import {
   console.log('  [PASS] tool defaults scope to "full" and maxTurns to 10');
 }
 
-// ── Test 8: Tool metadata is correct ──
+// ── Test 12: Tool metadata is correct ──
 {
   assert.equal(createSubagentTool.name, 'create_subagent');
   assert.equal(createSubagentTool.metadata?.sideEffectClass, 'subagent');
   assert.equal(createSubagentTool.metadata?.planMode, 'allow');
+  assert.equal(subagentStatusTool.name, 'subagent_status');
+  assert.equal(subagentStatusTool.metadata?.sideEffectClass, 'readonly');
+  assert.equal(subagentStatusTool.metadata?.planMode, 'allow');
   assert.ok(createSubagentTool.inputSchema.properties.task, 'schema should have task property');
   assert.ok(createSubagentTool.inputSchema.properties.scope, 'schema should have scope property');
+  assert.ok(createSubagentTool.inputSchema.properties.background, 'schema should have background property');
+  assert.ok(subagentStatusTool.inputSchema.properties.taskId, 'status schema should have taskId property');
   assert.ok(!createSubagentTool.inputSchema.properties.mode, 'schema should not have unimplemented mode property');
   assert.deepEqual(createSubagentTool.inputSchema.required, ['task']);
+  assert.deepEqual(subagentStatusTool.inputSchema.required, ['taskId']);
   console.log('  [PASS] tool metadata and schema are correct');
 }
 
-// ── Test 9: Scope filtering prevents recursion ──
+// ── Test 13: Scope filtering prevents recursion ──
 {
   // Simulate what the runner does: filter out create_subagent from any scope
   const allToolNames = ['read', 'write', 'exec', 'create_subagent', 'grep'];
@@ -199,4 +321,4 @@ import {
   console.log('  [PASS] recursion prevention: create_subagent filtered from all scopes');
 }
 
-console.log('\n[pass] create-subagent: 9/9');
+console.log('\n[pass] create-subagent: 13/13');

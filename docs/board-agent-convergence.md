@@ -1,100 +1,208 @@
-# Moss Board-Agent Convergence Goal
+# Moss OpenClaw Capability Coverage Goal
 
 ## Final Objective
 
-Moss should become RDK Studio's single upper-level agent runtime for both desktop
-and board-side work. OpenClaw remains valuable, but its long-term product role is
-as a reusable board-side implementation/channel behind Moss, not as a permanent
-parallel agent tier that users or host prompts must reason about separately.
+Moss should become the agent runtime that makes users feel they can do the same
+work through Moss that they can do through OpenClaw. OpenClaw remains useful as a
+reusable board-side gateway/channel, but it should no longer be the separate
+product mental model users depend on for "real work."
 
-In the end state, any capability that OpenClaw can perform on the board should be
-reachable through Moss-owned contracts for subagent lifecycle, tool permissions,
-completion handoff, observability, and host adaptation. RDK Studio can still use
-OpenClaw as the board backplane, but the product mental model is: the user works
-with Moss; Moss chooses and governs the board channel.
+In the end state, Moss can coordinate desktop tools, board tools, files,
+terminals, web/browser tools, attachments, channels, long-running tasks,
+subagents, memory/skills, approvals, and external messaging with an experience
+that is not weaker than OpenClaw. RDK Studio may still route some actions through
+OpenClaw internally, especially on-device actions, but the user-facing promise is
+simple: use Moss; Moss can reach the right tool surface and execute the task.
 
 ## Evidence-Gated Current State
 
+- OpenClaw positions itself as an any-OS gateway that connects many chat and
+  channel surfaces to AI coding agents, with tool use, sessions, memory, and
+  multi-agent routing.
+- OpenClaw's docs include Control UI, WebChat, browser realtime talk, live tool
+  output cards, logs, media uploads, channel delivery, session filtering, and
+  multi-agent routing.
+- RDK Studio already gives Moss many local and product tools: workspace file
+  read/write/edit/exec, web fetch/browser fetch, attachment read/image/audio
+  analysis, Studio UI intents, terminal opening, device SSH/file/ROS/camera/VNC
+  tools, external messaging tools, task tools, and OpenClaw board tools.
 - RDK Studio already exposes `sessions_spawn` as a first-class subagent tool.
   The legacy Studio implementation starts a child run and returns immediately,
   then appends `subagent_summary` or `subagent_error` back into the parent
   session later.
-- Studio prompts already tell the agent that `sessions_spawn` is a non-blocking
-  background child task.
-- Upstream Moss has `create_subagent`, but the tool currently awaits
-  `ctx.spawnSubagent()` and returns the child summary synchronously.
-- Moss has useful primitives that should be preserved: scoped tool profiles,
-  recursion prevention, child workspace isolation for write-capable scopes, and
-  in-memory child run collection.
+- Upstream Moss has `create_subagent`, scoped tool profiles, recursion
+  prevention, child workspace isolation for write-capable scopes, and in-memory
+  child run collection, but it still does not define the full OpenClaw-like
+  product capability surface as Moss-owned contracts.
 - Studio already classifies subagent and OpenClaw tool capabilities through the
   D-Moss capability manifest and permission boundaries.
 
+## Capability Coverage Areas
+
+Moss should cover OpenClaw at the level users feel, not only at the subagent
+lifecycle level:
+
+1. **Computer and workspace control**: local file read/write/edit, shell
+   commands, patching, search, project context, generated artifacts, downloads,
+   and safe previews.
+2. **Board and robotics control**: device SSH, board file operations, ROS/TROS
+   inspection and execution, camera/audio/VNC/desktop terminal tools, hardware
+   diagnostics, deployment, and board-side verification.
+3. **Browser and web work**: ordinary fetch, rendered browser fetch, web search,
+   documentation lookup, authenticated-browser handoff where needed, and safe
+   URL handling.
+4. **Media and attachments**: image understanding, document/PDF/Office reading,
+   audio/video transcription, file upload/download, and attachment routing
+   between local, Studio, channels, and board.
+5. **Channels and external actions**: chat channels, Feishu/Weixin/forum style
+   sends, mobile or web surfaces, outbound media, and audit-friendly delivery
+   state.
+6. **Long-running task execution**: background tasks, subagents, task status,
+   wait/yield, cancellation, retries, resumable summaries, and completion
+   handoff.
+7. **Memory, skills, and teaching**: reusable knowledge, validated skills,
+   learned workflows, board-side skill install/write when appropriate, and clear
+   provenance.
+8. **Safety and governance**: tool allow/deny profiles, approval gates,
+   side-effect classes, sandbox/tool policy, credential boundaries, audit
+   events, and replay/idempotency protections.
+9. **OpenClaw as channel/backplane**: OpenClaw should be mountable as one
+   implementation for board-side execution, not the higher-level agent users
+   need to reason about.
+
+## RDK Studio Capability Matrix
+
+The priority is based on RDK Studio user jobs, not on copying every OpenClaw
+feature. OpenClaw's tool list is useful evidence for what a broad agent gateway
+can do, but RDK Studio should first cover the jobs that make board development
+feel complete through Moss.
+
+### P0: Required For "Moss Is Not Worse Than OpenClaw"
+
+| Capability | User-visible job | Current RDK Studio coverage | Gap to close |
+| --- | --- | --- | --- |
+| Computer and workspace control | Inspect and edit project files, apply patches, run builds or scripts, and open a terminal without leaving Moss. | Core tool buckets already include `read`, `list`, `grep`, `write`, `edit`, `apply_patch`, and `exec`. | Host manifests must label these as Moss-owned surfaces with result presentation and approval metadata so routing does not depend on prompt wording. |
+| Board and robotics control | Diagnose a selected board, run commands over SSH, read/write board files, inspect ROS/TROS, check cameras, flash readiness, VNC, and board terminal workflows. | Device buckets already include file, exec, ROS, camera, flash, VNC, TTS/STT, and board terminal tools. | Moss needs a board/robotics capability contract that can declare availability, side effects, progress, verification expectations, and fallback behavior. |
+| OpenClaw backplane | Use OpenClaw for board-side gateway operations, pairing, skills, model switching, doctor checks, and fleet delegation while keeping Moss as the user-facing orchestrator. | Device and fleet buckets already include `board_openclaw_*`, `fleet_board_delegate`, and `fleet_board_broadcast`. | OpenClaw must be modeled as a channel/backplane with health, capabilities, structured errors, and task methods, not as a separate top-level agent tier. |
+| Long-running work and subagents | Start slow research, build, flash, diagnosis, or fleet tasks without blocking the parent conversation; inspect status and receive a final summary once. | Studio already exposes `sessions_spawn` plus `dmoss_task_*`; OpenClaw has non-blocking spawn, status/log/steer, isolated/fork context, timeout, and completion handoff. | Moss needs async task/subagent handles, status, wait/yield, stop, timeout, parent-abort cascade, and idempotent completion records as host-neutral contracts. |
+| Attachments and media understanding | Read uploaded PDFs, Office files, logs, images, and audio/video transcripts; move attachments between user chat, local workspace, and board paths. | Studio registers `attachment_list`, `attachment_read`, `attachment_describe_image`, and `attachment_get_audio_transcript`; device upload can consume attachment ids. | Moss needs a declared attachment/media surface and routing policy for inbound channel media, local files, board uploads/downloads, and result rendering. |
+| Web and documentation work | Search/fetch RDK docs, forums, SkillHub, web pages, downloads, and forum posts as part of board troubleshooting. | Web/forum buckets include search, local RDK doc search, fetch, rendered browser fetch, extract, download, forum auth/status, and posting tools. | Moss should route web work by capability and network policy, and distinguish simple fetch from real browser automation. |
+
+### P1: Important Coverage After P0 Contracts Exist
+
+| Capability | User-visible job | Current RDK Studio coverage | Gap to close |
+| --- | --- | --- | --- |
+| Real browser automation | Navigate authenticated pages, click through dashboards, capture screenshots, download/upload files, inspect console/errors, and debug web UIs. | Studio has URL open, embedded browser capture, local preview, and rendered web fetch. | OpenClaw's browser surface is deeper: navigation, click/type, screenshots, downloads/uploads, cookies/storage, console, errors, device emulation. RDK Studio should add this only when a real Studio workflow needs it. |
+| Channels and external delivery | Send useful results or alerts through Feishu/Weixin/forum-style surfaces and preserve delivery state. | Studio has Weixin/Feishu outbound tools and forum posting tools. | Inbound media, per-channel progress streaming, retry/delivery state, and broad channel parity are not yet Moss contracts. |
+| Memory, skills, and teaching | Persist user preferences, board facts, validated procedures, and reusable workflows. | Core memory tools, Studio daily/longterm memory tools, skill discovery, and board OpenClaw skill install/write tools exist. | Moss needs provenance and validation rules that connect memory, skills, board-side skills, and host knowledge without blurring them. |
+| Media and voice assistance | Understand camera frames or screenshots, transcribe audio/video, and optionally speak or listen in board workflows. | Attachment image/audio tools and board TTS/STT tools exist. | Image/video/music generation is not a P0 RDK Studio need; media understanding for board debugging is the higher-value slice. |
+
+### P2: Defer Until A Concrete RDK Studio Workflow Needs It
+
+| Capability | Why deferred |
+| --- | --- |
+| Image/video/music generation | OpenClaw supports generation tools, but they are not core to RDK board development unless a product workflow asks for demo media creation. |
+| Cron/gateway management | Scheduled board health checks are plausible, but async task contracts and task status should come first. |
+| Canvas/nodes parity | OpenClaw has canvas/nodes concepts; RDK Studio should not copy them unless NodeHub or visual workflow work creates a concrete need. |
+
+### Do Not Change Yet
+
+- Do not remove existing Studio tools simply because they are not part of a
+  P0 surface. P1/P2 tools can remain available while Moss learns to classify
+  them.
+- Do not add browser, media generation, cron, or canvas abstractions merely for
+  parity. Each new abstraction needs a real RDK Studio workflow and verification
+  path.
+- Do not make Moss import RDK Studio's OpenClaw manager. The backplane must be
+  exposed by a host/channel contract.
+
 ## Acceptance Criteria
 
-1. Moss exposes a host-neutral async subagent contract that can start a child
-   task and immediately return a stable handle without blocking the parent run.
-2. Moss exposes a wait/yield operation, or equivalent host adapter method, that
-   waits for a specific child handle to complete and returns the final summary.
-3. Moss maintains observable child state: queued, running, completed, failed,
-   cancelled, timed out, plus timestamps and parent/child linkage.
-4. Child completion handoff is idempotent. Re-reading or replaying completion
-   must not append duplicate parent summaries or repeat side effects.
-5. Moss supports retry/fallback routing at the contract layer: a failed board
-   channel can return a structured failure that lets the parent choose local,
-   board, or alternate-channel recovery.
-6. Moss-owned tool profiles cover allow/deny behavior for child scopes,
-   including read-only, device-read, explore, plan, verify, and full.
-7. Child task options cover the board-agent surface that matters in practice:
+1. Users can ask Moss to perform representative OpenClaw-style work without
+   being redirected to a separate OpenClaw mental model: inspect a machine,
+   operate files, run commands, use a browser/web source, process attachments,
+   call board tools, and report verified results.
+2. Moss has a runtime capability manifest that can declare and inspect the
+   actual tool surfaces available in a host: desktop/local, board/device,
+   browser/web, attachment/media, messaging/channel, task/subagent, memory/skill,
+   and OpenClaw channel.
+3. Moss can route tasks by capability, not by product name. When the same action
+   can be done locally, on the board, or through OpenClaw, Moss chooses based on
+   availability, safety, expected quality, and fallback behavior.
+4. Moss exposes host-neutral contracts for tool execution, progress, result
+   presentation, approvals, side-effect class, retry/fallback, and cancellation.
+5. Moss exposes async task/subagent contracts for start, status, wait/yield,
+   stop, timeout, parent abort cascade, and idempotent completion handoff.
+6. Moss supports child/task options that matter for OpenClaw-like work:
    cwd/workspace, model, reasoning/thinking, run timeout, sandbox/tool policy,
-   context payload, cleanup policy, and optional channel preference.
-8. Moss enforces concurrency and depth limits for children, and provides
-   cascade stop semantics when a parent run is aborted or cleaned up.
-9. RDK Studio invokes board-side agent work through Moss-owned contracts. Direct
-   OpenClaw tools can remain internally, but user-facing prompts and capability
-   manifests should not require OpenClaw as a separate agent tier.
-10. OpenClaw can be mounted as a Moss board channel with declared capabilities,
-    health/status, spawn/wait/stop/status methods, and structured errors.
-11. The migration preserves existing Studio behavior: `sessions_spawn` remains
-    non-blocking for current users while newer Moss paths can use explicit
-    handles and wait/status APIs.
-12. Tests cover success, failure, timeout, cancellation, parent abort, duplicate
-    completion replay, permission denial, depth limit, concurrency limit, and
-    OpenClaw-channel fallback behavior.
+   context payload, channel preference, and cleanup policy.
+7. Moss-owned tool profiles cover allow/deny behavior for task scopes,
+   including read-only, device-read, explore, plan, verify, and full.
+8. Moss can mount OpenClaw as a board channel with declared capabilities,
+   health/status, task execution methods, and structured errors; Moss must not
+   import RDK Studio's OpenClaw manager directly.
+9. RDK Studio invokes user-facing board-side agent work through Moss-owned
+   contracts. Direct OpenClaw tools can remain internally, but prompts and
+   capability manifests should present Moss as the orchestrator.
+10. Migration preserves useful existing Studio behavior, including non-blocking
+    `sessions_spawn`, live progress, approval boundaries, and device mutation
+    safeguards.
+11. Tests cover at least: local task success, board-channel success, missing
+    capability, permission denial, timeout, cancellation, parent abort,
+    duplicate completion replay, fallback routing, and result presentation
+    metadata.
+12. A representative parity smoke suite proves Moss can complete a useful
+    OpenClaw-like workflow end to end: inspect context, use tools, perform an
+    action, verify the result, and produce a concise user-facing answer.
 
 ## Milestones
 
-### 1. Contract-First Bridge
+### 1. Capability Contract And Inventory
 
-Define the Moss async child-task contract without changing board runtime behavior
-yet. The first implementation can wrap the current Studio/OpenClaw path, but the
-contract must be Moss-owned and testable without a real board.
-
-Deliverables:
-
-- `AsyncSubagentHandle` or equivalent stable handle type.
-- `spawn`, `wait/yield`, `status`, and `stop` semantics in a host-neutral
-  interface.
-- Idempotent completion records with tests before any UI or prompt expansion.
-- A Studio adapter that can map the current non-blocking `sessions_spawn`
-  behavior into the new contract.
-
-### 2. Moss-Native Lifecycle Governance
-
-Move lifecycle rules into Moss so Studio/OpenClaw is no longer the only place
-that understands child state, retries, cancellation, and limits.
+Define the Moss-owned capability model and map what RDK Studio already exposes.
+This prevents the project from treating "OpenClaw parity" as a vague checklist.
 
 Deliverables:
 
-- Child registry keyed by stable run id.
-- Parent abort and cleanup cascade.
-- Concurrency/depth enforcement in Moss.
-- Tool-profile enforcement remains Moss-owned, with host extensions only adding
-  product-specific tools.
-- Event stream coverage for child queued/running/completed/failed/cancelled.
+- Capability taxonomy for local computer, board/device, browser/web,
+  attachment/media, channel/messaging, task/subagent, memory/skill, and
+  OpenClaw-channel tools.
+- Host manifest contract that can declare tool availability, side-effect class,
+  approval policy, result presentation, progress support, and fallback options.
+- A Studio inventory document or generated report that maps existing D-Moss
+  tools into the taxonomy.
+- Tests for manifest validation and missing-capability diagnostics.
 
-### 3. OpenClaw Channelization
+### 2. Task Execution And Routing
 
-Reduce OpenClaw to a board channel implementation behind Moss contracts.
+Make Moss choose and govern the right tool surface for a task, instead of
+hard-coding product-specific routes in prompts.
+
+Deliverables:
+
+- Capability-aware task router for local vs board vs OpenClaw-channel execution.
+- Result/progress envelope shared by desktop, board, browser, and channel tools.
+- Fallback behavior when a preferred capability is unavailable, denied, or fails.
+- Representative smoke tests for local+board+web+attachment workflows.
+
+### 3. Async Work And Subagents
+
+Preserve OpenClaw-like background execution while making lifecycle governance a
+Moss contract.
+
+Deliverables:
+
+- Stable async task/subagent handle.
+- `spawn`, `status`, `wait/yield`, and `stop` semantics.
+- Idempotent completion records.
+- Parent abort cascade and concurrency/depth limits.
+- Studio adapter that maps current `sessions_spawn` behavior into the Moss
+  contract.
+
+### 4. OpenClaw Channelization
+
+Reduce OpenClaw to one implementation behind Moss, while keeping its strengths
+available.
 
 Deliverables:
 
@@ -102,32 +210,71 @@ Deliverables:
 - OpenClaw implementation of the channel interface.
 - Test/stub channel for CI and local development.
 - Studio prompts and capability manifests speak in Moss terms first, with
-  OpenClaw only named as an implementation where necessary for diagnostics.
+  OpenClaw named only as an implementation where useful for diagnostics.
 
 ## Smallest Safe Next Implementation
 
-The next code change should not try to "replace OpenClaw." The smallest safe
-step is to add a Moss-owned async subagent contract and tests that prove
-idempotent handle semantics without requiring a real board. After that passes,
-RDK Studio can adapt its existing `sessions_spawn` path to the contract.
+The next code change should start with capability coverage, not only subagent
+state. The smallest safe slice is to extend the host-adapter contract with a
+Moss-owned tool-surface taxonomy and manifest validation, then use it to map RDK
+Studio's existing P0 tool buckets. That makes the desired OpenClaw-like coverage
+explicit and testable before wiring new execution behavior.
 
 Suggested first slice:
 
-1. Add a contract module under `moss/packages/dmoss-agent/src/core/subagent/`
-   for async child handles and states.
-2. Add a pure in-memory registry with `spawned`, `completed`, `failed`,
-   `cancelled`, and idempotent `readCompletion` transitions.
-3. Add `node:test` coverage for duplicate completion replay and parent abort.
-4. Only then wire the registry into `createSubAgentRunner` or a new host
-   adapter bridge.
+1. Extend `moss/packages/dmoss/src/contracts/host-adapter.ts` with stable tool
+   surface/result-surface constants and optional fields on host tool
+   declarations.
+2. Add compatibility validation for missing required tool surfaces and invalid
+   surface/result-surface values while preserving legacy manifests that omit
+   the optional fields.
+3. Add conformance coverage for all P0/P1 surface constants, missing-surface
+   diagnostics, invalid-surface rejection, and legacy compatibility.
+4. Map RDK Studio's existing P0 tool buckets into the taxonomy in the Studio
+   host adapter, then assert that the Studio manifest declares at least:
+   computer/workspace, computer/shell, board/device, robotics runtime,
+   browser/web, attachment/media, task/subagent, memory/skill, channel
+   messaging, and OpenClaw channel.
+5. Only after the inventory is verified, add the async task/subagent handle as
+   the first lifecycle primitive under the same capability model.
+
+Current local progress:
+
+- Moss now declares and validates the tool-surface/result-surface taxonomy in
+  the host-adapter contract, with conformance tests for invalid values,
+  missing required surfaces, and legacy manifests that omit optional fields.
+- RDK Studio now maps its declared D-Moss tool buckets into those surfaces in
+  `server/dmoss/studio-host-adapter-contract.ts` and verifies that the P0
+  surface inventory is present.
+- Until RDK Studio updates `external/moss` to a Moss commit containing the new
+  contract fields, Studio keeps a compatibility-period surface check in its
+  own host-adapter evaluator so `requiredToolSurfaces` cannot be silently
+  ignored by the older Moss evaluator.
+- Moss core now also includes a host-neutral async task/subagent lifecycle
+  contract with an in-memory reference registry. The registry returns stable
+  handles immediately, records idempotent completions, supports wait/status/list
+  operations, propagates parent aborts, cancels child task trees, and enforces
+  timeout completions. This is not wired to Studio or OpenClaw yet; it is the
+  runtime contract the next adapter slice can consume.
+- `@rdk-moss/agent` now consumes that contract for an opt-in
+  `create_subagent` background path. The default tool behavior still waits for
+  the child and returns the final summary, while `background: true` starts the
+  same child through the async task registry and returns a stable task handle
+  immediately. This proves the contract is no longer only a declaration; the
+  existing subagent tool can execute through it without changing the default
+  synchronous user path.
+- The background path now has a matching `subagent_status` tool. It can inspect
+  a non-blocking status snapshot or wait for final completion, giving Moss the
+  first start/status/wait loop needed for OpenClaw-like long-running work.
 
 ## Things Not To Change Yet
 
-- Do not remove RDK Studio's current `sessions_spawn`; it already provides the
-  non-blocking user-visible behavior that must be preserved.
+- Do not remove RDK Studio's current `sessions_spawn`; it already provides
+  useful non-blocking behavior that must be preserved.
 - Do not make Moss import Studio's OpenClaw manager directly. OpenClaw access
   should enter Moss through a host/channel interface.
 - Do not collapse tool permission boundaries into prompt text. Runtime policy
-  must continue to enforce the declared tool profile.
-- Do not turn this into a generic framework checklist. Each capability should
-  remain tied to a real board-side user path or a verified lifecycle bug.
+  must continue to enforce declared tool capability and side-effect metadata.
+- Do not frame parity as "copy OpenClaw internals." The target is user-visible
+  capability coverage: Moss can perform the same classes of work with equal or
+  better governance.

@@ -48,6 +48,33 @@ export interface MossHostProviderRef {
   toolCalling: boolean;
 }
 
+export const MOSS_HOST_TOOL_SURFACE_KINDS = [
+  'computer_workspace',
+  'computer_shell',
+  'browser_web',
+  'attachment_media',
+  'board_device',
+  'robotics_runtime',
+  'channel_messaging',
+  'task_subagent',
+  'memory_skill',
+  'openclaw_channel',
+] as const;
+
+export type MossHostToolSurfaceKind = (typeof MOSS_HOST_TOOL_SURFACE_KINDS)[number];
+
+export const MOSS_HOST_TOOL_RESULT_SURFACES = [
+  'assistant_text',
+  'timeline_summary',
+  'terminal_output',
+  'artifact',
+  'media_or_file',
+  'channel_delivery',
+  'background_task',
+] as const;
+
+export type MossHostToolResultSurface = (typeof MOSS_HOST_TOOL_RESULT_SURFACES)[number];
+
 export interface MossHostToolRef {
   name: string;
   boundaryId: string;
@@ -62,6 +89,18 @@ export interface MossHostToolRef {
     | 'subagent';
   approval: 'not_required' | 'plan_audit' | 'execute_audit';
   source: 'moss' | 'host' | 'extension';
+  /**
+   * User-visible capability surface this tool contributes to.
+   *
+   * This is intentionally optional for backward compatibility with Host Adapter
+   * v1 manifests. New hosts should set it so Moss can evaluate OpenClaw-style
+   * capability coverage at the level users feel: desktop, board, browser,
+   * attachments, channels, background tasks, memory/skills, and OpenClaw
+   * channel backplanes.
+   */
+  surface?: MossHostToolSurfaceKind;
+  /** Presentation surface the host uses for this tool result/progress. */
+  resultSurface?: MossHostToolResultSurface;
 }
 
 export interface MossHostEventSinkRef {
@@ -158,6 +197,7 @@ export interface MossHostCompatibilityRequirement {
   minContractVersion?: MossHostAdapterContractVersion;
   maxContractVersion?: MossHostAdapterContractVersion;
   requiredCapabilities?: readonly MossHostCapabilityKind[];
+  requiredToolSurfaces?: readonly MossHostToolSurfaceKind[];
   requiredEventSchemas?: readonly string[];
   requiredProviderFamilies?: readonly string[];
 }
@@ -176,6 +216,7 @@ export interface MossHostCompatibilityReport {
   status: MossHostCompatibilityStatus;
   reasons: readonly string[];
   missingCapabilities: readonly MossHostCapabilityKind[];
+  missingToolSurfaces: readonly MossHostToolSurfaceKind[];
   missingEventSchemas: readonly string[];
   missingProviderFamilies: readonly string[];
 }
@@ -203,6 +244,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isOneOf<const T extends readonly string[]>(value: unknown, allowed: T): value is T[number] {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value);
 }
 
 function validateMossHostManifestShape(manifest: unknown): string | null {
@@ -271,6 +316,18 @@ function validateMossHostManifestShape(manifest: unknown): string | null {
   ) {
     return 'manifest.tools must be an array of tool records';
   }
+  for (const tool of manifest.tools) {
+    if (!isRecord(tool)) continue;
+    if (tool.surface !== undefined && !isOneOf(tool.surface, MOSS_HOST_TOOL_SURFACE_KINDS)) {
+      return 'manifest.tools[].surface must be a known tool surface';
+    }
+    if (
+      tool.resultSurface !== undefined &&
+      !isOneOf(tool.resultSurface, MOSS_HOST_TOOL_RESULT_SURFACES)
+    ) {
+      return 'manifest.tools[].resultSurface must be a known result surface';
+    }
+  }
 
   if (!Array.isArray(manifest.eventSinks)) return 'manifest.eventSinks must be an array';
   if (
@@ -312,6 +369,7 @@ function emptyFailureReport(
     status,
     reasons,
     missingCapabilities: [],
+    missingToolSurfaces: [],
     missingEventSchemas: [],
     missingProviderFamilies: [],
   };
@@ -372,6 +430,7 @@ export function evaluateMossHostCompatibility(
       status: 'host_version_incompatible',
       reasons,
       missingCapabilities: [],
+      missingToolSurfaces: [],
       missingEventSchemas: [],
       missingProviderFamilies: [],
     };
@@ -390,6 +449,26 @@ export function evaluateMossHostCompatibility(
       status: 'missing_capability',
       reasons,
       missingCapabilities,
+      missingToolSurfaces: [],
+      missingEventSchemas: [],
+      missingProviderFamilies: [],
+    };
+  }
+
+  const toolSurfaces = new Set(
+    runtimeManifest.tools.flatMap((tool) => (tool.surface ? [tool.surface] : [])),
+  );
+  const missingToolSurfaces = (requirement.requiredToolSurfaces ?? []).filter(
+    (surface) => !toolSurfaces.has(surface),
+  );
+  if (missingToolSurfaces.length > 0) {
+    reasons.push(`missing host tool surfaces: ${missingToolSurfaces.join(', ')}`);
+    return {
+      compatible: false,
+      status: 'missing_capability',
+      reasons,
+      missingCapabilities: [],
+      missingToolSurfaces,
       missingEventSchemas: [],
       missingProviderFamilies: [],
     };
@@ -406,6 +485,7 @@ export function evaluateMossHostCompatibility(
       status: 'missing_event_schema',
       reasons,
       missingCapabilities: [],
+      missingToolSurfaces: [],
       missingEventSchemas,
       missingProviderFamilies: [],
     };
@@ -424,6 +504,7 @@ export function evaluateMossHostCompatibility(
       status: 'missing_provider_family',
       reasons,
       missingCapabilities: [],
+      missingToolSurfaces: [],
       missingEventSchemas: [],
       missingProviderFamilies,
     };
@@ -434,6 +515,7 @@ export function evaluateMossHostCompatibility(
     status: 'ok',
     reasons,
     missingCapabilities: [],
+    missingToolSurfaces: [],
     missingEventSchemas: [],
     missingProviderFamilies: [],
   };

@@ -9,14 +9,18 @@
  * Host applications can extend this via intersection types
  * to add product-specific fields (device bindings, etc.).
  */
+import type { MossAsyncTaskRegistry } from '@rdk-moss/core/contracts/async-task';
+
 export interface ToolContext {
   workspaceDir: string;
   bootstrapDir?: string;
   extraAllowedRoots?: string[];
+  runId?: string;
   sessionKey: string;
   sessionId?: string;
   agentId?: string;
   abortSignal?: AbortSignal;
+  asyncTaskRegistry?: MossAsyncTaskRegistry;
   toolCallId?: string;
   spawnSubagent?: (params: {
     task: string;
@@ -26,6 +30,7 @@ export interface ToolContext {
     maxTurns?: number;
     mode?: 'single' | 'fan-out' | 'pipeline';
     tasks?: Array<{ task: string; scope?: string }>;
+    abortSignal?: AbortSignal;
   }) => Promise<{
     runId: string;
     sessionKey: string;

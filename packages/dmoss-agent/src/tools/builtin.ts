@@ -17,7 +17,7 @@ import { runProcess, ProcessError } from '../utils/run-process.js';
 import type { Tool } from '../core/tools/tool-types.js';
 import { assertSandboxPath } from '../safety/sandbox-paths.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
-import { createSubagentTool } from './create-subagent.js';
+import { createSubagentTool, subagentStatusTool } from './create-subagent.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
 import { applyUpdateHunk, extractAddContent, parsePatch } from '../utils/apply-patch-core.js';
 import { atomicWriteFile } from '../utils/atomic-write.js';
@@ -547,6 +547,7 @@ export const builtinTools: Tool[] = [
   searchCodeTool,
   applyPatchTool,
   createSubagentTool,
+  subagentStatusTool,
 ];
 
 /**

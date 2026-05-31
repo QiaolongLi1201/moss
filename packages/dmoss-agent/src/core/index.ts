@@ -82,6 +82,7 @@ export type {
   LLMStreamEvent,
   LLMRequestOptions,
   LLMResponse,
+  LLMSystemPromptParts,
   LLMToolDeclaration,
 } from './llm/index.js';
 export {

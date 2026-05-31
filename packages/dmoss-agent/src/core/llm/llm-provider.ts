@@ -39,6 +39,17 @@ export interface LLMToolDeclaration {
   };
 }
 
+export interface LLMSystemPromptParts {
+  /**
+   * Stable prefix that can be marked as a provider prompt-cache breakpoint.
+   * Must be the prefix of `systemPrompt` when `dynamic` is appended with the
+   * normal double-newline joiner.
+   */
+  stable: string;
+  /** Per-turn suffix that should not invalidate the stable prefix cache. */
+  dynamic: string;
+}
+
 export interface LLMStreamEvent {
   type:
     | 'message_start'
@@ -65,6 +76,12 @@ export interface LLMStreamEvent {
 export interface LLMRequestOptions {
   model: string;
   systemPrompt: string;
+  /**
+   * Optional provider hint for prompt-cache-aware adapters.
+   * Callers still send `systemPrompt` for backwards compatibility; providers
+   * that understand split prompts may send multiple native system blocks.
+   */
+  systemPromptParts?: LLMSystemPromptParts;
   messages: LLMMessage[];
   tools?: LLMToolDeclaration[];
   maxTokens?: number;

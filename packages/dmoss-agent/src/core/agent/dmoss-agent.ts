@@ -435,10 +435,14 @@ export class DmossAgent {
     const extraContext = [options?.extraContext, goalContext, workingContext]
       .filter(Boolean)
       .join('\n\n');
-    const systemPrompt = this.buildSystemPrompt({
+    const stableSystemPrompt = this.buildSystemPrompt({
       platform: options?.platform,
-      extraContext,
     });
+    const systemPrompt = [stableSystemPrompt, extraContext].filter(Boolean).join('\n\n');
+    const systemPromptParts =
+      stableSystemPrompt && extraContext
+        ? { stable: stableSystemPrompt, dynamic: extraContext }
+        : undefined;
     const allTools = [...this.tools.getAll(), ...(options?.ephemeralTools ?? [])];
 
     const toolCtx: ToolContext = {
@@ -544,6 +548,7 @@ export class DmossAgent {
       currentMessages: toSessionMessages(messages),
       compactionSummary: undefined,
       systemPrompt,
+      systemPromptParts,
       toolsForRun: allTools,
       getToolsForRun: () => allTools,
       toolCtx,

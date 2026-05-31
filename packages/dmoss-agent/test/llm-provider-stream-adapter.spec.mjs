@@ -48,6 +48,7 @@ const stream = streamFn(
   },
   {
     systemPrompt: 'system',
+    systemPromptParts: { stable: 'stable system', dynamic: 'dynamic turn' },
     messages: [{ role: 'user', content: 'hi', timestamp: 1 }],
     tools: [
       {
@@ -69,6 +70,10 @@ const result = await stream.result();
 assert.equal(requests.length, 1);
 assert.equal(requests[0].model, 'fake-model');
 assert.equal(requests[0].systemPrompt, 'system');
+assert.deepEqual(requests[0].systemPromptParts, {
+  stable: 'stable system',
+  dynamic: 'dynamic turn',
+});
 assert.equal(requests[0].messages[0].role, 'user');
 assert.equal(requests[0].messages[0].content, 'hi');
 assert.equal(requests[0].tools[0].name, 'probe');

@@ -28,6 +28,7 @@ import type {
   LLMResponse,
   LLMStreamEvent,
   LLMContentBlock,
+  LLMSystemPromptParts,
 } from '../core/llm/llm-provider.js';
 import { envPreferDmoss } from '../utils/env-compat.js';
 import { getRootLogger } from '../logger.js';
@@ -50,6 +51,64 @@ import {
 } from './pi-ai-watchdog.js';
 
 const log = getRootLogger().child('provider:pi-ai');
+
+const DEFAULT_ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function buildAnthropicSplitSystemBlocks(
+  parts: LLMSystemPromptParts,
+  cacheControl: unknown,
+): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [
+    {
+      type: 'text',
+      text: parts.stable,
+      cache_control: cacheControl,
+    },
+  ];
+  if (parts.dynamic) {
+    blocks.push({ type: 'text', text: parts.dynamic });
+  }
+  return blocks;
+}
+
+function applyAnthropicSystemPromptPartsToPayload(
+  payload: unknown,
+  systemPrompt: string,
+  parts?: LLMSystemPromptParts,
+): void {
+  if (!parts?.stable || !isRecord(payload)) return;
+  const system = payload.system;
+
+  if (typeof system === 'string') {
+    if (system !== systemPrompt) return;
+    payload.system = buildAnthropicSplitSystemBlocks(
+      parts,
+      DEFAULT_ANTHROPIC_CACHE_CONTROL,
+    );
+    return;
+  }
+
+  if (!Array.isArray(system)) return;
+  const targetIndex = system.findIndex(
+    (block) => isRecord(block) && block.type === 'text' && block.text === systemPrompt,
+  );
+  if (targetIndex < 0) return;
+
+  const targetBlock = system[targetIndex];
+  const cacheControl =
+    isRecord(targetBlock) && targetBlock.cache_control !== undefined
+      ? targetBlock.cache_control
+      : DEFAULT_ANTHROPIC_CACHE_CONTROL;
+  system.splice(
+    targetIndex,
+    1,
+    ...buildAnthropicSplitSystemBlocks(parts, cacheControl),
+  );
+}
 
 // Re-export types that were previously defined in this file
 export { PiAiFirstEventTimeoutError } from './pi-ai-watchdog.js';
@@ -377,6 +436,7 @@ export class PiAiLLMProvider implements LLMProvider {
 
     return {
       systemPrompt: options.systemPrompt,
+      ...(options.systemPromptParts ? { systemPromptParts: options.systemPromptParts } : {}),
       messages: convertedMessages,
       tools: tools ?? [],
       apiKey: this.apiKey,
@@ -416,6 +476,15 @@ export class PiAiLLMProvider implements LLMProvider {
     } else if (this.reasoning !== undefined && this.reasoning !== null && this.reasoning !== '') {
       reasoningForPi = this.reasoning;
     }
+    const onPayload = options.systemPromptParts
+      ? (payload: unknown) => {
+          applyAnthropicSystemPromptPartsToPayload(
+            payload,
+            options.systemPrompt,
+            options.systemPromptParts,
+          );
+        }
+      : undefined;
 
     return {
       apiKey: this.apiKey,
@@ -425,6 +494,7 @@ export class PiAiLLMProvider implements LLMProvider {
       ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(effectiveSignal ? { abortSignal: effectiveSignal, signal: effectiveSignal } : {}),
       ...(toolChoice ? { toolChoice } : {}),
+      ...(onPayload ? { onPayload } : {}),
     };
   }
 }

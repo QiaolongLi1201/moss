@@ -14,6 +14,7 @@ import type {
   LLMResponse,
   LLMStreamEvent,
   LLMContentBlock,
+  LLMSystemPromptParts,
 } from '../core/llm/llm-provider.js';
 import { DmossError, ErrorCode } from '../errors.js';
 
@@ -31,6 +32,30 @@ interface AnthropicSseEvent {
   message?: Record<string, unknown>;
   usage?: Record<string, number>;
   error?: { type?: string; message?: string };
+}
+
+interface AnthropicTextSystemBlock {
+  type: 'text';
+  text: string;
+  cache_control?: { type: 'ephemeral' };
+}
+
+function buildAnthropicSystemPrompt(
+  systemPrompt: string,
+  parts?: LLMSystemPromptParts,
+): string | AnthropicTextSystemBlock[] {
+  if (!parts?.stable) return systemPrompt;
+  const blocks: AnthropicTextSystemBlock[] = [
+    {
+      type: 'text',
+      text: parts.stable,
+      cache_control: { type: 'ephemeral' },
+    },
+  ];
+  if (parts.dynamic) {
+    blocks.push({ type: 'text', text: parts.dynamic });
+  }
+  return blocks;
 }
 
 export class AnthropicLLMProvider implements LLMProvider {
@@ -59,7 +84,7 @@ export class AnthropicLLMProvider implements LLMProvider {
     const body = {
       model: opts.model || this.defaultModel,
       max_tokens: opts.maxTokens || 4096,
-      system: opts.systemPrompt,
+      system: buildAnthropicSystemPrompt(opts.systemPrompt, opts.systemPromptParts),
       messages: opts.messages.map((m) => ({
         role: m.role,
         content: m.content,

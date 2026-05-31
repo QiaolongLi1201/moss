@@ -148,4 +148,62 @@ import { PiAiFirstEventTimeoutError } from '../dist/provider/pi-ai-adapter.js';
   assert.equal(toolUse?.input?.url, 'https://developer.d-robotics.cc/forum');
 }
 
+{
+  const { PiAiLLMProvider } = await import('../dist/provider/index.js');
+  let capturedContext;
+  let capturedPayload;
+  const provider = new PiAiLLMProvider({
+    streamFn: async function* (_model, context, options) {
+      capturedContext = context;
+      const payload = {
+        system: [
+          {
+            type: 'text',
+            text: 'You are Claude Code, Anthropic\'s official CLI for Claude.',
+            cache_control: { type: 'ephemeral' },
+          },
+          {
+            type: 'text',
+            text: 'stable prompt\n\ndynamic turn context',
+            cache_control: { type: 'ephemeral', ttl: '5m' },
+          },
+        ],
+      };
+      options?.onPayload?.(payload);
+      capturedPayload = payload;
+      yield {
+        type: 'done',
+        stopReason: 'stop',
+        message: {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { input: 1, output: 1 },
+        },
+      };
+    },
+    model: { api: 'anthropic-messages', provider: 'anthropic', id: 'claude-sonnet-4-20250514' },
+    apiKey: 'sk-ant-api03-abcdef1234567890ghijklmnopqrstuv',
+  });
+
+  await provider.complete({
+    model: 'claude-sonnet-4-20250514',
+    systemPrompt: 'stable prompt\n\ndynamic turn context',
+    systemPromptParts: { stable: 'stable prompt', dynamic: 'dynamic turn context' },
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assert.deepEqual(capturedContext.systemPromptParts, {
+    stable: 'stable prompt',
+    dynamic: 'dynamic turn context',
+  });
+  assert.deepEqual(capturedPayload.system[1], {
+    type: 'text',
+    text: 'stable prompt',
+    cache_control: { type: 'ephemeral', ttl: '5m' },
+  });
+  assert.deepEqual(capturedPayload.system[2], {
+    type: 'text',
+    text: 'dynamic turn context',
+  });
+}
+
 console.log('All pi-ai-adapter checks passed.');

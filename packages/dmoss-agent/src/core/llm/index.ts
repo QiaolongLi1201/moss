@@ -6,6 +6,7 @@ export type {
   LLMStreamEvent,
   LLMRequestOptions,
   LLMResponse,
+  LLMSystemPromptParts,
   LLMToolDeclaration,
 } from './llm-provider.js';
 export {

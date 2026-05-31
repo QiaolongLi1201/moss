@@ -71,6 +71,14 @@ function createModelEventProvider(handler) {
   assert.equal(requests.length, 1);
   assert.equal(requests[0].model, 'fake-model');
   assert(requests[0].systemPrompt.includes('base'));
+  assert(requests[0].systemPromptParts, 'expected provider request to include split system prompt');
+  assert(requests[0].systemPromptParts.stable.includes('base'));
+  assert(!requests[0].systemPromptParts.stable.includes('<dmoss_working_context>'));
+  assert(requests[0].systemPromptParts.dynamic.includes('<dmoss_working_context>'));
+  assert.equal(
+    requests[0].systemPrompt,
+    `${requests[0].systemPromptParts.stable}\n\n${requests[0].systemPromptParts.dynamic}`,
+  );
 
   const stored = await store.loadMessages('bridge-text');
   assert(stored.some((message) => message.role === 'assistant'));

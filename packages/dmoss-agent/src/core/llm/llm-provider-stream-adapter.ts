@@ -17,6 +17,7 @@ import type {
   LLMRequestOptions,
   LLMResponse,
   LLMStreamEvent,
+  LLMSystemPromptParts,
   LLMToolDeclaration,
 } from './llm-provider.js';
 import { describeError } from '../../provider/errors.js';
@@ -132,6 +133,16 @@ function mapUsage(usage: LLMResponse['usage'] | undefined): Usage {
     totalTokens: usage.inputTokens + usage.outputTokens,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };
+}
+
+function readSystemPromptParts(context: PiContext): LLMSystemPromptParts | undefined {
+  const raw = (context as PiContext & { systemPromptParts?: unknown }).systemPromptParts;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const parts = raw as { stable?: unknown; dynamic?: unknown };
+  if (typeof parts.stable !== 'string' || typeof parts.dynamic !== 'string') {
+    return undefined;
+  }
+  return { stable: parts.stable, dynamic: parts.dynamic };
 }
 
 interface ForwardState {
@@ -311,11 +322,13 @@ export function createStreamFunctionFromLlmProvider(
     void (async () => {
       try {
         const forwardState = createForwardState();
+        const piContext = context as PiContext;
         const request: LLMRequestOptions = {
           model: model.id,
-          systemPrompt: String((context as PiContext).systemPrompt ?? ''),
-          messages: mapPiMessagesToLlm((context as PiContext).messages ?? []),
-          tools: mapPiToolsToLlm((context as PiContext).tools),
+          systemPrompt: String(piContext.systemPrompt ?? ''),
+          systemPromptParts: readSystemPromptParts(piContext),
+          messages: mapPiMessagesToLlm(piContext.messages ?? []),
+          tools: mapPiToolsToLlm(piContext.tools),
           maxTokens: streamOptions?.maxTokens,
           temperature: streamOptions?.temperature,
           abortSignal: streamOptions?.signal,

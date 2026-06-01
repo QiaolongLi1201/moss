@@ -298,6 +298,10 @@ export function statusLine(options: {
   return parts.filter(Boolean).join('  ');
 }
 
+export function promptCacheModeLabel(runtime?: CliRuntimeStatus): string {
+  return runtime?.config?.promptCacheEnabled === false ? 'cache off' : 'cache stable';
+}
+
 export function footerHint(state: TuiRunState): string {
   if (state === 'approval') return 'y approve · n/Esc deny';
   if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
@@ -628,10 +632,12 @@ export interface SessionHeaderProps {
   state: TuiRunState;
   toolsExpanded?: boolean;
   version?: string;
+  cacheMode?: string;
 }
 
-export function SessionHeader({ device, workspace, model, state, toolsExpanded, version }: SessionHeaderProps): React.ReactElement {
+export function SessionHeader({ device, workspace, model, state, toolsExpanded, version, cacheMode }: SessionHeaderProps): React.ReactElement {
   const stateLabel = statusBadge(state);
+  const cacheLabel = cacheMode || 'cache stable';
   return React.createElement(
     Box,
     { flexDirection: 'column', marginBottom: 1 },
@@ -655,7 +661,7 @@ export function SessionHeader({ device, workspace, model, state, toolsExpanded, 
       React.createElement(Text, null,
         React.createElement(Text, { color: theme.textMuted }, 'status:    '),
         React.createElement(Text, { color: statusBarColor(state), bold: true }, stateLabel),
-        React.createElement(Text, { color: theme.textMuted }, `    ${device}  ·  tools ${toolsExpanded ? 'expanded' : 'collapsed'}`),
+        React.createElement(Text, { color: theme.textMuted }, `    ${device}  ·  ${cacheLabel}  ·  tools ${toolsExpanded ? 'expanded' : 'collapsed'}`),
       ),
     ),
   );
@@ -714,9 +720,10 @@ export interface WelcomePanelProps {
   workspace: string;
   device: string;
   model?: string;
+  cacheMode?: string;
 }
 
-export function WelcomePanel({ workspace, device, model }: WelcomePanelProps): React.ReactElement {
+export function WelcomePanel({ workspace, device, model, cacheMode }: WelcomePanelProps): React.ReactElement {
   const commandRows: Array<[string, string]> = [
     ['/model', 'choose what model to use'],
     ['/status', 'inspect runtime, device, and workspace context'],
@@ -743,7 +750,7 @@ export function WelcomePanel({ workspace, device, model }: WelcomePanelProps): R
         React.createElement(Text, { color: theme.textMuted }, 'expand or collapse tool calls'),
       ),
     ),
-    React.createElement(Text, { color: theme.textDim }, `workspace ${compactPath(workspace)} · device ${device} · model ${model || 'connecting...'}`),
+    React.createElement(Text, { color: theme.textDim }, `workspace ${compactPath(workspace)} · device ${device} · model ${model || 'connecting...'} · ${cacheMode || 'cache stable'}`),
   );
 }
 
@@ -1618,6 +1625,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   }, [addTranscript, approval, runInput, setQueuedInputs]);
 
   const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
+  const cacheMode = promptCacheModeLabel(runtime);
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
   const terminalRows = Math.max(12, stdout?.rows ?? 30);
   const promptRows = Math.min(6, Math.max(1, input ? input.split('\n').length : 1)) + 2 + (input.startsWith('/') ? 8 : 0);
@@ -1645,12 +1653,13 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       state: runState,
       toolsExpanded: toolsExpanded || detailMode === 'verbose',
       version: `v${getPackageVersion()}`,
+      cacheMode,
     }),
     React.createElement(
       Box,
       { flexDirection: 'column', height: transcriptRows, overflow: 'hidden' },
       transcript.length === 0
-        ? React.createElement(WelcomePanel, { workspace, device, model: currentModel })
+        ? React.createElement(WelcomePanel, { workspace, device, model: currentModel, cacheMode })
         : null,
       ...transcript.map((item) => React.createElement(TranscriptMessage, {
           key: item.id,

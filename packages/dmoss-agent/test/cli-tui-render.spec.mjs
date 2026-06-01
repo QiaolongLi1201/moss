@@ -43,6 +43,24 @@ test('SessionHeader renders a compact Codex-style launch panel', () => {
   assert.match(frame, /deepseek-v4-pro/);
   assert.match(frame, /directory:/);
   assert.match(frame, /\/model to change/);
+  assert.match(frame, /cache stable/);
+  cleanup();
+});
+
+test('SessionHeader surfaces disabled prompt cache mode', () => {
+  const { lastFrame } = render(
+    React.createElement(SessionHeader, {
+      state: 'ready',
+      device: 'no device',
+      workspace: '/Users/me/project',
+      model: 'deepseek-v4-pro',
+      version: 'v0.3.7',
+      toolsExpanded: false,
+      cacheMode: 'cache off',
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /cache off/);
   cleanup();
 });
 
@@ -104,6 +122,7 @@ test('WelcomePanel renders a Tip and Codex-style command list', () => {
   assert.match(frame, /\/model\s+choose what model to use/);
   assert.match(frame, /\/status\s+inspect runtime/);
   assert.match(frame, /Ctrl\+O\s+expand or collapse tool calls/);
+  assert.match(frame, /cache stable/);
   cleanup();
 });
 

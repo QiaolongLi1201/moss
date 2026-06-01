@@ -549,7 +549,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       const answer = await askApproval([
         'Allow LOCAL host shell commands in this TUI session?',
         'This runs on the computer where this CLI is open.',
-        'It does not run on the board, OpenClaw gateway, or a remote device.',
+        'It does not run on the board, a board gateway, or a remote device.',
         `First command: ${command}`,
       ].join('\n'));
       if (answer.trim().toLowerCase() !== 'y') {

@@ -399,7 +399,7 @@ export interface MossHostEffectiveToolInventoryContext {
    *
    * When omitted, Moss builds a static projection from declarations only. When
    * present, surface readiness is enforced so product UIs can explain why a
-   * declared board, browser, attachment, task, or OpenClaw backplane surface is
+   * declared board, browser, attachment, task, or channel backplane surface is
    * unavailable right now.
    */
   readySignals?: readonly MossHostToolSurfaceReadinessSignal[];

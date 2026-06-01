@@ -141,6 +141,7 @@ const COPY_SENSITIVE_TOKEN_RE = /^(?:https?:\/\/|file:\/\/|[A-Za-z]:\\|\/|\.\/|\
 const RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 const LOCAL_SHELL_OUTPUT_LIMIT = 40_000;
 const MAX_TRANSCRIPT_ITEMS = 200;
+const MAX_INPUT_HISTORY = 100;
 const HEADLINE_MAX = 72;
 const KNOWN_COMMANDS = [
   '/help',
@@ -844,6 +845,8 @@ export interface PromptEditorProps {
   onSubmit: (value: string) => void;
   placeholder: string;
   disabled: boolean;
+  onHistoryPrevious?: () => void;
+  onHistoryNext?: () => void;
   onShiftEnter?: () => void;
   hint?: string;
   model?: string;
@@ -866,11 +869,30 @@ function commandRowsForInput(value: string): Array<[string, string]> {
   return rows.filter(([command]) => command.startsWith(normalized));
 }
 
-export function PromptEditor({ value, onChange, onSubmit, placeholder, disabled, onShiftEnter, hint, model }: PromptEditorProps): React.ReactElement {
+export function PromptEditor({
+  value,
+  onChange,
+  onSubmit,
+  placeholder,
+  disabled,
+  onHistoryPrevious,
+  onHistoryNext,
+  onShiftEnter,
+  hint,
+  model,
+}: PromptEditorProps): React.ReactElement {
   const lineCount = value.length > 0 ? value.split('\n').length : 0;
   const isMulti = lineCount > 1;
   useInput((inputChar, key) => {
     if (disabled) return;
+    if (key.upArrow) {
+      onHistoryPrevious?.();
+      return;
+    }
+    if (key.downArrow) {
+      onHistoryNext?.();
+      return;
+    }
     if (key.return) {
       if (key.shift || key.ctrl || inputChar === '\n') {
         onChange(`${value}\n`);
@@ -950,10 +972,52 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const flashTimerRef = useRef<NodeJS.Timeout | null>(null);
   const busyRef = useRef(false);
   const queuedInputsRef = useRef<QueuedInput[]>([]);
+  const inputHistoryRef = useRef<string[]>([]);
+  const historyIndexRef = useRef<number | null>(null);
+  const historyDraftRef = useRef('');
 
   const setBusyState = useCallback((next: boolean): void => {
     busyRef.current = next;
     setBusy(next);
+  }, []);
+
+  const rememberInput = useCallback((message: string): void => {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    const history = inputHistoryRef.current;
+    if (history[history.length - 1] === trimmed) return;
+    inputHistoryRef.current = [...history, trimmed].slice(-MAX_INPUT_HISTORY);
+  }, []);
+
+  const setInputFromTyping = useCallback((next: string): void => {
+    historyIndexRef.current = null;
+    historyDraftRef.current = '';
+    setInput(next);
+  }, []);
+
+  const recallHistoryPrevious = useCallback((): void => {
+    const history = inputHistoryRef.current;
+    if (history.length === 0) return;
+    const currentIndex = historyIndexRef.current;
+    const nextIndex = currentIndex === null ? history.length - 1 : Math.max(0, currentIndex - 1);
+    if (currentIndex === null) historyDraftRef.current = input;
+    historyIndexRef.current = nextIndex;
+    setInput(history[nextIndex] ?? '');
+  }, [input]);
+
+  const recallHistoryNext = useCallback((): void => {
+    const history = inputHistoryRef.current;
+    const currentIndex = historyIndexRef.current;
+    if (currentIndex === null) return;
+    if (currentIndex >= history.length - 1) {
+      historyIndexRef.current = null;
+      setInput(historyDraftRef.current);
+      historyDraftRef.current = '';
+      return;
+    }
+    const nextIndex = currentIndex + 1;
+    historyIndexRef.current = nextIndex;
+    setInput(history[nextIndex] ?? '');
   }, []);
 
   const addTranscript = useCallback((kind: TranscriptKind, text: string, extra: Partial<TranscriptItem> = {}): number => {
@@ -1286,6 +1350,9 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     const message = raw.trim();
     setInput('');
     if (!message || approval) return;
+    rememberInput(message);
+    historyIndexRef.current = null;
+    historyDraftRef.current = '';
     if (busyRef.current && (message === '/stop' || message === '/abort')) {
       runInput(raw);
       return;
@@ -1345,10 +1412,12 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       ? React.createElement(ApprovalPromptLine, { question: approval.question })
       : React.createElement(PromptEditor, {
           value: input,
-          onChange: setInput,
+          onChange: setInputFromTyping,
           onSubmit: submit,
           placeholder: promptPlaceholder(runState),
           disabled: false,
+          onHistoryPrevious: recallHistoryPrevious,
+          onHistoryNext: recallHistoryNext,
           onShiftEnter: () => undefined,
           model: currentModel,
           hint: footerHintText,

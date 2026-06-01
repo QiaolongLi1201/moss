@@ -320,6 +320,32 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   cleanup();
 });
 
+test('PromptEditor maps arrow keys to prompt history callbacks', async () => {
+  let previousCount = 0;
+  let nextCount = 0;
+  const { stdin } = render(
+    React.createElement(PromptEditor, {
+      value: '',
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: '',
+      disabled: false,
+      onHistoryPrevious: () => {
+        previousCount += 1;
+      },
+      onHistoryNext: () => {
+        nextCount += 1;
+      },
+    }),
+  );
+  stdin.write('\u001B[A');
+  stdin.write('\u001B[B');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(previousCount, 1);
+  assert.equal(nextCount, 1);
+  cleanup();
+});
+
 // ───── renderMarkdown ─────
 
 test('renderMarkdown produces a string with ANSI codes for code blocks', () => {

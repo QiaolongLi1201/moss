@@ -18,6 +18,7 @@ import type { Tool } from '../core/tools/tool-types.js';
 import { assertSandboxPath } from '../safety/sandbox-paths.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
 import { createSubagentTool, subagentStatusTool, subagentStopTool } from './create-subagent.js';
+import { createWebFetchTool } from './web-fetch.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
 import { applyUpdateHunk, extractAddContent, parsePatch } from '../utils/apply-patch-core.js';
 import { atomicWriteFile } from '../utils/atomic-write.js';
@@ -475,6 +476,8 @@ export const applyPatchTool: Tool = {
   },
 };
 
+export const webFetchTool: Tool = createWebFetchTool();
+
 /**
  * Recursively walk directories and grep file contents for a regex pattern.
  * Respects extension filter, file size limit, result limit, and timeout.
@@ -545,6 +548,7 @@ export const builtinTools: Tool[] = [
   execTool,
   searchFilesTool,
   searchCodeTool,
+  webFetchTool,
   applyPatchTool,
   createSubagentTool,
   subagentStatusTool,

@@ -155,7 +155,7 @@ async function runStreamScenario() {
     assert.equal(calls.length, 1, 'stream path should execute only the first identical non-mutating call; second is replayed');
     assert.equal(toolEnds.length, 3, 'stream path should still surface all three tool_end events');
     assert.ok(toolEnds[2].result.includes(GUARD_MARKER), 'third stream tool result should be guard text');
-    assert.ok(toolEnds[2].result.includes('web_search/web_fetch'), 'guard text should tell the model to pivot to independent evidence');
+    assert.ok(toolEnds[2].result.includes('web_fetch'), 'guard text should tell the model to pivot to independent evidence');
     console.log('  [PASS] streamChat identical-repeat guard mirrors chat');
   } finally {
     if (oldIdentical === undefined) delete process.env.DMOSS_TOOL_LOOP_IDENTICAL_LIMIT;
@@ -174,7 +174,7 @@ function runSteeringTests() {
     sessionKey: 'test',
   });
   assert.equal(errorGuidance.firedRules[0], 'error-recovery');
-  assert.ok(errorGuidance.guidances.join('\n').includes('web_search/web_fetch'));
+  assert.ok(errorGuidance.guidances.join('\n').includes('web_fetch'));
   assert.ok(errorGuidance.guidances.join('\n').includes('lower-level device commands'));
 
   const loopEngine = new SteeringEngine([BUILTIN_TOOL_LOOP_RULE]);
@@ -206,7 +206,7 @@ await runChatScenario(
     assert.equal(calls.length, 1, 'second identical non-mutating call should replay, not execute');
     assert.equal(result.response, 'saw guard and pivoted');
     assert.ok(lastToolResultText(messages).includes(GUARD_MARKER));
-    assert.ok(lastToolResultText(messages).includes('web_search/web_fetch'));
+    assert.ok(lastToolResultText(messages).includes('web_fetch'));
   },
 );
 

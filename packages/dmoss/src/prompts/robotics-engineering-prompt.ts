@@ -38,7 +38,7 @@ export function buildRoboticsEngineeringPrompt(): string {
     '',
     '### 与工具配合',
     '- 远端设备上验证：用 `device_exec` 等**基于事实**探测；避免臆测路径或包名。',
-    '- 需要官方文档时：用 **`web_fetch` / `web_search`** 指向**用户实际声明的平台**文档，勿混用未声明的平台。',
+    '- 需要官方文档时：优先用工具列表中实际存在的 Web 工具（例如 `web_fetch`；只有注册了 `web_search` 才使用它）指向**用户实际声明的平台**文档，勿混用未声明的平台；不要用 `exec`/`curl` 冒充缺失的 Web 工具。',
   ].join('\n');
 }
 

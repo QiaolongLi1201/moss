@@ -27,7 +27,7 @@ export function formatToolLoopGuardMessage(reason: string, toolName: string): st
   return [
     `[dmoss-agent] Tool loop guard stopped another ${toolName} call: ${reason}.`,
     'Do not retry the same preset tool path immediately.',
-    'If the preset tool is failing, pivot to an independent evidence source such as web_search/web_fetch, local knowledge/files, lower-level device commands, or a simpler diagnostic tool.',
+    'If the preset tool is failing, pivot to an independent evidence source such as an available Web tool (for example web_fetch), local knowledge/files, lower-level device commands, or a simpler diagnostic tool.',
     'Then summarize what changed and continue only with a new approach, or ask the user for the missing decision.',
   ].join(' ');
 }

@@ -321,6 +321,13 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
       'Useful when you need the content of a documentation / API reference / status page. ' +
       'Blocks private / loopback / link-local addresses by default (anti-SSRF). ' +
       'Truncates very large bodies. For live JS apps, prefer a headless browser tool.',
+    metadata: {
+      sideEffectClass: 'readonly',
+      planMode: 'allow',
+      transientRetry: true,
+      permissionBoundary:
+        'Performs outbound HTTP(S) only; private, loopback, and link-local targets are blocked by default.',
+    },
     inputSchema: {
       type: 'object',
       properties: {

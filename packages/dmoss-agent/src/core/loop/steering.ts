@@ -55,7 +55,7 @@ export const BUILTIN_ERROR_RECOVERY_RULE: SteeringRule = {
     return [
       '[Steering] Multiple consecutive tool errors detected.',
       'Stop retrying the same preset tool path. First verify the command/path/arguments, then pivot to an independent evidence source:',
-      'web_search/web_fetch for public facts, local files/knowledge for product context, lower-level device commands for board state,',
+      'available Web tools such as web_fetch for public facts, local files/knowledge for product context, lower-level device commands for board state,',
       'or a simpler diagnostic tool. Ask the user only when the missing decision cannot be inferred.',
     ].join(' ');
   },

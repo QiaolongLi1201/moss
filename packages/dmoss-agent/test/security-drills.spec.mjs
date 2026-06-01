@@ -234,10 +234,12 @@ async function testToolMetadata() {
     listDirectoryTool,
     execTool,
     searchFilesTool,
+    webFetchTool,
     applyPatchTool,
+    builtinTools,
   } = await import('../dist/tools/builtin.js');
 
-  const tools = [readFileTool, writeFileTool, listDirectoryTool, execTool, searchFilesTool, applyPatchTool];
+  const tools = [readFileTool, writeFileTool, listDirectoryTool, execTool, searchFilesTool, webFetchTool, applyPatchTool];
 
   for (const tool of tools) {
     assert.ok(
@@ -254,6 +256,7 @@ async function testToolMetadata() {
   assert.equal(readFileTool.metadata.sideEffectClass, 'readonly');
   assert.equal(listDirectoryTool.metadata.sideEffectClass, 'readonly');
   assert.equal(searchFilesTool.metadata.sideEffectClass, 'readonly');
+  assert.equal(webFetchTool.metadata.sideEffectClass, 'readonly');
   assert.equal(writeFileTool.metadata.sideEffectClass, 'local_write');
   assert.equal(execTool.metadata.sideEffectClass, 'local_write');
   assert.equal(applyPatchTool.metadata.sideEffectClass, 'local_write');
@@ -262,9 +265,14 @@ async function testToolMetadata() {
   assert.equal(readFileTool.metadata.planMode, 'allow');
   assert.equal(listDirectoryTool.metadata.planMode, 'allow');
   assert.equal(searchFilesTool.metadata.planMode, 'allow');
+  assert.equal(webFetchTool.metadata.planMode, 'allow');
   assert.equal(writeFileTool.metadata.planMode, 'requires_user_confirmation');
   assert.equal(execTool.metadata.planMode, 'requires_user_confirmation');
   assert.equal(applyPatchTool.metadata.planMode, 'requires_user_confirmation');
+  assert.ok(
+    builtinTools.some((tool) => tool.name === 'web_fetch'),
+    'web_fetch should be registered as a built-in read-only evidence tool',
+  );
 
   console.log('  [PASS] tool metadata: all tools declared with correct classifications');
 }

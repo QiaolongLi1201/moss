@@ -142,6 +142,7 @@ const expectedExports = [
   'truncateToolOutput',
   'turnAttributes',
   'unregisterKnowledgeModule',
+  'webFetchTool',
   'withSpan',
   'wrapAsDmoss',
   'writeFileTool',

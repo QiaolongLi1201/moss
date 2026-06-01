@@ -243,6 +243,7 @@ export {
   execTool,
   searchFilesTool,
   searchCodeTool,
+  webFetchTool,
   applyPatchTool,
 } from './tools/builtin.js';
 

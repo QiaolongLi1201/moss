@@ -5,6 +5,28 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-06-01
+
+### Added
+
+- Added an effective host tool inventory projection so hosts can distinguish
+  declared tools from tools that are hidden, disabled, denied, or not ready for
+  the current session.
+- Registered `web_fetch` as a built-in read-only CLI evidence tool with metadata
+  and root export coverage.
+
+### Changed
+
+- Refined the interactive TUI output path so transcript text remains visible and
+  local shell approval copy stays clear about host-only execution.
+- Updated built-in prompt and recovery guidance to reference only Web tools that
+  are actually available instead of implying `web_search` is always registered.
+
+### Compatibility
+
+- Backward compatible for existing hosts and CLI consumers. New tool metadata and
+  inventory fields are additive.
+
 ## [0.3.5] - 2026-05-31
 
 ### Added

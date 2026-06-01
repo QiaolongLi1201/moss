@@ -125,6 +125,7 @@ export function renderAuthStatus(
     `  safetyMode: ${resolved.safetyMode} (${resolved.safetyModeSource})`,
     `  approvalPolicy: ${resolved.approvalPolicy} (${resolved.approvalPolicySource})`,
     `  promptCache: ${resolved.promptCacheEnabled ? 'enabled' : 'disabled'} (${resolved.promptCacheSource})`,
+    `  promptCacheDebug: ${resolved.promptCacheDebug ? 'enabled' : 'disabled'} (${resolved.promptCacheDebugSource})`,
     `  config: ${resolved.configPath}`,
   ].join('\n');
 }
@@ -174,7 +175,7 @@ export async function runSetupWizard(): Promise<void> {
     model,
     baseUrl,
     apiKey,
-    promptCache: current.promptCache ?? { enabled: true },
+    promptCache: current.promptCache ?? { enabled: true, debug: false },
   };
   saveConfigFile(next);
   print('');
@@ -207,7 +208,7 @@ export function runConfigSet(args: string[]): void {
   const [key, ...rest] = args;
   const value = rest.join(' ').trim();
   if (!key || !value) {
-    print('Usage: dmoss config set <provider|model|baseUrl|safetyMode|approvalPolicy|promptCache> <value>');
+    print('Usage: dmoss config set <provider|model|baseUrl|safetyMode|approvalPolicy|promptCache|promptCacheDebug> <value>');
     process.exitCode = 1;
     return;
   }
@@ -239,10 +240,24 @@ export function runConfigSet(args: string[]): void {
       process.exitCode = 1;
       return;
     }
-    next.promptCache = { enabled };
+    const previous = typeof current.promptCache === 'object' && current.promptCache !== null
+      ? current.promptCache
+      : {};
+    next.promptCache = { ...previous, enabled };
+  } else if (key === 'promptCacheDebug') {
+    const debug = parseConfigBoolean(value);
+    if (debug === null) {
+      print('Supported promptCacheDebug values: true, false');
+      process.exitCode = 1;
+      return;
+    }
+    const previous = typeof current.promptCache === 'object' && current.promptCache !== null
+      ? current.promptCache
+      : { enabled: typeof current.promptCache === 'boolean' ? current.promptCache : true };
+    next.promptCache = { ...previous, debug };
   }
   else {
-    print('Supported keys: provider, model, baseUrl, safetyMode, approvalPolicy, promptCache');
+    print('Supported keys: provider, model, baseUrl, safetyMode, approvalPolicy, promptCache, promptCacheDebug');
     process.exitCode = 1;
     return;
   }

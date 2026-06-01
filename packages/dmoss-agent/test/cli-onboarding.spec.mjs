@@ -9,6 +9,7 @@ import {
   renderCliDetailHelp,
   renderCliExamples,
   renderCliInteractiveHelp,
+  renderCliPermissions,
   renderCliStatus,
   renderCliTools,
   renderCliUpgradeHelp,
@@ -67,6 +68,8 @@ const runtime = {
     approvalPolicySource: 'config',
     promptCacheEnabled: false,
     promptCacheSource: 'config',
+    promptCacheDebug: true,
+    promptCacheDebugSource: 'config',
     configPath: '/tmp/dmoss-config/config.json',
   },
 };
@@ -125,7 +128,23 @@ const agent = createAgent([
   assert.match(status, /safety: workspace-write/);
   assert.match(status, /approval: never \(config\)/);
   assert.match(status, /prompt cache: disabled \(config\)/);
+  assert.match(status, /prompt cache debug: enabled \(config\)/);
   assert.match(status, /tools: 7/);
+}
+
+{
+  const permissions = renderCliPermissions(runtime);
+  assert.match(permissions, /Permissions & Config/);
+  assert.match(permissions, /config file: \/tmp\/dmoss-config\/config\.json/);
+  assert.match(permissions, /safety: workspace-write \(config\)/);
+  assert.match(permissions, /approval: never \(config\)/);
+  assert.match(permissions, /prompt cache: disabled \(config\)/);
+  assert.match(permissions, /prompt cache debug: enabled \(config\)/);
+  assert.match(permissions, /dmoss config set safetyMode/);
+  assert.match(permissions, /dmoss config set promptCacheDebug/);
+  assert.match(permissions, /DMOSS_SAFETY_MODE/);
+  assert.match(permissions, /DMOSS_PROMPT_CACHE_DEBUG/);
+  assert.doesNotMatch(permissions, /test-key/);
 }
 
 {
@@ -158,6 +177,8 @@ const agent = createAgent([
   const help = renderCliInteractiveHelp();
   assert.match(help, /Inspect/);
   assert.match(help, /Configure/);
+  assert.match(help, /\/permissions/);
+  assert.match(help, /\/config/);
   assert.match(help, /\/upgrade/);
 }
 

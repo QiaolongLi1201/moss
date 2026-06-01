@@ -16,7 +16,17 @@ reduces latency/cost for long sessions.
 
 ## Debugging
 
-Set `DMOSS_PROMPT_PREFIX_DEBUG=true` to log when the provider-facing message
-window is no longer an exact prefix extension of the previous LLM request in
-the same run. The check is disabled by default to avoid extra serialization on
-the hot path.
+Set `DMOSS_PROMPT_PREFIX_DEBUG=true` or configure:
+
+```json
+{
+  "promptCache": {
+    "enabled": true,
+    "debug": true
+  }
+}
+```
+
+This logs when the provider-facing message window is no longer an exact prefix
+extension of the previous LLM request in the same run. The check is disabled by
+default to avoid extra serialization on the hot path.

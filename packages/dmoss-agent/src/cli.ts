@@ -240,7 +240,10 @@ async function main() {
   const agent = new DmossAgent({
     llmProvider: createCliProvider(resolvedConfig), sessionStore, model,
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
-    promptCache: { enabled: resolvedConfig.promptCacheEnabled },
+    promptCache: {
+      enabled: resolvedConfig.promptCacheEnabled,
+      debug: resolvedConfig.promptCacheDebug,
+    },
     hooks: {
       enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: workspace }),
       onBeforeToolExec: createCliToolApprovalHook(safetyMode, process.env, {

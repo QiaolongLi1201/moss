@@ -9,6 +9,7 @@ import {
   renderCliDetailHelp,
   renderCliExamples,
   renderCliInteractiveHelp,
+  renderCliPermissions,
   renderCliStatus,
   renderCliTools,
   renderCliUpgradeHelp,
@@ -26,6 +27,8 @@ export const INTERACTIVE_COMMANDS = [
   '/help',
   '/tools',
   '/status',
+  '/permissions',
+  '/config',
   '/examples',
   '/model',
   '/models',
@@ -109,6 +112,12 @@ export async function runInteractive(
 
     if (msg === '/status') {
       console.error(renderCliStatus(agent, runtime));
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/permissions' || msg === '/config') {
+      console.error(renderCliPermissions(runtime));
       rl.prompt();
       continue;
     }
@@ -203,7 +212,7 @@ export async function runInteractive(
 
     if (msg.startsWith('/')) {
       console.error(`[help] Unknown command: ${msg}`);
-      console.error('[help] Available: /help /tools /status /examples /model /models /detail /memory /skills /upgrade /quit');
+      console.error('[help] Available: /help /tools /status /permissions /config /examples /model /models /detail /memory /skills /upgrade /quit');
       rl.prompt();
       continue;
     }

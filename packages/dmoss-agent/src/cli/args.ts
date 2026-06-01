@@ -42,6 +42,7 @@ function normalizeConfigKey(key: string): keyof CliConfigOverrides | null {
   if (raw === 'safetymode' || raw === 'safety') return 'safetyMode';
   if (raw === 'approvalpolicy' || raw === 'approval') return 'approvalPolicy';
   if (raw === 'promptcache' || raw === 'promptcacheenabled') return 'promptCacheEnabled';
+  if (raw === 'promptcachedebug' || raw === 'promptprefixdebug') return 'promptCacheDebug';
   return null;
 }
 
@@ -71,6 +72,12 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
     const parsed = parseConfigBoolean(value);
     if (parsed === null) throw new Error(`Unsupported promptCache value "${value}"`);
     target.promptCacheEnabled = parsed;
+    return;
+  }
+  if (key === 'promptCacheDebug') {
+    const parsed = parseConfigBoolean(value);
+    if (parsed === null) throw new Error(`Unsupported promptCacheDebug value "${value}"`);
+    target.promptCacheDebug = parsed;
     return;
   }
   if (key === 'model' || key === 'provider' || key === 'baseUrl' || key === 'workspace') {

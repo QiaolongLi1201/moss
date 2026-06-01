@@ -29,6 +29,8 @@ import { parseCliArgs } from '../dist/cli/args.js';
     'approvalPolicy=never',
     '-c',
     'promptCache=false',
+    '-c',
+    'promptCacheDebug=true',
     '--',
     'run diff -r',
   ]);
@@ -38,6 +40,7 @@ import { parseCliArgs } from '../dist/cli/args.js';
   assert.equal(parsed.configOverrides.safetyMode, 'read-only');
   assert.equal(parsed.configOverrides.approvalPolicy, 'never');
   assert.equal(parsed.configOverrides.promptCacheEnabled, false);
+  assert.equal(parsed.configOverrides.promptCacheDebug, true);
   assert.equal(parsed.prompt, 'run diff -r');
 }
 

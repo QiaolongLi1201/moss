@@ -619,6 +619,7 @@ export class DmossAgent {
       compactHooks: this.config.compactHooks,
       platform: {
         toolTimeoutMs: this.config.toolTimeoutMs,
+        promptPrefixDebug: this.config.promptCache?.debug,
       },
       getFollowUpMessages: this.config.enableFollowUpGuard !== false
         ? async () => {

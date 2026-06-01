@@ -44,6 +44,7 @@ try {
   assert.equal(resolved.safetyModeSource, 'default');
   assert.equal(resolved.approvalPolicy, 'prompt');
   assert.equal(resolved.promptCacheEnabled, true);
+  assert.equal(resolved.promptCacheDebug, false);
 
   const envResolved = resolveCliConfig({
     DMOSS_PROVIDER: 'openai',
@@ -53,6 +54,7 @@ try {
     DMOSS_SAFETY_MODE: 'read-only',
     DMOSS_APPROVAL_POLICY: 'never',
     DMOSS_PROMPT_CACHE: 'false',
+    DMOSS_PROMPT_CACHE_DEBUG: 'true',
   }, loadConfigFile());
   assert.equal(envResolved.provider, 'openai');
   assert.equal(envResolved.apiKey, 'env-secret');
@@ -64,6 +66,8 @@ try {
   assert.equal(envResolved.approvalPolicySource, 'DMOSS_APPROVAL_POLICY');
   assert.equal(envResolved.promptCacheEnabled, false);
   assert.equal(envResolved.promptCacheSource, 'DMOSS_PROMPT_CACHE');
+  assert.equal(envResolved.promptCacheDebug, true);
+  assert.equal(envResolved.promptCacheDebugSource, 'DMOSS_PROMPT_CACHE_DEBUG');
 
   const cliResolved = resolveCliConfig({
     DMOSS_MODEL: 'gpt-4o-mini',
@@ -75,6 +79,7 @@ try {
     safetyMode: 'full-access',
     approvalPolicy: 'never',
     promptCacheEnabled: false,
+    promptCacheDebug: true,
   });
   assert.equal(cliResolved.model, 'deepseek-v4-pro');
   assert.equal(cliResolved.modelSource, 'cli');
@@ -87,6 +92,8 @@ try {
   assert.equal(cliResolved.approvalPolicySource, 'cli');
   assert.equal(cliResolved.promptCacheEnabled, false);
   assert.equal(cliResolved.promptCacheSource, 'cli');
+  assert.equal(cliResolved.promptCacheDebug, true);
+  assert.equal(cliResolved.promptCacheDebugSource, 'cli');
 
   const status = renderAuthStatus(loadConfigFile(), {});
   assert.match(status, /apiKey: configured via config/);
@@ -94,6 +101,7 @@ try {
   assert.match(status, /safetyMode: workspace-write/);
   assert.match(status, /approvalPolicy: prompt/);
   assert.match(status, /promptCache: enabled/);
+  assert.match(status, /promptCacheDebug: disabled/);
   assert.doesNotMatch(status, /stored-secret/);
 
   const envStatus = renderAuthStatus(loadConfigFile(), { DASHSCOPE_API_KEY: 'env-secret' });
@@ -111,7 +119,7 @@ try {
     ...loadConfigFile(),
     safetyMode: 'read-only',
     approvalPolicy: 'never',
-    promptCache: { enabled: false },
+    promptCache: { enabled: false, debug: true },
   }, tmp);
   const filePolicyResolved = resolveCliConfig({}, loadConfigFile());
   assert.equal(filePolicyResolved.safetyMode, 'read-only');
@@ -120,6 +128,8 @@ try {
   assert.equal(filePolicyResolved.approvalPolicySource, 'config');
   assert.equal(filePolicyResolved.promptCacheEnabled, false);
   assert.equal(filePolicyResolved.promptCacheSource, 'config');
+  assert.equal(filePolicyResolved.promptCacheDebug, true);
+  assert.equal(filePolicyResolved.promptCacheDebugSource, 'config');
 
   runConfigSet(['model', 'qwen-plus']);
   assert.equal(loadConfigFile().model, 'qwen-plus');
@@ -132,7 +142,9 @@ try {
   runConfigSet(['approvalPolicy', 'never']);
   assert.equal(loadConfigFile().approvalPolicy, 'never');
   runConfigSet(['promptCache', 'false']);
-  assert.deepEqual(loadConfigFile().promptCache, { enabled: false });
+  assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
+  runConfigSet(['promptCacheDebug', 'true']);
+  assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
 
   console.log('[PASS] CLI setup config resolves safely');
 } finally {

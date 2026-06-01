@@ -41,6 +41,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.green('config set model')} ${c.dim('<m>')}  update stored model`,
     `    ${c.green('config set baseUrl')} ${c.dim('<u>')} update stored OpenAI-compatible base URL`,
     `    ${c.green('config set provider')} ${c.dim('<p>')} qwen | openai | anthropic | openai-compatible`,
+    `    ${c.green('config set promptCacheDebug')} ${c.dim('<bool>')} enable prompt-prefix cache diagnostics`,
     '',
     `  ${c.bold('Interactive commands')}`,
     `    ${c.green('/help')}            show interactive commands`,

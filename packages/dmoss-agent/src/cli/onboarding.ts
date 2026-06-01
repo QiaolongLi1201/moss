@@ -60,6 +60,7 @@ function approvalPolicyLine(config: ResolvedCliConfig): string {
 }
 
 function promptCacheLine(config: ResolvedCliConfig): string {
+  if (config.promptCacheDebug === true && config.promptCacheEnabled !== false) return 'cache debug';
   return config.promptCacheEnabled === false ? 'cache off' : 'cache stable';
 }
 
@@ -203,6 +204,7 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     `  ${label('safety')} ${rt.safetyMode}`,
     `  ${label('approval')} ${auth.approvalPolicy ?? 'prompt'} (${auth.approvalPolicySource ?? 'default'})`,
     `  ${label('prompt cache')} ${auth.promptCacheEnabled === false ? 'disabled' : 'enabled'} (${auth.promptCacheSource ?? 'default'})`,
+    `  ${label('prompt cache debug')} ${auth.promptCacheDebug === true ? 'enabled' : 'disabled'} (${auth.promptCacheDebugSource ?? 'default'})`,
     `  ${label('exec')} ${rt.execBackend}${rt.execBackend === 'docker' && rt.dockerImage ? ` (${rt.dockerImage})` : ''}`,
     `  ${label('memory')} ${memoryCount} entries`,
     `  ${label('skills')} ${skillCount}`,
@@ -224,6 +226,42 @@ export function renderCliTools(agent: DmossAgent): string {
   lines.push('');
   lines.push(`${ui.dim('tip')} /detail verbose shows redacted tool inputs and outputs during a run.`);
   return lines.join('\n');
+}
+
+export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
+  const rt = runtimeWithDefaults(runtime);
+  const auth = rt.config;
+  const safety = auth.safetyMode ?? rt.safetyMode;
+  const approval = auth.approvalPolicy ?? 'prompt';
+  const cache = auth.promptCacheEnabled === false ? 'disabled' : 'enabled';
+  const cacheDebug = auth.promptCacheDebug === true ? 'enabled' : 'disabled';
+  return [
+    ui.bold('Permissions & Config'),
+    `  ${label('config file')} ${auth.configPath}`,
+    `  ${label('workspace')} ${auth.workspace} (${auth.workspaceSource})`,
+    `  ${label('safety')} ${safety} (${auth.safetyModeSource ?? 'default'})`,
+    `  ${label('approval')} ${approval} (${auth.approvalPolicySource ?? 'default'})`,
+    `  ${label('prompt cache')} ${cache} (${auth.promptCacheSource ?? 'default'})`,
+    `  ${label('prompt cache debug')} ${cacheDebug} (${auth.promptCacheDebugSource ?? 'default'})`,
+    '',
+    '  Safety modes:',
+    '    read-only        allow reads/search/status only; block mutations',
+    '    workspace-write  allow workspace/runtime writes; block broader side effects',
+    '    full-access      allow all declared tool side-effect classes',
+    '',
+    '  Approval policies:',
+    '    prompt           ask before side-effectful tools',
+    '    never            auto-approve allowed side-effectful tools',
+    '',
+    '  Persist changes:',
+    '    dmoss config set safetyMode read-only|workspace-write|full-access',
+    '    dmoss config set approvalPolicy prompt|never',
+    '    dmoss config set promptCache true|false',
+    '    dmoss config set promptCacheDebug true|false',
+    '',
+    '  Environment overrides:',
+    '    DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG',
+  ].join('\n');
 }
 
 export function renderCliExamples(agent: DmossAgent, runtime: CliRuntimeStatus = {}): string {
@@ -258,6 +296,8 @@ export function renderCliInteractiveHelp(): string {
     '  Inspect',
     '    /tools               show registered tools grouped by capability',
     '    /status              show model, workspace, runtime, device, and tool state',
+    '    /permissions         show safety, approval, cache, and config-file policy',
+    '    /config              show the active config file and policy commands',
     '    /examples            show prompts matched to enabled capabilities',
     '    /memory              show stored long-term memories',
     '    /skills              list learned SKILL.md files',

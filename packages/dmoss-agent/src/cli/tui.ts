@@ -8,7 +8,7 @@ import { markedTerminal } from 'marked-terminal';
 import type { DmossAgent, DmossAgentEvent } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import { setCliApprovalAsker } from './approval.js';
-import { renderCliDetailHelp, renderCliExamples, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
+import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, ui } from './ui.js';
@@ -147,6 +147,8 @@ const KNOWN_COMMANDS = [
   '/help',
   '/tools',
   '/status',
+  '/permissions',
+  '/config',
   '/examples',
   '/model',
   '/models',
@@ -299,7 +301,8 @@ export function statusLine(options: {
 }
 
 export function promptCacheModeLabel(runtime?: CliRuntimeStatus): string {
-  return runtime?.config?.promptCacheEnabled === false ? 'cache off' : 'cache stable';
+  if (runtime?.config?.promptCacheEnabled === false) return 'cache off';
+  return runtime?.config?.promptCacheDebug === true ? 'cache debug' : 'cache stable';
 }
 
 export function footerHint(state: TuiRunState): string {
@@ -727,6 +730,7 @@ export function WelcomePanel({ workspace, device, model, cacheMode }: WelcomePan
   const commandRows: Array<[string, string]> = [
     ['/model', 'choose what model to use'],
     ['/status', 'inspect runtime, device, and workspace context'],
+    ['/permissions', 'show safety, approval, cache, and config file policy'],
     ['/tools', 'list available tools and permission surface'],
     ['/examples', 'starter tasks'],
     ['/detail', 'toggle quiet, progress, or verbose detail'],
@@ -742,11 +746,11 @@ export function WelcomePanel({ workspace, device, model, cacheMode }: WelcomePan
     ),
     React.createElement(Box, { marginTop: 2, flexDirection: 'column' },
       ...commandRows.map(([command, description]) => React.createElement(Text, { key: command },
-        React.createElement(Text, { bold: true }, command.padEnd(12)),
+        React.createElement(Text, { bold: true }, command.padEnd(14)),
         React.createElement(Text, { color: theme.textMuted }, description),
       )),
       React.createElement(Text, null,
-        React.createElement(Text, { bold: true }, 'Ctrl+O'.padEnd(12)),
+        React.createElement(Text, { bold: true }, 'Ctrl+O'.padEnd(14)),
         React.createElement(Text, { color: theme.textMuted }, 'expand or collapse tool calls'),
       ),
     ),
@@ -1001,6 +1005,8 @@ function commandRowsForInput(value: string): Array<[string, string]> {
   const rows: Array<[string, string]> = [
     ['/model', 'choose what model to use'],
     ['/status', 'inspect runtime, device, and workspace context'],
+    ['/permissions', 'show safety, approval, cache, and config file policy'],
+    ['/config', 'show config file path and policy commands'],
     ['/tools', 'list available tools and permission surface'],
     ['/examples', 'starter tasks'],
     ['/detail', 'toggle quiet, progress, or verbose detail'],
@@ -1381,6 +1387,10 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       addTranscript('system', renderCliStatus(agent, runtime));
       return true;
     }
+    if (message === '/permissions' || message === '/config') {
+      addTranscript('system', renderCliPermissions(runtime));
+      return true;
+    }
     if (message === '/tools') {
       addTranscript('system', renderCliTools(agent));
       return true;
@@ -1698,6 +1708,8 @@ function commandList(): string {
     'Commands',
     '  /examples          starter prompts',
     '  /status            runtime and device context',
+    '  /permissions       safety, approval, cache, and config file policy',
+    '  /config            active config file and policy commands',
     '  /tools             available tools',
     '  /stop              stop the active run',
     '  /queue [clear]     show or discard queued prompts',

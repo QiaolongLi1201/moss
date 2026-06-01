@@ -70,6 +70,7 @@ export type ConfigApprovalPolicy = 'prompt' | 'never';
 
 export interface PromptCacheConfig {
   enabled?: boolean;
+  debug?: boolean;
 }
 
 export interface CliConfigOverrides {
@@ -80,6 +81,7 @@ export interface CliConfigOverrides {
   safetyMode?: CliSafetyModeConfig;
   approvalPolicy?: ConfigApprovalPolicy;
   promptCacheEnabled?: boolean;
+  promptCacheDebug?: boolean;
 }
 
 export function resolveConfigPath(configDir = resolveConfigDir()): string {
@@ -179,6 +181,8 @@ export interface ResolvedCliConfig {
   approvalPolicySource: string;
   promptCacheEnabled: boolean;
   promptCacheSource: string;
+  promptCacheDebug: boolean;
+  promptCacheDebugSource: string;
   configPath: string;
 }
 
@@ -264,18 +268,32 @@ export function resolveCliConfig(
 
   const promptCacheEnv = env.DMOSS_PROMPT_CACHE ?? env.DMOSS_PROMPT_CACHE_ENABLED;
   const envPromptCache = parseConfigBoolean(promptCacheEnv);
+  const promptCacheDebugEnv = env.DMOSS_PROMPT_CACHE_DEBUG ?? env.DMOSS_PROMPT_PREFIX_DEBUG;
+  const envPromptCacheDebug = parseConfigBoolean(promptCacheDebugEnv);
   const configPromptCache =
     typeof config.promptCache === 'boolean'
       ? config.promptCache
       : config.promptCache && typeof config.promptCache === 'object' && typeof config.promptCache.enabled === 'boolean'
         ? config.promptCache.enabled
         : undefined;
+  const configPromptCacheDebug =
+    config.promptCache && typeof config.promptCache === 'object' && typeof config.promptCache.debug === 'boolean'
+      ? config.promptCache.debug
+      : undefined;
   const promptCacheEnabled = overrides.promptCacheEnabled ?? envPromptCache ?? configPromptCache ?? true;
   const promptCacheSource = overrides.promptCacheEnabled !== undefined
     ? 'cli'
     : envPromptCache !== null
       ? (env.DMOSS_PROMPT_CACHE !== undefined ? 'DMOSS_PROMPT_CACHE' : 'DMOSS_PROMPT_CACHE_ENABLED')
       : configPromptCache !== undefined
+        ? 'config'
+        : 'default';
+  const promptCacheDebug = overrides.promptCacheDebug ?? envPromptCacheDebug ?? configPromptCacheDebug ?? false;
+  const promptCacheDebugSource = overrides.promptCacheDebug !== undefined
+    ? 'cli'
+    : envPromptCacheDebug !== null
+      ? (env.DMOSS_PROMPT_CACHE_DEBUG !== undefined ? 'DMOSS_PROMPT_CACHE_DEBUG' : 'DMOSS_PROMPT_PREFIX_DEBUG')
+      : configPromptCacheDebug !== undefined
         ? 'config'
         : 'default';
 
@@ -296,6 +314,8 @@ export function resolveCliConfig(
     approvalPolicySource,
     promptCacheEnabled,
     promptCacheSource,
+    promptCacheDebug,
+    promptCacheDebugSource,
     configPath: resolveConfigPath(),
   };
 }

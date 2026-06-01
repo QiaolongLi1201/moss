@@ -117,6 +117,7 @@ assert.match(footerHint('running'), /Enter queue/);
   }), /cache off/);
   assert.equal(promptCacheModeLabel(), 'cache stable');
   assert.equal(promptCacheModeLabel({ config: { promptCacheEnabled: false } }), 'cache off');
+  assert.equal(promptCacheModeLabel({ config: { promptCacheEnabled: true, promptCacheDebug: true } }), 'cache debug');
 }
 
 {

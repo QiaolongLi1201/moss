@@ -24,6 +24,8 @@ export interface AgentLoopPlatformConfig {
   recordLlmUsage?: boolean;
   /** M7: Override env-based quiet mode. When set, env vars are not read. */
   quiet?: boolean;
+  /** Override env-based prompt-prefix cache diagnostics. */
+  promptPrefixDebug?: boolean;
 }
 
 export interface AgentLoopIdentity {

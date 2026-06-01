@@ -185,7 +185,7 @@ export function runAgentLoop(
     const state = createInitialLoopState();
     state.compactionSummary = params.compactionSummary;
     const toolFollowupBypassCap = resolveToolFollowupBypassCap(maxTurns);
-    const prefixDebugEnabled = isPromptPrefixDebugEnabled();
+    const prefixDebugEnabled = platform?.promptPrefixDebug ?? isPromptPrefixDebugEnabled();
     // C1 note: kept outside state — these are observability scratch variables for
     // prompt prefix cache stability checks, not loop-control state.
     let previousPrefixSnapshot: Message[] | null = null;

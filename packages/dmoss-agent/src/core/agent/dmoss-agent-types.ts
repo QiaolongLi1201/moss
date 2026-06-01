@@ -99,6 +99,11 @@ export interface PromptCacheConfig {
    * support prompt-cache breakpoints. Default: true.
    */
   enabled?: boolean;
+  /**
+   * Enable prompt-prefix stability diagnostics without requiring process env.
+   * Useful for file-configured cache hit-rate investigations.
+   */
+  debug?: boolean;
 }
 
 export interface DmossAgentConfig

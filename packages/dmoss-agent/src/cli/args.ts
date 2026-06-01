@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { CliConfigOverrides } from './config.js';
+import { normalizeApprovalPolicyConfig, normalizeSafetyModeConfig, parseConfigBoolean, type CliConfigOverrides } from './config.js';
 import type { CliSafetyMode } from './approval.js';
 
 export type CliCommand = 'chat' | 'setup' | 'auth' | 'config' | 'doctor' | 'update' | 'resume' | 'fork';
@@ -39,6 +39,9 @@ function normalizeConfigKey(key: string): keyof CliConfigOverrides | null {
   if (raw === 'provider') return 'provider';
   if (raw === 'baseurl') return 'baseUrl';
   if (raw === 'workspace' || raw === 'cwd' || raw === 'cd') return 'workspace';
+  if (raw === 'safetymode' || raw === 'safety') return 'safetyMode';
+  if (raw === 'approvalpolicy' || raw === 'approval') return 'approvalPolicy';
+  if (raw === 'promptcache' || raw === 'promptcacheenabled') return 'promptCacheEnabled';
   return null;
 }
 
@@ -51,15 +54,32 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
   if (!key) {
     throw new Error(`Unsupported --config key "${pair.slice(0, eqIdx)}"`);
   }
-  target[key] = pair.slice(eqIdx + 1);
+  const value = pair.slice(eqIdx + 1);
+  if (key === 'safetyMode') {
+    const normalized = normalizeSafetyModeConfig(value);
+    if (!normalized) throw new Error(`Unsupported safetyMode "${value}"`);
+    target.safetyMode = normalized;
+    return;
+  }
+  if (key === 'approvalPolicy') {
+    const normalized = normalizeApprovalPolicyConfig(value);
+    if (!normalized) throw new Error(`Unsupported approvalPolicy "${value}"`);
+    target.approvalPolicy = normalized;
+    return;
+  }
+  if (key === 'promptCacheEnabled') {
+    const parsed = parseConfigBoolean(value);
+    if (parsed === null) throw new Error(`Unsupported promptCache value "${value}"`);
+    target.promptCacheEnabled = parsed;
+    return;
+  }
+  if (key === 'model' || key === 'provider' || key === 'baseUrl' || key === 'workspace') {
+    target[key] = value;
+  }
 }
 
 function normalizeSafetyMode(value: string): CliSafetyMode | null {
-  const raw = value.toLowerCase().trim();
-  if (raw === 'read-only' || raw === 'readonly' || raw === 'untrusted') return 'read-only';
-  if (raw === 'workspace-write' || raw === 'workspace' || raw === 'on-request') return 'workspace-write';
-  if (raw === 'full-access' || raw === 'full' || raw === 'danger-full-access') return 'full-access';
-  return null;
+  return normalizeSafetyModeConfig(value);
 }
 
 function normalizeDetail(value: string): ParsedCliArgs['detailMode'] {
@@ -209,7 +229,10 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     if (arg === '--ask-for-approval' || arg.startsWith('--ask-for-approval=')) {
       const parsed = readValue(argv, i, arg);
       const raw = parsed.value.toLowerCase().trim();
-      if (raw === 'never') approvalPolicy = 'never';
+      if (raw === 'never') {
+        approvalPolicy = 'never';
+        configOverrides.approvalPolicy = 'never';
+      }
       const safety = normalizeSafetyMode(raw);
       if (safety) safetyModeOverride = safety;
       i = parsed.nextIndex;

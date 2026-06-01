@@ -85,6 +85,39 @@ function createModelEventProvider(handler) {
 }
 
 {
+  const store = new InMemorySessionStore();
+  const { provider, requests } = createModelEventProvider((_options, onEvent) => {
+    onEvent({ type: 'content_block_delta', text: 'cache disabled', deltaRole: 'visible' });
+    return {
+      stopReason: 'end_turn',
+      content: [{ type: 'text', text: 'cache disabled' }],
+      usage: { inputTokens: 2, outputTokens: 3 },
+    };
+  });
+  const agent = new DmossAgent({
+    llmProvider: provider,
+    sessionStore: store,
+    model: 'fake-model',
+    domainPrompt: false,
+    includeRegisteredKnowledgePrompts: false,
+    baseSystemPrompt: 'base',
+    maxAgentTurns: 3,
+    promptCache: { enabled: false },
+  });
+
+  const events = [];
+  for await (const event of agent.streamChat('bridge-prompt-cache-disabled', 'hi')) {
+    events.push(event);
+  }
+
+  assert(events.some((event) => event.type === 'done'), 'expected done event');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].systemPromptParts, undefined);
+  assert(requests[0].systemPrompt.includes('base'));
+  assert(requests[0].systemPrompt.includes('<dmoss_working_context>'));
+}
+
+{
   const usageDir = await mkdtemp(path.join(os.tmpdir(), 'dmoss-observability-bridge-'));
   const origUsageLog = process.env.DMOSS_LLM_USAGE_LOG;
   process.env.DMOSS_LLM_USAGE_LOG = path.join(usageDir, 'llm-usage.jsonl');

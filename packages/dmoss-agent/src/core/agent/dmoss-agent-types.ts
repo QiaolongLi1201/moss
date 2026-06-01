@@ -93,6 +93,14 @@ export interface PromptConfig {
   includeRegisteredKnowledgePrompts?: boolean;
 }
 
+export interface PromptCacheConfig {
+  /**
+   * Mark the stable system prompt prefix as cacheable for providers that
+   * support prompt-cache breakpoints. Default: true.
+   */
+  enabled?: boolean;
+}
+
 export interface DmossAgentConfig
   extends ProviderConfig,
     ContextManagementConfig,
@@ -102,6 +110,8 @@ export interface DmossAgentConfig
   maxAgentTurns?: number;
   /** Lifecycle hooks for host customization */
   hooks?: AgentHooks;
+  /** Prompt-cache policy for stable system prompt prefixes. */
+  promptCache?: PromptCacheConfig;
 
   // ── Thinking stream ──
   /** Enable inline thinking tag routing (<thinking>…</thinking>) (default: true) */

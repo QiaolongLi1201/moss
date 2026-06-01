@@ -60,6 +60,16 @@ export interface ConfigFile {
   model?: string;
   baseUrl?: string;
   workspace?: string;
+  safetyMode?: CliSafetyModeConfig | string;
+  approvalPolicy?: ConfigApprovalPolicy | string;
+  promptCache?: PromptCacheConfig | boolean;
+}
+
+export type CliSafetyModeConfig = 'read-only' | 'workspace-write' | 'full-access';
+export type ConfigApprovalPolicy = 'prompt' | 'never';
+
+export interface PromptCacheConfig {
+  enabled?: boolean;
 }
 
 export interface CliConfigOverrides {
@@ -67,6 +77,9 @@ export interface CliConfigOverrides {
   model?: string;
   baseUrl?: string;
   workspace?: string;
+  safetyMode?: CliSafetyModeConfig;
+  approvalPolicy?: ConfigApprovalPolicy;
+  promptCacheEnabled?: boolean;
 }
 
 export function resolveConfigPath(configDir = resolveConfigDir()): string {
@@ -108,6 +121,28 @@ export function normalizeProvider(value: string | undefined): CliProviderPreset 
   return 'anthropic';
 }
 
+export function normalizeSafetyModeConfig(value: string | undefined): CliSafetyModeConfig | null {
+  const raw = (value || '').toLowerCase().trim();
+  if (raw === 'read-only' || raw === 'readonly' || raw === 'untrusted') return 'read-only';
+  if (raw === 'workspace-write' || raw === 'workspace' || raw === 'write' || raw === 'on-request') return 'workspace-write';
+  if (raw === 'full-access' || raw === 'full' || raw === 'danger-full-access') return 'full-access';
+  return null;
+}
+
+export function normalizeApprovalPolicyConfig(value: string | undefined): ConfigApprovalPolicy | null {
+  const raw = (value || '').toLowerCase().trim();
+  if (raw === 'never' || raw === 'auto' || raw === 'auto-approve') return 'never';
+  if (raw === 'prompt' || raw === 'ask' || raw === 'on-request') return 'prompt';
+  return null;
+}
+
+export function parseConfigBoolean(value: string | undefined): boolean | null {
+  const raw = (value || '').toLowerCase().trim();
+  if (raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on' || raw === 'enabled') return true;
+  if (raw === '0' || raw === 'false' || raw === 'no' || raw === 'off' || raw === 'disabled') return false;
+  return null;
+}
+
 function inferProviderFromBaseUrl(baseUrl: string | undefined): CliProviderPreset | null {
   const raw = (baseUrl || '').toLowerCase();
   if (!raw) return null;
@@ -138,6 +173,12 @@ export interface ResolvedCliConfig {
   baseUrlSource: string;
   workspace: string;
   workspaceSource: string;
+  safetyMode: CliSafetyModeConfig;
+  safetyModeSource: string;
+  approvalPolicy: ConfigApprovalPolicy;
+  approvalPolicySource: string;
+  promptCacheEnabled: boolean;
+  promptCacheSource: string;
   configPath: string;
 }
 
@@ -185,6 +226,58 @@ export function resolveCliConfig(
     'DASHSCOPE_BASE_URL',
   ]);
   const workspaceEnv = env.DMOSS_WORKSPACE;
+  const safetyModeEnv = env.DMOSS_SAFETY_MODE || env.DMOSS_CLI_SAFETY_MODE;
+  const configSafetyMode = normalizeSafetyModeConfig(
+    typeof config.safetyMode === 'string' ? config.safetyMode : undefined,
+  );
+  const envSafetyMode = normalizeSafetyModeConfig(safetyModeEnv);
+  const safetyMode = overrides.safetyMode || envSafetyMode || configSafetyMode || 'workspace-write';
+  const safetyModeSource = overrides.safetyMode
+    ? 'cli'
+    : envSafetyMode
+      ? (env.DMOSS_SAFETY_MODE ? 'DMOSS_SAFETY_MODE' : 'DMOSS_CLI_SAFETY_MODE')
+      : configSafetyMode
+        ? 'config'
+        : 'default';
+
+  const approvalEnv = env.DMOSS_CLI_AUTO_APPROVE === '1' || env.DMOSS_AUTO_APPROVE === '1'
+    ? 'never'
+    : (env.DMOSS_APPROVAL_POLICY || env.DMOSS_ASK_FOR_APPROVAL);
+  const configApproval = normalizeApprovalPolicyConfig(
+    typeof config.approvalPolicy === 'string' ? config.approvalPolicy : undefined,
+  );
+  const envApproval = normalizeApprovalPolicyConfig(approvalEnv);
+  const approvalPolicy = overrides.approvalPolicy || envApproval || configApproval || 'prompt';
+  const approvalPolicySource = overrides.approvalPolicy
+    ? 'cli'
+    : envApproval
+      ? (env.DMOSS_CLI_AUTO_APPROVE === '1'
+          ? 'DMOSS_CLI_AUTO_APPROVE'
+          : env.DMOSS_AUTO_APPROVE === '1'
+            ? 'DMOSS_AUTO_APPROVE'
+            : env.DMOSS_APPROVAL_POLICY
+              ? 'DMOSS_APPROVAL_POLICY'
+              : 'DMOSS_ASK_FOR_APPROVAL')
+      : configApproval
+        ? 'config'
+        : 'default';
+
+  const promptCacheEnv = env.DMOSS_PROMPT_CACHE ?? env.DMOSS_PROMPT_CACHE_ENABLED;
+  const envPromptCache = parseConfigBoolean(promptCacheEnv);
+  const configPromptCache =
+    typeof config.promptCache === 'boolean'
+      ? config.promptCache
+      : config.promptCache && typeof config.promptCache === 'object' && typeof config.promptCache.enabled === 'boolean'
+        ? config.promptCache.enabled
+        : undefined;
+  const promptCacheEnabled = overrides.promptCacheEnabled ?? envPromptCache ?? configPromptCache ?? true;
+  const promptCacheSource = overrides.promptCacheEnabled !== undefined
+    ? 'cli'
+    : envPromptCache !== null
+      ? (env.DMOSS_PROMPT_CACHE !== undefined ? 'DMOSS_PROMPT_CACHE' : 'DMOSS_PROMPT_CACHE_ENABLED')
+      : configPromptCache !== undefined
+        ? 'config'
+        : 'default';
 
   return {
     provider,
@@ -197,6 +290,12 @@ export function resolveCliConfig(
     baseUrlSource: overrides.baseUrl ? 'cli' : baseUrlEnv?.source || (config.baseUrl ? 'config' : 'provider default'),
     workspace: overrides.workspace || workspaceEnv || config.workspace || process.cwd(),
     workspaceSource: overrides.workspace ? 'cli' : workspaceEnv ? 'DMOSS_WORKSPACE' : config.workspace ? 'config' : 'cwd',
+    safetyMode,
+    safetyModeSource,
+    approvalPolicy,
+    approvalPolicySource,
+    promptCacheEnabled,
+    promptCacheSource,
     configPath: resolveConfigPath(),
   };
 }

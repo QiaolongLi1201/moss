@@ -23,12 +23,21 @@ import { parseCliArgs } from '../dist/cli/args.js';
     'https://api.deepseek.com',
     '-c',
     'model=deepseek-v4-pro',
+    '-c',
+    'safetyMode=read-only',
+    '-c',
+    'approvalPolicy=never',
+    '-c',
+    'promptCache=false',
     '--',
     'run diff -r',
   ]);
   assert.equal(parsed.configOverrides.provider, 'openai-compatible');
   assert.equal(parsed.configOverrides.baseUrl, 'https://api.deepseek.com');
   assert.equal(parsed.configOverrides.model, 'deepseek-v4-pro');
+  assert.equal(parsed.configOverrides.safetyMode, 'read-only');
+  assert.equal(parsed.configOverrides.approvalPolicy, 'never');
+  assert.equal(parsed.configOverrides.promptCacheEnabled, false);
   assert.equal(parsed.prompt, 'run diff -r');
 }
 
@@ -49,6 +58,7 @@ import { parseCliArgs } from '../dist/cli/args.js';
 {
   const parsed = parseCliArgs(['--ask-for-approval', 'never', '--full-access', 'ship it']);
   assert.equal(parsed.approvalPolicy, 'never');
+  assert.equal(parsed.configOverrides.approvalPolicy, 'never');
   assert.equal(parsed.safetyModeOverride, 'full-access');
   assert.equal(parsed.prompt, 'ship it');
 }

@@ -2,6 +2,7 @@ import * as readline from 'node:readline';
 import type { AgentHooks, ToolApprovalRequest } from '../core/agent/agent-hooks.js';
 import type { Tool, ToolSideEffectClass } from '../core/tools/tool-types.js';
 import { sanitizeSecrets } from '../safety/secret-sanitizer.js';
+import { normalizeSafetyModeConfig } from './config.js';
 
 export type CliSafetyMode = 'read-only' | 'workspace-write' | 'full-access';
 
@@ -21,9 +22,8 @@ export function resolveCliSafetyMode(
   if (argv.includes('--workspace-write')) return 'workspace-write';
   if (argv.includes('--full-access')) return 'full-access';
   const raw = (env.DMOSS_SAFETY_MODE || env.DMOSS_CLI_SAFETY_MODE || '').toLowerCase().trim();
-  if (raw === 'read-only' || raw === 'readonly') return 'read-only';
-  if (raw === 'workspace-write' || raw === 'workspace' || raw === 'write') return 'workspace-write';
-  if (raw === 'full-access' || raw === 'full' || raw === 'danger-full-access') return 'full-access';
+  const envMode = normalizeSafetyModeConfig(raw);
+  if (envMode) return envMode;
   return 'workspace-write';
 }
 

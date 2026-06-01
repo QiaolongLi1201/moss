@@ -3,7 +3,10 @@ import * as readline from 'node:readline';
 import { stdin as input, stderr as output } from 'node:process';
 import {
   loadConfigFile,
+  normalizeApprovalPolicyConfig,
   normalizeProvider,
+  normalizeSafetyModeConfig,
+  parseConfigBoolean,
   PROVIDER_PRESETS,
   resolveCliConfig,
   resolveConfigPath,
@@ -119,6 +122,9 @@ export function renderAuthStatus(
     `  model: ${resolved.model} (${resolved.modelSource})`,
     `  baseUrl: ${withoutSecret(resolved.baseUrl)} (${resolved.baseUrlSource})`,
     `  apiKey: ${resolved.apiKey ? `configured via ${resolved.apiKeySource}` : 'missing'}`,
+    `  safetyMode: ${resolved.safetyMode} (${resolved.safetyModeSource})`,
+    `  approvalPolicy: ${resolved.approvalPolicy} (${resolved.approvalPolicySource})`,
+    `  promptCache: ${resolved.promptCacheEnabled ? 'enabled' : 'disabled'} (${resolved.promptCacheSource})`,
     `  config: ${resolved.configPath}`,
   ].join('\n');
 }
@@ -168,6 +174,7 @@ export async function runSetupWizard(): Promise<void> {
     model,
     baseUrl,
     apiKey,
+    promptCache: current.promptCache ?? { enabled: true },
   };
   saveConfigFile(next);
   print('');
@@ -200,7 +207,7 @@ export function runConfigSet(args: string[]): void {
   const [key, ...rest] = args;
   const value = rest.join(' ').trim();
   if (!key || !value) {
-    print('Usage: dmoss config set <provider|model|baseUrl> <value>');
+    print('Usage: dmoss config set <provider|model|baseUrl|safetyMode|approvalPolicy|promptCache> <value>');
     process.exitCode = 1;
     return;
   }
@@ -209,8 +216,33 @@ export function runConfigSet(args: string[]): void {
   if (key === 'provider') next.provider = normalizeProvider(value);
   else if (key === 'model') next.model = value;
   else if (key === 'baseUrl') next.baseUrl = sanitizeBaseUrl(value);
+  else if (key === 'safetyMode') {
+    const mode = normalizeSafetyModeConfig(value);
+    if (!mode) {
+      print('Supported safetyMode values: read-only, workspace-write, full-access');
+      process.exitCode = 1;
+      return;
+    }
+    next.safetyMode = mode;
+  } else if (key === 'approvalPolicy') {
+    const policy = normalizeApprovalPolicyConfig(value);
+    if (!policy) {
+      print('Supported approvalPolicy values: prompt, never');
+      process.exitCode = 1;
+      return;
+    }
+    next.approvalPolicy = policy;
+  } else if (key === 'promptCache') {
+    const enabled = parseConfigBoolean(value);
+    if (enabled === null) {
+      print('Supported promptCache values: true, false');
+      process.exitCode = 1;
+      return;
+    }
+    next.promptCache = { enabled };
+  }
   else {
-    print('Supported keys: provider, model, baseUrl');
+    print('Supported keys: provider, model, baseUrl, safetyMode, approvalPolicy, promptCache');
     process.exitCode = 1;
     return;
   }

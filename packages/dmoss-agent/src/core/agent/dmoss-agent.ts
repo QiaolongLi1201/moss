@@ -444,8 +444,9 @@ export class DmossAgent {
       platform: options?.platform,
     });
     const systemPrompt = [stableSystemPrompt, extraContext].filter(Boolean).join('\n\n');
+    const promptCacheEnabled = this.config.promptCache?.enabled !== false;
     const systemPromptParts =
-      stableSystemPrompt && extraContext
+      promptCacheEnabled && stableSystemPrompt
         ? { stable: stableSystemPrompt, dynamic: extraContext }
         : undefined;
     const allTools = [...this.tools.getAll(), ...(options?.ephemeralTools ?? [])];

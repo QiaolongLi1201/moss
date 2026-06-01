@@ -79,8 +79,6 @@ export const c = {
 
 const argv = parsedArgs.rawArgv;
 if (parsedArgs.detailMode) process.env.DMOSS_CLI_DETAIL = parsedArgs.detailMode;
-if (parsedArgs.approvalPolicy === 'never') process.env.DMOSS_CLI_AUTO_APPROVE = '1';
-const safetyMode = parsedArgs.safetyModeOverride ?? resolveCliSafetyMode(argv);
 
 function resolveCliLogLevel(): LogLevel {
   if (argv.includes('--debug')) return 'debug';
@@ -186,6 +184,10 @@ async function main() {
     loadEnvFromAncestors(parsedArgs.configOverrides.workspace);
   }
   const resolvedConfig = resolveCliConfig(process.env, loadConfigFile(), parsedArgs.configOverrides);
+  if (parsedArgs.approvalPolicy === 'never' || resolvedConfig.approvalPolicy === 'never') {
+    process.env.DMOSS_CLI_AUTO_APPROVE = '1';
+  }
+  const safetyMode = parsedArgs.safetyModeOverride ?? resolvedConfig.safetyMode ?? resolveCliSafetyMode(argv);
   const workspace = resolvedConfig.workspace;
   const model = resolvedConfig.model;
   const baseUrl = resolvedConfig.baseUrl;
@@ -241,6 +243,7 @@ async function main() {
   const agent = new DmossAgent({
     llmProvider: createCliProvider(resolvedConfig), sessionStore, model,
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
+    promptCache: { enabled: resolvedConfig.promptCacheEnabled },
     hooks: {
       enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: workspace }),
       onBeforeToolExec: createCliToolApprovalHook(safetyMode),

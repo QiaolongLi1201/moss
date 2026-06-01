@@ -435,6 +435,36 @@ export function commandSuggestion(command: string): string | null {
   return best && best.score <= 3 ? best.known : null;
 }
 
+function commonPrefix(values: readonly string[]): string {
+  if (values.length === 0) return '';
+  let prefix = values[0] || '';
+  for (const value of values.slice(1)) {
+    while (prefix && !value.startsWith(prefix)) {
+      prefix = prefix.slice(0, -1);
+    }
+  }
+  return prefix;
+}
+
+export function completeSlashCommandInput(value: string, cursor: number): PromptEditState | null {
+  const currentCursor = clampPromptCursor(value, cursor);
+  const beforeCursor = value.slice(0, currentCursor);
+  const afterCursor = value.slice(currentCursor);
+  if (!beforeCursor.startsWith('/') || /\s/.test(beforeCursor)) return null;
+  if (afterCursor && !/^\s/.test(afterCursor)) return null;
+
+  const normalized = beforeCursor.toLowerCase();
+  const exactCandidates = KNOWN_COMMANDS.filter((command) => command.startsWith(normalized));
+  const completion = exactCandidates.length > 0
+    ? commonPrefix(exactCandidates)
+    : commandSuggestion(normalized);
+  if (!completion || completion === beforeCursor) return null;
+  return {
+    value: `${completion}${afterCursor}`,
+    cursor: completion.length,
+  };
+}
+
 export function promptPlaceholder(state: TuiRunState): string {
   if (state === 'approval') return 'answer approval with y, n, or Esc';
   if (state === 'running') return 'running... /stop to cancel';
@@ -1006,6 +1036,14 @@ export function PromptEditor({
     }
     if (key.downArrow) {
       onHistoryNext?.();
+      return;
+    }
+    if (key.tab || inputChar === '\t') {
+      const completion = completeSlashCommandInput(value, currentCursor);
+      if (completion) {
+        onChange(completion.value);
+        onCursorChange?.(completion.cursor);
+      }
       return;
     }
     if (key.leftArrow) {

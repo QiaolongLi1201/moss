@@ -372,6 +372,31 @@ test('PromptEditor inserts typed text at the current cursor', async () => {
   cleanup();
 });
 
+test('PromptEditor accepts slash command completion with Tab', async () => {
+  let nextValue = '';
+  let nextCursor = -1;
+  const { stdin } = render(
+    React.createElement(PromptEditor, {
+      value: '/que',
+      cursor: 4,
+      onChange: (value) => {
+        nextValue = value;
+      },
+      onCursorChange: (cursor) => {
+        nextCursor = cursor;
+      },
+      onSubmit: () => undefined,
+      placeholder: '',
+      disabled: false,
+    }),
+  );
+  stdin.write('\t');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(nextValue, '/queue');
+  assert.equal(nextCursor, 6);
+  cleanup();
+});
+
 test('PromptEditor renders the cursor at the requested column', () => {
   const { lastFrame } = render(
     React.createElement(PromptEditor, {

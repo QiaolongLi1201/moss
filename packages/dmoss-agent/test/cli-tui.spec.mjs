@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import {
   applyPromptEdit,
+  completeSlashCommandInput,
   commandSuggestion,
   editorPreviewLines,
   extractAttachmentRefs,
@@ -69,6 +70,23 @@ assert.equal(commandSuggestion('/staus'), '/status');
 assert.equal(commandSuggestion('/tool'), '/tools');
 assert.equal(commandSuggestion('/queu'), '/queue');
 assert.equal(commandSuggestion('status'), null);
+
+assert.deepEqual(
+  completeSlashCommandInput('/que', 4),
+  { value: '/queue', cursor: 6 },
+);
+assert.deepEqual(
+  completeSlashCommandInput('/mo', 3),
+  { value: '/model', cursor: 6 },
+);
+assert.deepEqual(
+  completeSlashCommandInput('/model deepseek', 6),
+  null,
+);
+assert.deepEqual(
+  completeSlashCommandInput('plain', 5),
+  null,
+);
 
 assert.equal(promptPlaceholder('ready'), '');
 assert.match(promptPlaceholder('running'), /running/);

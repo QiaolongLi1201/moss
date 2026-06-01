@@ -17,12 +17,27 @@ interface CreateSubagentInput {
   task: string;
   scope?: 'read-only' | 'device-read' | 'full' | 'explore' | 'plan' | 'verify';
   maxTurns?: number;
+  timeoutMs?: number;
   background?: boolean;
 }
 
 interface SubagentStatusInput {
   taskId: string;
   wait?: boolean;
+}
+
+const DEFAULT_SUBAGENT_TIMEOUT_MS = 120_000;
+const MIN_SUBAGENT_TIMEOUT_MS = 100;
+const MAX_SUBAGENT_TIMEOUT_MS = 30 * 60_000;
+
+function resolveSubagentTimeoutMs(timeoutMs: number | undefined): number {
+  if (timeoutMs === undefined || !Number.isFinite(timeoutMs)) {
+    return DEFAULT_SUBAGENT_TIMEOUT_MS;
+  }
+  return Math.min(
+    MAX_SUBAGENT_TIMEOUT_MS,
+    Math.max(MIN_SUBAGENT_TIMEOUT_MS, Math.floor(timeoutMs)),
+  );
 }
 
 export const createSubagentTool: Tool<CreateSubagentInput> = {
@@ -54,6 +69,12 @@ export const createSubagentTool: Tool<CreateSubagentInput> = {
         type: 'number',
         description: 'Maximum turns the sub-agent may execute (default: 10)',
       },
+      timeoutMs: {
+        type: 'number',
+        minimum: MIN_SUBAGENT_TIMEOUT_MS,
+        maximum: MAX_SUBAGENT_TIMEOUT_MS,
+        description: 'Maximum runtime for the sub-agent in milliseconds (default: 120000, max: 1800000)',
+      },
       background: {
         type: 'boolean',
         description: 'Return immediately with a task handle instead of waiting for the sub-agent to finish',
@@ -81,17 +102,19 @@ export const createSubagentTool: Tool<CreateSubagentInput> = {
       const taskId = `${ctx.runId ?? ctx.sessionKey}/sub-${randomUUID().slice(0, 8)}`;
       const scope = input.scope ?? 'full';
       const maxTurns = input.maxTurns ?? 10;
+      const timeoutMs = resolveSubagentTimeoutMs(input.timeoutMs);
       const handle = ctx.asyncTaskRegistry.start(
         {
           taskId,
           kind: 'subagent',
           label: input.task.slice(0, 80),
           parentRunId: ctx.runId,
-          timeoutMs: 120_000,
+          timeoutMs,
           payload: {
             task: input.task,
             scope,
             maxTurns,
+            timeoutMs,
           },
         },
         async (_request: MossAsyncTaskStartRequest, signal: AbortSignal) => {
@@ -99,6 +122,7 @@ export const createSubagentTool: Tool<CreateSubagentInput> = {
             task: input.task,
             scope,
             maxTurns,
+            timeoutMs,
             abortSignal: signal,
           });
           if (!result) {
@@ -129,6 +153,7 @@ export const createSubagentTool: Tool<CreateSubagentInput> = {
       task: input.task,
       scope: input.scope ?? 'full',
       maxTurns: input.maxTurns ?? 10,
+      timeoutMs: resolveSubagentTimeoutMs(input.timeoutMs),
     });
     const status = result.success ? 'SUCCESS' : 'FAILED';
     const summary = result.summary || '(no output)';

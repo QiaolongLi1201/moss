@@ -49,6 +49,8 @@ export interface ContentBlock {
   content?: string;
   /** 工具结果是否为错误 (type=tool_result 时) */
   is_error?: boolean;
+  /** Host-provided cancellation metadata for user/timeout aborts (type=tool_result 时) */
+  aborted?: { by: 'user' | 'timeout' };
   /** Marks blocks synthesized by the agent to repair broken tool_use/tool_result pairs. Not a real tool invocation or result. */
   _synthetic?: "missing_tool_result" | "orphan_tool_use_repair";
   /** Structured content blocks from tools that return rich data (type=tool_result 时) */

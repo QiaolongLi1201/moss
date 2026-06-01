@@ -292,9 +292,8 @@ export class DmossAgent {
   /**
    * Single-turn convenience wrapper around `streamChat`.
    *
-   * Aligned with Codex's single-loop architecture: every `chat()` call collects
-   * events from `streamChat`, which is backed by `runAgentLoop`, and returns the
-   * final `ChatResult`.
+   * Every `chat()` call collects events from `streamChat`, which is backed by
+   * `runAgentLoop`, and returns the final `ChatResult`.
    */
   async chat(sessionKey: string, userMessage: string, options?: ChatOptions): Promise<ChatResult> {
     let finalResult: ChatResult | undefined;
@@ -524,7 +523,7 @@ export class DmossAgent {
           scope: ((params.scope ?? 'full') as SpawnToolScope),
           task: params.task,
           maxTurns: params.maxTurns ?? 10,
-          timeoutMs: 120_000,
+          timeoutMs: params.timeoutMs ?? 120_000,
         },
         params.abortSignal ?? abortSignal,
       );

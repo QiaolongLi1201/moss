@@ -28,6 +28,7 @@ export interface ToolContext {
     cleanup?: 'keep' | 'delete';
     scope?: string;
     maxTurns?: number;
+    timeoutMs?: number;
     mode?: 'single' | 'fan-out' | 'pipeline';
     tasks?: Array<{ task: string; scope?: string }>;
     abortSignal?: AbortSignal;

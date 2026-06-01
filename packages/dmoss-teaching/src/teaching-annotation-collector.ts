@@ -4,9 +4,9 @@
  * No SSE contract changes — taps into the existing emitTeachingMeta callback.
  */
 
-import type { StudioTeachingMetaV1 } from "./teaching-layer.js";
+import type { TeachingMetaV1 } from "./teaching-layer.js";
 import type { SkillCandidateTeachingMeta } from "@rdk-moss/skills";
-import { digestStudioToolCall } from "./teaching-tool-digest.js";
+import { digestToolCall } from "./teaching-tool-digest.js";
 
 interface CollectedAnnotation {
   argsDigest?: string;
@@ -30,7 +30,7 @@ export class TeachingAnnotationCollector {
 
   /** Record that a tool execution is about to start — maps argsDigest → toolName */
   recordToolStart(toolName: string, input: Record<string, unknown>): void {
-    const digest = digestStudioToolCall(toolName, input);
+    const digest = digestToolCall(toolName, input);
     this.digestToolNameMap.set(digest, toolName);
   }
 
@@ -49,7 +49,7 @@ export class TeachingAnnotationCollector {
   }
 
   /** Observe a teaching annotation — called from emitTeachingMeta callback */
-  observe(meta: StudioTeachingMetaV1): void {
+  observe(meta: TeachingMetaV1): void {
     if (meta.phase === "dry_run_summary") return;
     if (!meta.patch || meta.patch.skip === true) return;
     this.annotations.push({

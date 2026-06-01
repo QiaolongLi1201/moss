@@ -42,6 +42,11 @@ export type { DeviceFamily } from './contracts/device-family.js';
 // --- Host Adapter contract ---
 export {
   MOSS_HOST_ADAPTER_CONTRACT_VERSION,
+  MOSS_HOST_CAPABILITY_COVERAGE_PRIORITIES,
+  MOSS_HOST_CAPABILITY_COVERAGE_STATUSES,
+  MOSS_HOST_CAPABILITY_COVERAGE_STATUS_DEFINITIONS,
+  MOSS_HOST_CHANNEL_BACKPLANE_CAPABILITIES,
+  MOSS_HOST_TASK_SURFACE_CAPABILITIES,
   MOSS_HOST_TOOL_RESULT_SURFACES,
   MOSS_HOST_TOOL_SURFACE_PROGRESS_MODES,
   MOSS_HOST_TOOL_SURFACE_READINESS_SIGNALS,
@@ -50,6 +55,9 @@ export {
 } from './contracts/host-adapter.js';
 export type {
   MossHostAdapterContractVersion,
+  MossHostCapabilityCoveragePriority,
+  MossHostCapabilityCoverageRef,
+  MossHostCapabilityCoverageStatus,
   MossHostCapabilityKind,
   MossHostCapabilityRef,
   MossHostCapabilityStability,
@@ -58,9 +66,11 @@ export type {
   MossHostCompatibilityStatus,
   MossHostEventSinkRef,
   MossHostKnowledgeRef,
+  MossHostChannelBackplaneCapability,
   MossHostPackageRef,
   MossHostProviderRef,
   MossHostRuntimeManifest,
+  MossHostTaskSurfaceCapability,
   MossHostToolResultSurface,
   MossHostToolRef,
   MossHostToolSurfaceProgressMode,

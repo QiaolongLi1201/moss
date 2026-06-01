@@ -13,6 +13,11 @@
 import assert from 'node:assert/strict';
 import {
   MOSS_HOST_ADAPTER_CONTRACT_VERSION,
+  MOSS_HOST_CAPABILITY_COVERAGE_PRIORITIES,
+  MOSS_HOST_CAPABILITY_COVERAGE_STATUSES,
+  MOSS_HOST_CAPABILITY_COVERAGE_STATUS_DEFINITIONS,
+  MOSS_HOST_CHANNEL_BACKPLANE_CAPABILITIES,
+  MOSS_HOST_TASK_SURFACE_CAPABILITIES,
   MOSS_HOST_TOOL_RESULT_SURFACES,
   MOSS_HOST_TOOL_SURFACE_KINDS,
   evaluateMossHostCompatibility,
@@ -96,6 +101,24 @@ const fixtureManifest = {
       resultSurface: 'terminal_output',
     },
     {
+      name: 'device_file_read',
+      boundaryId: 'device',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'board_device',
+      resultSurface: 'media_or_file',
+    },
+    {
+      name: 'device_list_all',
+      boundaryId: 'device',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'board_device',
+      resultSurface: 'timeline_summary',
+    },
+    {
       name: 'ros_topics',
       boundaryId: 'ros',
       sideEffectClass: 'readonly',
@@ -130,6 +153,27 @@ const fixtureManifest = {
       source: 'moss',
       surface: 'task_subagent',
       resultSurface: 'background_task',
+      taskSurfaceCapability: 'start',
+    },
+    {
+      name: 'sessions_status',
+      boundaryId: 'subagent',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'moss',
+      surface: 'task_subagent',
+      resultSurface: 'background_task',
+      taskSurfaceCapabilities: ['status', 'wait', 'completion'],
+    },
+    {
+      name: 'sessions_stop',
+      boundaryId: 'subagent',
+      sideEffectClass: 'subagent',
+      approval: 'plan_audit',
+      source: 'moss',
+      surface: 'task_subagent',
+      resultSurface: 'background_task',
+      taskSurfaceCapability: 'control',
     },
     {
       name: 'memory_search',
@@ -148,6 +192,87 @@ const fixtureManifest = {
       source: 'host',
       surface: 'openclaw_channel',
       resultSurface: 'timeline_summary',
+      channelBackplaneCapability: 'status',
+    },
+    {
+      name: 'board_openclaw_health',
+      boundaryId: 'openclaw',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'openclaw_channel',
+      resultSurface: 'timeline_summary',
+      channelBackplaneCapability: 'health',
+    },
+    {
+      name: 'board_openclaw_chat',
+      boundaryId: 'openclaw',
+      sideEffectClass: 'device_mutation',
+      approval: 'plan_audit',
+      source: 'host',
+      surface: 'openclaw_channel',
+      resultSurface: 'assistant_text',
+      channelBackplaneCapability: 'chat',
+    },
+    {
+      name: 'board_openclaw_delegate',
+      boundaryId: 'openclaw',
+      sideEffectClass: 'device_mutation',
+      approval: 'plan_audit',
+      source: 'host',
+      surface: 'openclaw_channel',
+      resultSurface: 'assistant_text',
+      channelBackplaneCapability: 'delegate',
+    },
+    {
+      name: 'board_openclaw_read_config',
+      boundaryId: 'openclaw',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'openclaw_channel',
+      resultSurface: 'media_or_file',
+      channelBackplaneCapability: 'configure',
+    },
+    {
+      name: 'board_openclaw_gateway_pair',
+      boundaryId: 'openclaw',
+      sideEffectClass: 'device_mutation',
+      approval: 'execute_audit',
+      source: 'host',
+      surface: 'openclaw_channel',
+      resultSurface: 'terminal_output',
+      channelBackplaneCapability: 'pairing',
+    },
+    {
+      name: 'board_openclaw_skills_list',
+      boundaryId: 'openclaw',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'openclaw_channel',
+      resultSurface: 'timeline_summary',
+      channelBackplaneCapability: 'skills',
+    },
+    {
+      name: 'board_openclaw_logs',
+      boundaryId: 'openclaw',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'openclaw_channel',
+      resultSurface: 'terminal_output',
+      channelBackplaneCapability: 'logs',
+    },
+    {
+      name: 'fleet_board_list',
+      boundaryId: 'openclaw',
+      sideEffectClass: 'readonly',
+      approval: 'not_required',
+      source: 'host',
+      surface: 'openclaw_channel',
+      resultSurface: 'timeline_summary',
+      channelBackplaneCapability: 'fleet',
     },
   ],
   toolSurfaces: [
@@ -163,13 +288,47 @@ const fixtureManifest = {
     },
     {
       kind: 'openclaw_channel',
-      summary: 'Board-side OpenClaw gateway used as a reusable execution backplane.',
+      summary: 'Board-side channel backplane gateway used as a reusable execution backplane.',
       readiness: ['device_selected', 'device_reachable', 'openclaw_gateway_ready'],
       progressMode: 'streaming',
-      primaryTools: ['board_openclaw_status'],
-      healthTools: ['board_openclaw_status'],
+      primaryTools: ['board_openclaw_status', 'board_openclaw_chat', 'board_openclaw_delegate'],
+      healthTools: ['board_openclaw_status', 'board_openclaw_health'],
       fallbackSurfaces: ['board_device'],
-      resultSurfaces: ['timeline_summary'],
+      resultSurfaces: ['timeline_summary', 'assistant_text', 'terminal_output', 'media_or_file'],
+    },
+  ],
+  capabilityCoverage: [
+    {
+      id: 'workspace-control',
+      priority: 'P0',
+      status: 'covered',
+      userOutcome: 'Read local project files.',
+      surface: 'computer_workspace',
+      tools: ['read_file'],
+      evidence: ['packages/dmoss/test/host-adapter-conformance.spec.mjs'],
+      gaps: [],
+      rationale: 'The host exposes a read-only workspace tool.',
+    },
+    {
+      id: 'browser-automation',
+      priority: 'P1',
+      status: 'partial',
+      userOutcome: 'Fetch rendered web content.',
+      surface: 'browser_web',
+      tools: ['web_fetch'],
+      evidence: ['packages/dmoss/test/host-adapter-conformance.spec.mjs'],
+      gaps: ['no click/navigation automation in this fixture'],
+      rationale: 'The fixture only proves web fetch classification, not full browser control.',
+    },
+    {
+      id: 'image-generation',
+      priority: 'P2',
+      status: 'not_exposed',
+      userOutcome: 'Generate images.',
+      tools: [],
+      evidence: ['packages/dmoss/test/host-adapter-conformance.spec.mjs'],
+      gaps: ['no image generation tool is registered'],
+      rationale: 'The fixture intentionally does not expose media generation tools.',
     },
   ],
   eventSinks: [
@@ -196,7 +355,7 @@ total++;
   passed++;
 }
 
-/* ---- Test 2: host tool surface constants expose the OpenClaw coverage taxonomy ---- */
+/* ---- Test 2: host tool surface constants expose the channel backplane coverage taxonomy ---- */
 
 total++;
 {
@@ -221,7 +380,33 @@ total++;
     'channel_delivery',
     'background_task',
   ]);
-  console.log('  [PASS] host tool surface constants expose the OpenClaw coverage taxonomy');
+  assert.deepEqual([...MOSS_HOST_TASK_SURFACE_CAPABILITIES], [
+    'start',
+    'status',
+    'wait',
+    'control',
+    'completion',
+  ]);
+  assert.deepEqual([...MOSS_HOST_CHANNEL_BACKPLANE_CAPABILITIES], [
+    'status',
+    'health',
+    'chat',
+    'delegate',
+    'configure',
+    'pairing',
+    'skills',
+    'logs',
+    'fleet',
+  ]);
+  assert.deepEqual([...MOSS_HOST_CAPABILITY_COVERAGE_PRIORITIES], ['P0', 'P1', 'P2']);
+  assert.deepEqual([...MOSS_HOST_CAPABILITY_COVERAGE_STATUSES], [
+    'covered',
+    'partial',
+    'deferred',
+    'not_exposed',
+  ]);
+  assert.ok(MOSS_HOST_CAPABILITY_COVERAGE_STATUS_DEFINITIONS.partial.includes('gaps'));
+  console.log('  [PASS] host tool surface constants expose the capability coverage taxonomy');
   passed++;
 }
 
@@ -316,6 +501,7 @@ total++;
   assert.equal(result.missingCapabilities.length, 0);
   assert.equal(result.missingToolSurfaces.length, 0);
   assert.equal(result.missingToolSurfaceDetails.length, 0);
+  assert.equal(result.missingTaskSurfaceCapabilities.length, 0);
   assert.equal(result.missingEventSchemas.length, 0);
   assert.equal(result.missingProviderFamilies.length, 0);
   console.log('  [PASS] ok when all requirements satisfied');
@@ -530,7 +716,17 @@ total++;
 {
   const legacyManifest = {
     ...fixtureManifest,
-    tools: fixtureManifest.tools.map(({ surface, resultSurface, ...tool }) => tool),
+    tools: fixtureManifest.tools.map(({
+      resultSurface,
+      surface,
+      taskSurfaceCapability,
+      taskSurfaceCapabilities,
+      channelBackplaneCapability,
+      channelBackplaneCapabilities,
+      ...tool
+    }) => tool),
+    toolSurfaces: undefined,
+    capabilityCoverage: undefined,
   };
   const result = evaluateMossHostCompatibility(legacyManifest);
   assert.equal(result.status, 'ok');
@@ -657,6 +853,310 @@ total++;
   assert.equal(result.compatible, true);
   assert.deepEqual(result.missingToolSurfaceDetails, []);
   console.log('  [PASS] required surface details pass when declared');
+  passed++;
+}
+
+/* ---- Test 31: missing_capability — required task lifecycle capability absent ---- */
+
+total++;
+{
+  const manifestWithoutTaskWait = {
+    ...fixtureManifest,
+    tools: fixtureManifest.tools.map((tool) => (
+      tool.name === 'sessions_status'
+        ? { ...tool, taskSurfaceCapabilities: ['status', 'completion'] }
+        : tool
+    )),
+  };
+  const result = evaluateMossHostCompatibility(manifestWithoutTaskWait, {
+    requiredTaskSurfaceCapabilities: ['wait'],
+  });
+  assert.equal(result.status, 'missing_capability');
+  assert.equal(result.compatible, false);
+  assert.deepEqual(result.missingTaskSurfaceCapabilities, ['wait']);
+  assert.ok(result.reasons[0].includes('task/subagent lifecycle capabilities'));
+  console.log('  [PASS] missing_capability when required task lifecycle capability absent');
+  passed++;
+}
+
+/* ---- Test 32: required task lifecycle capabilities pass when declared ---- */
+
+total++;
+{
+  const result = evaluateMossHostCompatibility(fixtureManifest, {
+    requiredTaskSurfaceCapabilities: [...MOSS_HOST_TASK_SURFACE_CAPABILITIES],
+  });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.compatible, true);
+  assert.deepEqual(result.missingTaskSurfaceCapabilities, []);
+  console.log('  [PASS] required task lifecycle capabilities pass when declared');
+  passed++;
+}
+
+/* ---- Test 33: missing_capability — required channel backplane capability absent ---- */
+
+total++;
+{
+  const manifestWithoutChannelBackplaneDelegate = {
+    ...fixtureManifest,
+    tools: fixtureManifest.tools.map((tool) => (
+      tool.name === 'board_openclaw_delegate'
+        ? { ...tool, channelBackplaneCapability: 'chat' }
+        : tool
+    )),
+  };
+  const result = evaluateMossHostCompatibility(manifestWithoutChannelBackplaneDelegate, {
+    requiredChannelBackplaneCapabilities: ['delegate'],
+  });
+  assert.equal(result.status, 'missing_capability');
+  assert.equal(result.compatible, false);
+  assert.deepEqual(result.missingChannelBackplaneCapabilities, ['delegate']);
+  assert.ok(result.reasons[0].includes('channel/backplane capabilities'));
+  console.log('  [PASS] missing_capability when required channel backplane capability absent');
+  passed++;
+}
+
+/* ---- Test 34: required channel backplane capabilities pass when declared ---- */
+
+total++;
+{
+  const result = evaluateMossHostCompatibility(fixtureManifest, {
+    requiredChannelBackplaneCapabilities: [...MOSS_HOST_CHANNEL_BACKPLANE_CAPABILITIES],
+  });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.compatible, true);
+  assert.deepEqual(result.missingChannelBackplaneCapabilities, []);
+  console.log('  [PASS] required channel backplane capabilities pass when declared');
+  passed++;
+}
+
+/* ---- Test 35: invalid channel backplane capability is rejected ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    tools: [
+      {
+        ...fixtureManifest.tools.find((tool) => tool.name === 'board_openclaw_status'),
+        channelBackplaneCapability: 'telepathy',
+      },
+    ],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('channelBackplaneCapability'));
+  console.log('  [PASS] invalid channel backplane capability is rejected');
+  passed++;
+}
+
+/* ---- Test 36: channel backplane capability is only valid on openclaw_channel tools ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    tools: [
+      {
+        ...fixtureManifest.tools.find((tool) => tool.name === 'read_file'),
+        channelBackplaneCapability: 'status',
+      },
+    ],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('channel backplane capabilities'));
+  console.log('  [PASS] channel backplane capability is only valid on openclaw_channel tools');
+  passed++;
+}
+
+/* ---- Test 37: invalid task lifecycle capability is rejected ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    tools: [
+      {
+        ...fixtureManifest.tools.find((tool) => tool.name === 'sessions_spawn'),
+        taskSurfaceCapability: 'sleep',
+      },
+    ],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('taskSurfaceCapability'));
+  console.log('  [PASS] invalid task lifecycle capability is rejected');
+  passed++;
+}
+
+/* ---- Test 38: task lifecycle capability is only valid on task_subagent tools ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    tools: [
+      {
+        ...fixtureManifest.tools.find((tool) => tool.name === 'read_file'),
+        taskSurfaceCapability: 'status',
+      },
+    ],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('task lifecycle capabilities'));
+  console.log('  [PASS] task lifecycle capability is only valid on task_subagent tools');
+  passed++;
+}
+
+/* ---- Test 39: capability coverage with duplicate ids is rejected ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    capabilityCoverage: [
+      fixtureManifest.capabilityCoverage[0],
+      fixtureManifest.capabilityCoverage[0],
+    ],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('unique'));
+  console.log('  [PASS] capability coverage with duplicate ids is rejected');
+  passed++;
+}
+
+/* ---- Test 40: covered capability cannot carry gaps ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    capabilityCoverage: [
+      {
+        ...fixtureManifest.capabilityCoverage[0],
+        gaps: ['should not be here'],
+      },
+    ],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('covered capability'));
+  console.log('  [PASS] covered capability cannot carry gaps');
+  passed++;
+}
+
+/* ---- Test 41: partial capability must name gaps ---- */
+
+total++;
+{
+  const invalidManifest = {
+    ...fixtureManifest,
+    capabilityCoverage: [
+      {
+        ...fixtureManifest.capabilityCoverage[1],
+        gaps: [],
+      },
+    ],
+  };
+  const result = evaluateMossHostCompatibility(invalidManifest);
+  assert.equal(result.status, 'invalid_manifest');
+  assert.equal(result.compatible, false);
+  assert.ok(result.reasons[0].includes('partial capability'));
+  console.log('  [PASS] partial capability must name gaps');
+  passed++;
+}
+
+/* ---- Test 42: capability coverage tools must exist and match declared surfaces ---- */
+
+total++;
+{
+  const missingToolManifest = {
+    ...fixtureManifest,
+    capabilityCoverage: [
+      {
+        ...fixtureManifest.capabilityCoverage[0],
+        tools: ['missing_tool'],
+      },
+    ],
+  };
+  const missingToolResult = evaluateMossHostCompatibility(missingToolManifest);
+  assert.equal(missingToolResult.status, 'invalid_manifest');
+  assert.equal(missingToolResult.compatible, false);
+  assert.ok(missingToolResult.reasons[0].includes('references unknown tool'));
+
+  const wrongSurfaceManifest = {
+    ...fixtureManifest,
+    capabilityCoverage: [
+      {
+        ...fixtureManifest.capabilityCoverage[0],
+        tools: ['web_fetch'],
+      },
+    ],
+  };
+  const wrongSurfaceResult = evaluateMossHostCompatibility(wrongSurfaceManifest);
+  assert.equal(wrongSurfaceResult.status, 'invalid_manifest');
+  assert.equal(wrongSurfaceResult.compatible, false);
+  assert.ok(wrongSurfaceResult.reasons[0].includes('different surface'));
+  console.log('  [PASS] capability coverage tools must exist and match declared surfaces');
+  passed++;
+}
+
+/* ---- Test 43: tool surface primary/health tools must exist and match declared surfaces ---- */
+
+total++;
+{
+  const missingPrimaryToolManifest = {
+    ...fixtureManifest,
+    toolSurfaces: [
+      {
+        ...fixtureManifest.toolSurfaces[0],
+        primaryTools: ['missing_device_tool'],
+      },
+    ],
+  };
+  const missingPrimaryToolResult = evaluateMossHostCompatibility(missingPrimaryToolManifest);
+  assert.equal(missingPrimaryToolResult.status, 'invalid_manifest');
+  assert.equal(missingPrimaryToolResult.compatible, false);
+  assert.ok(missingPrimaryToolResult.reasons[0].includes('primaryTools references unknown tool'));
+
+  const wrongSurfacePrimaryToolManifest = {
+    ...fixtureManifest,
+    toolSurfaces: [
+      {
+        ...fixtureManifest.toolSurfaces[0],
+        primaryTools: ['web_fetch'],
+      },
+    ],
+  };
+  const wrongSurfacePrimaryToolResult = evaluateMossHostCompatibility(wrongSurfacePrimaryToolManifest);
+  assert.equal(wrongSurfacePrimaryToolResult.status, 'invalid_manifest');
+  assert.equal(wrongSurfacePrimaryToolResult.compatible, false);
+  assert.ok(wrongSurfacePrimaryToolResult.reasons[0].includes('primaryTools references tool from different surface'));
+
+  const mutatingHealthToolManifest = {
+    ...fixtureManifest,
+    toolSurfaces: [
+      {
+        ...fixtureManifest.toolSurfaces[0],
+        healthTools: ['device_exec'],
+      },
+    ],
+  };
+  const mutatingHealthToolResult = evaluateMossHostCompatibility(mutatingHealthToolManifest);
+  assert.equal(mutatingHealthToolResult.status, 'invalid_manifest');
+  assert.equal(mutatingHealthToolResult.compatible, false);
+  assert.ok(mutatingHealthToolResult.reasons[0].includes('healthTools must reference read-only tools'));
+
+  console.log('  [PASS] tool surface primary/health tools must exist and match declared surfaces');
   passed++;
 }
 

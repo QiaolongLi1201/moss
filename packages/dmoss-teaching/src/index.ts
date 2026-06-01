@@ -1,8 +1,8 @@
 export {
-  createStudioTeachingHooks,
+  createTeachingHooks,
   normalizeTeachingDepth,
-  type StudioTeachingLayerParams,
-  type StudioTeachingMetaV1,
+  type TeachingLayerParams,
+  type TeachingMetaV1,
   type TeachDryRunSummary,
   type TeachingDepth,
 } from "./teaching-layer.js";
@@ -12,5 +12,5 @@ export {
 } from "./teaching-annotation-collector.js";
 
 export {
-  digestStudioToolCall,
+  digestToolCall,
 } from "./teaching-tool-digest.js";

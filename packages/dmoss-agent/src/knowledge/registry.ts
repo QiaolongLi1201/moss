@@ -54,10 +54,14 @@ export class KnowledgeRegistry {
   }
 
   register(mod: KnowledgeModule): void {
-    if (this.modules.has(mod.id)) {
+    const existing = this.modules.get(mod.id);
+    if (existing === mod) {
+      return;
+    }
+    if (existing) {
       log.warn('replacing module', {
         id: mod.id,
-        oldVersion: this.modules.get(mod.id)!.version,
+        oldVersion: existing.version,
         newVersion: mod.version,
       });
     }

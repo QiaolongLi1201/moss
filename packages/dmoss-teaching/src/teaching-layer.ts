@@ -1,5 +1,5 @@
 /**
- * Teach-while-solve: RDK Studio SSE teaching meta + hook glue (task 2026-05-01-moss-teach-while-solve).
+ * Teach-while-solve: host teaching meta + hook glue (task 2026-05-01-moss-teach-while-solve).
  * Correlates pre-teach patches with tool_start via stable argsDigest (onBeforeToolExec has no toolCallId).
  */
 
@@ -7,7 +7,7 @@ import * as crypto from "node:crypto";
 import type { LLMProvider, LLMResponse, ToolApprovalRequest, ToolApprovalDecision } from "@rdk-moss/agent/core";
 import type { ToolCall, ToolResult } from "@rdk-moss/agent/core";
 import { sanitizeSecrets } from "@rdk-moss/agent/safety";
-import { digestStudioToolCall } from "./teaching-tool-digest.js";
+import { digestToolCall } from "./teaching-tool-digest.js";
 
 export type TeachingDepth = "off" | "concise" | "detailed";
 
@@ -22,7 +22,7 @@ export interface TeachDryRunSummary {
   risk: string;
 }
 
-export type StudioTeachingMetaV1 = {
+export type TeachingMetaV1 = {
   v: 1;
   toolCallId?: string;
   argsDigest?: string;
@@ -123,9 +123,9 @@ function postProcessConfidence(
   return row;
 }
 
-export interface StudioTeachingLayerParams {
+export interface TeachingLayerParams {
   depth: TeachingDepth;
-  /** User checkbox in RDK Studio — may still be non-interactive on IM channels. */
+  /** User checkbox in the host UI; may still be non-interactive on IM channels. */
   teachingConfirmRequested: boolean;
   /** False on weixin/feishu — auto-approve (no SSE meta user actions). */
   teachingConfirmInteractive: boolean;
@@ -133,7 +133,7 @@ export interface StudioTeachingLayerParams {
   modelId: string;
   temperature?: number;
   /** meta push (caller filters IM / suppress) */
-  emitTeachingMeta: (st: StudioTeachingMetaV1) => void;
+  emitTeachingMeta: (st: TeachingMetaV1) => void;
   runId: string;
   sessionKey: string;
   deviceLabel: string;
@@ -144,7 +144,7 @@ export interface StudioTeachingLayerParams {
   abortSignal?: AbortSignal;
 }
 
-export function createStudioTeachingHooks(p: StudioTeachingLayerParams): {
+export function createTeachingHooks(p: TeachingLayerParams): {
   onBeforeToolExec: (req: ToolApprovalRequest) => Promise<ToolApprovalDecision>;
   onToolResult: (call: ToolCall, result: ToolResult) => void;
 } {
@@ -226,7 +226,7 @@ export function createStudioTeachingHooks(p: StudioTeachingLayerParams): {
 
     const token = crypto.randomUUID();
     const blockingConfirm = Boolean(p.teachingConfirmRequested && p.teachingConfirmInteractive);
-    const meta: StudioTeachingMetaV1 = {
+    const meta: TeachingMetaV1 = {
       v: 1,
       phase: "dry_run_summary",
       // Type bridge: summary is a structured object compatible with Record<string, unknown> at runtime
@@ -264,7 +264,7 @@ export function createStudioTeachingHooks(p: StudioTeachingLayerParams): {
 
     if (!shouldAnnotate(toolName, mutation)) return { approved: true };
 
-    const digest = digestStudioToolCall(toolName, input as Record<string, unknown>);
+    const digest = digestToolCall(toolName, input as Record<string, unknown>);
     const cacheKey = `${p.sessionKey}:${digest}:pre`;
 
     void (async () => {

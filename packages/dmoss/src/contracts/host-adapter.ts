@@ -85,6 +85,32 @@ export const MOSS_HOST_TOOL_SURFACE_PROGRESS_MODES = [
 export type MossHostToolSurfaceProgressMode =
   (typeof MOSS_HOST_TOOL_SURFACE_PROGRESS_MODES)[number];
 
+export const MOSS_HOST_TASK_SURFACE_CAPABILITIES = [
+  'start',
+  'status',
+  'wait',
+  'control',
+  'completion',
+] as const;
+
+export type MossHostTaskSurfaceCapability =
+  (typeof MOSS_HOST_TASK_SURFACE_CAPABILITIES)[number];
+
+export const MOSS_HOST_CHANNEL_BACKPLANE_CAPABILITIES = [
+  'status',
+  'health',
+  'chat',
+  'delegate',
+  'configure',
+  'pairing',
+  'skills',
+  'logs',
+  'fleet',
+] as const;
+
+export type MossHostChannelBackplaneCapability =
+  (typeof MOSS_HOST_CHANNEL_BACKPLANE_CAPABILITIES)[number];
+
 export const MOSS_HOST_TOOL_SURFACE_READINESS_SIGNALS = [
   'always_available',
   'workspace_selected',
@@ -100,6 +126,36 @@ export const MOSS_HOST_TOOL_SURFACE_READINESS_SIGNALS = [
 
 export type MossHostToolSurfaceReadinessSignal =
   (typeof MOSS_HOST_TOOL_SURFACE_READINESS_SIGNALS)[number];
+
+export const MOSS_HOST_CAPABILITY_COVERAGE_PRIORITIES = [
+  'P0',
+  'P1',
+  'P2',
+] as const;
+
+export type MossHostCapabilityCoveragePriority =
+  (typeof MOSS_HOST_CAPABILITY_COVERAGE_PRIORITIES)[number];
+
+export const MOSS_HOST_CAPABILITY_COVERAGE_STATUSES = [
+  'covered',
+  'partial',
+  'deferred',
+  'not_exposed',
+] as const;
+
+export type MossHostCapabilityCoverageStatus =
+  (typeof MOSS_HOST_CAPABILITY_COVERAGE_STATUSES)[number];
+
+export const MOSS_HOST_CAPABILITY_COVERAGE_STATUS_DEFINITIONS = {
+  covered:
+    'The host registers the named tools and may advertise the user outcome without caveats.',
+  partial:
+    'The host registers some supporting tools, but gaps name behavior Moss must not assume.',
+  deferred:
+    'The capability is a deliberate roadmap item and must not be advertised through tool surfaces yet.',
+  not_exposed:
+    'The capability exists elsewhere but is intentionally absent from this host runtime.',
+} as const satisfies Record<MossHostCapabilityCoverageStatus, string>;
 
 export interface MossHostToolSurfaceRef {
   kind: MossHostToolSurfaceKind;
@@ -137,6 +193,24 @@ export interface MossHostToolRef {
   surface?: MossHostToolSurfaceKind;
   /** Presentation surface the host uses for this tool result/progress. */
   resultSurface?: MossHostToolResultSurface;
+  /**
+   * Long-running task lifecycle operation supplied by a task_subagent tool.
+   *
+   * Use `taskSurfaceCapabilities` when one tool genuinely covers more than one
+   * lifecycle operation. Hosts should prefer one value per tool so Moss can
+   * reason about start/status/wait/control/idempotent-completion separately.
+   */
+  taskSurfaceCapability?: MossHostTaskSurfaceCapability;
+  taskSurfaceCapabilities?: readonly MossHostTaskSurfaceCapability[];
+  /**
+   * channel/backplane operation supplied by an openclaw_channel tool.
+   *
+   * This lets Moss distinguish a host that can merely report channel backplane status
+   * from one that can use channel backplane as a board-side execution backplane for
+   * chat, delegation, configuration, skills, logs, and fleet dispatch.
+   */
+  channelBackplaneCapability?: MossHostChannelBackplaneCapability;
+  channelBackplaneCapabilities?: readonly MossHostChannelBackplaneCapability[];
 }
 
 export interface MossHostEventSinkRef {
@@ -171,6 +245,19 @@ export interface MossHostCapabilityRef {
   optional?: boolean;
 }
 
+export interface MossHostCapabilityCoverageRef {
+  id: string;
+  priority: MossHostCapabilityCoveragePriority;
+  status: MossHostCapabilityCoverageStatus;
+  userOutcome: string;
+  surface?: MossHostToolSurfaceKind;
+  surfaces?: readonly MossHostToolSurfaceKind[];
+  tools: readonly string[];
+  evidence: readonly string[];
+  gaps: readonly string[];
+  rationale: string;
+}
+
 export interface MossHostRuntimeManifest {
   schema: 'moss_host_adapter.v1';
   contractVersion: MossHostAdapterContractVersion;
@@ -196,6 +283,15 @@ export interface MossHostRuntimeManifest {
    */
   toolSurfaces?: readonly MossHostToolSurfaceRef[];
   tools: readonly MossHostToolRef[];
+  /**
+   * Optional P0/P1/P2 capability inventory.
+   *
+   * This is the host's audited claim about what users can do through the
+   * current Moss surface. It deliberately separates "covered" from "partial"
+   * so hosts can expose backend, browser, channel, or media gaps
+   * without teaching Moss to assume parity that is not actually available.
+   */
+  capabilityCoverage?: readonly MossHostCapabilityCoverageRef[];
   eventSinks: readonly MossHostEventSinkRef[];
   /**
    * Optional long-term-memory source supplied by the host.
@@ -245,6 +341,8 @@ export interface MossHostCompatibilityRequirement {
   requiredCapabilities?: readonly MossHostCapabilityKind[];
   requiredToolSurfaces?: readonly MossHostToolSurfaceKind[];
   requiredToolSurfaceDetails?: readonly MossHostToolSurfaceKind[];
+  requiredTaskSurfaceCapabilities?: readonly MossHostTaskSurfaceCapability[];
+  requiredChannelBackplaneCapabilities?: readonly MossHostChannelBackplaneCapability[];
   requiredEventSchemas?: readonly string[];
   requiredProviderFamilies?: readonly string[];
 }
@@ -265,6 +363,8 @@ export interface MossHostCompatibilityReport {
   missingCapabilities: readonly MossHostCapabilityKind[];
   missingToolSurfaces: readonly MossHostToolSurfaceKind[];
   missingToolSurfaceDetails: readonly MossHostToolSurfaceKind[];
+  missingTaskSurfaceCapabilities: readonly MossHostTaskSurfaceCapability[];
+  missingChannelBackplaneCapabilities: readonly MossHostChannelBackplaneCapability[];
   missingEventSchemas: readonly string[];
   missingProviderFamilies: readonly string[];
 }
@@ -296,6 +396,120 @@ function isStringArray(value: unknown): value is readonly string[] {
 
 function isOneOf<const T extends readonly string[]>(value: unknown, allowed: T): value is T[number] {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value);
+}
+
+function validateMossCapabilityCoverageShape(
+  coverage: unknown,
+  tools: readonly unknown[],
+): string | null {
+  if (coverage === undefined) return null;
+  if (!Array.isArray(coverage)) {
+    return 'manifest.capabilityCoverage must be an array when present';
+  }
+
+  const toolsByName = new Map<string, Record<string, unknown>>();
+  for (const tool of tools) {
+    if (isRecord(tool) && typeof tool.name === 'string') {
+      toolsByName.set(tool.name, tool);
+    }
+  }
+
+  const ids = new Set<string>();
+  for (const entry of coverage) {
+    if (!isRecord(entry)) {
+      return 'manifest.capabilityCoverage must be an array of coverage records';
+    }
+    if (typeof entry.id !== 'string' || !entry.id.trim()) {
+      return 'manifest.capabilityCoverage[].id must be a non-empty string';
+    }
+    if (ids.has(entry.id)) {
+      return `manifest.capabilityCoverage[].id must be unique: ${entry.id}`;
+    }
+    ids.add(entry.id);
+    if (!isOneOf(entry.priority, MOSS_HOST_CAPABILITY_COVERAGE_PRIORITIES)) {
+      return 'manifest.capabilityCoverage[].priority must be P0, P1, or P2';
+    }
+    if (!isOneOf(entry.status, MOSS_HOST_CAPABILITY_COVERAGE_STATUSES)) {
+      return 'manifest.capabilityCoverage[].status must be a known coverage status';
+    }
+    if (typeof entry.userOutcome !== 'string' || !entry.userOutcome.trim()) {
+      return 'manifest.capabilityCoverage[].userOutcome must be a non-empty string';
+    }
+    if (typeof entry.rationale !== 'string' || !entry.rationale.trim()) {
+      return 'manifest.capabilityCoverage[].rationale must be a non-empty string';
+    }
+    if (entry.surface !== undefined && !isOneOf(entry.surface, MOSS_HOST_TOOL_SURFACE_KINDS)) {
+      return 'manifest.capabilityCoverage[].surface must be a known tool surface';
+    }
+    if (
+      entry.surfaces !== undefined &&
+      (
+        !Array.isArray(entry.surfaces) ||
+        !entry.surfaces.every((item) => isOneOf(item, MOSS_HOST_TOOL_SURFACE_KINDS))
+      )
+    ) {
+      return 'manifest.capabilityCoverage[].surfaces must contain known tool surfaces';
+    }
+    if (!isStringArray(entry.tools)) {
+      return 'manifest.capabilityCoverage[].tools must be a string array';
+    }
+    if (!isStringArray(entry.evidence) || entry.evidence.length === 0) {
+      return 'manifest.capabilityCoverage[].evidence must be a non-empty string array';
+    }
+    if (!entry.evidence.every((item) => item.trim())) {
+      return 'manifest.capabilityCoverage[].evidence entries must be non-empty';
+    }
+    if (!isStringArray(entry.gaps)) {
+      return 'manifest.capabilityCoverage[].gaps must be a string array';
+    }
+
+    const status = entry.status as MossHostCapabilityCoverageStatus;
+    if (status === 'covered') {
+      if (entry.tools.length === 0) {
+        return `covered capability must cite backing tools: ${entry.id}`;
+      }
+      if (entry.gaps.length > 0) {
+        return `covered capability must not carry unresolved gaps: ${entry.id}`;
+      }
+    } else if (status === 'partial') {
+      if (entry.tools.length === 0) {
+        return `partial capability must cite existing backing tools: ${entry.id}`;
+      }
+      if (entry.gaps.length === 0) {
+        return `partial capability must name remaining gaps: ${entry.id}`;
+      }
+    } else {
+      if (entry.tools.length > 0) {
+        return `deferred/not_exposed capability must not advertise tools: ${entry.id}`;
+      }
+      if (entry.gaps.length === 0) {
+        return `deferred/not_exposed capability must name why it is unavailable: ${entry.id}`;
+      }
+    }
+
+    const entrySurfaces = new Set<MossHostToolSurfaceKind>([
+      ...(typeof entry.surface === 'string' ? [entry.surface] : []),
+      ...(Array.isArray(entry.surfaces)
+        ? entry.surfaces.filter((item): item is MossHostToolSurfaceKind => typeof item === 'string')
+        : []),
+    ]);
+    for (const toolName of entry.tools) {
+      const tool = toolsByName.get(toolName);
+      if (!tool) {
+        return `manifest.capabilityCoverage[].tools references unknown tool: ${entry.id} -> ${toolName}`;
+      }
+      const toolSurface = tool.surface;
+      if (
+        entrySurfaces.size > 0 &&
+        isOneOf(toolSurface, MOSS_HOST_TOOL_SURFACE_KINDS) &&
+        !entrySurfaces.has(toolSurface)
+      ) {
+        return `manifest.capabilityCoverage[].tools references tool from different surface: ${entry.id} -> ${toolName} (${tool.surface})`;
+      }
+    }
+  }
+
+  return null;
 }
 
 function validateMossHostManifestShape(manifest: unknown): string | null {
@@ -375,6 +589,55 @@ function validateMossHostManifestShape(manifest: unknown): string | null {
     ) {
       return 'manifest.tools[].resultSurface must be a known result surface';
     }
+    if (
+      tool.taskSurfaceCapability !== undefined &&
+      !isOneOf(tool.taskSurfaceCapability, MOSS_HOST_TASK_SURFACE_CAPABILITIES)
+    ) {
+      return 'manifest.tools[].taskSurfaceCapability must be a known task lifecycle capability';
+    }
+    if (
+      tool.taskSurfaceCapabilities !== undefined &&
+      (
+        !Array.isArray(tool.taskSurfaceCapabilities) ||
+        !tool.taskSurfaceCapabilities.every((item) => isOneOf(item, MOSS_HOST_TASK_SURFACE_CAPABILITIES))
+      )
+    ) {
+      return 'manifest.tools[].taskSurfaceCapabilities must contain known task lifecycle capabilities';
+    }
+    if (
+      (tool.taskSurfaceCapability !== undefined || tool.taskSurfaceCapabilities !== undefined) &&
+      tool.surface !== 'task_subagent'
+    ) {
+      return 'manifest.tools[] task lifecycle capabilities may only be declared on task_subagent tools';
+    }
+    if (
+      tool.channelBackplaneCapability !== undefined &&
+      !isOneOf(tool.channelBackplaneCapability, MOSS_HOST_CHANNEL_BACKPLANE_CAPABILITIES)
+    ) {
+      return 'manifest.tools[].channelBackplaneCapability must be a known channel backplane capability';
+    }
+    if (
+      tool.channelBackplaneCapabilities !== undefined &&
+      (
+        !Array.isArray(tool.channelBackplaneCapabilities) ||
+        !tool.channelBackplaneCapabilities.every((item) => isOneOf(item, MOSS_HOST_CHANNEL_BACKPLANE_CAPABILITIES))
+      )
+    ) {
+      return 'manifest.tools[].channelBackplaneCapabilities must contain known channel backplane capabilities';
+    }
+    if (
+      (tool.channelBackplaneCapability !== undefined || tool.channelBackplaneCapabilities !== undefined) &&
+      tool.surface !== 'openclaw_channel'
+    ) {
+      return 'manifest.tools[] channel backplane capabilities may only be declared on openclaw_channel tools';
+    }
+  }
+
+  const toolsByName = new Map<string, Record<string, unknown>>();
+  for (const tool of manifest.tools) {
+    if (isRecord(tool) && typeof tool.name === 'string') {
+      toolsByName.set(tool.name, tool);
+    }
   }
 
   if (manifest.toolSurfaces !== undefined) {
@@ -406,6 +669,27 @@ function validateMossHostManifestShape(manifest: unknown): string | null {
       if (surface.healthTools !== undefined && !isStringArray(surface.healthTools)) {
         return 'manifest.toolSurfaces[].healthTools must be a string array';
       }
+      for (const toolName of surface.primaryTools) {
+        const tool = toolsByName.get(toolName);
+        if (!tool) {
+          return `manifest.toolSurfaces[].primaryTools references unknown tool: ${surface.kind} -> ${toolName}`;
+        }
+        if (tool.surface !== surface.kind) {
+          return `manifest.toolSurfaces[].primaryTools references tool from different surface: ${surface.kind} -> ${toolName} (${String(tool.surface)})`;
+        }
+      }
+      for (const toolName of surface.healthTools ?? []) {
+        const tool = toolsByName.get(toolName);
+        if (!tool) {
+          return `manifest.toolSurfaces[].healthTools references unknown tool: ${surface.kind} -> ${toolName}`;
+        }
+        if (tool.surface !== surface.kind) {
+          return `manifest.toolSurfaces[].healthTools references tool from different surface: ${surface.kind} -> ${toolName} (${String(tool.surface)})`;
+        }
+        if (tool.sideEffectClass !== 'readonly') {
+          return `manifest.toolSurfaces[].healthTools must reference read-only tools: ${surface.kind} -> ${toolName}`;
+        }
+      }
       if (
         surface.fallbackSurfaces !== undefined &&
         (
@@ -426,6 +710,12 @@ function validateMossHostManifestShape(manifest: unknown): string | null {
       }
     }
   }
+
+  const invalidCapabilityCoverage = validateMossCapabilityCoverageShape(
+    manifest.capabilityCoverage,
+    manifest.tools,
+  );
+  if (invalidCapabilityCoverage) return invalidCapabilityCoverage;
 
   if (!Array.isArray(manifest.eventSinks)) return 'manifest.eventSinks must be an array';
   if (
@@ -469,6 +759,8 @@ function emptyFailureReport(
     missingCapabilities: [],
     missingToolSurfaces: [],
     missingToolSurfaceDetails: [],
+    missingTaskSurfaceCapabilities: [],
+    missingChannelBackplaneCapabilities: [],
     missingEventSchemas: [],
     missingProviderFamilies: [],
   };
@@ -531,6 +823,8 @@ export function evaluateMossHostCompatibility(
       missingCapabilities: [],
       missingToolSurfaces: [],
       missingToolSurfaceDetails: [],
+      missingTaskSurfaceCapabilities: [],
+      missingChannelBackplaneCapabilities: [],
       missingEventSchemas: [],
       missingProviderFamilies: [],
     };
@@ -551,6 +845,8 @@ export function evaluateMossHostCompatibility(
       missingCapabilities,
       missingToolSurfaces: [],
       missingToolSurfaceDetails: [],
+      missingTaskSurfaceCapabilities: [],
+      missingChannelBackplaneCapabilities: [],
       missingEventSchemas: [],
       missingProviderFamilies: [],
     };
@@ -571,6 +867,8 @@ export function evaluateMossHostCompatibility(
       missingCapabilities: [],
       missingToolSurfaces,
       missingToolSurfaceDetails: [],
+      missingTaskSurfaceCapabilities: [],
+      missingChannelBackplaneCapabilities: [],
       missingEventSchemas: [],
       missingProviderFamilies: [],
     };
@@ -591,6 +889,64 @@ export function evaluateMossHostCompatibility(
       missingCapabilities: [],
       missingToolSurfaces: [],
       missingToolSurfaceDetails,
+      missingTaskSurfaceCapabilities: [],
+      missingChannelBackplaneCapabilities: [],
+      missingEventSchemas: [],
+      missingProviderFamilies: [],
+    };
+  }
+
+  const taskSurfaceCapabilities = new Set(
+    runtimeManifest.tools
+      .filter((tool) => tool.surface === 'task_subagent')
+      .flatMap((tool) => [
+        ...(tool.taskSurfaceCapability ? [tool.taskSurfaceCapability] : []),
+        ...(tool.taskSurfaceCapabilities ?? []),
+      ]),
+  );
+  const missingTaskSurfaceCapabilities = (requirement.requiredTaskSurfaceCapabilities ?? []).filter(
+    (capability) => !taskSurfaceCapabilities.has(capability),
+  );
+  if (missingTaskSurfaceCapabilities.length > 0) {
+    reasons.push(`missing task/subagent lifecycle capabilities: ${missingTaskSurfaceCapabilities.join(', ')}`);
+    return {
+      compatible: false,
+      status: 'missing_capability',
+      reasons,
+      missingCapabilities: [],
+      missingToolSurfaces: [],
+      missingToolSurfaceDetails: [],
+      missingTaskSurfaceCapabilities,
+      missingChannelBackplaneCapabilities: [],
+      missingEventSchemas: [],
+      missingProviderFamilies: [],
+    };
+  }
+
+  const channelBackplaneCapabilities = new Set(
+    runtimeManifest.tools
+      .filter((tool) => tool.surface === 'openclaw_channel')
+      .flatMap((tool) => [
+        ...(tool.channelBackplaneCapability ? [tool.channelBackplaneCapability] : []),
+        ...(tool.channelBackplaneCapabilities ?? []),
+      ]),
+  );
+  const missingChannelBackplaneCapabilities = (
+    requirement.requiredChannelBackplaneCapabilities ?? []
+  ).filter((capability) => !channelBackplaneCapabilities.has(capability));
+  if (missingChannelBackplaneCapabilities.length > 0) {
+    reasons.push(
+      `missing channel/backplane capabilities: ${missingChannelBackplaneCapabilities.join(', ')}`,
+    );
+    return {
+      compatible: false,
+      status: 'missing_capability',
+      reasons,
+      missingCapabilities: [],
+      missingToolSurfaces: [],
+      missingToolSurfaceDetails: [],
+      missingTaskSurfaceCapabilities: [],
+      missingChannelBackplaneCapabilities,
       missingEventSchemas: [],
       missingProviderFamilies: [],
     };
@@ -609,6 +965,8 @@ export function evaluateMossHostCompatibility(
       missingCapabilities: [],
       missingToolSurfaces: [],
       missingToolSurfaceDetails: [],
+      missingTaskSurfaceCapabilities: [],
+      missingChannelBackplaneCapabilities: [],
       missingEventSchemas,
       missingProviderFamilies: [],
     };
@@ -629,6 +987,8 @@ export function evaluateMossHostCompatibility(
       missingCapabilities: [],
       missingToolSurfaces: [],
       missingToolSurfaceDetails: [],
+      missingTaskSurfaceCapabilities: [],
+      missingChannelBackplaneCapabilities: [],
       missingEventSchemas: [],
       missingProviderFamilies,
     };
@@ -641,6 +1001,8 @@ export function evaluateMossHostCompatibility(
     missingCapabilities: [],
     missingToolSurfaces: [],
     missingToolSurfaceDetails: [],
+    missingTaskSurfaceCapabilities: [],
+    missingChannelBackplaneCapabilities: [],
     missingEventSchemas: [],
     missingProviderFamilies: [],
   };

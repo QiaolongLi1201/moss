@@ -1,6 +1,8 @@
 export {
   KnowledgeRegistry,
+  bridgeGlobalKnowledgeModuleForExtension,
   registerKnowledgeModule,
+  unbridgeGlobalKnowledgeModuleForExtension,
   unregisterKnowledgeModule,
   getKnowledgeModule,
   getAllKnowledgeModules,

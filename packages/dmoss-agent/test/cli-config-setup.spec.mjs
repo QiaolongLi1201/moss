@@ -107,6 +107,20 @@ try {
   assert.match(redactedStatus, /baseUrl: https:\/\/example\.com\/compatible-mode\/v1/);
   assert.doesNotMatch(redactedStatus, /user|pass|api_key|secret/);
 
+  saveConfigFile({
+    ...loadConfigFile(),
+    safetyMode: 'read-only',
+    approvalPolicy: 'never',
+    promptCache: { enabled: false },
+  }, tmp);
+  const filePolicyResolved = resolveCliConfig({}, loadConfigFile());
+  assert.equal(filePolicyResolved.safetyMode, 'read-only');
+  assert.equal(filePolicyResolved.safetyModeSource, 'config');
+  assert.equal(filePolicyResolved.approvalPolicy, 'never');
+  assert.equal(filePolicyResolved.approvalPolicySource, 'config');
+  assert.equal(filePolicyResolved.promptCacheEnabled, false);
+  assert.equal(filePolicyResolved.promptCacheSource, 'config');
+
   runConfigSet(['model', 'qwen-plus']);
   assert.equal(loadConfigFile().model, 'qwen-plus');
   runConfigSet(['baseUrl', 'https://example.com/v1/']);

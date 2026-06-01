@@ -4,6 +4,7 @@ import { stdin as input, stderr as output } from 'node:process';
 import {
   loadConfigFile,
   normalizeApprovalPolicyConfig,
+  normalizeConfigProfile,
   normalizeProvider,
   normalizeSafetyModeConfig,
   parseConfigBoolean,
@@ -120,6 +121,7 @@ export function renderAuthStatus(
   return [
     '[auth]',
     `  provider: ${resolved.provider} (${resolved.providerSource})`,
+    `  profile: ${resolved.profile} (${resolved.profileSource})`,
     `  model: ${resolved.model} (${resolved.modelSource})`,
     `  baseUrl: ${withoutSecret(resolved.baseUrl)} (${resolved.baseUrlSource})`,
     `  apiKey: ${resolved.apiKey ? `configured via ${resolved.apiKeySource}` : 'missing'}`,
@@ -210,13 +212,22 @@ export function runConfigSet(args: string[]): void {
   const [key, ...rest] = args;
   const value = rest.join(' ').trim();
   if (!key || !value) {
-    print('Usage: dmoss config set <provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug> <value>');
+    print('Usage: dmoss config set <profile|provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug> <value>');
     process.exitCode = 1;
     return;
   }
   const current = loadConfigFile();
   const next = { ...current };
-  if (key === 'provider') next.provider = normalizeProvider(value);
+  if (key === 'profile') {
+    const profile = normalizeConfigProfile(value);
+    if (!profile) {
+      print('Supported profile values: cautious, balanced, autonomous');
+      process.exitCode = 1;
+      return;
+    }
+    next.profile = profile;
+  }
+  else if (key === 'provider') next.provider = normalizeProvider(value);
   else if (key === 'model') next.model = value;
   else if (key === 'baseUrl') next.baseUrl = sanitizeBaseUrl(value);
   else if (key === 'safetyMode') {
@@ -267,7 +278,7 @@ export function runConfigSet(args: string[]): void {
     next.promptCache = { ...previous, debug };
   }
   else {
-    print('Supported keys: provider, model, baseUrl, safetyMode, approvalPolicy, trustedTools, promptCache, promptCacheDebug');
+    print('Supported keys: profile, provider, model, baseUrl, safetyMode, approvalPolicy, trustedTools, promptCache, promptCacheDebug');
     process.exitCode = 1;
     return;
   }

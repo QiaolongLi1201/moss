@@ -288,11 +288,13 @@ export function statusLine(options: {
   device: string;
   workspace: string;
   cacheMode?: string;
+  profile?: string;
 }): string {
   const parts = [
     'D-Moss',
     statusBadge(options.state),
     options.model || 'no model',
+    options.profile ? `profile ${options.profile}` : '',
     options.device,
     compactPath(options.workspace),
     options.cacheMode || 'cache stable',
@@ -636,11 +638,13 @@ export interface SessionHeaderProps {
   toolsExpanded?: boolean;
   version?: string;
   cacheMode?: string;
+  profile?: string;
 }
 
-export function SessionHeader({ device, workspace, model, state, toolsExpanded, version, cacheMode }: SessionHeaderProps): React.ReactElement {
+export function SessionHeader({ device, workspace, model, state, toolsExpanded, version, cacheMode, profile }: SessionHeaderProps): React.ReactElement {
   const stateLabel = statusBadge(state);
   const cacheLabel = cacheMode || 'cache stable';
+  const profileLabel = profile ? `profile ${profile}  ·  ` : '';
   return React.createElement(
     Box,
     { flexDirection: 'column', marginBottom: 1 },
@@ -664,7 +668,7 @@ export function SessionHeader({ device, workspace, model, state, toolsExpanded, 
       React.createElement(Text, null,
         React.createElement(Text, { color: theme.textMuted }, 'status:    '),
         React.createElement(Text, { color: statusBarColor(state), bold: true }, stateLabel),
-        React.createElement(Text, { color: theme.textMuted }, `    ${device}  ·  ${cacheLabel}  ·  tools ${toolsExpanded ? 'expanded' : 'collapsed'}`),
+        React.createElement(Text, { color: theme.textMuted }, `    ${profileLabel}${device}  ·  ${cacheLabel}  ·  tools ${toolsExpanded ? 'expanded' : 'collapsed'}`),
       ),
     ),
   );
@@ -724,9 +728,10 @@ export interface WelcomePanelProps {
   device: string;
   model?: string;
   cacheMode?: string;
+  profile?: string;
 }
 
-export function WelcomePanel({ workspace, device, model, cacheMode }: WelcomePanelProps): React.ReactElement {
+export function WelcomePanel({ workspace, device, model, cacheMode, profile }: WelcomePanelProps): React.ReactElement {
   const commandRows: Array<[string, string]> = [
     ['/model', 'choose what model to use'],
     ['/status', 'inspect runtime, device, and workspace context'],
@@ -754,7 +759,7 @@ export function WelcomePanel({ workspace, device, model, cacheMode }: WelcomePan
         React.createElement(Text, { color: theme.textMuted }, 'expand or collapse tool calls'),
       ),
     ),
-    React.createElement(Text, { color: theme.textDim }, `workspace ${compactPath(workspace)} · device ${device} · model ${model || 'connecting...'} · ${cacheMode || 'cache stable'}`),
+    React.createElement(Text, { color: theme.textDim }, `profile ${profile || 'balanced'} · ${cacheMode || 'cache stable'} · workspace ${compactPath(workspace)} · device ${device} · model ${model || 'connecting...'}`),
   );
 }
 
@@ -1636,6 +1641,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
 
   const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
   const cacheMode = promptCacheModeLabel(runtime);
+  const profile = runtime?.config?.profile || 'balanced';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
   const terminalRows = Math.max(12, stdout?.rows ?? 30);
   const promptRows = Math.min(6, Math.max(1, input ? input.split('\n').length : 1)) + 2 + (input.startsWith('/') ? 8 : 0);
@@ -1664,12 +1670,13 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       toolsExpanded: toolsExpanded || detailMode === 'verbose',
       version: `v${getPackageVersion()}`,
       cacheMode,
+      profile,
     }),
     React.createElement(
       Box,
       { flexDirection: 'column', height: transcriptRows, overflow: 'hidden' },
       transcript.length === 0
-        ? React.createElement(WelcomePanel, { workspace, device, model: currentModel, cacheMode })
+        ? React.createElement(WelcomePanel, { workspace, device, model: currentModel, cacheMode, profile })
         : null,
       ...transcript.map((item) => React.createElement(TranscriptMessage, {
           key: item.id,

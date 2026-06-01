@@ -35,6 +35,7 @@ test('SessionHeader renders a compact Codex-style launch panel', () => {
       model: 'deepseek-v4-pro',
       version: 'v0.3.7',
       toolsExpanded: false,
+      profile: 'autonomous',
     }),
   );
   const frame = lastFrame();
@@ -43,6 +44,7 @@ test('SessionHeader renders a compact Codex-style launch panel', () => {
   assert.match(frame, /deepseek-v4-pro/);
   assert.match(frame, /directory:/);
   assert.match(frame, /\/model to change/);
+  assert.match(frame, /profile autonomous/);
   assert.match(frame, /cache stable/);
   cleanup();
 });
@@ -115,6 +117,7 @@ test('WelcomePanel renders a Tip and Codex-style command list', () => {
       workspace: '/Users/me/project',
       device: 'no device',
       model: 'deepseek-v4-pro',
+      profile: 'cautious',
     }),
   );
   const frame = lastFrame();
@@ -123,6 +126,7 @@ test('WelcomePanel renders a Tip and Codex-style command list', () => {
   assert.match(frame, /\/permissions\s+show safety/);
   assert.match(frame, /\/status\s+inspect runtime/);
   assert.match(frame, /Ctrl\+O\s+expand or collapse tool calls/);
+  assert.match(frame, /profile cautious/);
   assert.match(frame, /cache stable/);
   cleanup();
 });

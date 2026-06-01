@@ -52,6 +52,8 @@ const runtime = {
   meshEnabled: true,
   device: { host: '10.64.1.10', user: 'root', port: 22 },
   config: {
+    profile: 'autonomous',
+    profileSource: 'config',
     provider: 'qwen',
     providerSource: 'config',
     apiKey: 'test-key',
@@ -100,6 +102,7 @@ const agent = createAgent([
   assert.match(welcome, /capabilities: workspace 2/);
   assert.match(welcome, /device root@10\.64\.1\.10:22/);
   assert.match(welcome, /mesh on/);
+  assert.match(welcome, /profile autonomous/);
   assert.match(welcome, /approval never/);
   assert.match(welcome, /cache off/);
   assert.match(welcome, /commands.*\/help.*\/tools.*\/status/);
@@ -125,6 +128,7 @@ const agent = createAgent([
   const status = renderCliStatus(agent, runtime);
   assert.match(status, /session: cli/);
   assert.match(status, /provider: qwen/);
+  assert.match(status, /profile: autonomous \(config\)/);
   assert.match(status, /token-plan\.cn-beijing\.maas\.aliyuncs\.com/);
   assert.match(status, /device: root@10\.64\.1\.10:22/);
   assert.match(status, /safety: workspace-write/);
@@ -139,14 +143,17 @@ const agent = createAgent([
   const permissions = renderCliPermissions(runtime);
   assert.match(permissions, /Permissions & Config/);
   assert.match(permissions, /config file: \/tmp\/dmoss-config\/config\.json/);
+  assert.match(permissions, /profile: autonomous \(config\)/);
   assert.match(permissions, /safety: workspace-write \(config\)/);
   assert.match(permissions, /approval: never \(config\)/);
   assert.match(permissions, /trusted tools: exec \(config\)/);
   assert.match(permissions, /prompt cache: disabled \(config\)/);
   assert.match(permissions, /prompt cache debug: enabled \(config\)/);
   assert.match(permissions, /dmoss config set safetyMode/);
+  assert.match(permissions, /dmoss config set profile/);
   assert.match(permissions, /dmoss config set trustedTools/);
   assert.match(permissions, /dmoss config set promptCacheDebug/);
+  assert.match(permissions, /DMOSS_PROFILE/);
   assert.match(permissions, /DMOSS_SAFETY_MODE/);
   assert.match(permissions, /DMOSS_TRUSTED_TOOLS/);
   assert.match(permissions, /DMOSS_PROMPT_CACHE_DEBUG/);

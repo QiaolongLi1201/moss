@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { normalizeApprovalPolicyConfig, normalizeSafetyModeConfig, parseConfigBoolean, parseTrustedTools, type CliConfigOverrides } from './config.js';
+import { normalizeApprovalPolicyConfig, normalizeConfigProfile, normalizeSafetyModeConfig, parseConfigBoolean, parseTrustedTools, type CliConfigOverrides } from './config.js';
 import type { CliSafetyMode } from './approval.js';
 
 export type CliCommand = 'chat' | 'setup' | 'auth' | 'config' | 'doctor' | 'update' | 'resume' | 'fork';
@@ -35,6 +35,7 @@ function readValue(argv: string[], index: number, flag: string): { value: string
 
 function normalizeConfigKey(key: string): keyof CliConfigOverrides | null {
   const raw = key.trim().replace(/[-_]/g, '').toLowerCase();
+  if (raw === 'profile') return 'profile';
   if (raw === 'model') return 'model';
   if (raw === 'provider') return 'provider';
   if (raw === 'baseurl') return 'baseUrl';
@@ -57,6 +58,12 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
     throw new Error(`Unsupported --config key "${pair.slice(0, eqIdx)}"`);
   }
   const value = pair.slice(eqIdx + 1);
+  if (key === 'profile') {
+    const normalized = normalizeConfigProfile(value);
+    if (!normalized) throw new Error(`Unsupported profile "${value}"`);
+    target.profile = normalized;
+    return;
+  }
   if (key === 'safetyMode') {
     const normalized = normalizeSafetyModeConfig(value);
     if (!normalized) throw new Error(`Unsupported safetyMode "${value}"`);

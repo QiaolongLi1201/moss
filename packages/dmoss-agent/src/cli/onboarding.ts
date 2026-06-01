@@ -59,6 +59,10 @@ function approvalPolicyLine(config: ResolvedCliConfig): string {
   return `approval ${config.approvalPolicy ?? 'prompt'}`;
 }
 
+function profileLine(config: ResolvedCliConfig): string {
+  return `profile ${config.profile ?? 'balanced'}`;
+}
+
 function promptCacheLine(config: ResolvedCliConfig): string {
   if (config.promptCacheDebug === true && config.promptCacheEnabled !== false) return 'cache debug';
   return config.promptCacheEnabled === false ? 'cache off' : 'cache stable';
@@ -165,7 +169,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const auth = rt.config;
 
   const authState = auth.apiKey ? `auth ${auth.apiKeySource}` : 'auth missing';
-  const policyState = `${approvalPolicyLine(auth)}   ${promptCacheLine(auth)}`;
+  const policyState = `${profileLine(auth)}   ${approvalPolicyLine(auth)}   ${promptCacheLine(auth)}`;
   const deviceState = rt.device
     ? `device ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
     : 'device not configured';
@@ -196,6 +200,7 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     `  ${label('session')} ${rt.sessionKey}`,
     `  ${label('model')} ${agent.config.model}`,
     `  ${label('provider')} ${auth.provider} (${auth.providerSource}) via ${shortBaseUrl(rt.baseUrl)}`,
+    `  ${label('profile')} ${auth.profile ?? 'balanced'} (${auth.profileSource ?? 'default'})`,
     `  ${label('api key')} ${auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
     `  ${label('workspace')} ${rt.workspace}`,
     `  ${label('config')} ${rt.configDir}`,
@@ -241,12 +246,18 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
   return [
     ui.bold('Permissions & Config'),
     `  ${label('config file')} ${auth.configPath}`,
+    `  ${label('profile')} ${auth.profile ?? 'balanced'} (${auth.profileSource ?? 'default'})`,
     `  ${label('workspace')} ${auth.workspace} (${auth.workspaceSource})`,
     `  ${label('safety')} ${safety} (${auth.safetyModeSource ?? 'default'})`,
     `  ${label('approval')} ${approval} (${auth.approvalPolicySource ?? 'default'})`,
     `  ${label('trusted tools')} ${trustedTools} (${auth.trustedToolsSource ?? 'default'})`,
     `  ${label('prompt cache')} ${cache} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${cacheDebug} (${auth.promptCacheDebugSource ?? 'default'})`,
+    '',
+    '  Profiles:',
+    '    cautious        read-only, prompt approvals, stable prompt cache',
+    '    balanced        workspace-write, prompt approvals, stable prompt cache',
+    '    autonomous      workspace-write, auto approvals, trusts exec/apply_patch, stable prompt cache',
     '',
     '  Safety modes:',
     '    read-only        allow reads/search/status only; block mutations',
@@ -258,6 +269,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    never            auto-approve allowed side-effectful tools',
     '',
     '  Persist changes:',
+    '    dmoss config set profile cautious|balanced|autonomous',
     '    dmoss config set safetyMode read-only|workspace-write|full-access',
     '    dmoss config set approvalPolicy prompt|never',
     '    dmoss config set trustedTools exec,write_file',
@@ -265,7 +277,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    dmoss config set promptCacheDebug true|false',
     '',
     '  Environment overrides:',
-    '    DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG',
+    '    DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG',
   ].join('\n');
 }
 

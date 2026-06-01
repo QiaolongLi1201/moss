@@ -37,18 +37,21 @@ try {
 
   const resolved = resolveCliConfig({}, loadConfigFile());
   assert.equal(resolved.provider, 'qwen');
+  assert.equal(resolved.profile, 'balanced');
+  assert.equal(resolved.profileSource, 'default');
   assert.equal(resolved.model, 'qwen3.7-max');
   assert.equal(resolved.apiKey, 'stored-secret');
   assert.equal(resolved.apiKeySource, 'config');
   assert.equal(resolved.safetyMode, 'workspace-write');
-  assert.equal(resolved.safetyModeSource, 'default');
+  assert.equal(resolved.safetyModeSource, 'profile:balanced');
   assert.equal(resolved.approvalPolicy, 'prompt');
   assert.deepEqual(resolved.trustedTools, []);
-  assert.equal(resolved.trustedToolsSource, 'default');
+  assert.equal(resolved.trustedToolsSource, 'profile:balanced');
   assert.equal(resolved.promptCacheEnabled, true);
   assert.equal(resolved.promptCacheDebug, false);
 
   const envResolved = resolveCliConfig({
+    DMOSS_PROFILE: 'autonomous',
     DMOSS_PROVIDER: 'openai',
     OPENAI_API_KEY: 'env-secret',
     DMOSS_MODEL: 'gpt-4o-mini',
@@ -60,6 +63,8 @@ try {
     DMOSS_PROMPT_CACHE_DEBUG: 'true',
   }, loadConfigFile());
   assert.equal(envResolved.provider, 'openai');
+  assert.equal(envResolved.profile, 'autonomous');
+  assert.equal(envResolved.profileSource, 'DMOSS_PROFILE');
   assert.equal(envResolved.apiKey, 'env-secret');
   assert.equal(envResolved.apiKeySource, 'OPENAI_API_KEY');
   assert.equal(envResolved.modelSource, 'DMOSS_MODEL');
@@ -78,6 +83,7 @@ try {
     DMOSS_MODEL: 'gpt-4o-mini',
     DMOSS_BASE_URL: 'https://api.openai.com',
   }, loadConfigFile(), {
+    profile: 'cautious',
     model: 'deepseek-v4-pro',
     baseUrl: 'https://api.deepseek.com',
     workspace: '/tmp/dmoss-workspace',
@@ -87,6 +93,8 @@ try {
     promptCacheEnabled: false,
     promptCacheDebug: true,
   });
+  assert.equal(cliResolved.profile, 'cautious');
+  assert.equal(cliResolved.profileSource, 'cli');
   assert.equal(cliResolved.model, 'deepseek-v4-pro');
   assert.equal(cliResolved.modelSource, 'cli');
   assert.equal(cliResolved.baseUrl, 'https://api.deepseek.com');
@@ -105,6 +113,7 @@ try {
 
   const status = renderAuthStatus(loadConfigFile(), {});
   assert.match(status, /apiKey: configured via config/);
+  assert.match(status, /profile: balanced \(default\)/);
   assert.match(status, /baseUrl: https:\/\/token-plan\.cn-beijing\.maas\.aliyuncs\.com\/compatible-mode/);
   assert.match(status, /safetyMode: workspace-write/);
   assert.match(status, /approvalPolicy: prompt/);
@@ -126,12 +135,15 @@ try {
 
   saveConfigFile({
     ...loadConfigFile(),
+    profile: 'autonomous',
     safetyMode: 'read-only',
     approvalPolicy: 'never',
     trustedTools: ['exec'],
     promptCache: { enabled: false, debug: true },
   }, tmp);
   const filePolicyResolved = resolveCliConfig({}, loadConfigFile());
+  assert.equal(filePolicyResolved.profile, 'autonomous');
+  assert.equal(filePolicyResolved.profileSource, 'config');
   assert.equal(filePolicyResolved.safetyMode, 'read-only');
   assert.equal(filePolicyResolved.safetyModeSource, 'config');
   assert.equal(filePolicyResolved.approvalPolicy, 'never');
@@ -143,6 +155,46 @@ try {
   assert.equal(filePolicyResolved.promptCacheDebug, true);
   assert.equal(filePolicyResolved.promptCacheDebugSource, 'config');
 
+  const autonomousResolved = resolveCliConfig({}, {
+    profile: 'autonomous',
+    provider: 'qwen',
+    apiKey: 'stored-secret',
+  });
+  assert.equal(autonomousResolved.safetyMode, 'workspace-write');
+  assert.equal(autonomousResolved.safetyModeSource, 'profile:autonomous');
+  assert.equal(autonomousResolved.approvalPolicy, 'never');
+  assert.equal(autonomousResolved.approvalPolicySource, 'profile:autonomous');
+  assert.deepEqual(autonomousResolved.trustedTools, ['exec', 'apply_patch']);
+  assert.equal(autonomousResolved.trustedToolsSource, 'profile:autonomous');
+  autonomousResolved.trustedTools.push('write_file');
+  assert.deepEqual(resolveCliConfig({}, {
+    profile: 'autonomous',
+    provider: 'qwen',
+    apiKey: 'stored-secret',
+  }).trustedTools, ['exec', 'apply_patch']);
+
+  const autonomousOverrideResolved = resolveCliConfig({}, {
+    profile: 'autonomous',
+    provider: 'qwen',
+    apiKey: 'stored-secret',
+    approvalPolicy: 'prompt',
+    trustedTools: ['write_file'],
+    promptCache: { enabled: false },
+  });
+  assert.equal(autonomousOverrideResolved.approvalPolicy, 'prompt');
+  assert.equal(autonomousOverrideResolved.approvalPolicySource, 'config');
+  assert.deepEqual(autonomousOverrideResolved.trustedTools, ['write_file']);
+  assert.equal(autonomousOverrideResolved.trustedToolsSource, 'config');
+  assert.equal(autonomousOverrideResolved.promptCacheEnabled, false);
+  assert.equal(autonomousOverrideResolved.promptCacheSource, 'config');
+
+  assert.throws(
+    () => resolveCliConfig({}, { profile: 'reckless' }),
+    /Unsupported config profile "reckless"/,
+  );
+
+  runConfigSet(['profile', 'autonomous']);
+  assert.equal(loadConfigFile().profile, 'autonomous');
   runConfigSet(['model', 'qwen-plus']);
   assert.equal(loadConfigFile().model, 'qwen-plus');
   runConfigSet(['baseUrl', 'https://example.com/v1/']);

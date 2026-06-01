@@ -22,6 +22,8 @@ import { parseCliArgs } from '../dist/cli/args.js';
     '--base-url',
     'https://api.deepseek.com',
     '-c',
+    'profile=autonomous',
+    '-c',
     'model=deepseek-v4-pro',
     '-c',
     'safetyMode=read-only',
@@ -38,6 +40,7 @@ import { parseCliArgs } from '../dist/cli/args.js';
   ]);
   assert.equal(parsed.configOverrides.provider, 'openai-compatible');
   assert.equal(parsed.configOverrides.baseUrl, 'https://api.deepseek.com');
+  assert.equal(parsed.configOverrides.profile, 'autonomous');
   assert.equal(parsed.configOverrides.model, 'deepseek-v4-pro');
   assert.equal(parsed.configOverrides.safetyMode, 'read-only');
   assert.equal(parsed.configOverrides.approvalPolicy, 'never');
@@ -83,5 +86,6 @@ import { parseCliArgs } from '../dist/cli/args.js';
 }
 
 assert.throws(() => parseCliArgs(['-c', 'temperature=0.7']), /Unsupported --config key/);
+assert.throws(() => parseCliArgs(['-c', 'profile=reckless']), /Unsupported profile/);
 
 console.log('[PASS] CLI argument parser preserves prompts and override flags');

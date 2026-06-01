@@ -105,8 +105,10 @@ assert.match(footerHint('running'), /Enter queue/);
     model: 'user-configured-model',
     device: 'root@192.168.1.10',
     workspace: process.cwd(),
+    profile: 'autonomous',
   });
   assert.match(line, /D-Moss  ready  user-configured-model/);
+  assert.match(line, /profile autonomous/);
   assert.match(line, /cache stable/);
   assert.match(statusLine({
     state: 'ready',

@@ -55,6 +55,7 @@ export function resolveConfigDir(): string {
 }
 
 export interface ConfigFile {
+  profile?: CliConfigProfile | string;
   provider?: CliProviderPreset | string;
   apiKey?: string;
   model?: string;
@@ -66,6 +67,7 @@ export interface ConfigFile {
   promptCache?: PromptCacheConfig | boolean;
 }
 
+export type CliConfigProfile = 'cautious' | 'balanced' | 'autonomous';
 export type CliSafetyModeConfig = 'read-only' | 'workspace-write' | 'full-access';
 export type ConfigApprovalPolicy = 'prompt' | 'never';
 
@@ -75,6 +77,7 @@ export interface PromptCacheConfig {
 }
 
 export interface CliConfigOverrides {
+  profile?: CliConfigProfile;
   provider?: CliProviderPreset | string;
   model?: string;
   baseUrl?: string;
@@ -85,6 +88,38 @@ export interface CliConfigOverrides {
   promptCacheEnabled?: boolean;
   promptCacheDebug?: boolean;
 }
+
+export interface CliProfileDefaults {
+  safetyMode: CliSafetyModeConfig;
+  approvalPolicy: ConfigApprovalPolicy;
+  trustedTools: string[];
+  promptCacheEnabled: boolean;
+  promptCacheDebug: boolean;
+}
+
+export const CLI_PROFILE_DEFAULTS: Record<CliConfigProfile, CliProfileDefaults> = {
+  cautious: {
+    safetyMode: 'read-only',
+    approvalPolicy: 'prompt',
+    trustedTools: [],
+    promptCacheEnabled: true,
+    promptCacheDebug: false,
+  },
+  balanced: {
+    safetyMode: 'workspace-write',
+    approvalPolicy: 'prompt',
+    trustedTools: [],
+    promptCacheEnabled: true,
+    promptCacheDebug: false,
+  },
+  autonomous: {
+    safetyMode: 'workspace-write',
+    approvalPolicy: 'never',
+    trustedTools: ['exec', 'apply_patch'],
+    promptCacheEnabled: true,
+    promptCacheDebug: false,
+  },
+};
 
 export function resolveConfigPath(configDir = resolveConfigDir()): string {
   return path.join(configDir, 'config.json');
@@ -123,6 +158,23 @@ export function normalizeProvider(value: string | undefined): CliProviderPreset 
     return 'openai-compatible';
   }
   return 'anthropic';
+}
+
+export function normalizeConfigProfile(value: string | undefined): CliConfigProfile | null {
+  const raw = (value || '').toLowerCase().trim();
+  if (raw === 'cautious' || raw === 'safe' || raw === 'readonly') return 'cautious';
+  if (raw === 'balanced' || raw === 'default' || raw === 'codex') return 'balanced';
+  if (raw === 'autonomous' || raw === 'auto' || raw === 'agentic') return 'autonomous';
+  return null;
+}
+
+function parseConfigProfile(value: string | undefined, source: string): CliConfigProfile | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const profile = normalizeConfigProfile(value);
+  if (!profile) {
+    throw new Error(`Unsupported ${source} profile "${value}". Supported profiles: cautious, balanced, autonomous`);
+  }
+  return profile;
 }
 
 export function normalizeSafetyModeConfig(value: string | undefined): CliSafetyModeConfig | null {
@@ -187,6 +239,8 @@ function firstEnv(env: NodeJS.ProcessEnv, names: string[]): { value: string; sou
 }
 
 export interface ResolvedCliConfig {
+  profile: CliConfigProfile;
+  profileSource: string;
   provider: CliProviderPreset;
   providerSource: string;
   apiKey: string;
@@ -215,6 +269,22 @@ export function resolveCliConfig(
   config: ConfigFile = loadConfigFile(),
   overrides: CliConfigOverrides = {},
 ): ResolvedCliConfig {
+  const profileEnv = env.DMOSS_PROFILE || env.DMOSS_CONFIG_PROFILE;
+  const configProfile = parseConfigProfile(
+    typeof config.profile === 'string' ? config.profile : undefined,
+    'config',
+  );
+  const envProfile = parseConfigProfile(profileEnv, env.DMOSS_PROFILE ? 'DMOSS_PROFILE' : 'DMOSS_CONFIG_PROFILE');
+  const profile = overrides.profile ?? envProfile ?? configProfile ?? 'balanced';
+  const profileSource = overrides.profile
+    ? 'cli'
+    : envProfile
+      ? (env.DMOSS_PROFILE ? 'DMOSS_PROFILE' : 'DMOSS_CONFIG_PROFILE')
+      : configProfile
+        ? 'config'
+        : 'default';
+  const profileDefaults = CLI_PROFILE_DEFAULTS[profile];
+
   const providerEnv = env.DMOSS_PROVIDER;
   const inferredProvider = inferProviderFromBaseUrl(
     overrides.baseUrl ||
@@ -259,14 +329,14 @@ export function resolveCliConfig(
     typeof config.safetyMode === 'string' ? config.safetyMode : undefined,
   );
   const envSafetyMode = normalizeSafetyModeConfig(safetyModeEnv);
-  const safetyMode = overrides.safetyMode || envSafetyMode || configSafetyMode || 'workspace-write';
+  const safetyMode = overrides.safetyMode || envSafetyMode || configSafetyMode || profileDefaults.safetyMode;
   const safetyModeSource = overrides.safetyMode
     ? 'cli'
     : envSafetyMode
       ? (env.DMOSS_SAFETY_MODE ? 'DMOSS_SAFETY_MODE' : 'DMOSS_CLI_SAFETY_MODE')
       : configSafetyMode
         ? 'config'
-        : 'default';
+        : `profile:${profile}`;
 
   const approvalEnv = env.DMOSS_CLI_AUTO_APPROVE === '1' || env.DMOSS_AUTO_APPROVE === '1'
     ? 'never'
@@ -275,7 +345,7 @@ export function resolveCliConfig(
     typeof config.approvalPolicy === 'string' ? config.approvalPolicy : undefined,
   );
   const envApproval = normalizeApprovalPolicyConfig(approvalEnv);
-  const approvalPolicy = overrides.approvalPolicy || envApproval || configApproval || 'prompt';
+  const approvalPolicy = overrides.approvalPolicy || envApproval || configApproval || profileDefaults.approvalPolicy;
   const approvalPolicySource = overrides.approvalPolicy
     ? 'cli'
     : envApproval
@@ -288,20 +358,20 @@ export function resolveCliConfig(
               : 'DMOSS_ASK_FOR_APPROVAL')
       : configApproval
         ? 'config'
-        : 'default';
+        : `profile:${profile}`;
 
   const envTrustedTools = parseTrustedTools(env.DMOSS_TRUSTED_TOOLS);
   const configTrustedTools = Array.isArray(config.trustedTools)
     ? parseTrustedTools(config.trustedTools)
     : undefined;
-  const trustedTools = overrides.trustedTools ?? envTrustedTools ?? configTrustedTools ?? [];
+  const trustedTools = overrides.trustedTools ?? envTrustedTools ?? configTrustedTools ?? profileDefaults.trustedTools;
   const trustedToolsSource = overrides.trustedTools
     ? 'cli'
     : envTrustedTools
       ? 'DMOSS_TRUSTED_TOOLS'
       : configTrustedTools
         ? 'config'
-        : 'default';
+        : `profile:${profile}`;
 
   const promptCacheEnv = env.DMOSS_PROMPT_CACHE ?? env.DMOSS_PROMPT_CACHE_ENABLED;
   const envPromptCache = parseConfigBoolean(promptCacheEnv);
@@ -317,24 +387,26 @@ export function resolveCliConfig(
     config.promptCache && typeof config.promptCache === 'object' && typeof config.promptCache.debug === 'boolean'
       ? config.promptCache.debug
       : undefined;
-  const promptCacheEnabled = overrides.promptCacheEnabled ?? envPromptCache ?? configPromptCache ?? true;
+  const promptCacheEnabled = overrides.promptCacheEnabled ?? envPromptCache ?? configPromptCache ?? profileDefaults.promptCacheEnabled;
   const promptCacheSource = overrides.promptCacheEnabled !== undefined
     ? 'cli'
     : envPromptCache !== null
       ? (env.DMOSS_PROMPT_CACHE !== undefined ? 'DMOSS_PROMPT_CACHE' : 'DMOSS_PROMPT_CACHE_ENABLED')
       : configPromptCache !== undefined
         ? 'config'
-        : 'default';
-  const promptCacheDebug = overrides.promptCacheDebug ?? envPromptCacheDebug ?? configPromptCacheDebug ?? false;
+        : `profile:${profile}`;
+  const promptCacheDebug = overrides.promptCacheDebug ?? envPromptCacheDebug ?? configPromptCacheDebug ?? profileDefaults.promptCacheDebug;
   const promptCacheDebugSource = overrides.promptCacheDebug !== undefined
     ? 'cli'
     : envPromptCacheDebug !== null
       ? (env.DMOSS_PROMPT_CACHE_DEBUG !== undefined ? 'DMOSS_PROMPT_CACHE_DEBUG' : 'DMOSS_PROMPT_PREFIX_DEBUG')
       : configPromptCacheDebug !== undefined
         ? 'config'
-        : 'default';
+        : `profile:${profile}`;
 
   return {
+    profile,
+    profileSource,
     provider,
     providerSource,
     apiKey: apiKeyEnv?.value || config.apiKey || '',
@@ -349,7 +421,7 @@ export function resolveCliConfig(
     safetyModeSource,
     approvalPolicy,
     approvalPolicySource,
-    trustedTools,
+    trustedTools: [...trustedTools],
     trustedToolsSource,
     promptCacheEnabled,
     promptCacheSource,

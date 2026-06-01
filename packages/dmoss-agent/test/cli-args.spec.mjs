@@ -5,13 +5,14 @@
  *   node packages/dmoss-agent/test/cli-args.spec.mjs
  */
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { parseCliArgs } from '../dist/cli/args.js';
 
 {
   const parsed = parseCliArgs(['-m', 'deepseek-v4-pro', '-C', '/tmp', 'hello', 'world']);
   assert.equal(parsed.command, 'chat');
   assert.equal(parsed.configOverrides.model, 'deepseek-v4-pro');
-  assert.equal(parsed.configOverrides.workspace, '/tmp');
+  assert.equal(parsed.configOverrides.workspace, path.resolve('/tmp'));
   assert.equal(parsed.prompt, 'hello world');
 }
 

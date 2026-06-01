@@ -66,16 +66,17 @@ export interface DmossTuiProps {
 
 const theme = {
   // semantic roles
-  primary: '#e07a4f',      // warm orange — prompt/active accents
-  user: '#7ec97f',         // green — user voice
-  tool: '#5fa8d3',         // cyan — tool calls
-  warn: '#e0b14f',         // amber — approval/warning
-  error: '#e06c75',        // soft red
-  success: '#7ec97f',
-  text: '#dcd7ce',
-  textMuted: '#8a8780',
-  textDim: '#5a5854',
-  border: '#3a3835',
+  primary: '#c65f2a',      // warm orange — prompt/active accents
+  primarySoft: '#f59e0b',
+  user: '#16833a',         // green — user voice
+  tool: '#0369a1',         // blue — tool calls
+  warn: '#b45309',         // amber — approval/warning
+  error: '#b91c1c',        // red
+  success: '#16833a',
+  text: undefined,
+  textMuted: '#4b5563',
+  textDim: '#6b7280',
+  border: '#9ca3af',
 } as const;
 
 // Glyphs — emoji at line-start only (never in alignment columns).
@@ -506,25 +507,51 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
     notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
     React.createElement(
       Box,
-      { flexDirection: 'row' },
+      { flexDirection: 'row', borderStyle: 'single', borderTop: true, borderBottom: false, borderLeft: false, borderRight: false, borderColor: theme.border },
       // Mode
       React.createElement(Text, { color: theme.primary, bold: true }, 'Default'),
-      React.createElement(Text, { color: theme.textDim }, '  '),
+      React.createElement(Text, { color: theme.textMuted }, '  '),
       // Status badge
       React.createElement(Text, { color: statusBarColor(state), bold: true }, statusBadge(state)),
-      React.createElement(Text, { color: theme.textDim }, '  '),
+      React.createElement(Text, { color: theme.textMuted }, '  '),
       // Context window usage
       ctxLabel ? React.createElement(Text, { color: ctxColor }, ctxLabel) : null,
-      ctxLabel ? React.createElement(Text, { color: theme.textDim }, '  ') : null,
+      ctxLabel ? React.createElement(Text, { color: theme.textMuted }, '  ') : null,
       // Flash hint (transient: tools expanded/collapsed)
       flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
-      flashHint ? React.createElement(Text, { color: theme.textDim }, '  ') : null,
+      flashHint ? React.createElement(Text, { color: theme.textMuted }, '  ') : null,
       // Spacer
       React.createElement(Box, { flexGrow: 1 }),
       // Right side: device · workspace · model · version · hint
-      React.createElement(Text, { color: theme.textDim },
+      React.createElement(Text, { color: theme.textMuted },
         `${device}  ·  ${compactPath(workspace)}  ·  ${model || 'connecting...'}  ·  ${version}${hint ? `  |  ${hint}` : ''}`,
       ),
+    ),
+  );
+}
+
+export interface WelcomePanelProps {
+  workspace: string;
+  device: string;
+  model?: string;
+}
+
+export function WelcomePanel({ workspace, device, model }: WelcomePanelProps): React.ReactElement {
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', marginTop: 1 },
+    React.createElement(Text, { color: theme.primary, bold: true }, 'D-Moss'),
+    React.createElement(Text, null, 'Agentic command line for RDK development.'),
+    React.createElement(Box, { marginTop: 1, flexDirection: 'column', borderStyle: 'single', borderLeft: true, borderTop: false, borderBottom: false, borderRight: false, borderColor: theme.primary, paddingLeft: 1 },
+      React.createElement(Text, { color: theme.textMuted }, `/status   runtime, device, and workspace context`),
+      React.createElement(Text, { color: theme.textMuted }, `/tools    available tools and permissions`),
+      React.createElement(Text, { color: theme.textMuted }, `/examples starter tasks`),
+      React.createElement(Text, { color: theme.textMuted }, `Ctrl+O   expand or collapse tool calls`),
+    ),
+    React.createElement(Box, { marginTop: 1, flexDirection: 'column' },
+      React.createElement(Text, { color: theme.textMuted }, `workspace  ${compactPath(workspace)}`),
+      React.createElement(Text, { color: theme.textMuted }, `device     ${device}`),
+      React.createElement(Text, { color: theme.textMuted }, `model      ${model || 'connecting...'}`),
     ),
   );
 }
@@ -813,14 +840,10 @@ export function PromptEditor({ value, onChange, onSubmit, placeholder, disabled,
       )),
       suggestion ? React.createElement(Text, { color: theme.textDim }, `  ${suggestion}`) : null,
       isMulti ? React.createElement(Text, { color: theme.textDim }, `  ${lineCount} lines`) : null,
+      hint || model ? React.createElement(Text, { color: theme.textMuted },
+        `  ${[model || '', hint || ''].filter(Boolean).join('  ·  ')}`,
+      ) : null,
     ),
-    hint || model ? React.createElement(
-      Box,
-      { paddingX: 1 },
-      React.createElement(Text, { color: theme.textDim },
-        [model || '', hint || ''].filter(Boolean).join('  ·  '),
-      ),
-    ) : null,
   );
 }
 
@@ -1188,12 +1211,15 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     React.createElement(
       Box,
       { flexDirection: 'column', height: transcriptRows, overflow: 'hidden' },
+      transcript.length === 0
+        ? React.createElement(WelcomePanel, { workspace, device, model: currentModel })
+        : null,
       ...transcript.map((item) => React.createElement(TranscriptMessage, {
-        key: item.id,
-        item,
-        model: currentModel,
-        toolsExpanded: toolsExpanded || detailMode === 'verbose',
-      })),
+          key: item.id,
+          item,
+          model: currentModel,
+          toolsExpanded: toolsExpanded || detailMode === 'verbose',
+        })),
     ),
     approval
       ? React.createElement(ApprovalPromptLine, { question: approval.question })

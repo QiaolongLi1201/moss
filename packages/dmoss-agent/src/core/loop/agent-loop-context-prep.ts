@@ -133,6 +133,12 @@ export interface PrepareTurnContextResult {
   toolsForRun: Tool[];
   piContext: PiContext;
   control: LoopControlSignal;
+  promptCacheTelemetry: {
+    prefixChecks: number;
+    prefixChanges: number;
+    toolOrderChecks: number;
+    toolOrderChanges: number;
+  };
   updatedSnapshots: {
     previousPrefixSnapshot: Message[] | null;
     previousToolNames: string[] | null;
@@ -207,6 +213,12 @@ export async function prepareTurnContext(
   } = params;
   let { previousPrefixSnapshot, previousToolNames } = params;
   const prefixDebugEnabled = params.prefixDebugEnabled;
+  const promptCacheTelemetry = {
+    prefixChecks: 0,
+    prefixChanges: 0,
+    toolOrderChecks: 0,
+    toolOrderChanges: 0,
+  };
   const pendingToolResultFollowUp = lastMessageEndsWithToolResult(currentMessages);
   const includeThinkingInBudget = shouldIncludeThinkingInBudget(currentMessages, modelDef);
 
@@ -385,8 +397,10 @@ export async function prepareTurnContext(
 
   // ===== Prefix debug: prompt stability =====
   if (prefixDebugEnabled) {
+    promptCacheTelemetry.prefixChecks++;
     const issue = checkPromptPrefixStable(previousPrefixSnapshot, messagesForModel);
     if (issue) {
+      promptCacheTelemetry.prefixChanges++;
       log.warn('prompt prefix changed before provider call', {
         sessionKey,
         runId,
@@ -411,8 +425,10 @@ export async function prepareTurnContext(
   // ===== Prefix debug: tool order =====
   if (prefixDebugEnabled) {
     const currentToolNames = piTools.map((t) => t.name);
+    promptCacheTelemetry.toolOrderChecks++;
     const toolOrderCheck = checkToolOrderConsistency(previousToolNames, currentToolNames);
     if (!toolOrderCheck.consistent) {
+      promptCacheTelemetry.toolOrderChanges++;
       log.warn('tool order changed between turns (causes prompt cache miss)', {
         sessionKey,
         runId,
@@ -436,6 +452,7 @@ export async function prepareTurnContext(
     toolsForRun,
     piContext,
     control: 'continue',
+    promptCacheTelemetry,
     updatedSnapshots: { previousPrefixSnapshot, previousToolNames },
   };
 }
@@ -462,6 +479,12 @@ function emptyResult(
     toolsForRun: [],
     piContext: { systemPrompt: '', messages: [] } as PiContext,
     control,
+    promptCacheTelemetry: {
+      prefixChecks: 0,
+      prefixChanges: 0,
+      toolOrderChecks: 0,
+      toolOrderChanges: 0,
+    },
     updatedSnapshots: { previousPrefixSnapshot, previousToolNames },
   };
 }

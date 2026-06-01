@@ -184,7 +184,19 @@ export function createDmossAgentLoopEventAdapter(
           ];
         case 'run_metrics':
           compactions = Math.max(compactions, event.metrics.contextCompactions);
-          return [];
+          return [
+            {
+              type: 'cache_metrics',
+              promptCacheEnabled: Boolean(event.metrics.promptCacheEnabled),
+              promptCacheDebug: Boolean(event.metrics.promptCacheDebug),
+              stableChars: event.metrics.promptCacheStableChars ?? 0,
+              dynamicChars: event.metrics.promptCacheDynamicChars ?? 0,
+              prefixChecks: event.metrics.promptPrefixChecks ?? 0,
+              prefixChanges: event.metrics.promptPrefixChanges ?? 0,
+              toolOrderChecks: event.metrics.promptToolOrderChecks ?? 0,
+              toolOrderChanges: event.metrics.promptToolOrderChanges ?? 0,
+            },
+          ];
         case 'retry':
           // Intentionally not surfaced to DmossAgentEvent — retry is internal observability.
           return [];

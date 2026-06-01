@@ -190,6 +190,12 @@ export function runAgentLoop(
     // prompt prefix cache stability checks, not loop-control state.
     let previousPrefixSnapshot: Message[] | null = null;
     let previousToolNames: string[] | null = null;
+    const promptCacheTelemetry = {
+      prefixChecks: 0,
+      prefixChanges: 0,
+      toolOrderChecks: 0,
+      toolOrderChanges: 0,
+    };
 
     const runStartMs = Date.now();
     const INTER_TURN_SILENCE_WINDOW = 50;
@@ -356,6 +362,10 @@ export function runAgentLoop(
             // Update prefix debug snapshots from context prep result
             previousPrefixSnapshot = ctxResult.updatedSnapshots.previousPrefixSnapshot;
             previousToolNames = ctxResult.updatedSnapshots.previousToolNames;
+            promptCacheTelemetry.prefixChecks += ctxResult.promptCacheTelemetry.prefixChecks;
+            promptCacheTelemetry.prefixChanges += ctxResult.promptCacheTelemetry.prefixChanges;
+            promptCacheTelemetry.toolOrderChecks += ctxResult.promptCacheTelemetry.toolOrderChecks;
+            promptCacheTelemetry.toolOrderChanges += ctxResult.promptCacheTelemetry.toolOrderChanges;
 
             if (ctxResult.control === 'break') break;
             if (ctxResult.control === 'retry') {
@@ -565,6 +575,14 @@ export function runAgentLoop(
           effectiveContextTokens: effMetrics,
           llmCompactionFailureStreak: state.overflowState.llmCompactionFailureStreak,
           systemPromptLayerCount: systemPromptMeta?.layerCount ?? 0,
+          promptCacheEnabled: Boolean(systemPromptParts?.stable),
+          promptCacheDebug: prefixDebugEnabled,
+          promptCacheStableChars: systemPromptParts?.stable.length ?? 0,
+          promptCacheDynamicChars: systemPromptParts?.dynamic.length ?? 0,
+          promptPrefixChecks: promptCacheTelemetry.prefixChecks,
+          promptPrefixChanges: promptCacheTelemetry.prefixChanges,
+          promptToolOrderChecks: promptCacheTelemetry.toolOrderChecks,
+          promptToolOrderChanges: promptCacheTelemetry.toolOrderChanges,
           // Observability for inter-turn latency.
           interTurnSilenceMs: state.interTurnSilenceMs,
           llmConnectionReused: wasConnectionReused(),

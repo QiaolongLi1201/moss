@@ -224,6 +224,17 @@ export type DmossAgentEvent =
       nextAction: string;
     }
   | { type: 'microcompact'; compressedCount: number; savedChars: number; savedTokens: number }
+  | {
+      type: 'cache_metrics';
+      promptCacheEnabled: boolean;
+      promptCacheDebug: boolean;
+      stableChars: number;
+      dynamicChars: number;
+      prefixChecks: number;
+      prefixChanges: number;
+      toolOrderChecks: number;
+      toolOrderChanges: number;
+    }
   | { type: 'done'; result: ChatResult };
 
 export type InternalContentBlock = Pick<

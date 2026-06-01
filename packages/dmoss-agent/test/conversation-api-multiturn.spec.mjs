@@ -29,6 +29,7 @@ function createPiAgent({
   modelReasoning = reasoning,
   streamPlan,
   maxAgentTurns = 5,
+  promptCache,
 } = {}) {
   const calls = [];
   let callIndex = 0;
@@ -54,6 +55,7 @@ function createPiAgent({
     includeRegisteredKnowledgePrompts: false,
     baseSystemPrompt: 'base',
     maxAgentTurns,
+    ...(promptCache ? { promptCache } : {}),
     enableCompaction: false,
     enableContextPruning: false,
   });
@@ -190,6 +192,39 @@ async function testToolFollowupKeepsReasoningButSuppressesNewReasoning() {
   console.log('  [PASS] tool follow-up keeps prior reasoning while suppressing new reasoning');
 }
 
+async function testPromptCacheTelemetrySurfacesToolFollowupStability() {
+  const { agent } = createPiAgent({
+    reasoning: null,
+    modelReasoning: null,
+    promptCache: { enabled: true, debug: true },
+    streamPlan: [
+      () => toolTurn({ id: 'call_cache_probe', name: 'local_probe', args: { query: 'cache' } }),
+      () => textTurn({ text: 'cache telemetry ready.' }),
+    ],
+  });
+  agent.tools.register({
+    name: 'local_probe',
+    description: 'Local probe tool',
+    inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+    async execute() {
+      return 'probe result';
+    },
+  });
+
+  const { events } = await collect(agent, 'cache-telemetry-tool', 'use the probe');
+  const cacheMetrics = events.find((event) => event.type === 'cache_metrics');
+  assert(cacheMetrics, 'expected cache_metrics event');
+  assert.equal(cacheMetrics.promptCacheEnabled, true);
+  assert.equal(cacheMetrics.promptCacheDebug, true);
+  assert(cacheMetrics.stableChars > 0, 'stable system prompt chars should be reported');
+  assert(cacheMetrics.dynamicChars > 0, 'dynamic task-frame context chars should be reported');
+  assert.equal(cacheMetrics.prefixChecks, 2);
+  assert.equal(cacheMetrics.toolOrderChecks, 2);
+  assert.equal(cacheMetrics.prefixChanges, 0);
+  assert.equal(cacheMetrics.toolOrderChanges, 0);
+  console.log('  [PASS] prompt cache telemetry reports stable tool-followup checks');
+}
+
 async function testFailedProviderTurnDoesNotPoisonLaterConversation() {
   const { agent, calls } = createPiAgent({
     streamPlan: [
@@ -251,6 +286,7 @@ async function testSessionsStayIsolated() {
 await testThinkingModelReplaysReasoningAcrossNormalTurns();
 await testNonThinkingModelDoesNotReplayReasoningAcrossNormalTurns();
 await testToolFollowupKeepsReasoningButSuppressesNewReasoning();
+await testPromptCacheTelemetrySurfacesToolFollowupStability();
 await testFailedProviderTurnDoesNotPoisonLaterConversation();
 await testSessionsStayIsolated();
 

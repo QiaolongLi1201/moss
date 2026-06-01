@@ -104,6 +104,14 @@ export interface RunMetrics {
   effectiveContextTokens: number;
   llmCompactionFailureStreak: number;
   systemPromptLayerCount: number;
+  promptCacheEnabled?: boolean;
+  promptCacheDebug?: boolean;
+  promptCacheStableChars?: number;
+  promptCacheDynamicChars?: number;
+  promptPrefixChecks?: number;
+  promptPrefixChanges?: number;
+  promptToolOrderChecks?: number;
+  promptToolOrderChanges?: number;
   /** Inter-turn silence observability (additive, optional). */
   interTurnSilenceMs?: number[];
   llmConnectionReused?: boolean;

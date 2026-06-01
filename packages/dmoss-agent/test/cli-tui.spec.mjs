@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import {
   applyPromptEdit,
+  approvalKeyDecision,
   completeSlashCommandInput,
   commandSuggestion,
   editorPreviewLines,
@@ -94,10 +95,17 @@ assert.deepEqual(
 assert.equal(promptPlaceholder('ready'), '');
 assert.match(promptPlaceholder('running'), /running/);
 assert.match(promptPlaceholder('approval'), /approval/);
+assert.match(promptPlaceholder('approval'), /y, a, n/);
 assert.equal(statusBadge('ready'), 'ready');
 assert.equal(statusBadge('running'), 'running');
 assert.equal(statusBadge('approval'), 'approval needed');
+assert.equal(approvalKeyDecision('y', {}), 'allow-once');
+assert.equal(approvalKeyDecision('a', {}), 'allow-always');
+assert.equal(approvalKeyDecision('n', {}), 'deny');
+assert.equal(approvalKeyDecision('', { escape: true }), 'deny');
+assert.equal(approvalKeyDecision('x', {}), null);
 assert.match(footerHint('ready'), /Ctrl\+O tools/);
+assert.match(footerHint('approval'), /a always this session/);
 assert.match(footerHint('running'), /Esc cancel/);
 assert.match(footerHint('running'), /Enter queue/);
 

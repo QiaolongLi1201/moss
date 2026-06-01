@@ -336,7 +336,7 @@ export function promptCacheModeLabel(runtime?: CliRuntimeStatus): string {
 }
 
 export function footerHint(state: TuiRunState): string {
-  if (state === 'approval') return 'y approve · n/Esc deny';
+  if (state === 'approval') return 'y approve · a always this session · n/Esc deny';
   if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
   return 'Ctrl+O tools · /help · Ctrl+C exit';
 }
@@ -503,7 +503,7 @@ export function completeSlashCommandInput(value: string, cursor: number): Prompt
 }
 
 export function promptPlaceholder(state: TuiRunState): string {
-  if (state === 'approval') return 'answer approval with y, n, or Esc';
+  if (state === 'approval') return 'answer approval with y, a, n, or Esc';
   if (state === 'running') return 'running... /stop to cancel';
   return '';
 }
@@ -512,6 +512,14 @@ export function statusBadge(state: TuiRunState): string {
   if (state === 'approval') return 'approval needed';
   if (state === 'running') return 'running';
   return 'ready';
+}
+
+export function approvalKeyDecision(inputChar: string, key: { escape?: boolean }): 'allow-once' | 'allow-always' | 'deny' | null {
+  const normalized = inputChar.toLowerCase();
+  if (key.escape || normalized === 'n') return 'deny';
+  if (normalized === 'y') return 'allow-once';
+  if (normalized === 'a') return 'allow-always';
+  return null;
 }
 
 function renderMemory(workspace: string): string {
@@ -891,7 +899,7 @@ export function ApprovalPromptLine({ question }: ApprovalPromptLineProps): React
     ...visibleText(question, 8).split('\n').map((line, idx) => (
       React.createElement(Text, { key: idx, color: theme.text }, line)
     )),
-    React.createElement(Text, { color: theme.textMuted }, 'y approve · n/Esc deny'),
+    React.createElement(Text, { color: theme.textMuted }, 'y approve · a always this session · n/Esc deny'),
   );
 }
 
@@ -1339,16 +1347,22 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     });
   }, [runtime?.configDir]);
 
-  // Global keybinds: Ctrl+O toggles tool expansion; approval handles y/n/Esc
+  // Global keybinds: Ctrl+O toggles tool expansion; approval handles y/a/n/Esc
   useInput((inputChar, key) => {
     if (approval) {
-      if (key.escape || inputChar.toLowerCase() === 'n') {
+      const decision = approvalKeyDecision(inputChar, key);
+      if (decision === 'deny') {
         approval.resolve('');
         setApproval(null);
         return;
       }
-      if (inputChar.toLowerCase() === 'y') {
+      if (decision === 'allow-once') {
         approval.resolve('y');
+        setApproval(null);
+        return;
+      }
+      if (decision === 'allow-always') {
+        approval.resolve('a');
         setApproval(null);
         return;
       }
@@ -1715,6 +1729,12 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
           toolsExpanded: toolsExpanded || detailMode === 'verbose',
         })),
     ),
+    React.createElement(QueuePreview, { items: queuedInputs }),
+    notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
+    flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
+    ctxUsage ? React.createElement(Text, { color: theme.textMuted },
+      `ctx ${humanTokens(ctxUsage.used)}/${humanTokens(ctxUsage.total)}`,
+    ) : null,
     approval
       ? React.createElement(ApprovalPromptLine, { question: approval.question })
       : React.createElement(PromptEditor, {
@@ -1731,12 +1751,6 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
           model: currentModel,
           hint: footerHintText,
         }),
-    React.createElement(QueuePreview, { items: queuedInputs }),
-    notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
-    flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
-    ctxUsage ? React.createElement(Text, { color: theme.textMuted },
-      `ctx ${humanTokens(ctxUsage.used)}/${humanTokens(ctxUsage.total)}`,
-    ) : null,
   );
 }
 

@@ -202,6 +202,7 @@ test('ApprovalPromptLine renders the question and y/n hint', () => {
   const frame = lastFrame();
   assert.match(frame, /Allow running this tool/);
   assert.match(frame, /y approve/);
+  assert.match(frame, /a always this session/);
   assert.match(frame, /n.*Esc deny/);
   cleanup();
 });

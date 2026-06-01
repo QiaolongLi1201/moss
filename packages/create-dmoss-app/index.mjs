@@ -155,7 +155,7 @@ const packageJson = {
   },
   dependencies: {
     '@rdk-moss/core': '^0.3.2',
-    '@rdk-moss/agent': '^0.3.5',
+    '@rdk-moss/agent': '^0.3.6',
   },
   devDependencies: {
     '@types/node': '^22.13.10',

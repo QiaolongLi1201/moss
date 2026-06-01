@@ -481,6 +481,45 @@ export interface StatusBarProps {
   hint?: string;
 }
 
+export interface SessionHeaderProps {
+  device: string;
+  workspace: string;
+  model?: string;
+  state: TuiRunState;
+  toolsExpanded?: boolean;
+}
+
+export function SessionHeader({ device, workspace, model, state, toolsExpanded }: SessionHeaderProps): React.ReactElement {
+  const stateLabel = state === 'running' ? 'working' : state === 'approval' ? 'approval' : 'ready';
+  return React.createElement(
+    Box,
+    {
+      flexDirection: 'column',
+      borderStyle: 'single',
+      borderTop: false,
+      borderLeft: false,
+      borderRight: false,
+      borderBottom: true,
+      borderColor: theme.border,
+      marginBottom: 1,
+    },
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(Text, { color: theme.primary, bold: true }, '✦ D-Moss'),
+      React.createElement(Text, { color: theme.textMuted }, '  '),
+      React.createElement(Text, { color: statusBarColor(state), bold: true }, stateLabel),
+      React.createElement(Text, { color: theme.textMuted }, '  ·  '),
+      React.createElement(Text, null, model || 'connecting...'),
+      React.createElement(Text, { color: theme.textMuted }, '  ·  '),
+      React.createElement(Text, { color: theme.textMuted }, compactPath(workspace)),
+      React.createElement(Box, { flexGrow: 1 }),
+      React.createElement(Text, { color: device === 'no device' ? theme.warn : theme.success }, device),
+      React.createElement(Text, { color: theme.textMuted }, `  ·  tools ${toolsExpanded ? 'expanded' : 'collapsed'}`),
+    ),
+  );
+}
+
 /**
  * Single-line status bar:
  *   Default  ready  ctx 21k/200k (10%)  ─────  model  |  Ctrl+O expand · /help
@@ -539,14 +578,26 @@ export interface WelcomePanelProps {
 export function WelcomePanel({ workspace, device, model }: WelcomePanelProps): React.ReactElement {
   return React.createElement(
     Box,
-    { flexDirection: 'column', marginTop: 1 },
-    React.createElement(Text, { color: theme.primary, bold: true }, 'D-Moss'),
-    React.createElement(Text, null, 'Agentic command line for RDK development.'),
-    React.createElement(Box, { marginTop: 1, flexDirection: 'column', borderStyle: 'single', borderLeft: true, borderTop: false, borderBottom: false, borderRight: false, borderColor: theme.primary, paddingLeft: 1 },
-      React.createElement(Text, { color: theme.textMuted }, `/status   runtime, device, and workspace context`),
-      React.createElement(Text, { color: theme.textMuted }, `/tools    available tools and permissions`),
-      React.createElement(Text, { color: theme.textMuted }, `/examples starter tasks`),
-      React.createElement(Text, { color: theme.textMuted }, `Ctrl+O   expand or collapse tool calls`),
+    { flexDirection: 'column', marginTop: 1, paddingLeft: 2 },
+    React.createElement(Text, { color: theme.primary, bold: true }, 'Welcome to D-Moss'),
+    React.createElement(Text, null, 'Ask for code, board diagnostics, shell help, or RDK workflow guidance.'),
+    React.createElement(Box, { marginTop: 1, flexDirection: 'column' },
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.primary, bold: true }, '/status'),
+        React.createElement(Text, { color: theme.textMuted }, '   inspect runtime, device, and workspace context'),
+      ),
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.primary, bold: true }, '/tools '),
+        React.createElement(Text, { color: theme.textMuted }, '   list available tools and permission surface'),
+      ),
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.primary, bold: true }, '/examples'),
+        React.createElement(Text, { color: theme.textMuted }, ' starter tasks'),
+      ),
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.primary, bold: true }, 'Ctrl+O'),
+        React.createElement(Text, { color: theme.textMuted }, '   expand or collapse tool calls'),
+      ),
     ),
     React.createElement(Box, { marginTop: 1, flexDirection: 'column' },
       React.createElement(Text, { color: theme.textMuted }, `workspace  ${compactPath(workspace)}`),
@@ -1195,9 +1246,10 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const terminalRows = Math.max(12, stdout?.rows ?? 30);
   const promptRows = Math.min(6, Math.max(1, input ? input.split('\n').length : 1)) + 3;
   const footerRows = 1;
+  const headerRows = 2;
   const approvalRows = approval ? Math.min(10, approval.question.split('\n').length + 4) : 0;
   const noticeRows = notice ? 1 : 0;
-  const transcriptRows = Math.max(1, terminalRows - promptRows - footerRows - approvalRows - noticeRows - 2);
+  const transcriptRows = Math.max(1, terminalRows - headerRows - promptRows - footerRows - approvalRows - noticeRows - 2);
 
   // Compose footer hint based on state (drives footerHint text used in tests).
   const footerHintText = footerHint(runState)
@@ -1208,6 +1260,13 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   return React.createElement(
     Box,
     { flexDirection: 'column', paddingX: 1, paddingTop: 1, paddingBottom: 1, height: terminalRows },
+    React.createElement(SessionHeader, {
+      device,
+      workspace,
+      model: currentModel,
+      state: runState,
+      toolsExpanded: toolsExpanded || detailMode === 'verbose',
+    }),
     React.createElement(
       Box,
       { flexDirection: 'column', height: transcriptRows, overflow: 'hidden' },

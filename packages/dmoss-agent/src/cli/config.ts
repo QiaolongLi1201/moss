@@ -85,6 +85,7 @@ export interface ConfigFile {
   approvalPolicy?: ConfigApprovalPolicy | string;
   trustedTools?: string[];
   promptCache?: PromptCacheConfig | boolean;
+  guardrails?: GuardrailsConfig;
 }
 
 export interface LoadedCliConfigFile {
@@ -100,6 +101,26 @@ export type ConfigApprovalPolicy = 'prompt' | 'never';
 export interface PromptCacheConfig {
   enabled?: boolean;
   debug?: boolean;
+}
+
+export interface TextGuardrailConfig {
+  blockPatterns?: string[];
+  redactPatterns?: string[];
+}
+
+export interface GuardrailsConfig {
+  input?: TextGuardrailConfig;
+  output?: TextGuardrailConfig;
+}
+
+export interface ResolvedTextGuardrailConfig {
+  blockPatterns: string[];
+  redactPatterns: string[];
+}
+
+export interface ResolvedGuardrailsConfig {
+  input: ResolvedTextGuardrailConfig;
+  output: ResolvedTextGuardrailConfig;
 }
 
 export interface CliConfigOverrides {
@@ -209,11 +230,34 @@ function mergePromptCacheConfig(
   return userPromptCache ?? projectPromptCache;
 }
 
+function mergeTextGuardrailConfig(
+  projectGuardrail: TextGuardrailConfig | undefined,
+  userGuardrail: TextGuardrailConfig | undefined,
+): TextGuardrailConfig | undefined {
+  if (!projectGuardrail && !userGuardrail) return undefined;
+  return {
+    ...projectGuardrail,
+    ...userGuardrail,
+  };
+}
+
+function mergeGuardrailsConfig(
+  projectGuardrails: ConfigFile['guardrails'],
+  userGuardrails: ConfigFile['guardrails'],
+): ConfigFile['guardrails'] {
+  if (!projectGuardrails && !userGuardrails) return undefined;
+  return {
+    input: mergeTextGuardrailConfig(projectGuardrails?.input, userGuardrails?.input),
+    output: mergeTextGuardrailConfig(projectGuardrails?.output, userGuardrails?.output),
+  };
+}
+
 export function mergeConfigFiles(projectConfig: ConfigFile, userConfig: ConfigFile): ConfigFile {
   return {
     ...projectConfig,
     ...userConfig,
     promptCache: mergePromptCacheConfig(projectConfig.promptCache, userConfig.promptCache),
+    guardrails: mergeGuardrailsConfig(projectConfig.guardrails, userConfig.guardrails),
   };
 }
 
@@ -323,6 +367,42 @@ export function parseTrustedTools(value: string | string[] | undefined): string[
   return unique.length > 0 ? unique : undefined;
 }
 
+function parsePatternList(value: unknown, source: string): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new Error(`Unsupported ${source}; expected an array of strings`);
+  }
+  const patterns = value
+    .map((pattern) => (typeof pattern === 'string' ? pattern.trim() : ''))
+    .filter(Boolean);
+  for (const pattern of patterns) {
+    if (pattern.length > 500) {
+      throw new Error(`Unsupported ${source} pattern: values must be 500 characters or less`);
+    }
+  }
+  return [...new Set(patterns)];
+}
+
+export function normalizeGuardrailsConfig(config: ConfigFile['guardrails']): ResolvedGuardrailsConfig {
+  return {
+    input: {
+      blockPatterns: parsePatternList(config?.input?.blockPatterns, 'guardrails.input.blockPatterns'),
+      redactPatterns: parsePatternList(config?.input?.redactPatterns, 'guardrails.input.redactPatterns'),
+    },
+    output: {
+      blockPatterns: parsePatternList(config?.output?.blockPatterns, 'guardrails.output.blockPatterns'),
+      redactPatterns: parsePatternList(config?.output?.redactPatterns, 'guardrails.output.redactPatterns'),
+    },
+  };
+}
+
+function hasGuardrails(config: ResolvedGuardrailsConfig): boolean {
+  return config.input.blockPatterns.length > 0 ||
+    config.input.redactPatterns.length > 0 ||
+    config.output.blockPatterns.length > 0 ||
+    config.output.redactPatterns.length > 0;
+}
+
 function inferProviderFromBaseUrl(baseUrl: string | undefined): CliProviderPreset | null {
   const raw = (baseUrl || '').toLowerCase();
   if (!raw) return null;
@@ -365,6 +445,8 @@ export interface ResolvedCliConfig {
   promptCacheSource: string;
   promptCacheDebug: boolean;
   promptCacheDebugSource: string;
+  guardrails: ResolvedGuardrailsConfig;
+  guardrailsSource: string;
   configPath: string;
   projectConfigPath?: string;
 }
@@ -512,6 +594,8 @@ export function resolveCliConfig(
       : configPromptCacheDebug !== undefined
         ? 'config'
         : `profile:${profile}`;
+  const guardrails = normalizeGuardrailsConfig(activeConfig.guardrails);
+  const guardrailsSource = hasGuardrails(guardrails) ? 'config' : 'default';
 
   return {
     profile,
@@ -536,6 +620,8 @@ export function resolveCliConfig(
     promptCacheSource,
     promptCacheDebug,
     promptCacheDebugSource,
+    guardrails,
+    guardrailsSource,
     configPath: configPaths?.configPath ?? resolveConfigPath(undefined, env),
     projectConfigPath: configPaths?.projectConfigPath,
   };

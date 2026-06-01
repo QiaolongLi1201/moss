@@ -74,6 +74,11 @@ const runtime = {
     promptCacheSource: 'config',
     promptCacheDebug: true,
     promptCacheDebugSource: 'config',
+    guardrails: {
+      input: { blockPatterns: ['forbidden input'], redactPatterns: ['SECRET=[^\\s]+'] },
+      output: { blockPatterns: [], redactPatterns: ['TOKEN=[^\\s]+'] },
+    },
+    guardrailsSource: 'config',
     configPath: '/tmp/dmoss-config/config.json',
   },
 };
@@ -105,6 +110,7 @@ const agent = createAgent([
   assert.match(welcome, /profile autonomous/);
   assert.match(welcome, /approval never/);
   assert.match(welcome, /cache off/);
+  assert.match(welcome, /guardrails in 2 out 1/);
   assert.match(welcome, /commands.*\/help.*\/tools.*\/status/);
 }
 
@@ -136,6 +142,7 @@ const agent = createAgent([
   assert.match(status, /trusted tools: exec \(config\)/);
   assert.match(status, /prompt cache: disabled \(config\)/);
   assert.match(status, /prompt cache debug: enabled \(config\)/);
+  assert.match(status, /guardrails: guardrails in 2 out 1 \(config\)/);
   assert.match(status, /tools: 7/);
 }
 
@@ -149,6 +156,8 @@ const agent = createAgent([
   assert.match(permissions, /trusted tools: exec \(config\)/);
   assert.match(permissions, /prompt cache: disabled \(config\)/);
   assert.match(permissions, /prompt cache debug: enabled \(config\)/);
+  assert.match(permissions, /guardrails: input 2, output 1 \(config\)/);
+  assert.match(permissions, /edit guardrails\.input\/output/);
   assert.match(permissions, /dmoss config set safetyMode/);
   assert.match(permissions, /dmoss config set profile/);
   assert.match(permissions, /dmoss config set trustedTools/);

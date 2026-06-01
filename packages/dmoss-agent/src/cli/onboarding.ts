@@ -68,6 +68,13 @@ function promptCacheLine(config: ResolvedCliConfig): string {
   return config.promptCacheEnabled === false ? 'cache off' : 'cache stable';
 }
 
+function guardrailLine(config: ResolvedCliConfig): string {
+  const inputCount = config.guardrails.input.blockPatterns.length + config.guardrails.input.redactPatterns.length;
+  const outputCount = config.guardrails.output.blockPatterns.length + config.guardrails.output.redactPatterns.length;
+  if (inputCount === 0 && outputCount === 0) return 'guardrails off';
+  return `guardrails in ${inputCount} out ${outputCount}`;
+}
+
 function countJsonIndex(filePath: string): number {
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
@@ -169,7 +176,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const auth = rt.config;
 
   const authState = auth.apiKey ? `auth ${auth.apiKeySource}` : 'auth missing';
-  const policyState = `${profileLine(auth)}   ${approvalPolicyLine(auth)}   ${promptCacheLine(auth)}`;
+  const policyState = `${profileLine(auth)}   ${approvalPolicyLine(auth)}   ${promptCacheLine(auth)}   ${guardrailLine(auth)}`;
   const deviceState = rt.device
     ? `device ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
     : 'device not configured';
@@ -211,6 +218,7 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     `  ${label('trusted tools')} ${(auth.trustedTools ?? []).length ? (auth.trustedTools ?? []).join(', ') : 'none'} (${auth.trustedToolsSource ?? 'default'})`,
     `  ${label('prompt cache')} ${auth.promptCacheEnabled === false ? 'disabled' : 'enabled'} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${auth.promptCacheDebug === true ? 'enabled' : 'disabled'} (${auth.promptCacheDebugSource ?? 'default'})`,
+    `  ${label('guardrails')} ${guardrailLine(auth)} (${auth.guardrailsSource ?? 'default'})`,
     `  ${label('exec')} ${rt.execBackend}${rt.execBackend === 'docker' && rt.dockerImage ? ` (${rt.dockerImage})` : ''}`,
     `  ${label('memory')} ${memoryCount} entries`,
     `  ${label('skills')} ${skillCount}`,
@@ -243,6 +251,8 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
   const trustedTools = configuredTrustedTools.length ? configuredTrustedTools.join(', ') : 'none';
   const cache = auth.promptCacheEnabled === false ? 'disabled' : 'enabled';
   const cacheDebug = auth.promptCacheDebug === true ? 'enabled' : 'disabled';
+  const inputGuardrails = auth.guardrails.input.blockPatterns.length + auth.guardrails.input.redactPatterns.length;
+  const outputGuardrails = auth.guardrails.output.blockPatterns.length + auth.guardrails.output.redactPatterns.length;
   return [
     ui.bold('Permissions & Config'),
     `  ${label('config file')} ${auth.configPath}`,
@@ -253,6 +263,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     `  ${label('trusted tools')} ${trustedTools} (${auth.trustedToolsSource ?? 'default'})`,
     `  ${label('prompt cache')} ${cache} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${cacheDebug} (${auth.promptCacheDebugSource ?? 'default'})`,
+    `  ${label('guardrails')} input ${inputGuardrails}, output ${outputGuardrails} (${auth.guardrailsSource ?? 'default'})`,
     '',
     '  Profiles:',
     '    cautious        read-only, prompt approvals, stable prompt cache',
@@ -276,6 +287,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    dmoss config set trustedTools exec,write_file',
     '    dmoss config set promptCache true|false',
     '    dmoss config set promptCacheDebug true|false',
+    '    edit guardrails.input/output blockPatterns or redactPatterns in config JSON',
     '',
     '  Environment overrides:',
     '    DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG',

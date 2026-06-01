@@ -57,6 +57,11 @@ try {
   assert.equal(resolved.trustedToolsSource, 'profile:balanced');
   assert.equal(resolved.promptCacheEnabled, true);
   assert.equal(resolved.promptCacheDebug, false);
+  assert.deepEqual(resolved.guardrails, {
+    input: { blockPatterns: [], redactPatterns: [] },
+    output: { blockPatterns: [], redactPatterns: [] },
+  });
+  assert.equal(resolved.guardrailsSource, 'default');
 
   const envResolved = resolveCliConfig({
     DMOSS_PROFILE: 'autonomous',
@@ -128,6 +133,7 @@ try {
   assert.match(status, /trustedTools: none/);
   assert.match(status, /promptCache: enabled/);
   assert.match(status, /promptCacheDebug: disabled/);
+  assert.match(status, /guardrails: none \(default\)/);
   assert.doesNotMatch(status, /stored-secret/);
 
   const envStatus = renderAuthStatus(loadConfigFile(), { DASHSCOPE_API_KEY: 'env-secret' });
@@ -178,6 +184,10 @@ try {
     safetyMode: 'full-access',
     approvalPolicy: 'never',
     promptCache: { debug: true },
+    guardrails: {
+      input: { redactPatterns: ['PROJECT_SECRET=[^\\s]+'] },
+      output: { blockPatterns: ['project leak'] },
+    },
   }, null, 2)}\n`);
   try {
     assert.equal(resolveProjectConfigPath(projectChild), projectConfigPath);
@@ -190,6 +200,10 @@ try {
     assert.equal(loadedProject.config.provider, 'qwen');
     assert.equal(loadedProject.config.model, 'qwen3.7-max');
     assert.deepEqual(loadedProject.config.promptCache, { debug: true });
+    assert.deepEqual(loadedProject.config.guardrails, {
+      input: { redactPatterns: ['PROJECT_SECRET=[^\\s]+'] },
+      output: { blockPatterns: ['project leak'] },
+    });
 
     const projectResolved = resolveCliConfig({ DMOSS_CONFIG_DIR: tmp }, loadedProject.config, {}, loadedProject);
     assert.equal(projectResolved.projectConfigPath, projectConfigPath);
@@ -202,6 +216,9 @@ try {
     assert.equal(projectResolved.promptCacheEnabled, true);
     assert.equal(projectResolved.promptCacheDebug, true);
     assert.equal(projectResolved.promptCacheDebugSource, 'config');
+    assert.deepEqual(projectResolved.guardrails.input.redactPatterns, ['PROJECT_SECRET=[^\\s]+']);
+    assert.deepEqual(projectResolved.guardrails.output.blockPatterns, ['project leak']);
+    assert.equal(projectResolved.guardrailsSource, 'config');
 
     const projectShow = spawnSync(process.execPath, [
       cliPath,
@@ -314,6 +331,14 @@ try {
     approvalPolicy: 'never',
     trustedTools: ['exec'],
     promptCache: { enabled: false, debug: true },
+    guardrails: {
+      input: {
+        redactPatterns: ['SECRET=[^\\s]+', 'SECRET=[^\\s]+'],
+      },
+      output: {
+        blockPatterns: ['private token'],
+      },
+    },
   }, tmp);
   const filePolicyResolved = resolveCliConfig({}, loadConfigFile());
   assert.equal(filePolicyResolved.profile, 'autonomous');
@@ -328,6 +353,11 @@ try {
   assert.equal(filePolicyResolved.promptCacheSource, 'config');
   assert.equal(filePolicyResolved.promptCacheDebug, true);
   assert.equal(filePolicyResolved.promptCacheDebugSource, 'config');
+  assert.deepEqual(filePolicyResolved.guardrails.input.redactPatterns, ['SECRET=[^\\s]+']);
+  assert.deepEqual(filePolicyResolved.guardrails.output.blockPatterns, ['private token']);
+  assert.equal(filePolicyResolved.guardrailsSource, 'config');
+  filePolicyResolved.guardrails.input.redactPatterns.push('MUTATED');
+  assert.deepEqual(resolveCliConfig({}, loadConfigFile()).guardrails.input.redactPatterns, ['SECRET=[^\\s]+']);
 
   const autonomousResolved = resolveCliConfig({}, {
     profile: 'autonomous',

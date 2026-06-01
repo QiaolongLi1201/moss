@@ -114,6 +114,13 @@ function withoutSecret(value: string): string {
   }
 }
 
+function guardrailSummary(resolved: ReturnType<typeof resolveCliConfig>): string {
+  const inputCount = resolved.guardrails.input.blockPatterns.length + resolved.guardrails.input.redactPatterns.length;
+  const outputCount = resolved.guardrails.output.blockPatterns.length + resolved.guardrails.output.redactPatterns.length;
+  if (inputCount === 0 && outputCount === 0) return `none (${resolved.guardrailsSource})`;
+  return `input ${inputCount}, output ${outputCount} (${resolved.guardrailsSource})`;
+}
+
 export function renderAuthStatus(
   config?: ConfigFile,
   env: NodeJS.ProcessEnv = process.env,
@@ -133,6 +140,7 @@ export function renderAuthStatus(
     `  trustedTools: ${resolved.trustedTools.length ? resolved.trustedTools.join(', ') : 'none'} (${resolved.trustedToolsSource})`,
     `  promptCache: ${resolved.promptCacheEnabled ? 'enabled' : 'disabled'} (${resolved.promptCacheSource})`,
     `  promptCacheDebug: ${resolved.promptCacheDebug ? 'enabled' : 'disabled'} (${resolved.promptCacheDebugSource})`,
+    `  guardrails: ${guardrailSummary(resolved)}`,
     `  config: ${resolved.configPath}`,
     `  projectConfig: ${resolved.projectConfigPath || 'none'}`,
   ].join('\n');

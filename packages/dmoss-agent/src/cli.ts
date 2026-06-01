@@ -9,6 +9,7 @@ import { loadCliConfigFile, loadEnvFromAncestors, resolveCliConfig, resolveConfi
 import { parseCliArgs } from './cli/args.js';
 import { renderCliDoctor } from './cli/doctor.js';
 import { displayHelp, displayVersion } from './cli/help.js';
+import { createConfiguredGuardrailHooks } from './cli/guardrails.js';
 import { createCliProvider } from './cli/providers.js';
 import { createMemoryTools } from './cli/tools.js';
 import { runOneShot } from './cli/oneshot.js';
@@ -257,6 +258,14 @@ async function main() {
   const extraPromptLayers: string[] = [];
   if (wsPromptLayer) extraPromptLayers.push(wsPromptLayer);
 
+  const hooks = createConfiguredGuardrailHooks(resolvedConfig, {
+    enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: workspace }),
+    onBeforeToolExec: createCliToolApprovalHook(safetyMode, process.env, {
+      approvalPolicy: resolvedConfig.approvalPolicy,
+      trustedTools: resolvedConfig.trustedTools,
+    }),
+  });
+
   const agent = new DmossAgent({
     llmProvider: createCliProvider(resolvedConfig), sessionStore, model,
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
@@ -264,13 +273,7 @@ async function main() {
       enabled: resolvedConfig.promptCacheEnabled,
       debug: resolvedConfig.promptCacheDebug,
     },
-    hooks: {
-      enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: workspace }),
-      onBeforeToolExec: createCliToolApprovalHook(safetyMode, process.env, {
-        approvalPolicy: resolvedConfig.approvalPolicy,
-        trustedTools: resolvedConfig.trustedTools,
-      }),
-    },
+    hooks,
   });
   registerBuiltinTools(agent);
 

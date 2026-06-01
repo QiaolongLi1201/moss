@@ -7,10 +7,16 @@
 import assert from 'node:assert/strict';
 import {
   commandSuggestion,
+  editorPreviewLines,
+  extractAttachmentRefs,
+  footerHint,
+  formatAttachmentChip,
   isLocalShellLine,
   promptPlaceholder,
   runLocalShellCommand,
   sanitizeRenderableText,
+  statusBadge,
+  statusLine,
 } from '../dist/cli/tui.js';
 
 {
@@ -43,9 +49,39 @@ assert.equal(commandSuggestion('/staus'), '/status');
 assert.equal(commandSuggestion('/tool'), '/tools');
 assert.equal(commandSuggestion('status'), null);
 
-assert.match(promptPlaceholder('ready'), /ask D-Moss/);
+assert.match(promptPlaceholder('ready'), /message/);
 assert.match(promptPlaceholder('running'), /running/);
 assert.match(promptPlaceholder('approval'), /approval/);
+assert.equal(statusBadge('ready'), 'ready');
+assert.equal(statusBadge('running'), 'running');
+assert.equal(statusBadge('approval'), 'approval needed');
+assert.match(footerHint('ready'), /Shift\+Enter newline/);
+assert.match(footerHint('running'), /\/stop cancel/);
+
+{
+  const line = statusLine({
+    state: 'ready',
+    model: 'user-configured-model',
+    device: 'root@192.168.1.10',
+    workspace: process.cwd(),
+  });
+  assert.match(line, /D-Moss  ready  user-configured-model/);
+  assert.match(line, /cache stable/);
+}
+
+{
+  const refs = extractAttachmentRefs('please inspect [Image #1] and [File #2], then compare [Image #1]');
+  assert.deepEqual(refs, [
+    { index: 1, kind: 'image', label: 'Image #1' },
+    { index: 2, kind: 'file', label: 'File #2' },
+  ]);
+  assert.equal(formatAttachmentChip(refs[0]), '[Image #1] image');
+}
+
+{
+  assert.deepEqual(editorPreviewLines('', 'message'), ['message']);
+  assert.deepEqual(editorPreviewLines('a\nb\nc', 'message', 2), ['... 1 earlier input lines ...', 'b', 'c']);
+}
 
 {
   const controller = new AbortController();

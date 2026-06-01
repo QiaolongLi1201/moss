@@ -3,7 +3,6 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
-import TextInput from 'ink-text-input';
 import type { DmossAgent, DmossAgentEvent } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import { setCliApprovalAsker } from './approval.js';
@@ -167,10 +166,71 @@ function visibleText(text: string, maxLines = 10): string {
 
 function initialTranscriptText(): string {
   return [
-    'D-Moss is ready.',
-    'Start with a normal request, /examples for task ideas, or /status to inspect the runtime.',
-    'Use !<command> only for local host shell commands; board/OpenClaw work should go through tools.',
+    'Ready. Ask a task or use /examples.',
+    '!<command> is local shell only.',
   ].join('\n');
+}
+
+export interface AttachmentRef {
+  index: number;
+  kind: 'image' | 'file';
+  label: string;
+}
+
+export function extractAttachmentRefs(text: string): AttachmentRef[] {
+  const refs: AttachmentRef[] = [];
+  const seen = new Set<string>();
+  const re = /\[((?:Image|File) #(\d+))\]/g;
+  for (const match of text.matchAll(re)) {
+    const label = match[1] || '';
+    if (seen.has(label)) continue;
+    seen.add(label);
+    refs.push({
+      index: Number(match[2]),
+      kind: label.startsWith('Image') ? 'image' : 'file',
+      label,
+    });
+  }
+  return refs;
+}
+
+export function formatAttachmentChip(ref: AttachmentRef): string {
+  return `[${ref.label}] ${ref.kind}`;
+}
+
+export function statusLine(options: {
+  state: TuiRunState;
+  model: string;
+  device: string;
+  workspace: string;
+  cacheMode?: string;
+}): string {
+  const parts = [
+    'D-Moss',
+    statusBadge(options.state),
+    options.model || 'no model',
+    options.device,
+    compactPath(options.workspace),
+    options.cacheMode || 'cache stable',
+  ];
+  return parts.filter(Boolean).join('  ');
+}
+
+export function footerHint(state: TuiRunState): string {
+  if (state === 'approval') return 'y approve · n/Esc deny';
+  if (state === 'running') return '/stop cancel · Ctrl+C exit';
+  return 'Enter send · Shift+Enter newline · /help · /status · !cmd local';
+}
+
+export function editorPreviewLines(value: string, placeholder: string, maxLines = 8): string[] {
+  if (!value) return [placeholder];
+  const normalized = sanitizeRenderableText(value).replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
+  if (lines.length <= maxLines) return lines;
+  return [
+    `... ${lines.length - maxLines} earlier input lines ...`,
+    ...lines.slice(-maxLines),
+  ];
 }
 
 export function commandSuggestion(command: string): string | null {
@@ -193,15 +253,15 @@ export function commandSuggestion(command: string): string | null {
 
 export function promptPlaceholder(state: TuiRunState): string {
   if (state === 'approval') return 'answer approval with y, n, or Esc';
-  if (state === 'running') return 'running... use /stop to cancel or Ctrl+C to exit';
-  return 'ask D-Moss, /help, /status, or !pwd for local shell';
+  if (state === 'running') return 'running... /stop to cancel';
+  return 'message, /examples, /status, or !pwd';
 }
 
 function commandList(): string {
   return [
-    'Common commands',
-    '  /status            runtime, provider, workspace, and device context',
-    '  /examples          task examples you can run directly',
+    'Commands',
+    '  /examples          starter prompts',
+    '  /status            runtime and device context',
     '  /tools             available tools',
     '  /stop              stop the active run',
     '',
@@ -220,6 +280,12 @@ function commandList(): string {
     '  !<command>         run a LOCAL host shell command after session approval',
     '  /quit              exit',
   ].join('\n');
+}
+
+export function statusBadge(state: TuiRunState): string {
+  if (state === 'approval') return 'approval needed';
+  if (state === 'running') return 'running';
+  return 'ready';
 }
 
 function renderMemory(workspace: string): string {
@@ -261,6 +327,57 @@ function activityLabel(event: DmossAgentEvent): string | null {
   if (event.type === 'microcompact') return `compressed ${event.compressedCount} items`;
   if (event.type === 'working_context_checkpoint') return `${event.status}`;
   return null;
+}
+
+function transcriptLabel(kind: TranscriptKind): string {
+  if (kind === 'user') return 'User';
+  if (kind === 'assistant') return 'Assistant';
+  if (kind === 'error') return 'Error';
+  return 'System';
+}
+
+function transcriptColor(kind: TranscriptKind): 'cyan' | 'red' | 'gray' | undefined {
+  if (kind === 'user') return 'cyan';
+  if (kind === 'error') return 'red';
+  if (kind === 'system') return 'gray';
+  return undefined;
+}
+
+function MultilineInput(props: {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: (value: string) => void;
+  placeholder: string;
+  disabled: boolean;
+}): React.ReactElement {
+  useInput((inputChar, key) => {
+    if (props.disabled) return;
+    if (key.return) {
+      if (key.shift || key.ctrl || inputChar === '\n') {
+        props.onChange(`${props.value}\n`);
+        return;
+      }
+      props.onSubmit(props.value);
+      return;
+    }
+    if (key.backspace) {
+      props.onChange(props.value.slice(0, -1));
+      return;
+    }
+    if (key.delete) return;
+    if (inputChar) {
+      props.onChange(`${props.value}${inputChar.replace(/\r\n?/g, '\n')}`);
+    }
+  }, { isActive: !props.disabled });
+
+  const lines = editorPreviewLines(props.value, props.placeholder, 8);
+  return React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: props.disabled ? 'gray' : 'cyan', paddingX: 1 },
+    ...lines.map((line, index) => React.createElement(Text, { key: `${index}-${line}`, color: props.value ? undefined : 'gray' },
+      index === 0 ? '> ' : '  ',
+      line,
+      props.value && index === lines.length - 1 ? React.createElement(Text, { color: 'cyan' }, '▌') : null,
+    )),
+  );
 }
 
 function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): React.ReactElement {
@@ -533,70 +650,36 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   }, [approval, busy, handleCommand, runLocalShell, runPrompt]);
 
   const visibleTranscript = useMemo(() => transcript.slice(-10), [transcript]);
-  const provider = runtime?.baseUrl ? new URL(runtime.baseUrl).host : 'provider not configured';
   const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
   const runStateColor = runState === 'approval' ? 'yellow' : runState === 'running' ? 'cyan' : 'green';
-  const localShellLabel = localShellApproved ? 'local shell approved' : 'local shell locked';
+  const topLine = statusLine({
+    state: runState,
+    model: currentModel,
+    device,
+    workspace,
+  });
 
   return React.createElement(Box, { flexDirection: 'column', paddingX: 1 },
-    React.createElement(Box, { borderStyle: 'round', borderColor: busy ? 'cyan' : 'gray', paddingX: 1, flexDirection: 'column' },
-      React.createElement(Box, null,
-        React.createElement(Text, { bold: true }, 'D-Moss Agent '),
-        React.createElement(Text, { color: 'gray' }, `v${getPackageVersion()}`),
-        React.createElement(Text, { color: 'gray' }, '  '),
-        React.createElement(Text, { color: runStateColor, bold: true }, runState),
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { color: 'gray' }, 'model '),
-        React.createElement(Text, { color: 'cyan' }, currentModel),
-        React.createElement(Text, { color: 'gray' }, '  provider '),
-        provider,
-        React.createElement(Text, { color: 'gray' }, '  session '),
-        sessionKey,
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { color: 'gray' }, 'directory '),
-        compactPath(workspace),
-        React.createElement(Text, { color: 'gray' }, '  safety '),
-        runtime?.safetyMode || 'workspace-write',
-        React.createElement(Text, { color: 'gray' }, '  detail '),
-        detailMode,
-        React.createElement(Text, { color: 'gray' }, '  thinking '),
-        showThinking ? 'on' : 'off',
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { color: runtime?.device ? 'green' : 'yellow' }, device),
-        React.createElement(Text, { color: 'gray' }, `  ${runtime?.meshEnabled ? 'mesh enabled' : 'mesh disabled'}`),
-        React.createElement(Text, { color: 'gray' }, '  '),
-        React.createElement(Text, { color: localShellApproved ? 'yellow' : 'gray' }, localShellLabel),
-      ),
+    React.createElement(Box, null,
+      React.createElement(Text, { color: runStateColor, bold: true }, topLine),
+      React.createElement(Text, { color: 'gray' }, `  v${getPackageVersion()}`),
     ),
     notice ? React.createElement(Text, { color: 'yellow' }, notice) : null,
-    React.createElement(Box, { flexDirection: 'column', marginTop: 1, borderStyle: 'single', borderColor: 'gray', paddingX: 1 },
-      React.createElement(Text, { color: 'gray' },
-        React.createElement(Text, { color: 'cyan' }, 'Ask '),
-        'natural language tasks  ',
-        React.createElement(Text, { color: 'cyan' }, '/status '),
-        'runtime  ',
-        React.createElement(Text, { color: 'cyan' }, '/tools '),
-        'capabilities  ',
-        React.createElement(Text, { color: 'cyan' }, '/examples '),
-        'starter prompts',
-      ),
-      React.createElement(Text, { color: 'gray' },
-        React.createElement(Text, { color: 'yellow' }, '!cmd '),
-        'is local host shell only; use D-Moss tools for board/OpenClaw work. ',
-        busy ? React.createElement(Text, { color: 'cyan' }, '/stop cancels the active run.') : null,
-      ),
-    ),
+
     React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
-      ...visibleTranscript.map((item) => React.createElement(Box, { key: item.id, flexDirection: 'column', marginBottom: 1 },
-        React.createElement(Text, { color: item.kind === 'user' ? 'cyan' : item.kind === 'error' ? 'red' : item.kind === 'system' ? 'gray' : undefined },
-          item.kind === 'user' ? `› ${item.text}` : visibleText(item.text),
-        ),
-      )),
+      ...visibleTranscript.map((item) => {
+        const refs = extractAttachmentRefs(item.text);
+        return React.createElement(Box, { key: item.id, flexDirection: 'column', marginBottom: 1 },
+          React.createElement(Text, { color: transcriptColor(item.kind), bold: item.kind !== 'system' }, transcriptLabel(item.kind)),
+          React.createElement(Text, { color: transcriptColor(item.kind) }, visibleText(item.text)),
+          ...refs.map((ref) => React.createElement(Text, { key: `${item.id}-${ref.label}`, color: ref.kind === 'image' ? 'magenta' : 'yellow' },
+            formatAttachmentChip(ref),
+          )),
+        );
+      }),
     ),
+
     activities.length > 0 ? React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: 'cyan', paddingX: 1 },
       React.createElement(Text, { color: 'cyan', bold: true }, 'Activity'),
       ...activities.map((item) => React.createElement(Text, { key: item.id, color: item.status === 'failed' ? 'yellow' : item.status === 'ok' ? 'green' : 'cyan' },
@@ -607,16 +690,20 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       React.createElement(Text, { color: 'yellow', bold: true }, 'Approval required'),
       React.createElement(Text, null, visibleText(approval.question, 8)),
       React.createElement(Text, { color: 'gray' }, 'Press y to approve, n or Esc to deny.'),
-    ) : React.createElement(Box, { marginTop: 1 },
-      React.createElement(Text, { color: busy ? 'gray' : 'cyan' }, busy ? 'running ' : '› '),
-      React.createElement(TextInput, {
+    ) : React.createElement(Box, { marginTop: 1, flexDirection: 'column' },
+      React.createElement(MultilineInput, {
         value: input,
         onChange: setInput,
         onSubmit: submit,
         placeholder: promptPlaceholder(runState),
-        focus: !busy,
-        showCursor: true,
+        disabled: busy,
       }),
+    ),
+    React.createElement(Box, { paddingX: 1 },
+      React.createElement(Text, { color: 'gray' }, footerHint(runState)),
+      React.createElement(Text, { color: 'gray' }, `  detail ${detailMode}`),
+      showThinking ? React.createElement(Text, { color: 'gray' }, '  thinking on') : null,
+      localShellApproved ? React.createElement(Text, { color: 'yellow' }, '  local shell approved') : null,
     ),
   );
 }

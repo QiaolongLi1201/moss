@@ -184,9 +184,6 @@ async function main() {
     loadEnvFromAncestors(parsedArgs.configOverrides.workspace);
   }
   const resolvedConfig = resolveCliConfig(process.env, loadConfigFile(), parsedArgs.configOverrides);
-  if (parsedArgs.approvalPolicy === 'never' || resolvedConfig.approvalPolicy === 'never') {
-    process.env.DMOSS_CLI_AUTO_APPROVE = '1';
-  }
   const safetyMode = parsedArgs.safetyModeOverride ?? resolvedConfig.safetyMode ?? resolveCliSafetyMode(argv);
   const workspace = resolvedConfig.workspace;
   const model = resolvedConfig.model;
@@ -246,7 +243,9 @@ async function main() {
     promptCache: { enabled: resolvedConfig.promptCacheEnabled },
     hooks: {
       enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: workspace }),
-      onBeforeToolExec: createCliToolApprovalHook(safetyMode),
+      onBeforeToolExec: createCliToolApprovalHook(safetyMode, process.env, {
+        approvalPolicy: resolvedConfig.approvalPolicy,
+      }),
     },
   });
   registerBuiltinTools(agent);

@@ -55,6 +55,14 @@ function runtimeWithDefaults(runtime: CliRuntimeStatus = {}) {
   return { ...DEFAULT_RUNTIME, ...runtime };
 }
 
+function approvalPolicyLine(config: ResolvedCliConfig): string {
+  return `approval ${config.approvalPolicy ?? 'prompt'}`;
+}
+
+function promptCacheLine(config: ResolvedCliConfig): string {
+  return config.promptCacheEnabled === false ? 'cache off' : 'cache stable';
+}
+
 function countJsonIndex(filePath: string): number {
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
@@ -156,6 +164,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const auth = rt.config;
 
   const authState = auth.apiKey ? `auth ${auth.apiKeySource}` : 'auth missing';
+  const policyState = `${approvalPolicyLine(auth)}   ${promptCacheLine(auth)}`;
   const deviceState = rt.device
     ? `device ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
     : 'device not configured';
@@ -165,7 +174,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
     `${ui.bold('D-Moss Agent')} ${ui.dim(`v${getPackageVersion()}`)}`,
     `${label('model')} ${agent.config.model}   ${label('provider')} ${shortBaseUrl(rt.baseUrl)}   ${label('session')} ${rt.sessionKey}`,
     `${label('workspace')} ${compactPath(rt.workspace)}   ${label('safety')} ${rt.safetyMode}   ${label('detail')} ${describeDetail(detailMode)}`,
-    `${statusDot(auth.apiKey ? 'ok' : 'warn')} ${authState}   ${statusDot('info')} tools ${tools.length}   ${statusDot('info')} memory ${memoryCount}   ${statusDot('info')} skills ${skillCount}`,
+    `${statusDot(auth.apiKey ? 'ok' : 'warn')} ${authState}   ${statusDot('info')} ${policyState}   ${statusDot('info')} tools ${tools.length}   ${statusDot('info')} memory ${memoryCount}   ${statusDot('info')} skills ${skillCount}`,
     `${statusDot(rt.device ? 'ok' : 'warn')} ${deviceState}   ${statusDot(rt.meshEnabled ? 'ok' : 'info')} ${meshState}`,
     groups.length ? `${label('capabilities')} ${formatEnabledGroups(groups)}` : `${label('capabilities')} none`,
     `${ui.dim('commands')} /help  /tools  /status  /examples  /model  /detail`,
@@ -192,6 +201,8 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     `  ${label('sessions')} ${sessionDir}`,
     `  ${label('detail')} ${describeDetail(detailMode)}`,
     `  ${label('safety')} ${rt.safetyMode}`,
+    `  ${label('approval')} ${auth.approvalPolicy ?? 'prompt'} (${auth.approvalPolicySource ?? 'default'})`,
+    `  ${label('prompt cache')} ${auth.promptCacheEnabled === false ? 'disabled' : 'enabled'} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('exec')} ${rt.execBackend}${rt.execBackend === 'docker' && rt.dockerImage ? ` (${rt.dockerImage})` : ''}`,
     `  ${label('memory')} ${memoryCount} entries`,
     `  ${label('skills')} ${skillCount}`,

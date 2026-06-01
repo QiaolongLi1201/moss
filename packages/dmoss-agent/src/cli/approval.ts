@@ -2,13 +2,17 @@ import * as readline from 'node:readline';
 import type { AgentHooks, ToolApprovalRequest } from '../core/agent/agent-hooks.js';
 import type { Tool, ToolSideEffectClass } from '../core/tools/tool-types.js';
 import { sanitizeSecrets } from '../safety/secret-sanitizer.js';
-import { normalizeSafetyModeConfig } from './config.js';
+import { normalizeSafetyModeConfig, type ConfigApprovalPolicy } from './config.js';
 
 export type CliSafetyMode = 'read-only' | 'workspace-write' | 'full-access';
 
 type AskUser = (question: string) => Promise<string>;
 
 let interactiveAsker: AskUser | null = null;
+
+export interface CliToolApprovalOptions {
+  approvalPolicy?: ConfigApprovalPolicy;
+}
 
 export function setCliApprovalAsker(asker: AskUser | null): void {
   interactiveAsker = asker;
@@ -76,6 +80,7 @@ async function defaultAskUser(question: string): Promise<string> {
 export function createCliToolApprovalHook(
   mode: CliSafetyMode,
   env: NodeJS.ProcessEnv = process.env,
+  options: CliToolApprovalOptions = {},
 ): NonNullable<AgentHooks['onBeforeToolExec']> {
   return async ({ tool, input }: ToolApprovalRequest) => {
     const sideEffect = inferSideEffectClass(tool);
@@ -87,7 +92,11 @@ export function createCliToolApprovalHook(
     }
     if (!needsApproval(tool, sideEffect)) return { approved: true };
 
-    if (env.DMOSS_CLI_AUTO_APPROVE === '1' || env.DMOSS_AUTO_APPROVE === '1') {
+    if (
+      options.approvalPolicy === 'never' ||
+      env.DMOSS_CLI_AUTO_APPROVE === '1' ||
+      env.DMOSS_AUTO_APPROVE === '1'
+    ) {
       return { approved: true };
     }
 

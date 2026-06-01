@@ -68,6 +68,25 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
 }
 
 {
+  const oldIsTty = process.stdin.isTTY;
+  Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+  try {
+    const approve = createCliToolApprovalHook('workspace-write', {}, { approvalPolicy: 'never' });
+    assert.deepEqual(
+      await approve({
+        tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+        input: { command: 'npm test' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'explicit approvalPolicy=never should approve allowed mutating tools without env mutation',
+    );
+  } finally {
+    Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });
+  }
+}
+
+{
   const approve = createCliToolApprovalHook('full-access', { DMOSS_CLI_AUTO_APPROVE: '1' });
   assert.deepEqual(
     await approve({

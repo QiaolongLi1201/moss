@@ -61,6 +61,12 @@ const runtime = {
     baseUrlSource: 'config',
     workspace: '/tmp/dmoss-workspace',
     workspaceSource: 'config',
+    safetyMode: 'workspace-write',
+    safetyModeSource: 'config',
+    approvalPolicy: 'never',
+    approvalPolicySource: 'config',
+    promptCacheEnabled: false,
+    promptCacheSource: 'config',
     configPath: '/tmp/dmoss-config/config.json',
   },
 };
@@ -89,6 +95,8 @@ const agent = createAgent([
   assert.match(welcome, /capabilities: workspace 2/);
   assert.match(welcome, /device root@10\.64\.1\.10:22/);
   assert.match(welcome, /mesh on/);
+  assert.match(welcome, /approval never/);
+  assert.match(welcome, /cache off/);
   assert.match(welcome, /commands.*\/help.*\/tools.*\/status/);
 }
 
@@ -115,6 +123,8 @@ const agent = createAgent([
   assert.match(status, /token-plan\.cn-beijing\.maas\.aliyuncs\.com/);
   assert.match(status, /device: root@10\.64\.1\.10:22/);
   assert.match(status, /safety: workspace-write/);
+  assert.match(status, /approval: never \(config\)/);
+  assert.match(status, /prompt cache: disabled \(config\)/);
   assert.match(status, /tools: 7/);
 }
 

@@ -397,6 +397,7 @@ export function runAgentLoop(
               compactHooks,
               recordLlmUsage,
               lastMessageNeedsToolFollowUpLlm,
+              suppressVisibleDeltas: Boolean(params.guardAssistantOutput),
             });
 
             if (llmResult.control === 'retry') {
@@ -410,6 +411,7 @@ export function runAgentLoop(
             // ===== Phase 3: Response processing =====
             const responseResult = await processLlmResponse({
               state,
+              runId,
               assistantContent: llmResult.assistantContent,
               messageThinkingChunks: llmResult.messageThinkingChunks,
               toolCalls: llmResult.toolCalls,
@@ -432,6 +434,7 @@ export function runAgentLoop(
               loadToolsMetaName,
               toolLoopGuard,
               checkToolApproval: params.checkToolApproval,
+              guardAssistantOutput: params.guardAssistantOutput,
               toolAbortSignalFor: params.toolAbortSignalFor,
               enrichToolContext: params.enrichToolContext,
               evaluateSteering,

@@ -78,6 +78,7 @@ export interface ExecuteLlmTurnParams {
     error?: string;
   }) => Promise<void>;
   lastMessageNeedsToolFollowUpLlm: (messages: Message[]) => boolean;
+  suppressVisibleDeltas?: boolean;
 }
 
 export interface ExecuteLlmTurnResult {
@@ -134,6 +135,7 @@ export async function executeLlmTurn(
     compactHooks,
     recordLlmUsage,
     lastMessageNeedsToolFollowUpLlm,
+    suppressVisibleDeltas,
   } = params;
 
   const llmTurnStartedAt = Date.now();
@@ -163,6 +165,7 @@ export async function executeLlmTurn(
           turn: state.turns,
           runStartMs,
           firstTokenMs: state.firstTokenMs,
+          suppressVisibleDeltas,
           logDebug: () => {},
         });
         if (turn.usage) {

@@ -668,6 +668,12 @@ export class DmossAgent {
             }));
           }
         : undefined,
+      guardAssistantOutput: hooks?.onOutputGuardrail
+        ? async (request) => hooks.onOutputGuardrail!({
+            ...request,
+            ...(options?.platform ? { platform: options.platform } : {}),
+          })
+        : undefined,
     };
 
     return {

@@ -108,6 +108,7 @@ export interface AgentLoopLlmTurnParams {
   turn: number;
   runStartMs: number;
   firstTokenMs: number | null;
+  suppressVisibleDeltas?: boolean;
   logDebug: (message: string, meta?: Record<string, unknown>) => void;
 }
 
@@ -137,6 +138,7 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
     sessionKey,
     turn: turns,
     runStartMs,
+    suppressVisibleDeltas,
   } = params;
   let firstTokenMs = params.firstTokenMs;
   let usage: { inputTokens: number; outputTokens: number } | undefined;
@@ -264,7 +266,9 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
                   currentThinkingParts.push(th);
                 }
                 for (const msg of routed.message) {
-                  stream.push({ type: 'message_delta', delta: msg });
+                  if (!suppressVisibleDeltas) {
+                    stream.push({ type: 'message_delta', delta: msg });
+                  }
                   streamedVisibleAccum += msg;
                 }
                 break;
@@ -320,7 +324,7 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
                   catchUp = visible;
                 }
 
-                if (catchUp && !abortSignal.aborted) {
+                if (catchUp && !abortSignal.aborted && !suppressVisibleDeltas) {
                   if (firstTokenMs == null) firstTokenMs = Date.now() - runStartMs;
                   await pushMessageDeltaCatchup(stream, catchUp, abortSignal);
                 }
@@ -378,7 +382,9 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
           }
           for (const msg of orphan.message) {
             if (firstTokenMs == null) firstTokenMs = Date.now() - runStartMs;
-            stream.push({ type: 'message_delta', delta: msg });
+            if (!suppressVisibleDeltas) {
+              stream.push({ type: 'message_delta', delta: msg });
+            }
             streamedVisibleAccum += msg;
           }
           if (currentThinkingParts && currentThinkingParts.length > 0) {
@@ -435,7 +441,9 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
               if (visible.trim()) {
                 assistantContent.push({ type: 'text', text: visible });
                 turnTextParts.push(visible);
-                await pushMessageDeltaCatchup(stream, visible, abortSignal);
+                if (!suppressVisibleDeltas) {
+                  await pushMessageDeltaCatchup(stream, visible, abortSignal);
+                }
               }
             }
           }

@@ -31,8 +31,38 @@ import {
   executeAgentLoopToolCalls,
 } from './agent-loop-tool-execution.js';
 
+const GUARDED_DELTA_CHUNK = 96;
+
+function pushGuardedMessageDeltas(push: (event: MiniAgentEvent) => void, text: string): void {
+  if (!text) return;
+  for (let i = 0; i < text.length; i += GUARDED_DELTA_CHUNK) {
+    const delta = text.slice(i, i + GUARDED_DELTA_CHUNK);
+    if (delta) push({ type: 'message_delta', delta });
+  }
+}
+
+function replaceAssistantVisibleText(content: ContentBlock[], text: string): void {
+  const next: ContentBlock[] = [];
+  let inserted = false;
+  for (const block of content) {
+    if (block.type !== 'text') {
+      next.push(block);
+      continue;
+    }
+    if (!inserted) {
+      if (text) next.push({ ...block, text });
+      inserted = true;
+    }
+  }
+  if (!inserted && text) {
+    next.unshift({ type: 'text', text });
+  }
+  content.splice(0, content.length, ...next);
+}
+
 export interface ProcessLlmResponseParams {
   state: AgentLoopMutableState;
+  runId: string;
   assistantContent: ContentBlock[];
   messageThinkingChunks: string[];
   toolCalls: { id: string; name: string; input: Record<string, unknown> }[];
@@ -60,6 +90,16 @@ export interface ProcessLlmResponseParams {
     name: string;
     input: unknown;
   }) => Promise<{ approved: boolean; decision: string } | null>;
+  guardAssistantOutput?: (request: {
+    sessionKey: string;
+    runId: string;
+    turn: number;
+    response: string;
+    stopReason?: string;
+  }) => Promise<
+    | { approved: true; response?: string }
+    | { approved: false; reason: string; response?: string }
+  >;
   toolAbortSignalFor?: (toolCallId: string) => AbortSignal | undefined;
   enrichToolContext?: (baseCtx: ToolContext, sessionKey: string) => ToolContext;
   evaluateSteering: () => Message[];
@@ -95,6 +135,7 @@ export async function processLlmResponse(
 ): Promise<ProcessLlmResponseResult> {
   const {
     state,
+    runId,
     assistantContent,
     messageThinkingChunks,
     toolCalls,
@@ -117,6 +158,7 @@ export async function processLlmResponse(
     loadToolsMetaName,
     toolLoopGuard,
     checkToolApproval,
+    guardAssistantOutput,
     toolAbortSignalFor,
     enrichToolContext,
     evaluateSteering,
@@ -210,10 +252,40 @@ export async function processLlmResponse(
     assistantBuffer.push(assistantMsg);
   }
 
-  const visibleAssistantText = buildVisibleAssistantText({
+  let visibleAssistantText = buildVisibleAssistantText({
     textParts: turnTextParts,
     thinkingFallback,
   });
+  if (guardAssistantOutput && !hasThinkingOnly) {
+    let decision:
+      | { approved: true; response?: string }
+      | { approved: false; reason: string; response?: string };
+    try {
+      decision = await guardAssistantOutput({
+        sessionKey,
+        runId,
+        turn: state.turns,
+        response: visibleAssistantText,
+        ...(streamStopReason ? { stopReason: streamStopReason } : {}),
+      });
+    } catch {
+      decision = { approved: false, reason: 'output guardrail failed' };
+    }
+    if (decision.approved) {
+      if (typeof decision.response === 'string') {
+        visibleAssistantText = decision.response;
+      }
+    } else {
+      visibleAssistantText =
+        typeof decision.response === 'string'
+          ? decision.response
+          : `Output blocked by host policy: ${decision.reason || 'no reason provided'}`;
+    }
+    replaceAssistantVisibleText(assistantContent, visibleAssistantText);
+  }
+  if (guardAssistantOutput && !hasThinkingOnly) {
+    pushGuardedMessageDeltas(push, visibleAssistantText);
+  }
   push({ type: 'message_end', message: assistantMsg, text: visibleAssistantText });
 
   // ===== Update state =====

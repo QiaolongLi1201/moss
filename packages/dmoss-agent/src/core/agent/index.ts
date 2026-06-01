@@ -3,6 +3,8 @@ export type {
   AgentHooks,
   InputGuardrailRequest,
   InputGuardrailDecision,
+  OutputGuardrailRequest,
+  OutputGuardrailDecision,
   ToolApprovalRequest,
   ToolApprovalDecision,
 } from './agent-hooks.js';

@@ -27,6 +27,19 @@ export type InputGuardrailDecision =
   | { approved: true; userMessage?: string }
   | { approved: false; reason: string };
 
+export interface OutputGuardrailRequest {
+  sessionKey: string;
+  runId: string;
+  turn: number;
+  response: string;
+  stopReason?: string;
+  platform?: string;
+}
+
+export type OutputGuardrailDecision =
+  | { approved: true; response?: string }
+  | { approved: false; reason: string; response?: string };
+
 /**
  * Agent lifecycle hooks — host implements these to customize behavior.
  *
@@ -58,6 +71,14 @@ export interface AgentHooks {
    * or return `{ approved: true, userMessage }` to normalize the input.
    */
   onInputGuardrail?(request: InputGuardrailRequest): Promise<InputGuardrailDecision>;
+
+  /**
+   * Called after a visible assistant answer is assembled, but before it is
+   * streamed to product UI, appended to the session, or returned in ChatResult.
+   * When this hook is configured, D-Moss buffers visible deltas until the
+   * decision is available so rejected content is not leaked through streaming.
+   */
+  onOutputGuardrail?(request: OutputGuardrailRequest): Promise<OutputGuardrailDecision>;
 
   /**
    * Called before a tool is executed. Return `{ approved: false }` to block execution.

@@ -84,6 +84,16 @@ export interface AgentLoopPolicy {
 export interface AgentLoopExtensions {
   getSteeringMessages?: () => Promise<Message[]>;
   getFollowUpMessages?: () => Promise<Message[]>;
+  guardAssistantOutput?: (request: {
+    sessionKey: string;
+    runId: string;
+    turn: number;
+    response: string;
+    stopReason?: string;
+  }) => Promise<
+    | { approved: true; response?: string }
+    | { approved: false; reason: string; response?: string }
+  >;
   compactHooks?: CompactHookRegistry;
   steeringEngine?: SteeringEngine;
 }

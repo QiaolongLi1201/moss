@@ -67,6 +67,7 @@ assert.equal(isLocalShellLine('  !pwd'), false);
 
 assert.equal(commandSuggestion('/staus'), '/status');
 assert.equal(commandSuggestion('/tool'), '/tools');
+assert.equal(commandSuggestion('/queu'), '/queue');
 assert.equal(commandSuggestion('status'), null);
 
 assert.equal(promptPlaceholder('ready'), '');

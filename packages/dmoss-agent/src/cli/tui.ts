@@ -47,7 +47,7 @@ interface ApprovalState {
   resolve: (answer: string) => void;
 }
 
-interface QueuedInput {
+export interface QueuedInput {
   raw: string;
   message: string;
 }
@@ -151,6 +151,8 @@ const KNOWN_COMMANDS = [
   '/model',
   '/models',
   '/detail',
+  '/queue',
+  '/clearqueue',
   '/memory',
   '/skills',
   '/upgrade',
@@ -298,7 +300,7 @@ export function statusLine(options: {
 
 export function footerHint(state: TuiRunState): string {
   if (state === 'approval') return 'y approve · n/Esc deny';
-  if (state === 'running') return 'Esc cancel · Enter queue · Ctrl+C exit';
+  if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
   return 'Ctrl+O tools · /help · Ctrl+C exit';
 }
 
@@ -965,6 +967,7 @@ function commandRowsForInput(value: string): Array<[string, string]> {
     ['/tools', 'list available tools and permission surface'],
     ['/examples', 'starter tasks'],
     ['/detail', 'toggle quiet, progress, or verbose detail'],
+    ['/queue', 'show or clear queued prompts'],
     ['/thinking', 'toggle thinking deltas'],
     ['/clear', 'clear visible transcript'],
     ['/quit', 'exit D-Moss'],
@@ -1094,6 +1097,28 @@ export function PromptEditor({
   );
 }
 
+export interface QueuePreviewProps {
+  items: QueuedInput[];
+}
+
+export function QueuePreview({ items }: QueuePreviewProps): React.ReactElement | null {
+  if (items.length === 0) return null;
+  const visible = items.slice(0, 3);
+  const hiddenCount = items.length - visible.length;
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', marginTop: 1 },
+    React.createElement(Text, { color: theme.textMuted },
+      `  queued ${items.length} · /queue clear to discard`),
+    ...visible.map((item, index) => React.createElement(Text, {
+      key: `${index}-${item.message}`,
+      color: theme.textMuted,
+    }, `  ${index + 1}. ${visibleText(item.message, 1)}`)),
+    hiddenCount > 0 ? React.createElement(Text, { color: theme.textMuted },
+      `  ... ${hiddenCount} more queued prompt${hiddenCount === 1 ? '' : 's'}`) : null,
+  );
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Main TUI
 // ────────────────────────────────────────────────────────────────────────────
@@ -1115,7 +1140,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [flashHint, setFlashHint] = useState<string>('');
   const [ctxUsage, setCtxUsage] = useState<{ used: number; total: number } | undefined>(undefined);
-  const [queuedCount, setQueuedCount] = useState(0);
+  const [queuedInputs, setQueuedInputsState] = useState<QueuedInput[]>([]);
   const answerIdRef = useRef<number | null>(null);
   const currentTurnIdRef = useRef<number | null>(null);
   const activeRunControllerRef = useRef<AbortController | null>(null);
@@ -1126,6 +1151,11 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const inputHistoryRef = useRef<string[]>([]);
   const historyIndexRef = useRef<number | null>(null);
   const historyDraftRef = useRef('');
+
+  const setQueuedInputs = useCallback((next: QueuedInput[]): void => {
+    queuedInputsRef.current = next;
+    setQueuedInputsState(next);
+  }, []);
 
   const setBusyState = useCallback((next: boolean): void => {
     busyRef.current = next;
@@ -1267,6 +1297,24 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       setTranscript([]);
       return true;
     }
+    if (message === '/queue' || message === '/queued') {
+      const queue = queuedInputsRef.current;
+      addTranscript('system', queue.length === 0
+        ? 'Queue is empty.'
+        : [
+            `Queued prompts (${queue.length})`,
+            ...queue.map((item, index) => `  ${index + 1}. ${item.message}`),
+            '',
+            'Use /queue clear to discard queued prompts.',
+          ].join('\n'));
+      return true;
+    }
+    if (message === '/queue clear' || message === '/clearqueue') {
+      const count = queuedInputsRef.current.length;
+      setQueuedInputs([]);
+      addTranscript('system', count === 0 ? 'Queue is already empty.' : `Cleared ${count} queued prompt${count === 1 ? '' : 's'}.`);
+      return true;
+    }
     if (message === '/stop' || message === '/abort') {
       if (activeRunControllerRef.current) {
         activeRunControllerRef.current.abort(new Error('aborted by user'));
@@ -1343,7 +1391,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       return true;
     }
     return false;
-  }, [addTranscript, agent, app, currentModel, runtime, workspace]);
+  }, [addTranscript, agent, app, currentModel, runtime, setQueuedInputs, workspace]);
 
   const runLocalShell = useCallback(async (raw: string): Promise<void> => {
     const command = raw.slice(1);
@@ -1498,10 +1546,10 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
 
   useEffect(() => {
     if (busy || approval || queuedInputsRef.current.length === 0) return;
-    const next = queuedInputsRef.current.shift();
-    setQueuedCount(queuedInputsRef.current.length);
+    const [next, ...rest] = queuedInputsRef.current;
+    setQueuedInputs(rest);
     if (next) runInput(next.raw);
-  }, [approval, busy, queuedCount, runInput]);
+  }, [approval, busy, queuedInputs.length, runInput, setQueuedInputs]);
 
   const submit = useCallback((value: string): void => {
     const raw = value;
@@ -1512,33 +1560,39 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     rememberInput(message);
     historyIndexRef.current = null;
     historyDraftRef.current = '';
-    if (busyRef.current && (message === '/stop' || message === '/abort')) {
+    const isImmediateBusyCommand = message === '/stop'
+      || message === '/abort'
+      || message === '/queue'
+      || message === '/queued'
+      || message === '/queue clear'
+      || message === '/clearqueue';
+    if (busyRef.current && isImmediateBusyCommand) {
       runInput(raw);
       return;
     }
     if (busyRef.current) {
       const nextQueue = [...queuedInputsRef.current, { raw, message }];
-      queuedInputsRef.current = nextQueue;
-      setQueuedCount(nextQueue.length);
-      addTranscript('system', `Queued: ${message}`);
+      setQueuedInputs(nextQueue);
+      addTranscript('system', `Queued #${nextQueue.length}: ${message}`);
       return;
     }
     runInput(raw);
-  }, [addTranscript, approval, runInput]);
+  }, [addTranscript, approval, runInput, setQueuedInputs]);
 
   const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
   const terminalRows = Math.max(12, stdout?.rows ?? 30);
   const promptRows = Math.min(6, Math.max(1, input ? input.split('\n').length : 1)) + 2 + (input.startsWith('/') ? 8 : 0);
+  const queueRows = queuedInputs.length > 0 ? Math.min(5, queuedInputs.length + 2) : 0;
   const footerRows = 0;
   const headerRows = 6;
   const approvalRows = approval ? Math.min(10, approval.question.split('\n').length + 4) : 0;
   const noticeRows = notice ? 1 : 0;
-  const transcriptRows = Math.max(1, terminalRows - headerRows - promptRows - footerRows - approvalRows - noticeRows - 2);
+  const transcriptRows = Math.max(1, terminalRows - headerRows - promptRows - queueRows - footerRows - approvalRows - noticeRows - 2);
 
   // Compose footer hint based on state (drives footerHint text used in tests).
   const footerHintText = footerHint(runState)
-    + (queuedCount > 0 ? `  ·  queued ${queuedCount}` : '')
+    + (queuedInputs.length > 0 ? `  ·  queued ${queuedInputs.length}` : '')
     + (detailMode !== 'progress' ? `  ·  detail ${detailMode}` : '')
     + (showThinking ? '  ·  thinking on' : '')
     + (localShellApproved ? '  ·  local shell' : '');
@@ -1583,6 +1637,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
           model: currentModel,
           hint: footerHintText,
         }),
+    React.createElement(QueuePreview, { items: queuedInputs }),
     notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
     flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
     ctxUsage ? React.createElement(Text, { color: theme.textMuted },
@@ -1598,6 +1653,7 @@ function commandList(): string {
     '  /status            runtime and device context',
     '  /tools             available tools',
     '  /stop              stop the active run',
+    '  /queue [clear]     show or discard queued prompts',
     '',
     'Conversation',
     '  /clear             clear visible transcript',

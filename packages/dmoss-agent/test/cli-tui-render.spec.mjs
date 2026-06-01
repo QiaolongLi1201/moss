@@ -15,6 +15,7 @@ import {
   ApprovalPromptLine,
   TranscriptMessage,
   PromptEditor,
+  QueuePreview,
   renderMarkdown,
 } from '../dist/cli/tui.js';
 
@@ -384,6 +385,25 @@ test('PromptEditor renders the cursor at the requested column', () => {
   );
   const frame = lastFrame();
   assert.match(frame, /> ab▌cd/);
+  cleanup();
+});
+
+test('QueuePreview renders queued prompts and overflow count', () => {
+  const { lastFrame } = render(
+    React.createElement(QueuePreview, {
+      items: [
+        { raw: 'first queued prompt', message: 'first queued prompt' },
+        { raw: 'second queued prompt', message: 'second queued prompt' },
+        { raw: 'third queued prompt', message: 'third queued prompt' },
+        { raw: 'fourth queued prompt', message: 'fourth queued prompt' },
+      ],
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /queued 4/);
+  assert.match(frame, /\/queue clear/);
+  assert.match(frame, /1\. first queued prompt/);
+  assert.match(frame, /\.\.\. 1 more queued prompt/);
   cleanup();
 });
 

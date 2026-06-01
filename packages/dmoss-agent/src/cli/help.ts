@@ -20,22 +20,22 @@ export function displayHelp(c: Colors): void {
   const configDir = resolveConfigDir();
   const lines = [
     '',
-    `  ${c.bold(c.cyan('dmoss-agent'))}  ${c.dim('— standalone agent for robotics & edge devices')}`,
+    `  ${c.bold(c.cyan('dmoss'))}  ${c.dim('— standalone agent for robotics & edge devices')}`,
     '',
     `  ${c.bold('Quick start')}`,
-    `    ${c.cyan('$')} dmoss-agent setup                ${c.dim('# configure provider, model, and API key')}`,
-    `    ${c.cyan('$')} dmoss-agent                      ${c.dim('# interactive REPL')}`,
-    `    ${c.cyan('$')} dmoss-agent -m deepseek-v4-pro   ${c.dim('# override model for this run')}`,
-    `    ${c.cyan('$')} dmoss-agent resume --last        ${c.dim('# continue the latest saved session')}`,
-    `    ${c.cyan('$')} dmoss-agent "check disk usage"   ${c.dim('# one-shot mode')}`,
-    `    ${c.cyan('$')} echo "list files" | dmoss-agent  ${c.dim('# piped stdin')}`,
+    `    ${c.cyan('$')} dmoss setup                ${c.dim('# configure provider, model, and API key')}`,
+    `    ${c.cyan('$')} dmoss                      ${c.dim('# interactive TUI')}`,
+    `    ${c.cyan('$')} dmoss -m deepseek-v4-pro   ${c.dim('# override model for this run')}`,
+    `    ${c.cyan('$')} dmoss resume --last        ${c.dim('# continue the latest saved session')}`,
+    `    ${c.cyan('$')} dmoss "check disk usage"   ${c.dim('# one-shot mode')}`,
+    `    ${c.cyan('$')} echo "list files" | dmoss  ${c.dim('# piped stdin')}`,
     '',
     `  ${c.bold('Setup & auth')}`,
     `    ${c.green('setup')}                 guided first-run model setup`,
     `    ${c.green('auth status')}           show provider/model/key source without printing secrets`,
     `    ${c.green('auth logout')}           remove stored API key from config`,
     `    ${c.green('doctor')}                inspect config, auth, workspace, runtime, and update state`,
-    `    ${c.green('update')}                run npm global update for dmoss-agent`,
+    `    ${c.green('update')}                run npm global update for dmoss`,
     `    ${c.green('resume')} ${c.dim('[--last]')}       resume a saved JSONL session`,
     `    ${c.green('fork')} ${c.dim('[--last]')}         copy a saved session into a new branch`,
     `    ${c.green('config set model')} ${c.dim('<m>')}  update stored model`,
@@ -120,7 +120,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.blue('ros2_topic_list')} · ${c.blue('ros2_topic_echo')} · ${c.blue('ros2_topic_hz')} · ${c.blue('ros2_node_list')}`,
     `    ${c.blue('ros2_service_list')} · ${c.blue('ros2_service_call')} · ${c.blue('ros2_launch')} · ${c.blue('ros2_pkg_list')}`,
     '',
-    `  ${c.dim('Docs: https://github.com/D-Moss/dmoss-agent · License: MIT')}`,
+    `  ${c.dim('Docs: https://github.com/QiaolongLi1201/moss/tree/main/packages/dmoss-agent · License: MIT')}`,
     '',
   ];
   console.log(lines.join('\n'));
@@ -129,6 +129,6 @@ export function displayHelp(c: Colors): void {
 
 export function displayVersion(c: Colors): void {
   const version = getPackageVersion();
-  console.log(`${c.bold('dmoss-agent')} ${version === 'unknown' ? c.dim('(unknown version)') : c.cyan(`v${version}`)}`);
+  console.log(`${c.bold('dmoss')} ${version === 'unknown' ? c.dim('(unknown version)') : c.cyan(`v${version}`)}`);
   process.exit(0);
 }

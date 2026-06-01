@@ -1,6 +1,6 @@
 {
   "name": "@rdk-moss/agent",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -91,6 +91,7 @@
     "access": "public"
   },
   "bin": {
+    "dmoss": "dist/cli.js",
     "dmoss-agent": "dist/cli.js"
   },
   "files": [
@@ -117,6 +118,7 @@
     "build": "npm run clean && tsc -p tsconfig.build.json && node -e \"const fs=require('fs');fs.chmodSync('dist/cli.js',0o755)\"",
     "typecheck": "tsc --noEmit",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",
+    "postinstall": "node -e \"const fs=require('fs');try{fs.chmodSync('dist/cli.js',0o755)}catch{}\"",
     "prepublishOnly": "npm run clean && npm run build",
     "test": "npm run build && node ../../scripts/run-package-tests.mjs",
     "cli": "npx tsx src/cli.ts",
@@ -124,19 +126,22 @@
   },
   "dependencies": {
     "@mariozechner/pi-ai": "^0.50.7",
-    "@rdk-moss/core": "^0.3.2",
-    "@rdk-moss/memory": "^0.3.1",
-    "@rdk-moss/skills": "^0.3.1",
+    "@rdk-moss/core": "^0.3.7",
+    "@rdk-moss/memory": "^0.3.7",
+    "@rdk-moss/skills": "^0.3.7",
     "@types/react": "^19.2.0",
     "ink": "^7.0.5",
-    "ink-text-input": "^6.0.0",
+    "marked": "^5.1.0",
+    "marked-terminal": "^7.0.0",
     "micromatch": "^4.0.8",
     "picocolors": "^1.1.1",
     "react": "^19.2.6",
     "undici": "^7.19.1"
   },
   "devDependencies": {
+    "@types/marked-terminal": "^6.1.1",
     "@types/micromatch": "^4.0.10",
+    "ink-testing-library": "^4.0.0",
     "typescript": "^5.7.3"
   },
   "peerDependencies": {

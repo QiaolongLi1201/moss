@@ -176,7 +176,7 @@ export async function runSetupWizard(): Promise<void> {
   print(`Model: ${model}`);
   print(`Base URL: ${withoutSecret(baseUrl)}`);
   print('');
-  print('Try `dmoss-agent "帮我检查当前目录"` or run `dmoss-agent` for interactive mode.');
+  print('Try `dmoss "帮我检查当前目录"` or run `dmoss` for interactive mode.');
 }
 
 export async function runAuthLogout(): Promise<void> {
@@ -200,7 +200,7 @@ export function runConfigSet(args: string[]): void {
   const [key, ...rest] = args;
   const value = rest.join(' ').trim();
   if (!key || !value) {
-    print('Usage: dmoss-agent config set <provider|model|baseUrl> <value>');
+    print('Usage: dmoss config set <provider|model|baseUrl> <value>');
     process.exitCode = 1;
     return;
   }
@@ -222,7 +222,7 @@ export function printMissingConfigGuidance(interactive: boolean): void {
   print('D-Moss needs a model configuration before it can run.');
   print('');
   print('Fast path:');
-  print('  dmoss-agent setup');
+  print('  dmoss setup');
   print('');
   print('Script/env path:');
   print('  export DMOSS_API_KEY=your-key');
@@ -230,7 +230,7 @@ export function printMissingConfigGuidance(interactive: boolean): void {
   print('  export DMOSS_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode');
   print('');
   if (interactive) {
-    print('You can run setup now, then start `dmoss-agent` again.');
+    print('You can run setup now, then start `dmoss` again.');
   } else {
     print('One-shot mode does not prompt, so scripts do not hang.');
   }
@@ -242,7 +242,7 @@ export async function offerSetupForInteractiveMissingConfig(): Promise<void> {
   if (!answer || /^y(es)?$/i.test(answer)) {
     await runSetupWizard();
   } else {
-    print('Setup skipped. Run `dmoss-agent setup` when you are ready.');
+    print('Setup skipped. Run `dmoss setup` when you are ready.');
     process.exitCode = 1;
   }
 }

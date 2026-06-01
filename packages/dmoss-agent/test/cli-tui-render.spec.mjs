@@ -1,0 +1,299 @@
+#!/usr/bin/env node
+/**
+ * Run:
+ *   npm run build -w @rdk-moss/agent
+ *   node packages/dmoss-agent/test/cli-tui-render.spec.mjs
+ */
+import assert from 'node:assert/strict';
+import React from 'react';
+import { render, cleanup } from 'ink-testing-library';
+import {
+  StatusBar,
+  ActivityItemLine,
+  ApprovalPromptLine,
+  TranscriptMessage,
+  PromptEditor,
+  renderMarkdown,
+} from '../dist/cli/tui.js';
+
+const tests = [];
+function test(name, fn) {
+  tests.push({ name, fn });
+}
+
+// ───── StatusBar ─────
+
+test('StatusBar renders the profile, device, workspace, state, and version', () => {
+  const { lastFrame } = render(
+    React.createElement(StatusBar, {
+      state: 'ready',
+      device: 'root@192.168.1.10',
+      workspace: '/Users/me/project',
+      version: 'v0.3.6',
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Default/);
+  assert.match(frame, /root@192\.168\.1\.10/);
+  assert.match(frame, /ready/);
+  assert.match(frame, /v0\.3\.6/);
+  cleanup();
+});
+
+test('StatusBar shows "approval needed" badge in approval state', () => {
+  const { lastFrame } = render(
+    React.createElement(StatusBar, {
+      state: 'approval',
+      device: 'no device',
+      workspace: '/tmp',
+      version: 'v0.3.6',
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /approval needed/);
+  cleanup();
+});
+
+test('StatusBar renders a disconnected device gracefully', () => {
+  const { lastFrame } = render(
+    React.createElement(StatusBar, {
+      state: 'ready',
+      device: 'no device',
+      workspace: '/tmp',
+      version: 'v0.3.6',
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /no device/);
+  cleanup();
+});
+
+// ───── ActivityItemLine ─────
+
+test('ActivityItemLine renders a running tool with the running glyph', () => {
+  const { lastFrame } = render(
+    React.createElement(ActivityItemLine, {
+      item: {
+        id: '1',
+        toolName: 'read_file',
+        toolCallId: '1',
+        startedAt: 0,
+        status: 'running',
+        inputSummary: '{"path": "README.md"}',
+      },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /read_file/);
+  assert.match(frame, /README\.md/);
+  assert.match(frame, /…/);
+  cleanup();
+});
+
+test('ActivityItemLine renders a completed tool with elapsed time', () => {
+  const { lastFrame } = render(
+    React.createElement(ActivityItemLine, {
+      item: {
+        id: '2',
+        toolName: 'exec',
+        toolCallId: '2',
+        startedAt: 0,
+        status: 'ok',
+        elapsedMs: 124,
+      },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /exec/);
+  assert.match(frame, /124ms/);
+  cleanup();
+});
+
+test('ActivityItemLine renders a failed tool with the failed glyph', () => {
+  const { lastFrame } = render(
+    React.createElement(ActivityItemLine, {
+      item: {
+        id: '3',
+        toolName: 'http_get',
+        toolCallId: '3',
+        startedAt: 0,
+        status: 'failed',
+        elapsedMs: 32,
+      },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /http_get/);
+  assert.match(frame, /!/);
+  cleanup();
+});
+
+// ───── ApprovalPromptLine ─────
+
+test('ApprovalPromptLine renders the question and y/n hint', () => {
+  const { lastFrame } = render(
+    React.createElement(ApprovalPromptLine, {
+      question: 'Allow running this tool?\nIt will read 3 files.',
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Allow running this tool/);
+  assert.match(frame, /y approve/);
+  assert.match(frame, /n.*Esc deny/);
+  cleanup();
+});
+
+// ───── TranscriptMessage ─────
+
+test('TranscriptMessage renders a system message dimmed', () => {
+  const { lastFrame } = render(
+    React.createElement(TranscriptMessage, {
+      item: { id: 1, kind: 'system', text: 'Ready. Ask a task or use /examples.' },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Ready\. Ask a task/);
+  cleanup();
+});
+
+test('TranscriptMessage renders a user message as plain text', () => {
+  const { lastFrame } = render(
+    React.createElement(TranscriptMessage, {
+      item: { id: 2, kind: 'user', text: 'Read README' },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Read README/);
+  cleanup();
+});
+
+test('TranscriptMessage renders an error message with the error text', () => {
+  const { lastFrame } = render(
+    React.createElement(TranscriptMessage, {
+      item: { id: 3, kind: 'error', text: 'Tool denied.' },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Tool denied\./);
+  cleanup();
+});
+
+test('TranscriptMessage renders a tool message via ActivityItemLine', () => {
+  const { lastFrame } = render(
+    React.createElement(TranscriptMessage, {
+      item: {
+        id: 4,
+        kind: 'tool',
+        text: '',
+        toolName: 'list_directory',
+        status: 'ok',
+        elapsedMs: 12,
+      },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /list_directory/);
+  assert.match(frame, /12ms/);
+  cleanup();
+});
+
+test('TranscriptMessage renders attachment chips for image and file references', () => {
+  const { lastFrame } = render(
+    React.createElement(TranscriptMessage, {
+      item: {
+        id: 5,
+        kind: 'assistant',
+        text: 'please inspect [Image #1] and [File #2]',
+        finalized: false,
+      },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /\[Image #1\] image/);
+  assert.match(frame, /\[File #2\] file/);
+  cleanup();
+});
+
+test('TranscriptMessage renders finalized assistant text as markdown', () => {
+  const { lastFrame } = render(
+    React.createElement(TranscriptMessage, {
+      item: {
+        id: 6,
+        kind: 'assistant',
+        text: '# Heading\n\n- item one\n- item two\n\n```bash\necho hi\n```\n',
+        finalized: true,
+      },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Heading/);
+  assert.match(frame, /item one/);
+  assert.match(frame, /item two/);
+  assert.match(frame, /echo hi/);
+  cleanup();
+});
+
+// ───── PromptEditor ─────
+
+test('PromptEditor renders a disabled state with a dim placeholder', () => {
+  const { lastFrame } = render(
+    React.createElement(PromptEditor, {
+      value: 'some input',
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: 'message, /examples, /status, or !pwd',
+      disabled: true,
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /some input/);
+  cleanup();
+});
+
+test('PromptEditor renders a multi-line indicator when value has newlines', () => {
+  const { lastFrame } = render(
+    React.createElement(PromptEditor, {
+      value: 'first line\nsecond line',
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: 'message',
+      disabled: false,
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /2 lines/);
+  cleanup();
+});
+
+// ───── renderMarkdown ─────
+
+test('renderMarkdown produces a string with ANSI codes for code blocks', () => {
+  const out = renderMarkdown('hello `inline` world');
+  assert.match(out, /hello/);
+  assert.match(out, /inline/);
+  assert.match(out, /world/);
+});
+
+test('renderMarkdown handles headings', () => {
+  const out = renderMarkdown('# Title\n\nbody');
+  assert.match(out, /Title/);
+  assert.match(out, /body/);
+});
+
+let failures = 0;
+for (const { name, fn } of tests) {
+  try {
+    await fn();
+    process.stderr.write(`  ok  ${name}\n`);
+  } catch (err) {
+    failures += 1;
+    process.stderr.write(`  FAIL ${name}\n`);
+    process.stderr.write(`       ${err && err.stack ? err.stack.split('\n').slice(0, 3).join('\n       ') : err}\n`);
+  }
+}
+
+if (failures > 0) {
+  console.error(`[FAIL] ${failures} of ${tests.length} TUI render tests failed`);
+  process.exit(1);
+}
+console.log(`[PASS] TUI render tests (${tests.length} snapshots)`);

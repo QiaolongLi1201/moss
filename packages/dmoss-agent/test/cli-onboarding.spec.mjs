@@ -153,7 +153,7 @@ const agent = createAgent([
 
 {
   const upgrade = renderCliUpgradeHelp();
-  assert.match(upgrade, /dmoss-agent update/);
+  assert.match(upgrade, /dmoss update/);
   assert.match(upgrade, /npm i -g @rdk-moss\/agent@latest/);
   assert.match(upgrade, /npx -y @rdk-moss\/agent@latest/);
   assert.doesNotMatch(upgrade, /API key/);

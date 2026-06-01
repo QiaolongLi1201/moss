@@ -45,13 +45,13 @@ function sourceLooksEnv(source: string): boolean {
 }
 
 export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
-  const lines = ['[doctor] dmoss-agent'];
+  const lines = ['[doctor] dmoss'];
   const nodeMajor = Number.parseInt(process.versions.node.split('.')[0] || '0', 10);
   lines.push(nodeMajor >= 22 ? ok('node', process.version) : fail('node', `${process.version}; requires >=22.16.0`));
   lines.push(ok('version', options.currentVersion));
   lines.push(options.config.apiKey
     ? ok('auth', `configured via ${options.config.apiKeySource}`)
-    : fail('auth', 'missing API key; run dmoss-agent setup or set DMOSS_API_KEY'));
+    : fail('auth', 'missing API key; run dmoss setup or set DMOSS_API_KEY'));
   lines.push(ok('provider', `${options.config.provider} (${options.config.providerSource})`));
   lines.push(ok('model', `${options.config.model} (${options.config.modelSource})`));
   lines.push(ok('baseUrl', `${options.config.baseUrl} (${options.config.baseUrlSource})`));
@@ -82,7 +82,7 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
     timeoutMs: 1500,
   });
   if (notice) {
-    lines.push(warn('npm update', `${notice.currentVersion} -> ${notice.latestVersion}; run dmoss-agent update`));
+    lines.push(warn('npm update', `${notice.currentVersion} -> ${notice.latestVersion}; run dmoss update`));
   } else if (options.npmLatest && options.npmLatest !== options.currentVersion) {
     lines.push(warn('npm registry', `latest is ${options.npmLatest}; installed source reports ${options.currentVersion}`));
   } else {

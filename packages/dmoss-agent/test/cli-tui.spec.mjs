@@ -68,13 +68,13 @@ assert.equal(commandSuggestion('/staus'), '/status');
 assert.equal(commandSuggestion('/tool'), '/tools');
 assert.equal(commandSuggestion('status'), null);
 
-assert.match(promptPlaceholder('ready'), /message/);
+assert.match(promptPlaceholder('ready'), /ask D-Moss/);
 assert.match(promptPlaceholder('running'), /running/);
 assert.match(promptPlaceholder('approval'), /approval/);
 assert.equal(statusBadge('ready'), 'ready');
 assert.equal(statusBadge('running'), 'running');
 assert.equal(statusBadge('approval'), 'approval needed');
-assert.match(footerHint('ready'), /Shift\+Enter newline/);
+assert.match(footerHint('ready'), /ctrl\+k menu/);
 assert.match(footerHint('running'), /\/stop cancel/);
 
 {

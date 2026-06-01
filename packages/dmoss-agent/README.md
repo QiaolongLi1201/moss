@@ -69,6 +69,8 @@ Requires **Node ≥ 22.16** (see `engines` in `package.json`). One-off CLI tryou
 
 ```bash
 npx -y @rdk-moss/agent --help
+npm i -g @rdk-moss/agent@latest
+dmoss
 ```
 
 ### Path 2 — Local tarballs (maintainers / CI)
@@ -110,11 +112,11 @@ node packages/dmoss-agent/dist/cli.js "check disk usage on /"
 `setup` writes `~/.config/dmoss/config.json` with `0600` permissions and supports Aliyun/Qwen, OpenAI, Anthropic, and OpenAI-compatible providers. You can inspect or update the stored configuration without printing secrets:
 
 ```bash
-dmoss-agent auth status
-dmoss-agent auth logout
-dmoss-agent config set model qwen3.7-max
-dmoss-agent config set baseUrl https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode
-dmoss-agent config set provider qwen
+dmoss auth status
+dmoss auth logout
+dmoss config set model qwen3.7-max
+dmoss config set baseUrl https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode
+dmoss config set provider qwen
 ```
 
 ### CLI flags recap

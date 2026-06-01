@@ -265,7 +265,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    dmoss config set promptCacheDebug true|false',
     '',
     '  Environment overrides:',
-    '    DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG',
+    '    DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG',
   ].join('\n');
 }
 

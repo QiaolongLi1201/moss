@@ -248,6 +248,7 @@ async function main() {
       enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: workspace }),
       onBeforeToolExec: createCliToolApprovalHook(safetyMode, process.env, {
         approvalPolicy: resolvedConfig.approvalPolicy,
+        trustedTools: resolvedConfig.trustedTools,
       }),
     },
   });

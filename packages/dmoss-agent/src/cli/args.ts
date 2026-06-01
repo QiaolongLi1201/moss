@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { normalizeApprovalPolicyConfig, normalizeSafetyModeConfig, parseConfigBoolean, type CliConfigOverrides } from './config.js';
+import { normalizeApprovalPolicyConfig, normalizeSafetyModeConfig, parseConfigBoolean, parseTrustedTools, type CliConfigOverrides } from './config.js';
 import type { CliSafetyMode } from './approval.js';
 
 export type CliCommand = 'chat' | 'setup' | 'auth' | 'config' | 'doctor' | 'update' | 'resume' | 'fork';
@@ -41,6 +41,7 @@ function normalizeConfigKey(key: string): keyof CliConfigOverrides | null {
   if (raw === 'workspace' || raw === 'cwd' || raw === 'cd') return 'workspace';
   if (raw === 'safetymode' || raw === 'safety') return 'safetyMode';
   if (raw === 'approvalpolicy' || raw === 'approval') return 'approvalPolicy';
+  if (raw === 'trustedtools' || raw === 'trusttools') return 'trustedTools';
   if (raw === 'promptcache' || raw === 'promptcacheenabled') return 'promptCacheEnabled';
   if (raw === 'promptcachedebug' || raw === 'promptprefixdebug') return 'promptCacheDebug';
   return null;
@@ -72,6 +73,10 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
     const parsed = parseConfigBoolean(value);
     if (parsed === null) throw new Error(`Unsupported promptCache value "${value}"`);
     target.promptCacheEnabled = parsed;
+    return;
+  }
+  if (key === 'trustedTools') {
+    target.trustedTools = parseTrustedTools(value) ?? [];
     return;
   }
   if (key === 'promptCacheDebug') {

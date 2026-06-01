@@ -43,6 +43,8 @@ try {
   assert.equal(resolved.safetyMode, 'workspace-write');
   assert.equal(resolved.safetyModeSource, 'default');
   assert.equal(resolved.approvalPolicy, 'prompt');
+  assert.deepEqual(resolved.trustedTools, []);
+  assert.equal(resolved.trustedToolsSource, 'default');
   assert.equal(resolved.promptCacheEnabled, true);
   assert.equal(resolved.promptCacheDebug, false);
 
@@ -53,6 +55,7 @@ try {
     DMOSS_BASE_URL: 'https://api.openai.com',
     DMOSS_SAFETY_MODE: 'read-only',
     DMOSS_APPROVAL_POLICY: 'never',
+    DMOSS_TRUSTED_TOOLS: 'exec,write_file',
     DMOSS_PROMPT_CACHE: 'false',
     DMOSS_PROMPT_CACHE_DEBUG: 'true',
   }, loadConfigFile());
@@ -64,6 +67,8 @@ try {
   assert.equal(envResolved.safetyModeSource, 'DMOSS_SAFETY_MODE');
   assert.equal(envResolved.approvalPolicy, 'never');
   assert.equal(envResolved.approvalPolicySource, 'DMOSS_APPROVAL_POLICY');
+  assert.deepEqual(envResolved.trustedTools, ['exec', 'write_file']);
+  assert.equal(envResolved.trustedToolsSource, 'DMOSS_TRUSTED_TOOLS');
   assert.equal(envResolved.promptCacheEnabled, false);
   assert.equal(envResolved.promptCacheSource, 'DMOSS_PROMPT_CACHE');
   assert.equal(envResolved.promptCacheDebug, true);
@@ -78,6 +83,7 @@ try {
     workspace: '/tmp/dmoss-workspace',
     safetyMode: 'full-access',
     approvalPolicy: 'never',
+    trustedTools: ['exec', 'memory_write'],
     promptCacheEnabled: false,
     promptCacheDebug: true,
   });
@@ -90,6 +96,8 @@ try {
   assert.equal(cliResolved.safetyModeSource, 'cli');
   assert.equal(cliResolved.approvalPolicy, 'never');
   assert.equal(cliResolved.approvalPolicySource, 'cli');
+  assert.deepEqual(cliResolved.trustedTools, ['exec', 'memory_write']);
+  assert.equal(cliResolved.trustedToolsSource, 'cli');
   assert.equal(cliResolved.promptCacheEnabled, false);
   assert.equal(cliResolved.promptCacheSource, 'cli');
   assert.equal(cliResolved.promptCacheDebug, true);
@@ -100,6 +108,7 @@ try {
   assert.match(status, /baseUrl: https:\/\/token-plan\.cn-beijing\.maas\.aliyuncs\.com\/compatible-mode/);
   assert.match(status, /safetyMode: workspace-write/);
   assert.match(status, /approvalPolicy: prompt/);
+  assert.match(status, /trustedTools: none/);
   assert.match(status, /promptCache: enabled/);
   assert.match(status, /promptCacheDebug: disabled/);
   assert.doesNotMatch(status, /stored-secret/);
@@ -119,6 +128,7 @@ try {
     ...loadConfigFile(),
     safetyMode: 'read-only',
     approvalPolicy: 'never',
+    trustedTools: ['exec'],
     promptCache: { enabled: false, debug: true },
   }, tmp);
   const filePolicyResolved = resolveCliConfig({}, loadConfigFile());
@@ -126,6 +136,8 @@ try {
   assert.equal(filePolicyResolved.safetyModeSource, 'config');
   assert.equal(filePolicyResolved.approvalPolicy, 'never');
   assert.equal(filePolicyResolved.approvalPolicySource, 'config');
+  assert.deepEqual(filePolicyResolved.trustedTools, ['exec']);
+  assert.equal(filePolicyResolved.trustedToolsSource, 'config');
   assert.equal(filePolicyResolved.promptCacheEnabled, false);
   assert.equal(filePolicyResolved.promptCacheSource, 'config');
   assert.equal(filePolicyResolved.promptCacheDebug, true);
@@ -141,6 +153,8 @@ try {
   assert.equal(loadConfigFile().safetyMode, 'read-only');
   runConfigSet(['approvalPolicy', 'never']);
   assert.equal(loadConfigFile().approvalPolicy, 'never');
+  runConfigSet(['trustedTools', 'exec,write_file']);
+  assert.deepEqual(loadConfigFile().trustedTools, ['exec', 'write_file']);
   runConfigSet(['promptCache', 'false']);
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
   runConfigSet(['promptCacheDebug', 'true']);

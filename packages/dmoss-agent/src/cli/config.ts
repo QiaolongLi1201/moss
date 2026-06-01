@@ -62,6 +62,7 @@ export interface ConfigFile {
   workspace?: string;
   safetyMode?: CliSafetyModeConfig | string;
   approvalPolicy?: ConfigApprovalPolicy | string;
+  trustedTools?: string[];
   promptCache?: PromptCacheConfig | boolean;
 }
 
@@ -80,6 +81,7 @@ export interface CliConfigOverrides {
   workspace?: string;
   safetyMode?: CliSafetyModeConfig;
   approvalPolicy?: ConfigApprovalPolicy;
+  trustedTools?: string[];
   promptCacheEnabled?: boolean;
   promptCacheDebug?: boolean;
 }
@@ -145,6 +147,26 @@ export function parseConfigBoolean(value: string | undefined): boolean | null {
   return null;
 }
 
+export function parseTrustedTools(value: string | string[] | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  const rawValues = Array.isArray(value) ? value : value.split(',');
+  const tools = rawValues
+    .map((tool) => tool.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const tool of tools) {
+    if (!/^[A-Za-z0-9_.:/-]+$/.test(tool)) {
+      throw new Error(`Unsupported trusted tool name "${tool}"`);
+    }
+    if (!seen.has(tool)) {
+      seen.add(tool);
+      unique.push(tool);
+    }
+  }
+  return unique.length > 0 ? unique : undefined;
+}
+
 function inferProviderFromBaseUrl(baseUrl: string | undefined): CliProviderPreset | null {
   const raw = (baseUrl || '').toLowerCase();
   if (!raw) return null;
@@ -179,6 +201,8 @@ export interface ResolvedCliConfig {
   safetyModeSource: string;
   approvalPolicy: ConfigApprovalPolicy;
   approvalPolicySource: string;
+  trustedTools: string[];
+  trustedToolsSource: string;
   promptCacheEnabled: boolean;
   promptCacheSource: string;
   promptCacheDebug: boolean;
@@ -266,6 +290,19 @@ export function resolveCliConfig(
         ? 'config'
         : 'default';
 
+  const envTrustedTools = parseTrustedTools(env.DMOSS_TRUSTED_TOOLS);
+  const configTrustedTools = Array.isArray(config.trustedTools)
+    ? parseTrustedTools(config.trustedTools)
+    : undefined;
+  const trustedTools = overrides.trustedTools ?? envTrustedTools ?? configTrustedTools ?? [];
+  const trustedToolsSource = overrides.trustedTools
+    ? 'cli'
+    : envTrustedTools
+      ? 'DMOSS_TRUSTED_TOOLS'
+      : configTrustedTools
+        ? 'config'
+        : 'default';
+
   const promptCacheEnv = env.DMOSS_PROMPT_CACHE ?? env.DMOSS_PROMPT_CACHE_ENABLED;
   const envPromptCache = parseConfigBoolean(promptCacheEnv);
   const promptCacheDebugEnv = env.DMOSS_PROMPT_CACHE_DEBUG ?? env.DMOSS_PROMPT_PREFIX_DEBUG;
@@ -312,6 +349,8 @@ export function resolveCliConfig(
     safetyModeSource,
     approvalPolicy,
     approvalPolicySource,
+    trustedTools,
+    trustedToolsSource,
     promptCacheEnabled,
     promptCacheSource,
     promptCacheDebug,

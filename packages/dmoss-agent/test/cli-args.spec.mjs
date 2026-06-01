@@ -28,6 +28,8 @@ import { parseCliArgs } from '../dist/cli/args.js';
     '-c',
     'approvalPolicy=never',
     '-c',
+    'trustedTools=exec,write_file',
+    '-c',
     'promptCache=false',
     '-c',
     'promptCacheDebug=true',
@@ -39,6 +41,7 @@ import { parseCliArgs } from '../dist/cli/args.js';
   assert.equal(parsed.configOverrides.model, 'deepseek-v4-pro');
   assert.equal(parsed.configOverrides.safetyMode, 'read-only');
   assert.equal(parsed.configOverrides.approvalPolicy, 'never');
+  assert.deepEqual(parsed.configOverrides.trustedTools, ['exec', 'write_file']);
   assert.equal(parsed.configOverrides.promptCacheEnabled, false);
   assert.equal(parsed.configOverrides.promptCacheDebug, true);
   assert.equal(parsed.prompt, 'run diff -r');

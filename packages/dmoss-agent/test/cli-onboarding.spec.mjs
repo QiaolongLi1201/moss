@@ -66,6 +66,8 @@ const runtime = {
     safetyModeSource: 'config',
     approvalPolicy: 'never',
     approvalPolicySource: 'config',
+    trustedTools: ['exec'],
+    trustedToolsSource: 'config',
     promptCacheEnabled: false,
     promptCacheSource: 'config',
     promptCacheDebug: true,
@@ -127,6 +129,7 @@ const agent = createAgent([
   assert.match(status, /device: root@10\.64\.1\.10:22/);
   assert.match(status, /safety: workspace-write/);
   assert.match(status, /approval: never \(config\)/);
+  assert.match(status, /trusted tools: exec \(config\)/);
   assert.match(status, /prompt cache: disabled \(config\)/);
   assert.match(status, /prompt cache debug: enabled \(config\)/);
   assert.match(status, /tools: 7/);
@@ -138,9 +141,11 @@ const agent = createAgent([
   assert.match(permissions, /config file: \/tmp\/dmoss-config\/config\.json/);
   assert.match(permissions, /safety: workspace-write \(config\)/);
   assert.match(permissions, /approval: never \(config\)/);
+  assert.match(permissions, /trusted tools: exec \(config\)/);
   assert.match(permissions, /prompt cache: disabled \(config\)/);
   assert.match(permissions, /prompt cache debug: enabled \(config\)/);
   assert.match(permissions, /dmoss config set safetyMode/);
+  assert.match(permissions, /dmoss config set trustedTools/);
   assert.match(permissions, /dmoss config set promptCacheDebug/);
   assert.match(permissions, /DMOSS_SAFETY_MODE/);
   assert.match(permissions, /DMOSS_PROMPT_CACHE_DEBUG/);

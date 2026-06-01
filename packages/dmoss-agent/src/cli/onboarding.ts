@@ -203,6 +203,7 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     `  ${label('detail')} ${describeDetail(detailMode)}`,
     `  ${label('safety')} ${rt.safetyMode}`,
     `  ${label('approval')} ${auth.approvalPolicy ?? 'prompt'} (${auth.approvalPolicySource ?? 'default'})`,
+    `  ${label('trusted tools')} ${auth.trustedTools.length ? auth.trustedTools.join(', ') : 'none'} (${auth.trustedToolsSource ?? 'default'})`,
     `  ${label('prompt cache')} ${auth.promptCacheEnabled === false ? 'disabled' : 'enabled'} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${auth.promptCacheDebug === true ? 'enabled' : 'disabled'} (${auth.promptCacheDebugSource ?? 'default'})`,
     `  ${label('exec')} ${rt.execBackend}${rt.execBackend === 'docker' && rt.dockerImage ? ` (${rt.dockerImage})` : ''}`,
@@ -233,6 +234,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
   const auth = rt.config;
   const safety = auth.safetyMode ?? rt.safetyMode;
   const approval = auth.approvalPolicy ?? 'prompt';
+  const trustedTools = auth.trustedTools.length ? auth.trustedTools.join(', ') : 'none';
   const cache = auth.promptCacheEnabled === false ? 'disabled' : 'enabled';
   const cacheDebug = auth.promptCacheDebug === true ? 'enabled' : 'disabled';
   return [
@@ -241,6 +243,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     `  ${label('workspace')} ${auth.workspace} (${auth.workspaceSource})`,
     `  ${label('safety')} ${safety} (${auth.safetyModeSource ?? 'default'})`,
     `  ${label('approval')} ${approval} (${auth.approvalPolicySource ?? 'default'})`,
+    `  ${label('trusted tools')} ${trustedTools} (${auth.trustedToolsSource ?? 'default'})`,
     `  ${label('prompt cache')} ${cache} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${cacheDebug} (${auth.promptCacheDebugSource ?? 'default'})`,
     '',
@@ -256,6 +259,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '  Persist changes:',
     '    dmoss config set safetyMode read-only|workspace-write|full-access',
     '    dmoss config set approvalPolicy prompt|never',
+    '    dmoss config set trustedTools exec,write_file',
     '    dmoss config set promptCache true|false',
     '    dmoss config set promptCacheDebug true|false',
     '',

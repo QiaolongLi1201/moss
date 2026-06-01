@@ -12,6 +12,7 @@ let interactiveAsker: AskUser | null = null;
 
 export interface CliToolApprovalOptions {
   approvalPolicy?: ConfigApprovalPolicy;
+  trustedTools?: readonly string[];
 }
 
 export function setCliApprovalAsker(asker: AskUser | null): void {
@@ -91,6 +92,10 @@ export function createCliToolApprovalHook(
       };
     }
     if (!needsApproval(tool, sideEffect)) return { approved: true };
+
+    if (new Set(options.trustedTools ?? []).has(tool.name)) {
+      return { approved: true };
+    }
 
     if (
       options.approvalPolicy === 'never' ||

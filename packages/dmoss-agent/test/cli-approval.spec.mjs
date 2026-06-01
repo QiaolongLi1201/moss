@@ -87,6 +87,31 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
 }
 
 {
+  const oldIsTty = process.stdin.isTTY;
+  Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+  try {
+    const approve = createCliToolApprovalHook('workspace-write', {}, { trustedTools: ['exec'] });
+    assert.deepEqual(
+      await approve({
+        tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+        input: { command: 'npm test' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'trustedTools should approve exact allowed tool names without interactive stdin',
+    );
+    const denied = await approve({
+      tool: tool('write_file', 'local_write', 'requires_user_confirmation'),
+      input: { path: 'a.txt', content: 'x' },
+      sessionKey: 's',
+    });
+    assert.equal(denied.approved, false, 'untrusted mutating tools still require approval');
+  } finally {
+    Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });
+  }
+}
+
+{
   const approve = createCliToolApprovalHook('full-access', { DMOSS_CLI_AUTO_APPROVE: '1' });
   assert.deepEqual(
     await approve({
@@ -106,6 +131,16 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     sessionKey: 's',
   });
   assert.equal(denied.approved, false, 'auto-approve must not override read-only mode');
+}
+
+{
+  const approve = createCliToolApprovalHook('read-only', {}, { trustedTools: ['exec'] });
+  const denied = await approve({
+    tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+    input: { command: 'npm test' },
+    sessionKey: 's',
+  });
+  assert.equal(denied.approved, false, 'trustedTools must not override read-only safety mode');
 }
 
 {

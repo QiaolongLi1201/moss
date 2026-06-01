@@ -16,6 +16,17 @@ export interface ToolApprovalRequest {
 
 export type ToolApprovalDecision = { approved: true } | { approved: false; reason: string };
 
+export interface InputGuardrailRequest {
+  sessionKey: string;
+  runId: string;
+  userMessage: string;
+  platform?: string;
+}
+
+export type InputGuardrailDecision =
+  | { approved: true; userMessage?: string }
+  | { approved: false; reason: string };
+
 /**
  * Agent lifecycle hooks — host implements these to customize behavior.
  *
@@ -41,6 +52,13 @@ export type ToolApprovalDecision = { approved: true } | { approved: false; reaso
  * ```
  */
 export interface AgentHooks {
+  /**
+   * Called before a user message is appended to the session or sent to the LLM.
+   * Return `{ approved: false }` to fail closed without persisting the message,
+   * or return `{ approved: true, userMessage }` to normalize the input.
+   */
+  onInputGuardrail?(request: InputGuardrailRequest): Promise<InputGuardrailDecision>;
+
   /**
    * Called before a tool is executed. Return `{ approved: false }` to block execution.
    * Useful for dangerous command approval, policy enforcement, etc.

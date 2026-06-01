@@ -2,6 +2,8 @@
 export { combineAbortSignals, wrapToolWithAbortSignal, abortable } from './agent/index.js';
 export type {
   AgentHooks,
+  InputGuardrailRequest,
+  InputGuardrailDecision,
   ToolApprovalRequest,
   ToolApprovalDecision,
 } from './agent/index.js';

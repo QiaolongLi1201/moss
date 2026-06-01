@@ -133,6 +133,20 @@ function createPreAbortedRunError(sessionKey: string, reason: unknown): DmossErr
   });
 }
 
+function createInputGuardrailDeniedError(
+  sessionKey: string,
+  runId: string,
+  reason: string,
+): DmossError {
+  return new DmossError({
+    code: ErrorCode.TOOL_NOT_ALLOWED,
+    message: `input guardrail rejected the user message: ${reason || 'no reason provided'}`,
+    hint: 'Review the request or host input policy before retrying.',
+    recoverable: false,
+    context: { sessionKey, runId, guardrail: 'input' },
+  });
+}
+
 // ─── Agent loop run state ──────────────────────────────────────
 
 /** Mutable state tracked across the agent loop run lifecycle. */
@@ -413,6 +427,21 @@ export class DmossAgent {
     if (abortSignal.aborted) {
       throw createPreAbortedRunError(sessionKey, abortSignal.reason);
     }
+    let activeUserMessage = userMessage;
+    if (hooks?.onInputGuardrail) {
+      const decision = await hooks.onInputGuardrail({
+        sessionKey,
+        runId,
+        userMessage: activeUserMessage,
+        ...(options?.platform ? { platform: options.platform } : {}),
+      });
+      if (!decision.approved) {
+        throw createInputGuardrailDeniedError(sessionKey, runId, decision.reason);
+      }
+      if (typeof decision.userMessage === 'string') {
+        activeUserMessage = decision.userMessage;
+      }
+    }
 
     // ── Session & task-frame loading ──
     // Type bridge: InternalMessage and LLMMessage have compatible runtime shapes but different type definitions due to module boundaries
@@ -421,15 +450,15 @@ export class DmossAgent {
     const taskFrameLoad = splitTaskFrameCheckpointMessages(
       toSessionMessages(goalLoad.messages as unknown as InternalMessage[]),
     );
-    const continuationIntent = detectContinuationIntent(userMessage);
+    const continuationIntent = detectContinuationIntent(activeUserMessage);
     const taskFrame = createOrUpdateTaskFrame({
       previous: taskFrameLoad.frame,
       sessionKey,
       runId,
-      userMessage,
+      userMessage: activeUserMessage,
     });
     const messages = fromSessionMessages(taskFrameLoad.messages);
-    const userMsg: InternalMessage = { role: 'user', content: userMessage, timestamp: Date.now() };
+    const userMsg: InternalMessage = { role: 'user', content: activeUserMessage, timestamp: Date.now() };
     messages.push(userMsg);
     // Type bridge: InternalMessage and LLMMessage have compatible runtime shapes but different type definitions due to module boundaries
     await store.appendMessage(sessionKey, userMsg as unknown as LLMMessage);

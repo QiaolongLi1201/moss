@@ -80,7 +80,13 @@ export {
 // --- Core: Agent, Tools, LLM, Session ---
 export { DmossAgent } from './core/index.js';
 export type { DmossAgentConfig, ChatOptions, ChatResult, DmossAgentEvent } from './core/index.js';
-export type { AgentHooks, ToolApprovalRequest, ToolApprovalDecision } from './core/index.js';
+export type {
+  AgentHooks,
+  InputGuardrailRequest,
+  InputGuardrailDecision,
+  ToolApprovalRequest,
+  ToolApprovalDecision,
+} from './core/index.js';
 export type { AgentLoopHardCaps } from './core/index.js';
 /** @internal Agent loop hard-cap resolution. */
 export { resolveEffectiveCaps } from './core/index.js';

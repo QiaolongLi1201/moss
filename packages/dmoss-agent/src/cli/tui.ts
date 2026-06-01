@@ -13,6 +13,7 @@ import { startCliUpdateCheck } from './update-check.js';
 import { compactPath } from './ui.js';
 
 type TranscriptKind = 'user' | 'assistant' | 'system' | 'error';
+type TuiRunState = 'ready' | 'running' | 'approval';
 
 interface TranscriptItem {
   id: number;
@@ -48,6 +49,24 @@ const LONG_TOKEN_RE = /[^\s]{33,}/g;
 const COPY_SENSITIVE_TOKEN_RE = /^(?:https?:\/\/|file:\/\/|[A-Za-z]:\\|\/|\.\/|\.\.\/|[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+|[A-Za-z0-9_-]*_[A-Za-z0-9_-]*)/;
 const RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 const LOCAL_SHELL_OUTPUT_LIMIT = 40_000;
+const KNOWN_COMMANDS = [
+  '/help',
+  '/tools',
+  '/status',
+  '/examples',
+  '/model',
+  '/models',
+  '/detail',
+  '/memory',
+  '/skills',
+  '/upgrade',
+  '/stop',
+  '/abort',
+  '/clear',
+  '/thinking',
+  '/quit',
+  '/exit',
+] as const;
 
 export function sanitizeRenderableText(text: string): string {
   const withoutAnsi = text.includes('\x1B') ? text.replace(ANSI_RE, '') : text;
@@ -143,22 +162,59 @@ function visibleText(text: string, maxLines = 10): string {
   ].join('\n');
 }
 
+function initialTranscriptText(): string {
+  return [
+    'D-Moss is ready.',
+    'Start with a normal request, /examples for task ideas, or /status to inspect the runtime.',
+    'Use !<command> only for local host shell commands; board/OpenClaw work should go through tools.',
+  ].join('\n');
+}
+
+export function commandSuggestion(command: string): string | null {
+  const normalized = command.trim().toLowerCase();
+  if (!normalized.startsWith('/')) return null;
+  const scored = KNOWN_COMMANDS
+    .map((known) => {
+      if (known.startsWith(normalized) || normalized.startsWith(known)) return { known, score: 0 };
+      let score = Math.abs(known.length - normalized.length);
+      const limit = Math.min(known.length, normalized.length);
+      for (let i = 0; i < limit; i += 1) {
+        if (known[i] !== normalized[i]) score += 1;
+      }
+      return { known, score };
+    })
+    .sort((a, b) => a.score - b.score);
+  const best = scored[0];
+  return best && best.score <= 3 ? best.known : null;
+}
+
+export function promptPlaceholder(state: TuiRunState): string {
+  if (state === 'approval') return 'answer approval with y, n, or Esc';
+  if (state === 'running') return 'running... use /stop to cancel or Ctrl+C to exit';
+  return 'ask D-Moss, /help, /status, or !pwd for local shell';
+}
+
 function commandList(): string {
   return [
-    'Commands',
-    '  /help              show commands',
-    '  /tools             list available tools',
-    '  /status            show runtime status',
-    '  /examples          show prompt examples',
-    '  /model [name]      show or switch model',
+    'Common commands',
+    '  /status            runtime, provider, workspace, and device context',
+    '  /examples          task examples you can run directly',
+    '  /tools             available tools',
+    '  /stop              stop the active run',
+    '',
+    'Conversation',
+    '  /clear             clear visible transcript',
+    '  /thinking          toggle thinking deltas',
     '  /detail [mode]     quiet | progress | verbose',
+    '',
+    'Runtime',
+    '  /model [name]      show or switch model',
     '  /memory            show memory count',
     '  /skills            list learned skills',
     '  /upgrade           show update commands',
-    '  /stop              stop current run',
-    '  /clear             clear visible transcript',
-    '  /thinking          toggle thinking deltas',
-    '  !<command>         run a local shell command after approval',
+    '',
+    'Shell and exit',
+    '  !<command>         run a LOCAL host shell command after session approval',
     '  /quit              exit',
   ].join('\n');
 }
@@ -220,7 +276,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     {
       id: nextId(),
       kind: 'system',
-      text: 'Ready. Type a prompt or /help.',
+      text: initialTranscriptText(),
     },
   ]);
   const answerIdRef = useRef<number | null>(null);
@@ -356,7 +412,11 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       return true;
     }
     if (message.startsWith('/')) {
-      addTranscript('error', `Unknown command: ${message}\nUse /help for available commands.`);
+      const suggestion = commandSuggestion(message);
+      addTranscript('error', [
+        `Unknown command: ${message}`,
+        suggestion ? `Did you mean ${suggestion}?` : 'Use /help for available commands.',
+      ].join('\n'));
       return true;
     }
     return false;
@@ -366,8 +426,9 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     const command = raw.slice(1);
     if (!localShellApprovedRef.current) {
       const answer = await askApproval([
-        'Allow local shell commands in this TUI session?',
-        'Commands run on this host, not on a remote gateway.',
+        'Allow LOCAL host shell commands in this TUI session?',
+        'This runs on the computer where this CLI is open.',
+        'It does not run on the board, OpenClaw gateway, or a remote device.',
         `First command: ${command}`,
       ].join('\n'));
       if (answer.trim().toLowerCase() !== 'y') {
@@ -471,12 +532,17 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const visibleTranscript = useMemo(() => transcript.slice(-10), [transcript]);
   const provider = runtime?.baseUrl ? new URL(runtime.baseUrl).host : 'provider not configured';
   const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
+  const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
+  const runStateColor = runState === 'approval' ? 'yellow' : runState === 'running' ? 'cyan' : 'green';
+  const localShellLabel = localShellApproved ? 'local shell approved' : 'local shell locked';
 
   return React.createElement(Box, { flexDirection: 'column', paddingX: 1 },
     React.createElement(Box, { borderStyle: 'round', borderColor: busy ? 'cyan' : 'gray', paddingX: 1, flexDirection: 'column' },
       React.createElement(Box, null,
         React.createElement(Text, { bold: true }, 'D-Moss Agent '),
         React.createElement(Text, { color: 'gray' }, `v${getPackageVersion()}`),
+        React.createElement(Text, { color: 'gray' }, '  '),
+        React.createElement(Text, { color: runStateColor, bold: true }, runState),
       ),
       React.createElement(Text, null,
         React.createElement(Text, { color: 'gray' }, 'model '),
@@ -499,9 +565,28 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       React.createElement(Text, null,
         React.createElement(Text, { color: runtime?.device ? 'green' : 'yellow' }, device),
         React.createElement(Text, { color: 'gray' }, `  ${runtime?.meshEnabled ? 'mesh enabled' : 'mesh disabled'}`),
+        React.createElement(Text, { color: 'gray' }, '  '),
+        React.createElement(Text, { color: localShellApproved ? 'yellow' : 'gray' }, localShellLabel),
       ),
     ),
     notice ? React.createElement(Text, { color: 'yellow' }, notice) : null,
+    React.createElement(Box, { flexDirection: 'column', marginTop: 1, borderStyle: 'single', borderColor: 'gray', paddingX: 1 },
+      React.createElement(Text, { color: 'gray' },
+        React.createElement(Text, { color: 'cyan' }, 'Ask '),
+        'natural language tasks  ',
+        React.createElement(Text, { color: 'cyan' }, '/status '),
+        'runtime  ',
+        React.createElement(Text, { color: 'cyan' }, '/tools '),
+        'capabilities  ',
+        React.createElement(Text, { color: 'cyan' }, '/examples '),
+        'starter prompts',
+      ),
+      React.createElement(Text, { color: 'gray' },
+        React.createElement(Text, { color: 'yellow' }, '!cmd '),
+        'is local host shell only; use D-Moss tools for board/OpenClaw work. ',
+        busy ? React.createElement(Text, { color: 'cyan' }, '/stop cancels the active run.') : null,
+      ),
+    ),
     React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
       ...visibleTranscript.map((item) => React.createElement(Box, { key: item.id, flexDirection: 'column', marginBottom: 1 },
         React.createElement(Text, { color: item.kind === 'user' ? 'cyan' : item.kind === 'error' ? 'red' : item.kind === 'system' ? 'gray' : undefined },
@@ -509,7 +594,8 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
         ),
       )),
     ),
-    activities.length > 0 ? React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: 'gray', paddingX: 1 },
+    activities.length > 0 ? React.createElement(Box, { flexDirection: 'column', borderStyle: 'single', borderColor: 'cyan', paddingX: 1 },
+      React.createElement(Text, { color: 'cyan', bold: true }, 'Activity'),
       ...activities.map((item) => React.createElement(Text, { key: item.id, color: item.status === 'failed' ? 'yellow' : item.status === 'ok' ? 'green' : 'cyan' },
         `${item.status === 'running' ? '•' : item.status === 'ok' ? '✓' : '!'} ${item.label}`,
       )),
@@ -524,7 +610,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
         value: input,
         onChange: setInput,
         onSubmit: submit,
-        placeholder: busy ? 'waiting for response...' : 'type a message or /help',
+        placeholder: promptPlaceholder(runState),
         focus: !busy,
         showCursor: true,
       }),

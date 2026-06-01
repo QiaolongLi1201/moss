@@ -6,7 +6,9 @@
  */
 import assert from 'node:assert/strict';
 import {
+  commandSuggestion,
   isLocalShellLine,
+  promptPlaceholder,
   runLocalShellCommand,
   sanitizeRenderableText,
 } from '../dist/cli/tui.js';
@@ -36,6 +38,14 @@ import {
 assert.equal(isLocalShellLine('!pwd'), true);
 assert.equal(isLocalShellLine('!'), false);
 assert.equal(isLocalShellLine('  !pwd'), false);
+
+assert.equal(commandSuggestion('/staus'), '/status');
+assert.equal(commandSuggestion('/tool'), '/tools');
+assert.equal(commandSuggestion('status'), null);
+
+assert.match(promptPlaceholder('ready'), /ask D-Moss/);
+assert.match(promptPlaceholder('running'), /running/);
+assert.match(promptPlaceholder('approval'), /approval/);
 
 {
   const controller = new AbortController();

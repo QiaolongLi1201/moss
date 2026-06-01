@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import {
   loadConfigFile,
   resolveCliConfig,
+  resolveConfigPath,
   saveConfigFile,
 } from '../dist/cli/config.js';
 import {
@@ -23,6 +24,8 @@ import {
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-config-'));
 const oldConfigDir = process.env.DMOSS_CONFIG_DIR;
+const oldConfigFile = process.env.DMOSS_CONFIG_FILE;
+const oldConfigPath = process.env.DMOSS_CONFIG_PATH;
 process.env.DMOSS_CONFIG_DIR = tmp;
 
 try {
@@ -139,6 +142,7 @@ try {
   const usage = renderConfigUsage();
   assert.match(usage, /dmoss config show/);
   assert.match(usage, /dmoss config set profile autonomous/);
+  assert.match(usage, /DMOSS_CONFIG_FILE/);
   assert.match(usage, /promptCacheDebug/);
 
   const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/cli.js');
@@ -156,6 +160,80 @@ try {
     assert.match(result.stderr, /profile: balanced \(default\)/);
     assert.match(result.stderr, /config: /);
     assert.doesNotMatch(result.stderr, /stored-secret/);
+  }
+
+  const explicitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-explicit-config-'));
+  const explicitConfigPath = path.join(explicitDir, 'named-config.json');
+  const cliConfigPath = path.join(explicitDir, 'cli-config.json');
+  const envIgnoredConfigPath = path.join(explicitDir, 'env-ignored-config.json');
+  process.env.DMOSS_CONFIG_FILE = explicitConfigPath;
+  try {
+    assert.equal(resolveConfigPath(), explicitConfigPath);
+    assert.equal(resolveConfigPath(undefined, {}, ['--config-file', cliConfigPath]), cliConfigPath);
+    assert.equal(resolveConfigPath(undefined, { DMOSS_CONFIG_FILE: envIgnoredConfigPath }, ['--config-file', cliConfigPath]), cliConfigPath);
+    saveConfigFile({
+      profile: 'cautious',
+      provider: 'openai',
+      apiKey: 'file-secret',
+      model: 'gpt-4o-mini',
+      baseUrl: 'https://api.openai.com',
+      approvalPolicy: 'prompt',
+    });
+    assert.equal(fs.existsSync(explicitConfigPath), true);
+    assert.equal(loadConfigFile().profile, 'cautious');
+    const explicitResolved = resolveCliConfig({ DMOSS_CONFIG_FILE: explicitConfigPath }, loadConfigFile());
+    assert.equal(explicitResolved.configPath, explicitConfigPath);
+    assert.equal(explicitResolved.profile, 'cautious');
+    assert.equal(explicitResolved.profileSource, 'config');
+
+    const result = spawnSync(process.execPath, [cliPath, 'config', 'show'], {
+      env: {
+        ...process.env,
+        DMOSS_CONFIG_FILE: explicitConfigPath,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `config show with explicit file should exit cleanly: ${result.stderr || result.stdout}`);
+    assert.match(result.stderr, /profile: cautious \(config\)/);
+    assert.match(result.stderr, new RegExp(`config: ${explicitConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.doesNotMatch(result.stderr, /file-secret/);
+
+    const setResult = spawnSync(process.execPath, [
+      cliPath,
+      '--config-file',
+      cliConfigPath,
+      'config',
+      'set',
+      'profile',
+      'autonomous',
+    ], {
+      env: {
+        ...process.env,
+        DMOSS_CONFIG_FILE: envIgnoredConfigPath,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(setResult.status, 0, `config set with explicit file should exit cleanly: ${setResult.stderr || setResult.stdout}`);
+    assert.equal(JSON.parse(fs.readFileSync(cliConfigPath, 'utf8')).profile, 'autonomous');
+    assert.equal(fs.existsSync(envIgnoredConfigPath), false);
+
+    const showResult = spawnSync(process.execPath, [cliPath, `--config-file=${cliConfigPath}`, 'config', 'show'], {
+      env: {
+        ...process.env,
+        DMOSS_CONFIG_FILE: envIgnoredConfigPath,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(showResult.status, 0, `config show with CLI file should exit cleanly: ${showResult.stderr || showResult.stdout}`);
+    assert.match(showResult.stderr, /profile: autonomous \(config\)/);
+    assert.match(showResult.stderr, new RegExp(`config: ${cliConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  } finally {
+    if (oldConfigFile === undefined) delete process.env.DMOSS_CONFIG_FILE;
+    else process.env.DMOSS_CONFIG_FILE = oldConfigFile;
+    fs.rmSync(explicitDir, { recursive: true, force: true });
   }
 
   saveConfigFile({
@@ -241,5 +319,9 @@ try {
 } finally {
   if (oldConfigDir === undefined) delete process.env.DMOSS_CONFIG_DIR;
   else process.env.DMOSS_CONFIG_DIR = oldConfigDir;
+  if (oldConfigFile === undefined) delete process.env.DMOSS_CONFIG_FILE;
+  else process.env.DMOSS_CONFIG_FILE = oldConfigFile;
+  if (oldConfigPath === undefined) delete process.env.DMOSS_CONFIG_PATH;
+  else process.env.DMOSS_CONFIG_PATH = oldConfigPath;
   fs.rmSync(tmp, { recursive: true, force: true });
 }

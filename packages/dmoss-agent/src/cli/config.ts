@@ -45,13 +45,33 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
   },
 };
 
-export function resolveConfigDir(): string {
-  const explicit = process.env.DMOSS_CONFIG_DIR;
+export function resolveConfigDir(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = env.DMOSS_CONFIG_DIR;
   if (explicit) return explicit;
   if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'dmoss');
+    return path.join(env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'dmoss');
   }
-  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'dmoss');
+  return path.join(env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'dmoss');
+}
+
+function readArgvValue(argv: string[], index: number): string | null {
+  const arg = argv[index] || '';
+  const eqIdx = arg.indexOf('=');
+  if (eqIdx !== -1) return arg.slice(eqIdx + 1);
+  const next = argv[index + 1];
+  return next && !next.startsWith('-') ? next : null;
+}
+
+function resolveCliConfigFileArg(argv: string[] = process.argv.slice(2)): string | null {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--') break;
+    if (arg === '--config-file' || arg.startsWith('--config-file=')) {
+      const value = readArgvValue(argv, i);
+      return value && value.trim() ? path.resolve(value) : null;
+    }
+  }
+  return null;
 }
 
 export interface ConfigFile {
@@ -121,12 +141,26 @@ export const CLI_PROFILE_DEFAULTS: Record<CliConfigProfile, CliProfileDefaults> 
   },
 };
 
-export function resolveConfigPath(configDir = resolveConfigDir()): string {
-  return path.join(configDir, 'config.json');
+function resolveExplicitConfigPath(
+  env: NodeJS.ProcessEnv = process.env,
+  argv: string[] = process.argv.slice(2),
+): string | null {
+  const fromArgv = resolveCliConfigFileArg(argv);
+  if (fromArgv) return fromArgv;
+  const explicit = env.DMOSS_CONFIG_FILE || env.DMOSS_CONFIG_PATH;
+  return explicit && explicit.trim() ? path.resolve(explicit) : null;
 }
 
-export function loadConfigFile(): ConfigFile {
-  const configPath = resolveConfigPath();
+export function resolveConfigPath(
+  configDir?: string,
+  env: NodeJS.ProcessEnv = process.env,
+  argv: string[] = process.argv.slice(2),
+): string {
+  if (configDir) return path.join(configDir, 'config.json');
+  return resolveExplicitConfigPath(env, argv) || path.join(resolveConfigDir(env), 'config.json');
+}
+
+export function loadConfigFile(configPath = resolveConfigPath()): ConfigFile {
   try {
     const raw = fs.readFileSync(configPath, 'utf-8');
     return JSON.parse(raw) as ConfigFile;
@@ -135,9 +169,9 @@ export function loadConfigFile(): ConfigFile {
   }
 }
 
-export function saveConfigFile(config: ConfigFile, configDir = resolveConfigDir()): void {
-  fs.mkdirSync(configDir, { recursive: true, mode: 0o700 });
+export function saveConfigFile(config: ConfigFile, configDir?: string): void {
   const configPath = resolveConfigPath(configDir);
+  fs.mkdirSync(path.dirname(configPath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, {
     encoding: 'utf-8',
     mode: 0o600,
@@ -427,7 +461,7 @@ export function resolveCliConfig(
     promptCacheSource,
     promptCacheDebug,
     promptCacheDebugSource,
-    configPath: resolveConfigPath(),
+    configPath: resolveConfigPath(undefined, env),
   };
 }
 

@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { resolveConfigDir } from './config.js';
+import { resolveConfigPath } from './config.js';
 import { getPackageVersion } from './package-info.js';
 
 type ColorFn = (s: string) => string;
@@ -17,7 +16,7 @@ interface Colors {
 }
 
 export function displayHelp(c: Colors): void {
-  const configDir = resolveConfigDir();
+  const configPath = resolveConfigPath();
   const lines = [
     '',
     `  ${c.bold(c.cyan('dmoss'))}  ${c.dim('— standalone agent for robotics & edge devices')}`,
@@ -68,6 +67,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.yellow('-m, --model')} ${c.dim('<m>')}     override model for this run`,
     `    ${c.yellow('-C, --cd')} ${c.dim('<dir>')}      use a different workspace`,
     `    ${c.yellow('-c, --config')} ${c.dim('k=v')}    override profile/model/provider/baseUrl/workspace/policy`,
+    `    ${c.yellow('--config-file')} ${c.dim('<p>')}   read/write an explicit config JSON file`,
     `    ${c.yellow('--provider')} ${c.dim('<p>')}      qwen | openai | anthropic | openai-compatible`,
     `    ${c.yellow('--base-url')} ${c.dim('<url>')}    override provider base URL`,
     `    ${c.yellow('--session')} ${c.dim('<key>')}     use a named session key`,
@@ -89,6 +89,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.magenta('DMOSS_MODEL')}             ${c.dim('model name (default: claude-sonnet-4-20250514)')}`,
     `    ${c.magenta('DMOSS_BASE_URL')}          ${c.dim('LLM API base URL')}`,
     `    ${c.magenta('DMOSS_PROFILE')}           ${c.dim('cautious | balanced | autonomous config profile')}`,
+    `    ${c.magenta('DMOSS_CONFIG_FILE')}       ${c.dim('explicit config JSON path (overrides config dir)')}`,
     `    ${c.magenta('DMOSS_WORKSPACE')}         ${c.dim('working directory (default: cwd)')}`,
     `    ${c.magenta('DMOSS_EXEC_BACKEND')}      ${c.dim('local (default) or docker')}`,
     `    ${c.magenta('DMOSS_SAFETY_MODE')}       ${c.dim('read-only | workspace-write | full-access')}`,
@@ -109,7 +110,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.magenta('DMOSS_SELF_LEARNING')}     ${c.dim('=true → extract user correction feedback as memory')}`,
     '',
     `  ${c.bold('Config file')}`,
-    `    ${c.gray(path.join(configDir, 'config.json'))}`,
+    `    ${c.gray(configPath)}`,
     '',
     `  ${c.bold('Built-in features')}`,
     `    ${c.green('✓')} Session persistence (JSONL) with ${c.cyan('--resume')}-style recovery`,

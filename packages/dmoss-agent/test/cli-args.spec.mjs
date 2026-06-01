@@ -99,6 +99,13 @@ import { parseCliArgs } from '../dist/cli/args.js';
   assert.equal(parsed.prompt, '');
 }
 
+{
+  const parsed = parseCliArgs(['--config-file', '/tmp/dmoss-custom.json', 'config', 'show']);
+  assert.equal(parsed.command, 'config');
+  assert.deepEqual(parsed.commandArgs, ['show']);
+  assert.equal(parsed.prompt, '');
+}
+
 assert.throws(() => parseCliArgs(['-c', 'temperature=0.7']), /Unsupported --config key/);
 assert.throws(() => parseCliArgs(['-c', 'profile=reckless']), /Unsupported profile/);
 

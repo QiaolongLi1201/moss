@@ -129,6 +129,7 @@ function flagConsumesNext(arg: string): boolean {
     arg === '--cd' ||
     arg === '-c' ||
     arg === '--config' ||
+    arg === '--config-file' ||
     arg === '--provider' ||
     arg === '--base-url' ||
     arg === '--ask-for-approval' ||
@@ -230,6 +231,11 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     if (arg === '-c' || arg === '--config' || arg.startsWith('--config=')) {
       const parsed = readValue(argv, i, arg);
       applyConfigOverride(configOverrides, parsed.value);
+      i = parsed.nextIndex;
+      continue;
+    }
+    if (arg === '--config-file' || arg.startsWith('--config-file=')) {
+      const parsed = readValue(argv, i, arg);
       i = parsed.nextIndex;
       continue;
     }

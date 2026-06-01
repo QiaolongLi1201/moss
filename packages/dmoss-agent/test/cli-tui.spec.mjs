@@ -68,14 +68,15 @@ assert.equal(commandSuggestion('/staus'), '/status');
 assert.equal(commandSuggestion('/tool'), '/tools');
 assert.equal(commandSuggestion('status'), null);
 
-assert.match(promptPlaceholder('ready'), /ask D-Moss/);
+assert.equal(promptPlaceholder('ready'), '');
 assert.match(promptPlaceholder('running'), /running/);
 assert.match(promptPlaceholder('approval'), /approval/);
 assert.equal(statusBadge('ready'), 'ready');
 assert.equal(statusBadge('running'), 'running');
 assert.equal(statusBadge('approval'), 'approval needed');
-assert.match(footerHint('ready'), /ctrl\+k menu/);
-assert.match(footerHint('running'), /\/stop cancel/);
+assert.match(footerHint('ready'), /Ctrl\+O tools/);
+assert.match(footerHint('running'), /Esc cancel/);
+assert.match(footerHint('running'), /Enter queue/);
 
 {
   const line = statusLine({

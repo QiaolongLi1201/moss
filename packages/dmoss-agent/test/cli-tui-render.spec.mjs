@@ -9,6 +9,8 @@ import React from 'react';
 import { render, cleanup } from 'ink-testing-library';
 import {
   StatusBar,
+  SessionHeader,
+  WelcomePanel,
   ActivityItemLine,
   ApprovalPromptLine,
   TranscriptMessage,
@@ -22,6 +24,26 @@ function test(name, fn) {
 }
 
 // ───── StatusBar ─────
+
+test('SessionHeader renders a compact Codex-style launch panel', () => {
+  const { lastFrame } = render(
+    React.createElement(SessionHeader, {
+      state: 'ready',
+      device: 'no device',
+      workspace: '/Users/me/project',
+      model: 'deepseek-v4-pro',
+      version: 'v0.3.7',
+      toolsExpanded: false,
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, />_ D-Moss/);
+  assert.match(frame, /model:/);
+  assert.match(frame, /deepseek-v4-pro/);
+  assert.match(frame, /directory:/);
+  assert.match(frame, /\/model to change/);
+  cleanup();
+});
 
 test('StatusBar renders the profile, device, workspace, state, and version', () => {
   const { lastFrame } = render(
@@ -65,6 +87,22 @@ test('StatusBar renders a disconnected device gracefully', () => {
   );
   const frame = lastFrame();
   assert.match(frame, /no device/);
+  cleanup();
+});
+
+test('WelcomePanel renders a Tip and Codex-style command list', () => {
+  const { lastFrame } = render(
+    React.createElement(WelcomePanel, {
+      workspace: '/Users/me/project',
+      device: 'no device',
+      model: 'deepseek-v4-pro',
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Tip:/);
+  assert.match(frame, /\/model\s+choose what model to use/);
+  assert.match(frame, /\/status\s+inspect runtime/);
+  assert.match(frame, /Ctrl\+O\s+expand or collapse tool calls/);
   cleanup();
 });
 
@@ -262,6 +300,23 @@ test('PromptEditor renders a multi-line indicator when value has newlines', () =
   );
   const frame = lastFrame();
   assert.match(frame, /2 lines/);
+  cleanup();
+});
+
+test('PromptEditor renders command suggestions when slash is typed', () => {
+  const { lastFrame } = render(
+    React.createElement(PromptEditor, {
+      value: '/',
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: '',
+      disabled: false,
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /> \//);
+  assert.match(frame, /\/model\s+choose what model to use/);
+  assert.match(frame, /\/tools\s+list available tools/);
   cleanup();
 });
 

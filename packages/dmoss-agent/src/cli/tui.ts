@@ -47,6 +47,11 @@ interface ApprovalState {
   resolve: (answer: string) => void;
 }
 
+interface QueuedInput {
+  raw: string;
+  message: string;
+}
+
 export interface AttachmentRef {
   index: number;
   kind: 'image' | 'file';
@@ -292,8 +297,8 @@ export function statusLine(options: {
 
 export function footerHint(state: TuiRunState): string {
   if (state === 'approval') return 'y approve · n/Esc deny';
-  if (state === 'running') return '/stop cancel · Ctrl+C exit';
-  return 'Ctrl+O tools · ctrl+k menu · /help · Ctrl+C exit';
+  if (state === 'running') return 'Esc cancel · Enter queue · Ctrl+C exit';
+  return 'Ctrl+O tools · /help · Ctrl+C exit';
 }
 
 export function editorPreviewLines(value: string, placeholder: string, maxLines = 8): string[] {
@@ -328,7 +333,7 @@ export function commandSuggestion(command: string): string | null {
 export function promptPlaceholder(state: TuiRunState): string {
   if (state === 'approval') return 'answer approval with y, n, or Esc';
   if (state === 'running') return 'running... /stop to cancel';
-  return 'ask D-Moss anything (Enter send · Ctrl+J newline · /help)';
+  return '';
 }
 
 export function statusBadge(state: TuiRunState): string {
@@ -487,35 +492,36 @@ export interface SessionHeaderProps {
   model?: string;
   state: TuiRunState;
   toolsExpanded?: boolean;
+  version?: string;
 }
 
-export function SessionHeader({ device, workspace, model, state, toolsExpanded }: SessionHeaderProps): React.ReactElement {
-  const stateLabel = state === 'running' ? 'working' : state === 'approval' ? 'approval' : 'ready';
+export function SessionHeader({ device, workspace, model, state, toolsExpanded, version }: SessionHeaderProps): React.ReactElement {
+  const stateLabel = statusBadge(state);
   return React.createElement(
     Box,
-    {
-      flexDirection: 'column',
-      borderStyle: 'single',
-      borderTop: false,
-      borderLeft: false,
-      borderRight: false,
-      borderBottom: true,
-      borderColor: theme.border,
-      marginBottom: 1,
-    },
+    { flexDirection: 'column', marginBottom: 1 },
     React.createElement(
       Box,
-      { flexDirection: 'row' },
-      React.createElement(Text, { color: theme.primary, bold: true }, '✦ D-Moss'),
-      React.createElement(Text, { color: theme.textMuted }, '  '),
-      React.createElement(Text, { color: statusBarColor(state), bold: true }, stateLabel),
-      React.createElement(Text, { color: theme.textMuted }, '  ·  '),
-      React.createElement(Text, null, model || 'connecting...'),
-      React.createElement(Text, { color: theme.textMuted }, '  ·  '),
-      React.createElement(Text, { color: theme.textMuted }, compactPath(workspace)),
-      React.createElement(Box, { flexGrow: 1 }),
-      React.createElement(Text, { color: device === 'no device' ? theme.warn : theme.success }, device),
-      React.createElement(Text, { color: theme.textMuted }, `  ·  tools ${toolsExpanded ? 'expanded' : 'collapsed'}`),
+      { flexDirection: 'column', borderStyle: 'single', borderColor: theme.border, paddingX: 1, width: 64 },
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.textMuted }, '>_ '),
+        React.createElement(Text, { bold: true }, 'D-Moss'),
+        React.createElement(Text, { color: theme.textMuted }, version ? ` (${version})` : ''),
+      ),
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.textMuted }, 'model:     '),
+        React.createElement(Text, { bold: true }, model || 'connecting...'),
+        React.createElement(Text, { color: theme.textMuted }, '    /model to change'),
+      ),
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.textMuted }, 'directory: '),
+        compactPath(workspace),
+      ),
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.textMuted }, 'status:    '),
+        React.createElement(Text, { color: statusBarColor(state), bold: true }, stateLabel),
+        React.createElement(Text, { color: theme.textMuted }, `    ${device}  ·  tools ${toolsExpanded ? 'expanded' : 'collapsed'}`),
+      ),
     ),
   );
 }
@@ -576,34 +582,33 @@ export interface WelcomePanelProps {
 }
 
 export function WelcomePanel({ workspace, device, model }: WelcomePanelProps): React.ReactElement {
+  const commandRows: Array<[string, string]> = [
+    ['/model', 'choose what model to use'],
+    ['/status', 'inspect runtime, device, and workspace context'],
+    ['/tools', 'list available tools and permission surface'],
+    ['/examples', 'starter tasks'],
+    ['/detail', 'toggle quiet, progress, or verbose detail'],
+    ['/thinking', 'toggle thinking deltas'],
+    ['/clear', 'clear visible transcript'],
+  ];
   return React.createElement(
     Box,
     { flexDirection: 'column', marginTop: 1, paddingLeft: 2 },
-    React.createElement(Text, { color: theme.primary, bold: true }, 'Welcome to D-Moss'),
-    React.createElement(Text, null, 'Ask for code, board diagnostics, shell help, or RDK workflow guidance.'),
-    React.createElement(Box, { marginTop: 1, flexDirection: 'column' },
+    React.createElement(Text, null,
+      React.createElement(Text, { bold: true }, 'Tip: '),
+      'Ask for code, board diagnostics, shell help, or RDK workflow guidance.',
+    ),
+    React.createElement(Box, { marginTop: 2, flexDirection: 'column' },
+      ...commandRows.map(([command, description]) => React.createElement(Text, { key: command },
+        React.createElement(Text, { bold: true }, command.padEnd(12)),
+        React.createElement(Text, { color: theme.textMuted }, description),
+      )),
       React.createElement(Text, null,
-        React.createElement(Text, { color: theme.primary, bold: true }, '/status'),
-        React.createElement(Text, { color: theme.textMuted }, '   inspect runtime, device, and workspace context'),
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { color: theme.primary, bold: true }, '/tools '),
-        React.createElement(Text, { color: theme.textMuted }, '   list available tools and permission surface'),
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { color: theme.primary, bold: true }, '/examples'),
-        React.createElement(Text, { color: theme.textMuted }, ' starter tasks'),
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { color: theme.primary, bold: true }, 'Ctrl+O'),
-        React.createElement(Text, { color: theme.textMuted }, '   expand or collapse tool calls'),
+        React.createElement(Text, { bold: true }, 'Ctrl+O'.padEnd(12)),
+        React.createElement(Text, { color: theme.textMuted }, 'expand or collapse tool calls'),
       ),
     ),
-    React.createElement(Box, { marginTop: 1, flexDirection: 'column' },
-      React.createElement(Text, { color: theme.textMuted }, `workspace  ${compactPath(workspace)}`),
-      React.createElement(Text, { color: theme.textMuted }, `device     ${device}`),
-      React.createElement(Text, { color: theme.textMuted }, `model      ${model || 'connecting...'}`),
-    ),
+    React.createElement(Text, { color: theme.textDim }, `workspace ${compactPath(workspace)} · device ${device} · model ${model || 'connecting...'}`),
   );
 }
 
@@ -844,6 +849,23 @@ export interface PromptEditorProps {
   model?: string;
 }
 
+function commandRowsForInput(value: string): Array<[string, string]> {
+  if (!value.startsWith('/')) return [];
+  const normalized = value.trim().toLowerCase();
+  const rows: Array<[string, string]> = [
+    ['/model', 'choose what model to use'],
+    ['/status', 'inspect runtime, device, and workspace context'],
+    ['/tools', 'list available tools and permission surface'],
+    ['/examples', 'starter tasks'],
+    ['/detail', 'toggle quiet, progress, or verbose detail'],
+    ['/thinking', 'toggle thinking deltas'],
+    ['/clear', 'clear visible transcript'],
+    ['/quit', 'exit D-Moss'],
+  ];
+  if (normalized === '/') return rows;
+  return rows.filter(([command]) => command.startsWith(normalized));
+}
+
 export function PromptEditor({ value, onChange, onSubmit, placeholder, disabled, onShiftEnter, hint, model }: PromptEditorProps): React.ReactElement {
   const lineCount = value.length > 0 ? value.split('\n').length : 0;
   const isMulti = lineCount > 1;
@@ -870,31 +892,33 @@ export function PromptEditor({ value, onChange, onSubmit, placeholder, disabled,
 
   const lines = editorPreviewLines(value, placeholder, 6);
   const suggestion = value.startsWith('/') ? commandSuggestion(value) : null;
-  const borderColor = disabled ? theme.border : theme.primary;
+  const commandRows = commandRowsForInput(value);
 
   return React.createElement(
     Box,
-    { flexDirection: 'column' },
-    React.createElement(
-      Box,
-      { flexDirection: 'column', borderStyle: 'round', borderColor, paddingX: 1 },
-      ...lines.map((line, index) => React.createElement(
-        Text,
-        { key: `${index}-${line}`, color: value ? theme.text : theme.textMuted },
-        index === 0
-          ? React.createElement(Text, { color: theme.primary, bold: true }, '▍ ')
-          : '  ',
-        line,
-        !disabled && value && index === lines.length - 1
-          ? React.createElement(Text, { color: theme.primary }, '▌')
-          : null,
+    { flexDirection: 'column', marginTop: 1 },
+    !value && (hint || model) ? React.createElement(Text, { color: theme.textMuted },
+      `  ${[model || '', hint || ''].filter(Boolean).join('  ·  ')}`,
+    ) : null,
+    commandRows.length > 0 ? React.createElement(Box, { flexDirection: 'column', marginBottom: 1, paddingLeft: 2 },
+      ...commandRows.map(([command, description]) => React.createElement(Text, { key: command },
+        React.createElement(Text, { bold: true }, command.padEnd(14)),
+        React.createElement(Text, { color: theme.textMuted }, description),
       )),
-      suggestion ? React.createElement(Text, { color: theme.textDim }, `  ${suggestion}`) : null,
-      isMulti ? React.createElement(Text, { color: theme.textDim }, `  ${lineCount} lines`) : null,
-      hint || model ? React.createElement(Text, { color: theme.textMuted },
-        `  ${[model || '', hint || ''].filter(Boolean).join('  ·  ')}`,
-      ) : null,
-    ),
+    ) : null,
+    suggestion && commandRows.length === 0 ? React.createElement(Text, { color: theme.textDim }, `  ${suggestion}`) : null,
+    isMulti ? React.createElement(Text, { color: theme.textDim }, `  ${lineCount} lines`) : null,
+    ...lines.map((line, index) => React.createElement(
+      Text,
+      { key: `${index}-${line}`, color: value ? theme.text : theme.textMuted },
+      index === 0
+        ? React.createElement(Text, { bold: true }, '> ')
+        : '  ',
+      line,
+      !disabled && index === lines.length - 1
+        ? React.createElement(Text, { color: theme.textMuted }, '▌')
+        : null,
+    )),
   );
 }
 
@@ -918,11 +942,19 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const [toolsExpanded, setToolsExpanded] = useState(false);
   const [flashHint, setFlashHint] = useState<string>('');
   const [ctxUsage, setCtxUsage] = useState<{ used: number; total: number } | undefined>(undefined);
+  const [queuedCount, setQueuedCount] = useState(0);
   const answerIdRef = useRef<number | null>(null);
   const currentTurnIdRef = useRef<number | null>(null);
   const activeRunControllerRef = useRef<AbortController | null>(null);
   const localShellApprovedRef = useRef(false);
   const flashTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const busyRef = useRef(false);
+  const queuedInputsRef = useRef<QueuedInput[]>([]);
+
+  const setBusyState = useCallback((next: boolean): void => {
+    busyRef.current = next;
+    setBusy(next);
+  }, []);
 
   const addTranscript = useCallback((kind: TranscriptKind, text: string, extra: Partial<TranscriptItem> = {}): number => {
     const id = nextId();
@@ -994,7 +1026,10 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       });
       return;
     }
-    if (busy) return;
+    if (key.escape && activeRunControllerRef.current) {
+      activeRunControllerRef.current.abort(new Error('aborted by user'));
+      addTranscript('system', 'Stop requested for the current run.');
+    }
   });
 
   const handleCommand = useCallback(async (message: string): Promise<boolean> => {
@@ -1108,7 +1143,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     const id = addTranscript('shell', `$ ${command}\n`);
     const controller = new AbortController();
     activeRunControllerRef.current = controller;
-    setBusy(true);
+    setBusyState(true);
     try {
       const result = await runLocalShellCommand({
         command,
@@ -1122,13 +1157,13 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       updateTranscript(id, `\n[local] ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       if (activeRunControllerRef.current === controller) activeRunControllerRef.current = null;
-      setBusy(false);
+      setBusyState(false);
     }
-  }, [addTranscript, askApproval, updateTranscript, workspace]);
+  }, [addTranscript, askApproval, setBusyState, updateTranscript, workspace]);
 
   const runPrompt = useCallback(async (message: string): Promise<void> => {
     addTranscript('user', message);
-    setBusy(true);
+    setBusyState(true);
     answerIdRef.current = null;
     const controller = new AbortController();
     activeRunControllerRef.current = controller;
@@ -1220,17 +1255,15 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       addTranscript('error', controller.signal.aborted ? 'Run stopped.' : String(err instanceof Error ? err.message : err));
     } finally {
       if (activeRunControllerRef.current === controller) activeRunControllerRef.current = null;
-      setBusy(false);
+      setBusyState(false);
       answerIdRef.current = null;
       currentTurnIdRef.current = null;
     }
-  }, [addTranscript, agent, detailMode, sessionKey, showThinking, skillLearner, updateTranscript]);
+  }, [addTranscript, agent, detailMode, sessionKey, setBusyState, showThinking, skillLearner, updateTranscript]);
 
-  const submit = useCallback((value: string): void => {
-    const raw = value;
+  const runInput = useCallback((raw: string): void => {
     const message = raw.trim();
-    setInput('');
-    if (!message || busy || approval) return;
+    if (!message || approval) return;
     void (async () => {
       if (isLocalShellLine(raw)) {
         await runLocalShell(raw);
@@ -1239,33 +1272,61 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       const handled = await handleCommand(message);
       if (!handled) await runPrompt(message);
     })();
-  }, [approval, busy, handleCommand, runLocalShell, runPrompt]);
+  }, [approval, handleCommand, runLocalShell, runPrompt]);
+
+  useEffect(() => {
+    if (busy || approval || queuedInputsRef.current.length === 0) return;
+    const next = queuedInputsRef.current.shift();
+    setQueuedCount(queuedInputsRef.current.length);
+    if (next) runInput(next.raw);
+  }, [approval, busy, queuedCount, runInput]);
+
+  const submit = useCallback((value: string): void => {
+    const raw = value;
+    const message = raw.trim();
+    setInput('');
+    if (!message || approval) return;
+    if (busyRef.current && (message === '/stop' || message === '/abort')) {
+      runInput(raw);
+      return;
+    }
+    if (busyRef.current) {
+      const nextQueue = [...queuedInputsRef.current, { raw, message }];
+      queuedInputsRef.current = nextQueue;
+      setQueuedCount(nextQueue.length);
+      addTranscript('system', `Queued: ${message}`);
+      return;
+    }
+    runInput(raw);
+  }, [addTranscript, approval, runInput]);
 
   const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
   const terminalRows = Math.max(12, stdout?.rows ?? 30);
-  const promptRows = Math.min(6, Math.max(1, input ? input.split('\n').length : 1)) + 3;
-  const footerRows = 1;
-  const headerRows = 2;
+  const promptRows = Math.min(6, Math.max(1, input ? input.split('\n').length : 1)) + 2 + (input.startsWith('/') ? 8 : 0);
+  const footerRows = 0;
+  const headerRows = 6;
   const approvalRows = approval ? Math.min(10, approval.question.split('\n').length + 4) : 0;
   const noticeRows = notice ? 1 : 0;
   const transcriptRows = Math.max(1, terminalRows - headerRows - promptRows - footerRows - approvalRows - noticeRows - 2);
 
   // Compose footer hint based on state (drives footerHint text used in tests).
   const footerHintText = footerHint(runState)
+    + (queuedCount > 0 ? `  ·  queued ${queuedCount}` : '')
     + (detailMode !== 'progress' ? `  ·  detail ${detailMode}` : '')
     + (showThinking ? '  ·  thinking on' : '')
     + (localShellApproved ? '  ·  local shell' : '');
 
   return React.createElement(
     Box,
-    { flexDirection: 'column', paddingX: 1, paddingTop: 1, paddingBottom: 1, height: terminalRows },
+    { flexDirection: 'column', paddingX: 1, paddingTop: 1, height: terminalRows },
     React.createElement(SessionHeader, {
       device,
       workspace,
       model: currentModel,
       state: runState,
       toolsExpanded: toolsExpanded || detailMode === 'verbose',
+      version: `v${getPackageVersion()}`,
     }),
     React.createElement(
       Box,
@@ -1287,22 +1348,16 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
           onChange: setInput,
           onSubmit: submit,
           placeholder: promptPlaceholder(runState),
-          disabled: busy,
+          disabled: false,
           onShiftEnter: () => undefined,
           model: currentModel,
           hint: footerHintText,
         }),
-    React.createElement(StatusBar, {
-      state: runState,
-      device,
-      workspace,
-      version: `v${getPackageVersion()}`,
-      notice,
-      model: currentModel,
-      ctxUsage,
-      flashHint,
-      hint: 'Ctrl+O tools',
-    }),
+    notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
+    flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
+    ctxUsage ? React.createElement(Text, { color: theme.textMuted },
+      `ctx ${humanTokens(ctxUsage.used)}/${humanTokens(ctxUsage.total)}`,
+    ) : null,
   );
 }
 

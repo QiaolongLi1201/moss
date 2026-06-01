@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_MODEL } from '@rdk-moss/core';
+import { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from '../context/compaction.js';
+import { resolveDmossMaxAgentTurns } from '../utils/max-agent-turns.js';
 
 export type CliProviderPreset = 'qwen' | 'openai' | 'anthropic' | 'openai-compatible';
 
@@ -86,6 +88,7 @@ export interface ConfigFile {
   trustedTools?: string[];
   promptCache?: PromptCacheConfig | boolean;
   guardrails?: GuardrailsConfig;
+  agent?: AgentRuntimeConfig;
 }
 
 export interface LoadedCliConfigFile {
@@ -113,6 +116,12 @@ export interface GuardrailsConfig {
   output?: TextGuardrailConfig;
 }
 
+export interface AgentRuntimeConfig {
+  maxTurns?: number;
+  contextTokens?: number;
+  compaction?: Partial<Pick<CompactionSettings, 'reserveTokens' | 'keepRecentTokens'>>;
+}
+
 export interface ResolvedTextGuardrailConfig {
   blockPatterns: string[];
   redactPatterns: string[];
@@ -134,6 +143,8 @@ export interface CliConfigOverrides {
   trustedTools?: string[];
   promptCacheEnabled?: boolean;
   promptCacheDebug?: boolean;
+  maxAgentTurns?: number;
+  contextTokens?: number;
 }
 
 export interface CliProfileDefaults {
@@ -252,12 +263,28 @@ function mergeGuardrailsConfig(
   };
 }
 
+function mergeAgentRuntimeConfig(
+  projectAgent: ConfigFile['agent'],
+  userAgent: ConfigFile['agent'],
+): ConfigFile['agent'] {
+  if (!projectAgent && !userAgent) return undefined;
+  return {
+    ...projectAgent,
+    ...userAgent,
+    compaction: {
+      ...projectAgent?.compaction,
+      ...userAgent?.compaction,
+    },
+  };
+}
+
 export function mergeConfigFiles(projectConfig: ConfigFile, userConfig: ConfigFile): ConfigFile {
   return {
     ...projectConfig,
     ...userConfig,
     promptCache: mergePromptCacheConfig(projectConfig.promptCache, userConfig.promptCache),
     guardrails: mergeGuardrailsConfig(projectConfig.guardrails, userConfig.guardrails),
+    agent: mergeAgentRuntimeConfig(projectConfig.agent, userConfig.agent),
   };
 }
 
@@ -403,6 +430,20 @@ function hasGuardrails(config: ResolvedGuardrailsConfig): boolean {
     config.output.redactPatterns.length > 0;
 }
 
+function parsePositiveInteger(value: unknown, source: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`Unsupported ${source}; expected a positive integer`);
+  }
+  return value;
+}
+
+function parsePositiveIntegerEnv(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number(value.trim());
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 function inferProviderFromBaseUrl(baseUrl: string | undefined): CliProviderPreset | null {
   const raw = (baseUrl || '').toLowerCase();
   if (!raw) return null;
@@ -447,6 +488,12 @@ export interface ResolvedCliConfig {
   promptCacheDebugSource: string;
   guardrails: ResolvedGuardrailsConfig;
   guardrailsSource: string;
+  maxAgentTurns: number;
+  maxAgentTurnsSource: string;
+  contextTokens: number;
+  contextTokensSource: string;
+  compactionSettings: Pick<CompactionSettings, 'reserveTokens' | 'keepRecentTokens'>;
+  compactionSettingsSource: string;
   configPath: string;
   projectConfigPath?: string;
 }
@@ -596,6 +643,40 @@ export function resolveCliConfig(
         : `profile:${profile}`;
   const guardrails = normalizeGuardrailsConfig(activeConfig.guardrails);
   const guardrailsSource = hasGuardrails(guardrails) ? 'config' : 'default';
+  const configMaxAgentTurns = parsePositiveInteger(activeConfig.agent?.maxTurns, 'agent.maxTurns');
+  const envMaxAgentTurns = parsePositiveIntegerEnv(env.DMOSS_MAX_AGENT_TURNS);
+  const maxAgentTurns = resolveDmossMaxAgentTurns(String(overrides.maxAgentTurns ?? envMaxAgentTurns ?? configMaxAgentTurns ?? ''));
+  const maxAgentTurnsSource = overrides.maxAgentTurns !== undefined
+    ? 'cli'
+    : envMaxAgentTurns !== undefined
+      ? 'DMOSS_MAX_AGENT_TURNS'
+      : configMaxAgentTurns !== undefined
+        ? 'config'
+        : 'default';
+  const configContextTokens = parsePositiveInteger(activeConfig.agent?.contextTokens, 'agent.contextTokens');
+  const envContextTokens = parsePositiveIntegerEnv(env.DMOSS_CONTEXT_TOKENS);
+  const contextTokens = overrides.contextTokens ?? envContextTokens ?? configContextTokens ?? 200_000;
+  const contextTokensSource = overrides.contextTokens !== undefined
+    ? 'cli'
+    : envContextTokens !== undefined
+      ? 'DMOSS_CONTEXT_TOKENS'
+      : configContextTokens !== undefined
+        ? 'config'
+        : 'default';
+  const configCompactionReserve = parsePositiveInteger(
+    activeConfig.agent?.compaction?.reserveTokens,
+    'agent.compaction.reserveTokens',
+  );
+  const configCompactionKeepRecent = parsePositiveInteger(
+    activeConfig.agent?.compaction?.keepRecentTokens,
+    'agent.compaction.keepRecentTokens',
+  );
+  const compactionSettings = {
+    reserveTokens: configCompactionReserve ?? DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+    keepRecentTokens: configCompactionKeepRecent ?? DEFAULT_COMPACTION_SETTINGS.keepRecentTokens,
+  };
+  const compactionSettingsSource =
+    configCompactionReserve !== undefined || configCompactionKeepRecent !== undefined ? 'config' : 'default';
 
   return {
     profile,
@@ -622,6 +703,12 @@ export function resolveCliConfig(
     promptCacheDebugSource,
     guardrails,
     guardrailsSource,
+    maxAgentTurns,
+    maxAgentTurnsSource,
+    contextTokens,
+    contextTokensSource,
+    compactionSettings,
+    compactionSettingsSource,
     configPath: configPaths?.configPath ?? resolveConfigPath(undefined, env),
     projectConfigPath: configPaths?.projectConfigPath,
   };

@@ -45,6 +45,8 @@ function normalizeConfigKey(key: string): keyof CliConfigOverrides | null {
   if (raw === 'trustedtools' || raw === 'trusttools') return 'trustedTools';
   if (raw === 'promptcache' || raw === 'promptcacheenabled') return 'promptCacheEnabled';
   if (raw === 'promptcachedebug' || raw === 'promptprefixdebug') return 'promptCacheDebug';
+  if (raw === 'maxagentturns' || raw === 'maxturns') return 'maxAgentTurns';
+  if (raw === 'contexttokens' || raw === 'contextwindow') return 'contextTokens';
   return null;
 }
 
@@ -90,6 +92,12 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
     const parsed = parseConfigBoolean(value);
     if (parsed === null) throw new Error(`Unsupported promptCacheDebug value "${value}"`);
     target.promptCacheDebug = parsed;
+    return;
+  }
+  if (key === 'maxAgentTurns' || key === 'contextTokens') {
+    const parsed = Number(value.trim());
+    if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`Unsupported ${key} value "${value}"`);
+    target[key] = parsed;
     return;
   }
   if (key === 'model' || key === 'provider' || key === 'baseUrl' || key === 'workspace') {

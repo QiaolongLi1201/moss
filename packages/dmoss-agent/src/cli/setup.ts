@@ -141,6 +141,9 @@ export function renderAuthStatus(
     `  promptCache: ${resolved.promptCacheEnabled ? 'enabled' : 'disabled'} (${resolved.promptCacheSource})`,
     `  promptCacheDebug: ${resolved.promptCacheDebug ? 'enabled' : 'disabled'} (${resolved.promptCacheDebugSource})`,
     `  guardrails: ${guardrailSummary(resolved)}`,
+    `  maxAgentTurns: ${resolved.maxAgentTurns} (${resolved.maxAgentTurnsSource})`,
+    `  contextTokens: ${resolved.contextTokens} (${resolved.contextTokensSource})`,
+    `  compaction: reserve ${resolved.compactionSettings.reserveTokens}, keepRecent ${resolved.compactionSettings.keepRecentTokens} (${resolved.compactionSettingsSource})`,
     `  config: ${resolved.configPath}`,
     `  projectConfig: ${resolved.projectConfigPath || 'none'}`,
   ].join('\n');
@@ -162,6 +165,7 @@ export function renderConfigUsage(): string {
     '  dmoss config set profile autonomous',
     '  dmoss config set approvalPolicy prompt',
     '  dmoss config set trustedTools exec,write_file',
+    '  edit agent.maxTurns/contextTokens/compaction in config JSON',
   ].join('\n');
 }
 

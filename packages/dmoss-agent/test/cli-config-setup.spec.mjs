@@ -18,6 +18,7 @@ import {
   resolveProjectConfigPath,
   saveConfigFile,
 } from '../dist/cli/config.js';
+import { resolveCliAgentRuntimeOptions } from '../dist/cli/agent-runtime.js';
 import {
   renderAuthStatus,
   renderConfigUsage,
@@ -62,6 +63,12 @@ try {
     output: { blockPatterns: [], redactPatterns: [] },
   });
   assert.equal(resolved.guardrailsSource, 'default');
+  assert.equal(resolved.maxAgentTurns, 64);
+  assert.equal(resolved.maxAgentTurnsSource, 'default');
+  assert.equal(resolved.contextTokens, 200000);
+  assert.equal(resolved.contextTokensSource, 'default');
+  assert.deepEqual(resolved.compactionSettings, { reserveTokens: 20000, keepRecentTokens: 20000 });
+  assert.equal(resolved.compactionSettingsSource, 'default');
 
   const envResolved = resolveCliConfig({
     DMOSS_PROFILE: 'autonomous',
@@ -74,6 +81,8 @@ try {
     DMOSS_TRUSTED_TOOLS: 'exec,write_file',
     DMOSS_PROMPT_CACHE: 'false',
     DMOSS_PROMPT_CACHE_DEBUG: 'true',
+    DMOSS_MAX_AGENT_TURNS: '12',
+    DMOSS_CONTEXT_TOKENS: '64000',
   }, loadConfigFile());
   assert.equal(envResolved.provider, 'openai');
   assert.equal(envResolved.profile, 'autonomous');
@@ -91,6 +100,19 @@ try {
   assert.equal(envResolved.promptCacheSource, 'DMOSS_PROMPT_CACHE');
   assert.equal(envResolved.promptCacheDebug, true);
   assert.equal(envResolved.promptCacheDebugSource, 'DMOSS_PROMPT_CACHE_DEBUG');
+  assert.equal(envResolved.maxAgentTurns, 12);
+  assert.equal(envResolved.maxAgentTurnsSource, 'DMOSS_MAX_AGENT_TURNS');
+  assert.equal(envResolved.contextTokens, 64000);
+  assert.equal(envResolved.contextTokensSource, 'DMOSS_CONTEXT_TOKENS');
+
+  const invalidEnvResolved = resolveCliConfig({
+    DMOSS_MAX_AGENT_TURNS: '1.5',
+    DMOSS_CONTEXT_TOKENS: '64000x',
+  }, loadConfigFile());
+  assert.equal(invalidEnvResolved.maxAgentTurns, 64);
+  assert.equal(invalidEnvResolved.maxAgentTurnsSource, 'default');
+  assert.equal(invalidEnvResolved.contextTokens, 200000);
+  assert.equal(invalidEnvResolved.contextTokensSource, 'default');
 
   const cliResolved = resolveCliConfig({
     DMOSS_MODEL: 'gpt-4o-mini',
@@ -105,6 +127,8 @@ try {
     trustedTools: ['exec', 'memory_write'],
     promptCacheEnabled: false,
     promptCacheDebug: true,
+    maxAgentTurns: 9,
+    contextTokens: 32000,
   });
   assert.equal(cliResolved.profile, 'cautious');
   assert.equal(cliResolved.profileSource, 'cli');
@@ -123,6 +147,10 @@ try {
   assert.equal(cliResolved.promptCacheSource, 'cli');
   assert.equal(cliResolved.promptCacheDebug, true);
   assert.equal(cliResolved.promptCacheDebugSource, 'cli');
+  assert.equal(cliResolved.maxAgentTurns, 9);
+  assert.equal(cliResolved.maxAgentTurnsSource, 'cli');
+  assert.equal(cliResolved.contextTokens, 32000);
+  assert.equal(cliResolved.contextTokensSource, 'cli');
 
   const status = renderAuthStatus(loadConfigFile(), {});
   assert.match(status, /apiKey: configured via config/);
@@ -134,6 +162,9 @@ try {
   assert.match(status, /promptCache: enabled/);
   assert.match(status, /promptCacheDebug: disabled/);
   assert.match(status, /guardrails: none \(default\)/);
+  assert.match(status, /maxAgentTurns: 64 \(default\)/);
+  assert.match(status, /contextTokens: 200000 \(default\)/);
+  assert.match(status, /compaction: reserve 20000, keepRecent 20000 \(default\)/);
   assert.doesNotMatch(status, /stored-secret/);
 
   const envStatus = renderAuthStatus(loadConfigFile(), { DASHSCOPE_API_KEY: 'env-secret' });
@@ -188,6 +219,11 @@ try {
       input: { redactPatterns: ['PROJECT_SECRET=[^\\s]+'] },
       output: { blockPatterns: ['project leak'] },
     },
+    agent: {
+      maxTurns: 24,
+      contextTokens: 128000,
+      compaction: { reserveTokens: 10000 },
+    },
   }, null, 2)}\n`);
   try {
     assert.equal(resolveProjectConfigPath(projectChild), projectConfigPath);
@@ -204,6 +240,11 @@ try {
       input: { redactPatterns: ['PROJECT_SECRET=[^\\s]+'] },
       output: { blockPatterns: ['project leak'] },
     });
+    assert.deepEqual(loadedProject.config.agent, {
+      maxTurns: 24,
+      contextTokens: 128000,
+      compaction: { reserveTokens: 10000 },
+    });
 
     const projectResolved = resolveCliConfig({ DMOSS_CONFIG_DIR: tmp }, loadedProject.config, {}, loadedProject);
     assert.equal(projectResolved.projectConfigPath, projectConfigPath);
@@ -219,6 +260,12 @@ try {
     assert.deepEqual(projectResolved.guardrails.input.redactPatterns, ['PROJECT_SECRET=[^\\s]+']);
     assert.deepEqual(projectResolved.guardrails.output.blockPatterns, ['project leak']);
     assert.equal(projectResolved.guardrailsSource, 'config');
+    assert.equal(projectResolved.maxAgentTurns, 24);
+    assert.equal(projectResolved.maxAgentTurnsSource, 'config');
+    assert.equal(projectResolved.contextTokens, 128000);
+    assert.equal(projectResolved.contextTokensSource, 'config');
+    assert.deepEqual(projectResolved.compactionSettings, { reserveTokens: 10000, keepRecentTokens: 20000 });
+    assert.equal(projectResolved.compactionSettingsSource, 'config');
 
     const projectShow = spawnSync(process.execPath, [
       cliPath,
@@ -339,6 +386,11 @@ try {
         blockPatterns: ['private token'],
       },
     },
+    agent: {
+      maxTurns: 18,
+      contextTokens: 96000,
+      compaction: { reserveTokens: 8000, keepRecentTokens: 9000 },
+    },
   }, tmp);
   const filePolicyResolved = resolveCliConfig({}, loadConfigFile());
   assert.equal(filePolicyResolved.profile, 'autonomous');
@@ -358,6 +410,18 @@ try {
   assert.equal(filePolicyResolved.guardrailsSource, 'config');
   filePolicyResolved.guardrails.input.redactPatterns.push('MUTATED');
   assert.deepEqual(resolveCliConfig({}, loadConfigFile()).guardrails.input.redactPatterns, ['SECRET=[^\\s]+']);
+  assert.equal(filePolicyResolved.maxAgentTurns, 18);
+  assert.equal(filePolicyResolved.maxAgentTurnsSource, 'config');
+  assert.equal(filePolicyResolved.contextTokens, 96000);
+  assert.equal(filePolicyResolved.contextTokensSource, 'config');
+  assert.deepEqual(filePolicyResolved.compactionSettings, { reserveTokens: 8000, keepRecentTokens: 9000 });
+  assert.equal(filePolicyResolved.compactionSettingsSource, 'config');
+  assert.deepEqual(resolveCliAgentRuntimeOptions(filePolicyResolved), {
+    maxAgentTurns: 18,
+    contextTokens: 96000,
+    compactionSettings: { reserveTokens: 8000, keepRecentTokens: 9000 },
+    promptCache: { enabled: false, debug: true },
+  });
 
   const autonomousResolved = resolveCliConfig({}, {
     profile: 'autonomous',
@@ -395,6 +459,14 @@ try {
   assert.throws(
     () => resolveCliConfig({}, { profile: 'reckless' }),
     /Unsupported config profile "reckless"/,
+  );
+  assert.throws(
+    () => resolveCliConfig({}, { agent: { maxTurns: 0 } }),
+    /Unsupported agent\.maxTurns/,
+  );
+  assert.throws(
+    () => resolveCliConfig({}, { agent: { compaction: { reserveTokens: -1 } } }),
+    /Unsupported agent\.compaction\.reserveTokens/,
   );
 
   runConfigSet(['profile', 'autonomous']);

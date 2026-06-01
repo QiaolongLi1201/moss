@@ -35,6 +35,10 @@ import { parseCliArgs } from '../dist/cli/args.js';
     'promptCache=false',
     '-c',
     'promptCacheDebug=true',
+    '-c',
+    'maxTurns=17',
+    '-c',
+    'contextTokens=96000',
     '--',
     'run diff -r',
   ]);
@@ -47,6 +51,8 @@ import { parseCliArgs } from '../dist/cli/args.js';
   assert.deepEqual(parsed.configOverrides.trustedTools, ['exec', 'write_file']);
   assert.equal(parsed.configOverrides.promptCacheEnabled, false);
   assert.equal(parsed.configOverrides.promptCacheDebug, true);
+  assert.equal(parsed.configOverrides.maxAgentTurns, 17);
+  assert.equal(parsed.configOverrides.contextTokens, 96000);
   assert.equal(parsed.prompt, 'run diff -r');
 }
 
@@ -108,5 +114,7 @@ import { parseCliArgs } from '../dist/cli/args.js';
 
 assert.throws(() => parseCliArgs(['-c', 'temperature=0.7']), /Unsupported --config key/);
 assert.throws(() => parseCliArgs(['-c', 'profile=reckless']), /Unsupported profile/);
+assert.throws(() => parseCliArgs(['-c', 'maxTurns=0']), /Unsupported maxAgentTurns/);
+assert.throws(() => parseCliArgs(['-c', 'contextTokens=1.5']), /Unsupported contextTokens/);
 
 console.log('[PASS] CLI argument parser preserves prompts and override flags');

@@ -219,6 +219,9 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     `  ${label('prompt cache')} ${auth.promptCacheEnabled === false ? 'disabled' : 'enabled'} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${auth.promptCacheDebug === true ? 'enabled' : 'disabled'} (${auth.promptCacheDebugSource ?? 'default'})`,
     `  ${label('guardrails')} ${guardrailLine(auth)} (${auth.guardrailsSource ?? 'default'})`,
+    `  ${label('max turns')} ${auth.maxAgentTurns} (${auth.maxAgentTurnsSource ?? 'default'})`,
+    `  ${label('context tokens')} ${auth.contextTokens} (${auth.contextTokensSource ?? 'default'})`,
+    `  ${label('compaction')} reserve ${auth.compactionSettings.reserveTokens}, keepRecent ${auth.compactionSettings.keepRecentTokens} (${auth.compactionSettingsSource ?? 'default'})`,
     `  ${label('exec')} ${rt.execBackend}${rt.execBackend === 'docker' && rt.dockerImage ? ` (${rt.dockerImage})` : ''}`,
     `  ${label('memory')} ${memoryCount} entries`,
     `  ${label('skills')} ${skillCount}`,
@@ -264,6 +267,9 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     `  ${label('prompt cache')} ${cache} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${cacheDebug} (${auth.promptCacheDebugSource ?? 'default'})`,
     `  ${label('guardrails')} input ${inputGuardrails}, output ${outputGuardrails} (${auth.guardrailsSource ?? 'default'})`,
+    `  ${label('max turns')} ${auth.maxAgentTurns} (${auth.maxAgentTurnsSource ?? 'default'})`,
+    `  ${label('context tokens')} ${auth.contextTokens} (${auth.contextTokensSource ?? 'default'})`,
+    `  ${label('compaction')} reserve ${auth.compactionSettings.reserveTokens}, keepRecent ${auth.compactionSettings.keepRecentTokens} (${auth.compactionSettingsSource ?? 'default'})`,
     '',
     '  Profiles:',
     '    cautious        read-only, prompt approvals, stable prompt cache',
@@ -288,9 +294,10 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    dmoss config set promptCache true|false',
     '    dmoss config set promptCacheDebug true|false',
     '    edit guardrails.input/output blockPatterns or redactPatterns in config JSON',
+    '    edit agent.maxTurns, agent.contextTokens, or agent.compaction in config JSON',
     '',
     '  Environment overrides:',
-    '    DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG',
+    '    DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG, DMOSS_MAX_AGENT_TURNS, DMOSS_CONTEXT_TOKENS',
   ].join('\n');
 }
 

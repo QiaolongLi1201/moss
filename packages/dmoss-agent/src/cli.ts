@@ -4,6 +4,7 @@
 import { execSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveCliAgentRuntimeOptions } from './cli/agent-runtime.js';
 import { createCliToolApprovalHook, resolveCliSafetyMode } from './cli/approval.js';
 import { loadCliConfigFile, loadEnvFromAncestors, resolveCliConfig, resolveConfigDir } from './cli/config.js';
 import { parseCliArgs } from './cli/args.js';
@@ -269,10 +270,7 @@ async function main() {
   const agent = new DmossAgent({
     llmProvider: createCliProvider(resolvedConfig), sessionStore, model,
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
-    promptCache: {
-      enabled: resolvedConfig.promptCacheEnabled,
-      debug: resolvedConfig.promptCacheDebug,
-    },
+    ...resolveCliAgentRuntimeOptions(resolvedConfig),
     hooks,
   });
   registerBuiltinTools(agent);

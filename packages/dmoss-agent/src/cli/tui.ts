@@ -55,6 +55,13 @@ export interface QueuedInput {
   enqueuedAt?: number;
 }
 
+export interface QueueDrainState {
+  busy: boolean;
+  approvalActive: boolean;
+  pausedAfterCancel: boolean;
+  queueLength: number;
+}
+
 export interface AttachmentRef {
   index: number;
   kind: 'image' | 'file';
@@ -289,6 +296,17 @@ export function queueItemMeta(item: QueuedInput, now = Date.now()): string {
     `${lineCount} line${lineCount === 1 ? '' : 's'}`,
     `${charCount} chars`,
   ].filter(Boolean).join(' · ');
+}
+
+export function shouldDrainQueue(state: QueueDrainState): boolean {
+  return !state.busy && !state.approvalActive && !state.pausedAfterCancel && state.queueLength > 0;
+}
+
+export function stopRequestedMessage(queueLength: number): string {
+  if (queueLength > 0) {
+    return `Stop requested. Queue paused (${queueLength} item${queueLength === 1 ? '' : 's'}); send any message to resume.`;
+  }
+  return 'Stop requested for the current run.';
 }
 
 export function extractAttachmentRefs(text: string): AttachmentRef[] {
@@ -1243,6 +1261,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const [flashHint, setFlashHint] = useState<string>('');
   const [ctxUsage, setCtxUsage] = useState<{ used: number; total: number } | undefined>(undefined);
   const [queuedInputs, setQueuedInputsState] = useState<QueuedInput[]>([]);
+  const [queuePausedAfterCancel, setQueuePausedAfterCancelState] = useState(false);
   const answerIdRef = useRef<number | null>(null);
   const currentTurnIdRef = useRef<number | null>(null);
   const activeRunControllerRef = useRef<AbortController | null>(null);
@@ -1250,6 +1269,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const flashTimerRef = useRef<NodeJS.Timeout | null>(null);
   const busyRef = useRef(false);
   const queuedInputsRef = useRef<QueuedInput[]>([]);
+  const queuePausedAfterCancelRef = useRef(false);
   const inputHistoryRef = useRef<string[]>([]);
   const historyIndexRef = useRef<number | null>(null);
   const historyDraftRef = useRef('');
@@ -1262,6 +1282,11 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const setBusyState = useCallback((next: boolean): void => {
     busyRef.current = next;
     setBusy(next);
+  }, []);
+
+  const setQueuePausedAfterCancel = useCallback((next: boolean): void => {
+    queuePausedAfterCancelRef.current = next;
+    setQueuePausedAfterCancelState(next);
   }, []);
 
   const rememberInput = useCallback((message: string): void => {
@@ -1332,6 +1357,15 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
   }, []);
 
+  const requestStop = useCallback((): boolean => {
+    if (!activeRunControllerRef.current) return false;
+    activeRunControllerRef.current.abort(new Error('aborted by user'));
+    const queuedCount = queuedInputsRef.current.length;
+    setQueuePausedAfterCancel(queuedCount > 0);
+    addTranscript('system', stopRequestedMessage(queuedCount));
+    return true;
+  }, [addTranscript, setQueuePausedAfterCancel]);
+
   useEffect(() => {
     localShellApprovedRef.current = localShellApproved;
   }, [localShellApproved]);
@@ -1387,8 +1421,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       return;
     }
     if (key.escape && activeRunControllerRef.current) {
-      activeRunControllerRef.current.abort(new Error('aborted by user'));
-      addTranscript('system', 'Stop requested for the current run.');
+      requestStop();
     }
   });
 
@@ -1421,14 +1454,12 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     if (message === '/queue clear' || message === '/clearqueue') {
       const count = queuedInputsRef.current.length;
       setQueuedInputs([]);
+      setQueuePausedAfterCancel(false);
       addTranscript('system', count === 0 ? 'Queue is already empty.' : `Cleared ${count} queued prompt${count === 1 ? '' : 's'}.`);
       return true;
     }
     if (message === '/stop' || message === '/abort') {
-      if (activeRunControllerRef.current) {
-        activeRunControllerRef.current.abort(new Error('aborted by user'));
-        addTranscript('system', 'Stop requested for the current run.');
-      } else {
+      if (!requestStop()) {
         addTranscript('system', 'No active run to stop.');
       }
       return true;
@@ -1504,7 +1535,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       return true;
     }
     return false;
-  }, [addTranscript, agent, app, currentModel, runtime, setQueuedInputs, workspace]);
+  }, [addTranscript, agent, app, currentModel, requestStop, runtime, setQueuePausedAfterCancel, setQueuedInputs, workspace]);
 
   const runLocalShell = useCallback(async (raw: string): Promise<void> => {
     const command = raw.slice(1);
@@ -1659,15 +1690,21 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   }, [approval, handleCommand, runLocalShell, runPrompt]);
 
   useEffect(() => {
-    if (busy || approval || queuedInputsRef.current.length === 0) return;
+    if (!shouldDrainQueue({
+      busy,
+      approvalActive: approval !== null,
+      pausedAfterCancel: queuePausedAfterCancelRef.current,
+      queueLength: queuedInputsRef.current.length,
+    })) return;
     const [next, ...rest] = queuedInputsRef.current;
     setQueuedInputs(rest);
     if (next) runInput(next.raw);
-  }, [approval, busy, queuedInputs.length, runInput, setQueuedInputs]);
+  }, [approval, busy, queuePausedAfterCancel, queuedInputs.length, runInput, setQueuedInputs]);
 
   const submit = useCallback((value: string): void => {
     const raw = value;
     const message = raw.trim();
+    if (queuePausedAfterCancelRef.current) setQueuePausedAfterCancel(false);
     setInput('');
     setInputCursor(0);
     if (!message || approval) return;
@@ -1691,7 +1728,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       return;
     }
     runInput(raw);
-  }, [addTranscript, approval, runInput, setQueuedInputs]);
+  }, [addTranscript, approval, runInput, setQueuePausedAfterCancel, setQueuedInputs]);
 
   const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
   const cacheMode = promptCacheModeLabel(runtime);

@@ -21,8 +21,10 @@ import {
   queueItemMeta,
   runLocalShellCommand,
   sanitizeRenderableText,
+  shouldDrainQueue,
   statusBadge,
   statusLine,
+  stopRequestedMessage,
   visibleText,
 } from '../dist/cli/tui.js';
 
@@ -116,6 +118,16 @@ assert.equal(formatQueueWait(60_000, 180_000), '2m');
 assert.match(queueItemMeta({ raw: 'plain prompt', message: 'plain prompt', enqueuedAt: 5_000 }, 10_000), /prompt .*waiting 5s .*1 line .*12 chars/);
 assert.match(queueItemMeta({ raw: '/tools', message: '/tools' }, 10_000), /command .*1 line .*6 chars/);
 assert.match(queueItemMeta({ raw: '!pwd', message: '!pwd' }, 10_000), /local shell .*1 line .*4 chars/);
+assert.equal(shouldDrainQueue({ busy: false, approvalActive: false, pausedAfterCancel: false, queueLength: 1 }), true);
+assert.equal(shouldDrainQueue({ busy: true, approvalActive: false, pausedAfterCancel: false, queueLength: 1 }), false);
+assert.equal(shouldDrainQueue({ busy: false, approvalActive: true, pausedAfterCancel: false, queueLength: 1 }), false);
+assert.equal(shouldDrainQueue({ busy: false, approvalActive: false, pausedAfterCancel: true, queueLength: 1 }), false);
+assert.equal(shouldDrainQueue({ busy: false, approvalActive: false, pausedAfterCancel: true, queueLength: 0 }), false);
+assert.equal(shouldDrainQueue({ busy: false, approvalActive: false, pausedAfterCancel: false, queueLength: 0 }), false);
+assert.equal(stopRequestedMessage(0), 'Stop requested for the current run.');
+assert.equal(stopRequestedMessage(1), 'Stop requested. Queue paused (1 item); send any message to resume.');
+assert.equal(stopRequestedMessage(2), 'Stop requested. Queue paused (2 items); send any message to resume.');
+assert.equal(stopRequestedMessage(10), 'Stop requested. Queue paused (10 items); send any message to resume.');
 
 {
   const line = statusLine({

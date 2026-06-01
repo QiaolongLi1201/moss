@@ -313,6 +313,108 @@ export function editorPreviewLines(value: string, placeholder: string, maxLines 
   ];
 }
 
+export interface PromptEditState {
+  value: string;
+  cursor: number;
+}
+
+export type PromptEditIntent =
+  | { type: 'insert'; text: string }
+  | { type: 'left' }
+  | { type: 'right' }
+  | { type: 'home' }
+  | { type: 'end' }
+  | { type: 'backspace' }
+  | { type: 'delete' }
+  | { type: 'killBefore' }
+  | { type: 'killAfter' }
+  | { type: 'deletePreviousWord' };
+
+function clampPromptCursor(value: string, cursor: number): number {
+  if (!Number.isFinite(cursor)) return value.length;
+  return Math.max(0, Math.min(value.length, Math.trunc(cursor)));
+}
+
+function previousWordStart(value: string, cursor: number): number {
+  let index = clampPromptCursor(value, cursor);
+  while (index > 0 && /\s/.test(value[index - 1] || '')) index -= 1;
+  while (index > 0 && !/\s/.test(value[index - 1] || '')) index -= 1;
+  return index;
+}
+
+export function applyPromptEdit(state: PromptEditState, intent: PromptEditIntent): PromptEditState {
+  const value = state.value;
+  const cursor = clampPromptCursor(value, state.cursor);
+  switch (intent.type) {
+    case 'insert': {
+      const text = intent.text.replace(/\r\n?/g, '\n');
+      return {
+        value: `${value.slice(0, cursor)}${text}${value.slice(cursor)}`,
+        cursor: cursor + text.length,
+      };
+    }
+    case 'left':
+      return { value, cursor: Math.max(0, cursor - 1) };
+    case 'right':
+      return { value, cursor: Math.min(value.length, cursor + 1) };
+    case 'home':
+      return { value, cursor: 0 };
+    case 'end':
+      return { value, cursor: value.length };
+    case 'backspace':
+      if (cursor === 0) return { value, cursor };
+      return { value: `${value.slice(0, cursor - 1)}${value.slice(cursor)}`, cursor: cursor - 1 };
+    case 'delete':
+      if (cursor >= value.length) return { value, cursor };
+      return { value: `${value.slice(0, cursor)}${value.slice(cursor + 1)}`, cursor };
+    case 'killBefore':
+      return { value: value.slice(cursor), cursor: 0 };
+    case 'killAfter':
+      return { value: value.slice(0, cursor), cursor };
+    case 'deletePreviousWord': {
+      const start = previousWordStart(value, cursor);
+      return { value: `${value.slice(0, start)}${value.slice(cursor)}`, cursor: start };
+    }
+  }
+}
+
+interface EditorPreviewLine {
+  text: string;
+  cursorColumn: number | null;
+}
+
+function editorPreviewLinesWithCursor(
+  value: string,
+  placeholder: string,
+  cursor: number,
+  maxLines = 8,
+): EditorPreviewLine[] {
+  if (!value) return [{ text: placeholder, cursorColumn: placeholder.length }];
+  const normalized = sanitizeRenderableText(value).replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
+  const normalizedCursor = clampPromptCursor(normalized, cursor);
+  const beforeCursor = normalized.slice(0, normalizedCursor);
+  const cursorLineIndex = beforeCursor.split('\n').length - 1;
+  const cursorColumn = beforeCursor.slice(beforeCursor.lastIndexOf('\n') + 1).length;
+  if (lines.length <= maxLines) {
+    return lines.map((line, index) => ({
+      text: line,
+      cursorColumn: index === cursorLineIndex ? cursorColumn : null,
+    }));
+  }
+  const hiddenCount = lines.length - maxLines;
+  return [
+    { text: `... ${hiddenCount} earlier input lines ...`, cursorColumn: null },
+    ...lines.slice(-maxLines).map((line, index) => {
+      const originalIndex = hiddenCount + index;
+      return {
+        text: line,
+        cursorColumn: originalIndex === cursorLineIndex ? cursorColumn : null,
+      };
+    }),
+  ];
+}
+
 export function commandSuggestion(command: string): string | null {
   const normalized = command.trim().toLowerCase();
   if (!normalized.startsWith('/')) return null;
@@ -841,7 +943,9 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
 
 export interface PromptEditorProps {
   value: string;
+  cursor?: number;
   onChange: (value: string) => void;
+  onCursorChange?: (cursor: number) => void;
   onSubmit: (value: string) => void;
   placeholder: string;
   disabled: boolean;
@@ -871,7 +975,9 @@ function commandRowsForInput(value: string): Array<[string, string]> {
 
 export function PromptEditor({
   value,
+  cursor,
   onChange,
+  onCursorChange,
   onSubmit,
   placeholder,
   disabled,
@@ -883,6 +989,12 @@ export function PromptEditor({
 }: PromptEditorProps): React.ReactElement {
   const lineCount = value.length > 0 ? value.split('\n').length : 0;
   const isMulti = lineCount > 1;
+  const currentCursor = clampPromptCursor(value, cursor ?? value.length);
+  const applyEdit = (intent: PromptEditIntent): void => {
+    const next = applyPromptEdit({ value, cursor: currentCursor }, intent);
+    onChange(next.value);
+    onCursorChange?.(next.cursor);
+  };
   useInput((inputChar, key) => {
     if (disabled) return;
     if (key.upArrow) {
@@ -893,9 +1005,38 @@ export function PromptEditor({
       onHistoryNext?.();
       return;
     }
+    if (key.leftArrow) {
+      applyEdit({ type: 'left' });
+      return;
+    }
+    if (key.rightArrow) {
+      applyEdit({ type: 'right' });
+      return;
+    }
+    const normalizedInput = inputChar.toLowerCase();
+    if (key.ctrl && (normalizedInput === 'a' || inputChar === '\u0001')) {
+      applyEdit({ type: 'home' });
+      return;
+    }
+    if (key.ctrl && (normalizedInput === 'e' || inputChar === '\u0005')) {
+      applyEdit({ type: 'end' });
+      return;
+    }
+    if (key.ctrl && (normalizedInput === 'u' || inputChar === '\u0015')) {
+      applyEdit({ type: 'killBefore' });
+      return;
+    }
+    if (key.ctrl && (normalizedInput === 'k' || inputChar === '\u000b')) {
+      applyEdit({ type: 'killAfter' });
+      return;
+    }
+    if (key.ctrl && (normalizedInput === 'w' || inputChar === '\u0017')) {
+      applyEdit({ type: 'deletePreviousWord' });
+      return;
+    }
     if (key.return) {
       if (key.shift || key.ctrl || inputChar === '\n') {
-        onChange(`${value}\n`);
+        applyEdit({ type: 'insert', text: '\n' });
         onShiftEnter?.();
         return;
       }
@@ -903,16 +1044,20 @@ export function PromptEditor({
       return;
     }
     if (key.backspace) {
-      onChange(value.slice(0, -1));
+      applyEdit({ type: 'backspace' });
       return;
     }
-    if (key.delete) return;
+    if (key.delete) {
+      applyEdit({ type: 'delete' });
+      return;
+    }
     if (inputChar) {
-      onChange(`${value}${inputChar.replace(/\r\n?/g, '\n')}`);
+      if (inputChar.length === 1 && inputChar.charCodeAt(0) < 32) return;
+      applyEdit({ type: 'insert', text: inputChar });
     }
   }, { isActive: !disabled });
 
-  const lines = editorPreviewLines(value, placeholder, 6);
+  const lines = editorPreviewLinesWithCursor(value, placeholder, currentCursor, 6);
   const suggestion = value.startsWith('/') ? commandSuggestion(value) : null;
   const commandRows = commandRowsForInput(value);
 
@@ -932,13 +1077,18 @@ export function PromptEditor({
     isMulti ? React.createElement(Text, { color: theme.textDim }, `  ${lineCount} lines`) : null,
     ...lines.map((line, index) => React.createElement(
       Text,
-      { key: `${index}-${line}`, color: value ? theme.text : theme.textMuted },
+      { key: `${index}-${line.text}`, color: value ? theme.text : theme.textMuted },
       index === 0
         ? React.createElement(Text, { bold: true }, '> ')
         : '  ',
-      line,
-      !disabled && index === lines.length - 1
+      line.cursorColumn !== null
+        ? line.text.slice(0, line.cursorColumn)
+        : line.text,
+      !disabled && line.cursorColumn !== null
         ? React.createElement(Text, { color: theme.textMuted }, '▌')
+        : null,
+      line.cursorColumn !== null
+        ? line.text.slice(line.cursorColumn)
         : null,
     )),
   );
@@ -953,6 +1103,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const { stdout } = useStdout();
   const workspace = runtime?.workspace || process.cwd();
   const [input, setInput] = useState('');
+  const [inputCursor, setInputCursor] = useState(0);
   const [busy, setBusy] = useState(false);
   const [currentModel, setCurrentModel] = useState(agent.config.model || '');
   const [detailMode, setDetailMode] = useState(process.env.DMOSS_CLI_DETAIL || 'quiet');
@@ -993,6 +1144,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     historyIndexRef.current = null;
     historyDraftRef.current = '';
     setInput(next);
+    setInputCursor((cursor) => clampPromptCursor(next, cursor));
   }, []);
 
   const recallHistoryPrevious = useCallback((): void => {
@@ -1002,7 +1154,9 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     const nextIndex = currentIndex === null ? history.length - 1 : Math.max(0, currentIndex - 1);
     if (currentIndex === null) historyDraftRef.current = input;
     historyIndexRef.current = nextIndex;
-    setInput(history[nextIndex] ?? '');
+    const recalled = history[nextIndex] ?? '';
+    setInput(recalled);
+    setInputCursor(recalled.length);
   }, [input]);
 
   const recallHistoryNext = useCallback((): void => {
@@ -1011,13 +1165,17 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     if (currentIndex === null) return;
     if (currentIndex >= history.length - 1) {
       historyIndexRef.current = null;
-      setInput(historyDraftRef.current);
+      const draft = historyDraftRef.current;
+      setInput(draft);
+      setInputCursor(draft.length);
       historyDraftRef.current = '';
       return;
     }
     const nextIndex = currentIndex + 1;
     historyIndexRef.current = nextIndex;
-    setInput(history[nextIndex] ?? '');
+    const recalled = history[nextIndex] ?? '';
+    setInput(recalled);
+    setInputCursor(recalled.length);
   }, []);
 
   const addTranscript = useCallback((kind: TranscriptKind, text: string, extra: Partial<TranscriptItem> = {}): number => {
@@ -1349,6 +1507,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     const raw = value;
     const message = raw.trim();
     setInput('');
+    setInputCursor(0);
     if (!message || approval) return;
     rememberInput(message);
     historyIndexRef.current = null;
@@ -1412,7 +1571,9 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       ? React.createElement(ApprovalPromptLine, { question: approval.question })
       : React.createElement(PromptEditor, {
           value: input,
+          cursor: inputCursor,
           onChange: setInputFromTyping,
+          onCursorChange: setInputCursor,
           onSubmit: submit,
           placeholder: promptPlaceholder(runState),
           disabled: false,

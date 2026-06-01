@@ -6,6 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import {
+  applyPromptEdit,
   commandSuggestion,
   editorPreviewLines,
   extractAttachmentRefs,
@@ -101,6 +102,33 @@ assert.match(footerHint('running'), /Enter queue/);
 {
   assert.deepEqual(editorPreviewLines('', 'message'), ['message']);
   assert.deepEqual(editorPreviewLines('a\nb\nc', 'message', 2), ['... 1 earlier input lines ...', 'b', 'c']);
+}
+
+{
+  assert.deepEqual(
+    applyPromptEdit({ value: 'abcd', cursor: 2 }, { type: 'insert', text: 'X' }),
+    { value: 'abXcd', cursor: 3 },
+  );
+  assert.deepEqual(
+    applyPromptEdit({ value: 'abcd', cursor: 2 }, { type: 'backspace' }),
+    { value: 'acd', cursor: 1 },
+  );
+  assert.deepEqual(
+    applyPromptEdit({ value: 'abcd', cursor: 2 }, { type: 'delete' }),
+    { value: 'abd', cursor: 2 },
+  );
+  assert.deepEqual(
+    applyPromptEdit({ value: 'alpha beta', cursor: 10 }, { type: 'deletePreviousWord' }),
+    { value: 'alpha ', cursor: 6 },
+  );
+  assert.deepEqual(
+    applyPromptEdit({ value: 'abcd', cursor: 2 }, { type: 'killBefore' }),
+    { value: 'cd', cursor: 0 },
+  );
+  assert.deepEqual(
+    applyPromptEdit({ value: 'abcd', cursor: 2 }, { type: 'killAfter' }),
+    { value: 'ab', cursor: 2 },
+  );
 }
 
 {

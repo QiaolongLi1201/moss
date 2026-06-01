@@ -346,6 +346,47 @@ test('PromptEditor maps arrow keys to prompt history callbacks', async () => {
   cleanup();
 });
 
+test('PromptEditor inserts typed text at the current cursor', async () => {
+  let nextValue = '';
+  let nextCursor = -1;
+  const { stdin } = render(
+    React.createElement(PromptEditor, {
+      value: 'abcd',
+      cursor: 2,
+      onChange: (value) => {
+        nextValue = value;
+      },
+      onCursorChange: (cursor) => {
+        nextCursor = cursor;
+      },
+      onSubmit: () => undefined,
+      placeholder: '',
+      disabled: false,
+    }),
+  );
+  stdin.write('X');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(nextValue, 'abXcd');
+  assert.equal(nextCursor, 3);
+  cleanup();
+});
+
+test('PromptEditor renders the cursor at the requested column', () => {
+  const { lastFrame } = render(
+    React.createElement(PromptEditor, {
+      value: 'abcd',
+      cursor: 2,
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: '',
+      disabled: false,
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /> ab▌cd/);
+  cleanup();
+});
+
 // ───── renderMarkdown ─────
 
 test('renderMarkdown produces a string with ANSI codes for code blocks', () => {

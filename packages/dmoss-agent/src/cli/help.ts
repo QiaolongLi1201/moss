@@ -111,6 +111,7 @@ export function displayHelp(c: Colors): void {
     '',
     `  ${c.bold('Config file')}`,
     `    ${c.gray(configPath)}`,
+    `    ${c.gray('.dmoss/config.json')} ${c.dim('in the current workspace is read as project defaults')}`,
     '',
     `  ${c.bold('Built-in features')}`,
     `    ${c.green('✓')} Session persistence (JSONL) with ${c.cyan('--resume')}-style recovery`,

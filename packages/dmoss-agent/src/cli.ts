@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createCliToolApprovalHook, resolveCliSafetyMode } from './cli/approval.js';
-import { loadConfigFile, loadEnvFromAncestors, resolveCliConfig, resolveConfigDir } from './cli/config.js';
+import { loadCliConfigFile, loadEnvFromAncestors, resolveCliConfig, resolveConfigDir } from './cli/config.js';
 import { parseCliArgs } from './cli/args.js';
 import { renderCliDoctor } from './cli/doctor.js';
 import { displayHelp, displayVersion } from './cli/help.js';
@@ -170,7 +170,7 @@ async function main() {
     return;
   }
   if (parsedArgs.command === 'auth' && parsedArgs.commandArgs[0] === 'status') {
-    console.error(renderAuthStatus());
+    console.error(renderAuthStatus(undefined, process.env, parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd()));
     return;
   }
   if (parsedArgs.command === 'auth' && parsedArgs.commandArgs[0] === 'logout') {
@@ -185,7 +185,7 @@ async function main() {
       parsedArgs.commandArgs[0] === 'status'
     )
   ) {
-    runConfigShow();
+    runConfigShow(parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd());
     return;
   }
   if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'set') {
@@ -201,7 +201,9 @@ async function main() {
   if (parsedArgs.configOverrides.workspace) {
     loadEnvFromAncestors(parsedArgs.configOverrides.workspace);
   }
-  const resolvedConfig = resolveCliConfig(process.env, loadConfigFile(), parsedArgs.configOverrides);
+  const configStartDir = parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd();
+  const loadedConfig = loadCliConfigFile(process.env, process.argv.slice(2), configStartDir);
+  const resolvedConfig = resolveCliConfig(process.env, loadedConfig.config, parsedArgs.configOverrides, loadedConfig);
   const safetyMode = parsedArgs.safetyModeOverride ?? resolvedConfig.safetyMode ?? resolveCliSafetyMode(argv);
   const workspace = resolvedConfig.workspace;
   const model = resolvedConfig.model;

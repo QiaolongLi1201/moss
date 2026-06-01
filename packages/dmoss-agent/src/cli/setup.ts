@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import * as readline from 'node:readline';
 import { stdin as input, stderr as output } from 'node:process';
 import {
+  loadCliConfigFile,
   loadConfigFile,
   normalizeApprovalPolicyConfig,
   normalizeConfigProfile,
@@ -114,10 +115,12 @@ function withoutSecret(value: string): string {
 }
 
 export function renderAuthStatus(
-  config: ConfigFile = loadConfigFile(),
+  config?: ConfigFile,
   env: NodeJS.ProcessEnv = process.env,
+  startDir = process.cwd(),
 ): string {
-  const resolved = resolveCliConfig(env, config);
+  const loaded = config === undefined ? loadCliConfigFile(env, process.argv.slice(2), startDir) : undefined;
+  const resolved = resolveCliConfig(env, config ?? loaded?.config, {}, loaded);
   return [
     '[auth]',
     `  provider: ${resolved.provider} (${resolved.providerSource})`,
@@ -131,6 +134,7 @@ export function renderAuthStatus(
     `  promptCache: ${resolved.promptCacheEnabled ? 'enabled' : 'disabled'} (${resolved.promptCacheSource})`,
     `  promptCacheDebug: ${resolved.promptCacheDebug ? 'enabled' : 'disabled'} (${resolved.promptCacheDebugSource})`,
     `  config: ${resolved.configPath}`,
+    `  projectConfig: ${resolved.projectConfigPath || 'none'}`,
   ].join('\n');
 }
 
@@ -142,6 +146,7 @@ export function renderConfigUsage(): string {
     '  dmoss config set <profile|provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug> <value>',
     '',
     'Config file:',
+    '  dmoss reads .dmoss/config.json from the current workspace as project defaults',
     '  dmoss --config-file /path/to/config.json config show',
     '  set DMOSS_CONFIG_FILE=/path/to/config.json to use an explicit config file',
     '',
@@ -152,8 +157,8 @@ export function renderConfigUsage(): string {
   ].join('\n');
 }
 
-export function runConfigShow(): void {
-  print(renderAuthStatus());
+export function runConfigShow(startDir = process.cwd()): void {
+  print(renderAuthStatus(undefined, process.env, startDir));
 }
 
 export async function runSetupWizard(): Promise<void> {

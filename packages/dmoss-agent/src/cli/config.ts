@@ -87,6 +87,12 @@ export interface ConfigFile {
   promptCache?: PromptCacheConfig | boolean;
 }
 
+export interface LoadedCliConfigFile {
+  config: ConfigFile;
+  configPath: string;
+  projectConfigPath?: string;
+}
+
 export type CliConfigProfile = 'cautious' | 'balanced' | 'autonomous';
 export type CliSafetyModeConfig = 'read-only' | 'workspace-write' | 'full-access';
 export type ConfigApprovalPolicy = 'prompt' | 'never';
@@ -151,6 +157,13 @@ function resolveExplicitConfigPath(
   return explicit && explicit.trim() ? path.resolve(explicit) : null;
 }
 
+function hasExplicitConfigPath(
+  env: NodeJS.ProcessEnv = process.env,
+  argv: string[] = process.argv.slice(2),
+): boolean {
+  return resolveExplicitConfigPath(env, argv) !== null;
+}
+
 export function resolveConfigPath(
   configDir?: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -160,6 +173,18 @@ export function resolveConfigPath(
   return resolveExplicitConfigPath(env, argv) || path.join(resolveConfigDir(env), 'config.json');
 }
 
+export function resolveProjectConfigPath(startDir = process.cwd(), maxHops = 16): string | null {
+  let dir = path.resolve(startDir);
+  for (let i = 0; i < maxHops; i++) {
+    const candidate = path.join(dir, '.dmoss', 'config.json');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
 export function loadConfigFile(configPath = resolveConfigPath()): ConfigFile {
   try {
     const raw = fs.readFileSync(configPath, 'utf-8');
@@ -167,6 +192,51 @@ export function loadConfigFile(configPath = resolveConfigPath()): ConfigFile {
   } catch {
     return {};
   }
+}
+
+function mergePromptCacheConfig(
+  projectPromptCache: ConfigFile['promptCache'],
+  userPromptCache: ConfigFile['promptCache'],
+): ConfigFile['promptCache'] {
+  if (
+    projectPromptCache &&
+    typeof projectPromptCache === 'object' &&
+    userPromptCache &&
+    typeof userPromptCache === 'object'
+  ) {
+    return { ...projectPromptCache, ...userPromptCache };
+  }
+  return userPromptCache ?? projectPromptCache;
+}
+
+export function mergeConfigFiles(projectConfig: ConfigFile, userConfig: ConfigFile): ConfigFile {
+  return {
+    ...projectConfig,
+    ...userConfig,
+    promptCache: mergePromptCacheConfig(projectConfig.promptCache, userConfig.promptCache),
+  };
+}
+
+export function loadCliConfigFile(
+  env: NodeJS.ProcessEnv = process.env,
+  argv: string[] = process.argv.slice(2),
+  startDir = process.cwd(),
+): LoadedCliConfigFile {
+  const configPath = resolveConfigPath(undefined, env, argv);
+  const userConfig = loadConfigFile(configPath);
+  if (hasExplicitConfigPath(env, argv)) {
+    return { config: userConfig, configPath };
+  }
+
+  const projectConfigPath = resolveProjectConfigPath(startDir) ?? undefined;
+  if (!projectConfigPath) {
+    return { config: userConfig, configPath };
+  }
+  return {
+    config: mergeConfigFiles(loadConfigFile(projectConfigPath), userConfig),
+    configPath,
+    projectConfigPath,
+  };
 }
 
 export function saveConfigFile(config: ConfigFile, configDir?: string): void {
@@ -296,16 +366,21 @@ export interface ResolvedCliConfig {
   promptCacheDebug: boolean;
   promptCacheDebugSource: string;
   configPath: string;
+  projectConfigPath?: string;
 }
 
 export function resolveCliConfig(
   env: NodeJS.ProcessEnv = process.env,
-  config: ConfigFile = loadConfigFile(),
+  config?: ConfigFile,
   overrides: CliConfigOverrides = {},
+  loadedConfig?: Pick<LoadedCliConfigFile, 'configPath' | 'projectConfigPath'>,
 ): ResolvedCliConfig {
+  const defaultLoadedConfig = config === undefined ? loadCliConfigFile(env) : undefined;
+  const activeConfig = config ?? defaultLoadedConfig?.config ?? {};
+  const configPaths = loadedConfig ?? defaultLoadedConfig;
   const profileEnv = env.DMOSS_PROFILE || env.DMOSS_CONFIG_PROFILE;
   const configProfile = parseConfigProfile(
-    typeof config.profile === 'string' ? config.profile : undefined,
+    typeof activeConfig.profile === 'string' ? activeConfig.profile : undefined,
     'config',
   );
   const envProfile = parseConfigProfile(profileEnv, env.DMOSS_PROFILE ? 'DMOSS_PROFILE' : 'DMOSS_CONFIG_PROFILE');
@@ -326,17 +401,17 @@ export function resolveCliConfig(
       env.OPENAI_BASE_URL ||
       env.ANTHROPIC_BASE_URL ||
       env.DASHSCOPE_BASE_URL ||
-      config.baseUrl,
+      activeConfig.baseUrl,
   );
-  const provider = overrides.provider || providerEnv || config.provider
-    ? normalizeProvider(overrides.provider || providerEnv || config.provider)
+  const provider = overrides.provider || providerEnv || activeConfig.provider
+    ? normalizeProvider(overrides.provider || providerEnv || activeConfig.provider)
     : inferredProvider || 'anthropic';
   const preset = PROVIDER_PRESETS[provider];
   const providerSource = overrides.provider
     ? 'cli'
     : providerEnv
       ? 'DMOSS_PROVIDER'
-      : config.provider
+      : activeConfig.provider
         ? 'config'
         : inferredProvider
           ? 'baseUrl'
@@ -360,7 +435,7 @@ export function resolveCliConfig(
   const workspaceEnv = env.DMOSS_WORKSPACE;
   const safetyModeEnv = env.DMOSS_SAFETY_MODE || env.DMOSS_CLI_SAFETY_MODE;
   const configSafetyMode = normalizeSafetyModeConfig(
-    typeof config.safetyMode === 'string' ? config.safetyMode : undefined,
+    typeof activeConfig.safetyMode === 'string' ? activeConfig.safetyMode : undefined,
   );
   const envSafetyMode = normalizeSafetyModeConfig(safetyModeEnv);
   const safetyMode = overrides.safetyMode || envSafetyMode || configSafetyMode || profileDefaults.safetyMode;
@@ -376,7 +451,7 @@ export function resolveCliConfig(
     ? 'never'
     : (env.DMOSS_APPROVAL_POLICY || env.DMOSS_ASK_FOR_APPROVAL);
   const configApproval = normalizeApprovalPolicyConfig(
-    typeof config.approvalPolicy === 'string' ? config.approvalPolicy : undefined,
+    typeof activeConfig.approvalPolicy === 'string' ? activeConfig.approvalPolicy : undefined,
   );
   const envApproval = normalizeApprovalPolicyConfig(approvalEnv);
   const approvalPolicy = overrides.approvalPolicy || envApproval || configApproval || profileDefaults.approvalPolicy;
@@ -395,8 +470,8 @@ export function resolveCliConfig(
         : `profile:${profile}`;
 
   const envTrustedTools = parseTrustedTools(env.DMOSS_TRUSTED_TOOLS);
-  const configTrustedTools = Array.isArray(config.trustedTools)
-    ? parseTrustedTools(config.trustedTools)
+  const configTrustedTools = Array.isArray(activeConfig.trustedTools)
+    ? parseTrustedTools(activeConfig.trustedTools)
     : undefined;
   const trustedTools = overrides.trustedTools ?? envTrustedTools ?? configTrustedTools ?? profileDefaults.trustedTools;
   const trustedToolsSource = overrides.trustedTools
@@ -412,14 +487,14 @@ export function resolveCliConfig(
   const promptCacheDebugEnv = env.DMOSS_PROMPT_CACHE_DEBUG ?? env.DMOSS_PROMPT_PREFIX_DEBUG;
   const envPromptCacheDebug = parseConfigBoolean(promptCacheDebugEnv);
   const configPromptCache =
-    typeof config.promptCache === 'boolean'
-      ? config.promptCache
-      : config.promptCache && typeof config.promptCache === 'object' && typeof config.promptCache.enabled === 'boolean'
-        ? config.promptCache.enabled
+    typeof activeConfig.promptCache === 'boolean'
+      ? activeConfig.promptCache
+      : activeConfig.promptCache && typeof activeConfig.promptCache === 'object' && typeof activeConfig.promptCache.enabled === 'boolean'
+        ? activeConfig.promptCache.enabled
         : undefined;
   const configPromptCacheDebug =
-    config.promptCache && typeof config.promptCache === 'object' && typeof config.promptCache.debug === 'boolean'
-      ? config.promptCache.debug
+    activeConfig.promptCache && typeof activeConfig.promptCache === 'object' && typeof activeConfig.promptCache.debug === 'boolean'
+      ? activeConfig.promptCache.debug
       : undefined;
   const promptCacheEnabled = overrides.promptCacheEnabled ?? envPromptCache ?? configPromptCache ?? profileDefaults.promptCacheEnabled;
   const promptCacheSource = overrides.promptCacheEnabled !== undefined
@@ -443,14 +518,14 @@ export function resolveCliConfig(
     profileSource,
     provider,
     providerSource,
-    apiKey: apiKeyEnv?.value || config.apiKey || '',
-    apiKeySource: apiKeyEnv?.source || (config.apiKey ? 'config' : 'missing'),
-    model: overrides.model || modelEnv || config.model || preset.defaultModel,
-    modelSource: overrides.model ? 'cli' : modelEnv ? 'DMOSS_MODEL' : config.model ? 'config' : 'provider default',
-    baseUrl: overrides.baseUrl || baseUrlEnv?.value || config.baseUrl || preset.defaultBaseUrl,
-    baseUrlSource: overrides.baseUrl ? 'cli' : baseUrlEnv?.source || (config.baseUrl ? 'config' : 'provider default'),
-    workspace: overrides.workspace || workspaceEnv || config.workspace || process.cwd(),
-    workspaceSource: overrides.workspace ? 'cli' : workspaceEnv ? 'DMOSS_WORKSPACE' : config.workspace ? 'config' : 'cwd',
+    apiKey: apiKeyEnv?.value || activeConfig.apiKey || '',
+    apiKeySource: apiKeyEnv?.source || (activeConfig.apiKey ? 'config' : 'missing'),
+    model: overrides.model || modelEnv || activeConfig.model || preset.defaultModel,
+    modelSource: overrides.model ? 'cli' : modelEnv ? 'DMOSS_MODEL' : activeConfig.model ? 'config' : 'provider default',
+    baseUrl: overrides.baseUrl || baseUrlEnv?.value || activeConfig.baseUrl || preset.defaultBaseUrl,
+    baseUrlSource: overrides.baseUrl ? 'cli' : baseUrlEnv?.source || (activeConfig.baseUrl ? 'config' : 'provider default'),
+    workspace: overrides.workspace || workspaceEnv || activeConfig.workspace || process.cwd(),
+    workspaceSource: overrides.workspace ? 'cli' : workspaceEnv ? 'DMOSS_WORKSPACE' : activeConfig.workspace ? 'config' : 'cwd',
     safetyMode,
     safetyModeSource,
     approvalPolicy,
@@ -461,7 +536,8 @@ export function resolveCliConfig(
     promptCacheSource,
     promptCacheDebug,
     promptCacheDebugSource,
-    configPath: resolveConfigPath(undefined, env),
+    configPath: configPaths?.configPath ?? resolveConfigPath(undefined, env),
+    projectConfigPath: configPaths?.projectConfigPath,
   };
 }
 
@@ -499,8 +575,8 @@ export function loadEnvFromAncestors(startDir: string, maxHops = 16): void {
 loadEnvFromAncestors(process.cwd());
 loadEnvFromAncestors(path.dirname(fileURLToPath(import.meta.url)));
 
-const configFile = loadConfigFile();
-const resolvedConfig = resolveCliConfig(process.env, configFile);
+const loadedConfigFile = loadCliConfigFile();
+const resolvedConfig = resolveCliConfig(process.env, loadedConfigFile.config, {}, loadedConfigFile);
 
 export const PROVIDER = resolvedConfig.provider;
 export const API_KEY = resolvedConfig.apiKey;

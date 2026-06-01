@@ -11,9 +11,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  loadCliConfigFile,
   loadConfigFile,
   resolveCliConfig,
   resolveConfigPath,
+  resolveProjectConfigPath,
   saveConfigFile,
 } from '../dist/cli/config.js';
 import {
@@ -142,6 +144,7 @@ try {
   const usage = renderConfigUsage();
   assert.match(usage, /dmoss config show/);
   assert.match(usage, /dmoss config set profile autonomous/);
+  assert.match(usage, /\.dmoss\/config\.json/);
   assert.match(usage, /DMOSS_CONFIG_FILE/);
   assert.match(usage, /promptCacheDebug/);
 
@@ -160,6 +163,74 @@ try {
     assert.match(result.stderr, /profile: balanced \(default\)/);
     assert.match(result.stderr, /config: /);
     assert.doesNotMatch(result.stderr, /stored-secret/);
+  }
+
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-project-config-'));
+  const projectChild = path.join(projectRoot, 'src', 'feature');
+  const projectConfigDir = path.join(projectRoot, '.dmoss');
+  const projectConfigPath = path.join(projectConfigDir, 'config.json');
+  fs.mkdirSync(projectChild, { recursive: true });
+  fs.mkdirSync(projectConfigDir, { recursive: true });
+  fs.writeFileSync(projectConfigPath, `${JSON.stringify({
+    profile: 'autonomous',
+    provider: 'openai',
+    model: 'project-model',
+    safetyMode: 'full-access',
+    approvalPolicy: 'never',
+    promptCache: { debug: true },
+  }, null, 2)}\n`);
+  try {
+    assert.equal(resolveProjectConfigPath(projectChild), projectConfigPath);
+    const loadedProject = loadCliConfigFile({ DMOSS_CONFIG_DIR: tmp }, [], projectChild);
+    assert.equal(loadedProject.configPath, path.join(tmp, 'config.json'));
+    assert.equal(loadedProject.projectConfigPath, projectConfigPath);
+    assert.equal(loadedProject.config.profile, 'autonomous');
+    assert.equal(loadedProject.config.safetyMode, 'full-access');
+    assert.equal(loadedProject.config.approvalPolicy, 'never');
+    assert.equal(loadedProject.config.provider, 'qwen');
+    assert.equal(loadedProject.config.model, 'qwen3.7-max');
+    assert.deepEqual(loadedProject.config.promptCache, { debug: true });
+
+    const projectResolved = resolveCliConfig({ DMOSS_CONFIG_DIR: tmp }, loadedProject.config, {}, loadedProject);
+    assert.equal(projectResolved.projectConfigPath, projectConfigPath);
+    assert.equal(projectResolved.profile, 'autonomous');
+    assert.equal(projectResolved.profileSource, 'config');
+    assert.equal(projectResolved.provider, 'qwen');
+    assert.equal(projectResolved.providerSource, 'config');
+    assert.equal(projectResolved.safetyMode, 'full-access');
+    assert.equal(projectResolved.safetyModeSource, 'config');
+    assert.equal(projectResolved.promptCacheEnabled, true);
+    assert.equal(projectResolved.promptCacheDebug, true);
+    assert.equal(projectResolved.promptCacheDebugSource, 'config');
+
+    const projectShow = spawnSync(process.execPath, [
+      cliPath,
+      '-C',
+      projectChild,
+      'config',
+      'show',
+    ], {
+      env: {
+        ...process.env,
+        DMOSS_CONFIG_DIR: tmp,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(projectShow.status, 0, `config show with project config should exit cleanly: ${projectShow.stderr || projectShow.stdout}`);
+    assert.match(projectShow.stderr, /profile: autonomous \(config\)/);
+    assert.match(projectShow.stderr, new RegExp(`projectConfig: ${projectConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.doesNotMatch(projectShow.stderr, /stored-secret/);
+
+    const explicitConfigPath = path.join(projectRoot, 'explicit.json');
+    fs.writeFileSync(explicitConfigPath, `${JSON.stringify({ profile: 'cautious' }, null, 2)}\n`);
+    const explicitLoaded = loadCliConfigFile({ DMOSS_CONFIG_DIR: tmp, DMOSS_CONFIG_FILE: explicitConfigPath }, [], projectChild);
+    assert.equal(explicitLoaded.configPath, explicitConfigPath);
+    assert.equal(explicitLoaded.projectConfigPath, undefined);
+    assert.equal(explicitLoaded.config.profile, 'cautious');
+    assert.equal(explicitLoaded.config.provider, undefined);
+  } finally {
+    fs.rmSync(projectRoot, { recursive: true, force: true });
   }
 
   const explicitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-explicit-config-'));

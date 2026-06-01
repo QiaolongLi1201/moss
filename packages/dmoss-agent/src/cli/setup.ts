@@ -134,6 +134,24 @@ export function renderAuthStatus(
   ].join('\n');
 }
 
+export function renderConfigUsage(): string {
+  return [
+    'Usage:',
+    '  dmoss config',
+    '  dmoss config show',
+    '  dmoss config set <profile|provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug> <value>',
+    '',
+    'Examples:',
+    '  dmoss config set profile autonomous',
+    '  dmoss config set approvalPolicy prompt',
+    '  dmoss config set trustedTools exec,write_file',
+  ].join('\n');
+}
+
+export function runConfigShow(): void {
+  print(renderAuthStatus());
+}
+
 export async function runSetupWizard(): Promise<void> {
   const current = loadConfigFile();
   print('D-Moss model setup');
@@ -212,7 +230,7 @@ export function runConfigSet(args: string[]): void {
   const [key, ...rest] = args;
   const value = rest.join(' ').trim();
   if (!key || !value) {
-    print('Usage: dmoss config set <profile|provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug> <value>');
+    print(renderConfigUsage());
     process.exitCode = 1;
     return;
   }

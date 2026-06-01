@@ -5,9 +5,11 @@
  *   node packages/dmoss-agent/test/cli-config-setup.spec.mjs
  */
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   loadConfigFile,
   resolveCliConfig,
@@ -15,6 +17,7 @@ import {
 } from '../dist/cli/config.js';
 import {
   renderAuthStatus,
+  renderConfigUsage,
   runConfigSet,
 } from '../dist/cli/setup.js';
 
@@ -132,6 +135,28 @@ try {
   }, {});
   assert.match(redactedStatus, /baseUrl: https:\/\/example\.com\/compatible-mode\/v1/);
   assert.doesNotMatch(redactedStatus, /user|pass|api_key|secret/);
+
+  const usage = renderConfigUsage();
+  assert.match(usage, /dmoss config show/);
+  assert.match(usage, /dmoss config set profile autonomous/);
+  assert.match(usage, /promptCacheDebug/);
+
+  const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/cli.js');
+  for (const args of [['config'], ['config', 'show']]) {
+    const result = spawnSync(process.execPath, [cliPath, ...args], {
+      env: {
+        ...process.env,
+        DMOSS_CONFIG_DIR: tmp,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `${args.join(' ')} should exit cleanly: ${result.stderr || result.stdout}`);
+    assert.match(result.stderr, /\[auth\]/);
+    assert.match(result.stderr, /profile: balanced \(default\)/);
+    assert.match(result.stderr, /config: /);
+    assert.doesNotMatch(result.stderr, /stored-secret/);
+  }
 
   saveConfigFile({
     ...loadConfigFile(),

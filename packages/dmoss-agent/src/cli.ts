@@ -20,7 +20,9 @@ import {
   offerSetupForInteractiveMissingConfig,
   printMissingConfigGuidance,
   renderAuthStatus,
+  renderConfigUsage,
   runAuthLogout,
+  runConfigShow,
   runConfigSet,
   runSetupWizard,
 } from './cli/setup.js';
@@ -175,8 +177,24 @@ async function main() {
     await runAuthLogout();
     return;
   }
+  if (
+    parsedArgs.command === 'config' &&
+    (
+      parsedArgs.commandArgs.length === 0 ||
+      parsedArgs.commandArgs[0] === 'show' ||
+      parsedArgs.commandArgs[0] === 'status'
+    )
+  ) {
+    runConfigShow();
+    return;
+  }
   if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'set') {
     runConfigSet(parsedArgs.commandArgs.slice(1));
+    return;
+  }
+  if (parsedArgs.command === 'config') {
+    console.error(renderConfigUsage());
+    process.exitCode = 1;
     return;
   }
 

@@ -79,6 +79,20 @@ import { parseCliArgs } from '../dist/cli/args.js';
 }
 
 {
+  const parsed = parseCliArgs(['config']);
+  assert.equal(parsed.command, 'config');
+  assert.deepEqual(parsed.commandArgs, []);
+  assert.equal(parsed.prompt, '');
+}
+
+{
+  const parsed = parseCliArgs(['config', 'show']);
+  assert.equal(parsed.command, 'config');
+  assert.deepEqual(parsed.commandArgs, ['show']);
+  assert.equal(parsed.prompt, '');
+}
+
+{
   const parsed = parseCliArgs(['--model', 'deepseek-v4-pro', 'doctor']);
   assert.equal(parsed.command, 'doctor');
   assert.equal(parsed.configOverrides.model, 'deepseek-v4-pro');

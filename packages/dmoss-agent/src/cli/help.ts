@@ -45,6 +45,8 @@ export function displayHelp(c: Colors): void {
     `    ${c.green('config set provider')} ${c.dim('<p>')} qwen | openai | anthropic | openai-compatible`,
     `    ${c.green('config set trustedTools')} ${c.dim('<csv>')} auto-approve exact tool names after safety checks`,
     `    ${c.green('config set promptCacheDebug')} ${c.dim('<bool>')} enable prompt-prefix cache diagnostics`,
+    `    ${c.green('config set agent.maxTurns')} ${c.dim('<n>')} set per-request agent turn budget`,
+    `    ${c.green('config set agent.contextTokens')} ${c.dim('<n>')} set context budget used by pruning/compaction`,
     '',
     `  ${c.bold('Interactive commands')}`,
     `    ${c.green('/help')}            show interactive commands`,

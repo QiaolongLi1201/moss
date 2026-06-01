@@ -487,6 +487,22 @@ try {
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
   runConfigSet(['promptCacheDebug', 'true']);
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
+  runConfigSet(['agent.maxTurns', '96']);
+  assert.equal(loadConfigFile().agent.maxTurns, 96);
+  runConfigSet(['agent.contextTokens', '160000']);
+  assert.equal(loadConfigFile().agent.contextTokens, 160000);
+  runConfigSet(['agent.compaction.reserveTokens', '24000']);
+  assert.deepEqual(loadConfigFile().agent.compaction, { reserveTokens: 24000, keepRecentTokens: 9000 });
+  runConfigSet(['agent.compaction.keepRecentTokens', '12000']);
+  assert.deepEqual(loadConfigFile().agent.compaction, { reserveTokens: 24000, keepRecentTokens: 12000 });
+
+  const configSetResolved = resolveCliConfig({}, loadConfigFile());
+  assert.equal(configSetResolved.maxAgentTurns, 96);
+  assert.equal(configSetResolved.maxAgentTurnsSource, 'config');
+  assert.equal(configSetResolved.contextTokens, 160000);
+  assert.equal(configSetResolved.contextTokensSource, 'config');
+  assert.deepEqual(configSetResolved.compactionSettings, { reserveTokens: 24000, keepRecentTokens: 12000 });
+  assert.equal(configSetResolved.compactionSettingsSource, 'config');
 
   console.log('[PASS] CLI setup config resolves safely');
 } finally {

@@ -121,6 +121,16 @@ function guardrailSummary(resolved: ReturnType<typeof resolveCliConfig>): string
   return `input ${inputCount}, output ${outputCount} (${resolved.guardrailsSource})`;
 }
 
+function parseConfigPositiveInteger(value: string, key: string): number | null {
+  const parsed = Number(value.trim());
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    print(`Supported ${key} value: positive integer`);
+    process.exitCode = 1;
+    return null;
+  }
+  return parsed;
+}
+
 export function renderAuthStatus(
   config?: ConfigFile,
   env: NodeJS.ProcessEnv = process.env,
@@ -154,7 +164,7 @@ export function renderConfigUsage(): string {
     'Usage:',
     '  dmoss config',
     '  dmoss config show',
-    '  dmoss config set <profile|provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug> <value>',
+    '  dmoss config set <profile|provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
     '',
     'Config file:',
     '  dmoss reads .dmoss/config.json from the current workspace as project defaults',
@@ -165,7 +175,9 @@ export function renderConfigUsage(): string {
     '  dmoss config set profile autonomous',
     '  dmoss config set approvalPolicy prompt',
     '  dmoss config set trustedTools exec,write_file',
-    '  edit agent.maxTurns/contextTokens/compaction in config JSON',
+    '  dmoss config set agent.maxTurns 96',
+    '  dmoss config set agent.contextTokens 200000',
+    '  dmoss config set agent.compaction.reserveTokens 20000',
   ].join('\n');
 }
 
@@ -315,9 +327,29 @@ export function runConfigSet(args: string[]): void {
       ? current.promptCache
       : { enabled: typeof current.promptCache === 'boolean' ? current.promptCache : true };
     next.promptCache = { ...previous, debug };
+  } else if (key === 'agent.maxTurns' || key === 'agent.contextTokens') {
+    const parsed = parseConfigPositiveInteger(value, key);
+    if (parsed === null) return;
+    next.agent = { ...current.agent };
+    if (key === 'agent.maxTurns') next.agent.maxTurns = parsed;
+    else next.agent.contextTokens = parsed;
+  } else if (key === 'agent.compaction.reserveTokens' || key === 'agent.compaction.keepRecentTokens') {
+    const parsed = parseConfigPositiveInteger(value, key);
+    if (parsed === null) return;
+    next.agent = {
+      ...current.agent,
+      compaction: {
+        ...current.agent?.compaction,
+      },
+    };
+    if (key === 'agent.compaction.reserveTokens') {
+      next.agent.compaction = { ...next.agent.compaction, reserveTokens: parsed };
+    } else {
+      next.agent.compaction = { ...next.agent.compaction, keepRecentTokens: parsed };
+    }
   }
   else {
-    print('Supported keys: profile, provider, model, baseUrl, safetyMode, approvalPolicy, trustedTools, promptCache, promptCacheDebug');
+    print('Supported keys: profile, provider, model, baseUrl, safetyMode, approvalPolicy, trustedTools, promptCache, promptCacheDebug, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens');
     process.exitCode = 1;
     return;
   }

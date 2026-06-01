@@ -157,6 +157,9 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
       sessionKey: 's',
     });
     assert.equal(denied.approved, false, 'untrusted mutating tools still require approval');
+    assert.match(denied.reason, /dmoss config set approvalPolicy never/);
+    assert.match(denied.reason, /dmoss config set trustedTools <tool>/);
+    assert.match(denied.reason, /DMOSS_CLI_AUTO_APPROVE=1/);
   } finally {
     Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });
   }

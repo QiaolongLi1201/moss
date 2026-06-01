@@ -52,6 +52,20 @@ try {
   assert.equal(envResolved.apiKeySource, 'OPENAI_API_KEY');
   assert.equal(envResolved.modelSource, 'DMOSS_MODEL');
 
+  const cliResolved = resolveCliConfig({
+    DMOSS_MODEL: 'gpt-4o-mini',
+    DMOSS_BASE_URL: 'https://api.openai.com',
+  }, loadConfigFile(), {
+    model: 'deepseek-v4-pro',
+    baseUrl: 'https://api.deepseek.com',
+    workspace: '/tmp/dmoss-workspace',
+  });
+  assert.equal(cliResolved.model, 'deepseek-v4-pro');
+  assert.equal(cliResolved.modelSource, 'cli');
+  assert.equal(cliResolved.baseUrl, 'https://api.deepseek.com');
+  assert.equal(cliResolved.baseUrlSource, 'cli');
+  assert.equal(cliResolved.workspaceSource, 'cli');
+
   const status = renderAuthStatus(loadConfigFile(), {});
   assert.match(status, /apiKey: configured via config/);
   assert.match(status, /baseUrl: https:\/\/token-plan\.cn-beijing\.maas\.aliyuncs\.com\/compatible-mode/);

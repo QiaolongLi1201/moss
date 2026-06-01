@@ -69,7 +69,7 @@ Mark these built-ins as `idempotent: false`:
 - `create_subagent`
 - memory write/delete tools
 
-Host tools should opt in explicitly. RDK Studio should classify board/OpenClaw
+Host tools should opt in explicitly. Product hosts should classify board/backend
 mutation tools as `idempotent: false` before enabling the runtime guard for
 those tools.
 

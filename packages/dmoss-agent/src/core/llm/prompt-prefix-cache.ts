@@ -1,7 +1,7 @@
 /**
- * Prompt prefix stability checks (aligned with Codex prompt caching strategy).
+ * Prompt prefix stability checks for cache-friendly LLM requests.
  *
- * Codex found that prompt cache hits require exact prefix matching:
+ * Prompt cache hits require exact prefix matching:
  * - New prompts must be exact prefix extensions of previous prompts
  * - Modifying earlier messages breaks the prefix match
  * - Tool ordering changes invalidate the entire cache
@@ -89,8 +89,8 @@ export function checkPromptPrefixStable(
 
 /**
  * Verify that tool declarations are in consistent sorted order across turns.
- * Codex discovered that inconsistent tool ordering causes cache misses even
- * when the tool set itself hasn't changed.
+ * Inconsistent tool ordering causes cache misses even when the tool set itself
+ * has not changed.
  */
 export function checkToolOrderConsistency(
   previousToolNames: readonly string[] | null,

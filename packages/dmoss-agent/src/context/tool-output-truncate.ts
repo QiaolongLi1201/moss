@@ -1,13 +1,13 @@
 /**
- * 工具输出智能截断（aligned with Codex best practices）
+ * Tool output truncation for long command and file results.
  *
  * Strategy: head + tail truncation with equal 50/50 split.
  * Limits are expressed in approximate token units (bytes / 4) rather than
- * raw characters, following Codex's recommendation for better model utilization.
+ * raw characters, which gives a practical approximation for model budgets.
  *
  * Why 50/50 instead of 60/40:
- * - Codex found that tail content (final output, error summaries, return values)
- *   is equally important as head content (command start, initial errors)
+ * - Tail content (final output, error summaries, return values) is often as
+ *   important as head content (command start, initial errors)
  * - Equal split avoids systematic bias toward either end
  * - Middle truncation marker uses "…N tokens truncated…" format for clarity
  */

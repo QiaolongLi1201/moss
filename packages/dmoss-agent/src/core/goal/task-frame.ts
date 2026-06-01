@@ -393,7 +393,7 @@ export function recordTaskFrameCompaction(
 }
 
 /**
- * Plan closure discipline (aligned with Codex):
+ * Plan closure discipline:
  * Before marking a task as completed, reconcile all pending steps.
  * Each unfinished step is either promoted to completed (if the assistant
  * response covers it) or explicitly marked as deferred.

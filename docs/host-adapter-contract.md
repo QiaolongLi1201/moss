@@ -1,7 +1,7 @@
 # Moss Host Adapter Contract
 
 Moss is intended to evolve as an independent open-source runtime. Product shells
-such as RDK Studio should keep credentials, UI, native integrations, and
+should keep credentials, UI, native integrations, and
 device-specific code outside of Moss, then expose them through a narrow host
 adapter.
 
@@ -166,25 +166,23 @@ Contract versions are numeric, not semver. They use exact `contractVersion`
 matching when specified, otherwise `minContractVersion` / `maxContractVersion`
 range checks.
 
-### RDK Studio Manifest
+### Downstream Host Manifest
 
-The RDK Studio audit identifies a concrete manifest generator in
-`rdstudio-web/server/dmoss/studio-host-adapter-contract.ts` that requires
-12 of 13 capability kinds (all except `telemetry`, which is optional).
-Tool references are derived from `listDeclaredToolCapabilityPolicies()` and
-`classifyToolPermissionBoundary()`. That manifest is the compatibility
-diagnostics surface evaluated with `evaluateMossHostCompatibility()`; it is
-not the same path as the chat runtime's direct Moss API usage.
+Downstream hosts should publish a concrete manifest generator that declares the
+capability kinds, tool references, and permission boundaries they actually
+provide. That manifest is the compatibility diagnostics surface evaluated with
+`evaluateMossHostCompatibility()`; it can remain separate from the host's normal
+chat runtime usage of Moss APIs.
 
-### DMossApp Integration
+### Runtime Integration
 
-`rdstudio-web/server/dmoss/app.ts` is the chat/runtime bridge between RDK
-Studio and Moss. DMossApp directly imports and uses Moss runtime APIs such as:
+Downstream host runtime apps can directly import and use Moss runtime APIs such
+as:
 - `PiAiLLMProvider` — model provider adapter
 - `JsonlSessionStore` — JSONL session persistence
 - `MemoryManager` + `selectMemoriesForContext` — memory management
 - `AgentMesh` — multi-agent collaboration
-- `maybePersistConversationSkill` + `createStudioTeachingHooks` — skill learning
+- `maybePersistConversationSkill` and host teaching hooks — skill learning
 
 The `_executeChat` method implements the full chat lifecycle: setup → context
 assembly → LLM execution → finalization. The runtime manifest is therefore a
@@ -193,11 +191,11 @@ execution path consumes the Moss APIs directly.
 
 ### Known Gaps
 
-1. Keep DMossApp's direct Moss API usage and the generated runtime manifest
+1. Keep direct Moss API usage and the generated runtime manifest
    documented as separate integration surfaces.
-2. When Studio adds or removes direct Moss capabilities, update both the
-   DMossApp integration notes and the manifest generator consumed by runtime
+2. When a host adds or removes direct Moss capabilities, update both the
+   integration notes and the manifest generator consumed by runtime
    diagnostics.
-3. Knowledge module version accuracy still needs a smoke check: Studio's
-   generated manifest should report the current device-knowledge module
+3. Knowledge module version accuracy still needs a smoke check: generated host
+   manifests should report the current knowledge module
    identity/version semantics rather than stale package metadata.

@@ -368,19 +368,19 @@ function classify(input) {
   console.log('  [PASS] 503 + context hint → context_length_exceeded (beats generic 503)');
 }
 
-/* ---- Test 5c: opaque Codex stream failure → service_unavailable ---- */
+/* ---- Test 5c: opaque stream failure -> service_unavailable ---- */
 {
   const surface = classify({ errorMessage: 'LLM stream error: Codex stream error' });
   assert.equal(
     surface.category,
     'service_unavailable',
-    'opaque Codex stream failures should not fall through to unknown/config advice',
+    'opaque stream failures should not fall through to unknown/config advice',
   );
   assert.equal(surface.retryable, true);
   const actionIds = surface.actions.map((a) => a.id);
   assert.ok(actionIds.includes('retry'), 'transient stream failure should offer retry');
   assert.ok(actionIds.includes('switchModel'), 'transient stream failure should offer switchModel');
-  console.log('  [PASS] Codex stream error → service_unavailable + retry/switch');
+  console.log('  [PASS] opaque stream error -> service_unavailable + retry/switch');
 }
 
 /* ---- Test 5d: abort / unknown branches unchanged ---- */

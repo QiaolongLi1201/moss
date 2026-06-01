@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { TeachingAnnotationCollector, digestStudioToolCall } from '../dist/index.js';
+import { TeachingAnnotationCollector, digestToolCall } from '../dist/index.js';
 
 // ── Constructor ──
 
@@ -34,7 +34,7 @@ import { TeachingAnnotationCollector, digestStudioToolCall } from '../dist/index
   collector.recordToolStart('read_tool', {});
   collector.observe({
     v: 1,
-    argsDigest: digestStudioToolCall('read_tool', {}),
+    argsDigest: digestToolCall('read_tool', {}),
     phase: 'pre',
     patch: { why: 'test' },
   });
@@ -51,7 +51,7 @@ import { TeachingAnnotationCollector, digestStudioToolCall } from '../dist/index
   collector.recordToolStart('write_tool', {});
   collector.observe({
     v: 1,
-    argsDigest: digestStudioToolCall('write_tool', {}),
+    argsDigest: digestToolCall('write_tool', {}),
     phase: 'pre',
     patch: { why: 'test' },
   });
@@ -68,7 +68,7 @@ import { TeachingAnnotationCollector, digestStudioToolCall } from '../dist/index
   collector.recordToolStart('read_tool', {});
   collector.observe({
     v: 1,
-    argsDigest: digestStudioToolCall('read_tool', {}),
+    argsDigest: digestToolCall('read_tool', {}),
     phase: 'pre',
     patch: { why: 'test' },
   });
@@ -80,11 +80,11 @@ import { TeachingAnnotationCollector, digestStudioToolCall } from '../dist/index
 // ── recordToolStart / recordToolResult ──
 
 {
-  // recordToolStart populates the digest→toolName map via digestStudioToolCall
+  // recordToolStart populates the digest→toolName map via digestToolCall
   const collector = new TeachingAnnotationCollector('detailed');
   collector.recordToolStart('shell_exec', { cmd: 'echo hello' });
   // The internal map is not directly accessible, but we can verify via observe+assembleTeachingMeta
-  const digest = digestStudioToolCall('shell_exec', { cmd: 'echo hello' });
+  const digest = digestToolCall('shell_exec', { cmd: 'echo hello' });
   collector.observe({
     v: 1,
     argsDigest: digest,
@@ -318,7 +318,7 @@ import { TeachingAnnotationCollector, digestStudioToolCall } from '../dist/index
   collector.recordToolStart('tool_a', { x: 1 });
   collector.recordToolStart('tool_b', { y: 2 });
 
-  const digestA = digestStudioToolCall('tool_a', { x: 1 });
+  const digestA = digestToolCall('tool_a', { x: 1 });
   collector.observe({
     v: 1,
     argsDigest: digestA,
@@ -343,7 +343,7 @@ import { TeachingAnnotationCollector, digestStudioToolCall } from '../dist/index
 
   // Only annotate tool_a
   collector.recordToolStart('tool_a', { x: 1 });
-  const digestA = digestStudioToolCall('tool_a', { x: 1 });
+  const digestA = digestToolCall('tool_a', { x: 1 });
   collector.observe({
     v: 1,
     argsDigest: digestA,
@@ -362,7 +362,7 @@ import { TeachingAnnotationCollector, digestStudioToolCall } from '../dist/index
   const collector = new TeachingAnnotationCollector('detailed');
   // Must record tool start so the argsDigest maps to a toolName → annotatedToolNames is non-empty
   collector.recordToolStart('tool_x', { a: 1 });
-  const d = digestStudioToolCall('tool_x', { a: 1 });
+  const d = digestToolCall('tool_x', { a: 1 });
   collector.observe({
     v: 1,
     argsDigest: d,
@@ -397,7 +397,7 @@ import { TeachingAnnotationCollector, digestStudioToolCall } from '../dist/index
   collector.recordToolStart('deploy', { app: 'v1' });
   collector.recordToolResult('call-99', 'deploy');
 
-  const digestDeploy = digestStudioToolCall('deploy', { app: 'v1' });
+  const digestDeploy = digestToolCall('deploy', { app: 'v1' });
   collector.observe({
     v: 1,
     argsDigest: digestDeploy,

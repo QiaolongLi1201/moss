@@ -157,7 +157,7 @@ Supported commands are `/goal`, `/goal status`, `/goal set <objective>`, `/goal 
 
 Command results use stable event names for observability: `goal_status`, `goal_set`, `goal_paused`, `goal_resumed`, `goal_completed`, `goal_blocked`, and `goal_cleared`.
 
-`sessionKey` is the goal ownership boundary. A goal belongs only to the exact `sessionKey` passed to the agent or command adapter. Subagents, mesh peer queries, external channel sessions, and other host-specific conversations do not inherit a parent goal unless the host explicitly passes or copies that goal into their own session. Mesh peer queries should use their own session keys when they must not mutate a Studio main session goal.
+`sessionKey` is the goal ownership boundary. A goal belongs only to the exact `sessionKey` passed to the agent or command adapter. Subagents, mesh peer queries, external channel sessions, and other host-specific conversations do not inherit a parent goal unless the host explicitly passes or copies that goal into their own session. Mesh peer queries should use their own session keys when they must not mutate a host main session goal.
 
 Completed and blocked goals are stored for hosts to inspect until cleared, but only active or paused goals are injected as model guidance.
 

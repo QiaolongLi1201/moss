@@ -69,14 +69,14 @@ assert.match(requests[0].systemPrompt, /<dmoss_goal_mode>/);
 assert.match(requests[0].systemPrompt, /Stabilize Host Adapter v1 and golden E2E/);
 assert.match(requests[0].systemPrompt, /Status: active/);
 
-const paused = await agent.pauseGoal(sessionKey, 'waiting for RDK Studio review');
+const paused = await agent.pauseGoal(sessionKey, 'waiting for host review');
 assert.equal(paused?.status, 'paused');
-assert.equal(paused?.statusReason, 'waiting for RDK Studio review');
+assert.equal(paused?.statusReason, 'waiting for host review');
 
 await collect(agent.streamChat(sessionKey, 'what is next?'));
 assert.equal(requests.length, 2);
 assert.match(requests[1].systemPrompt, /Status: paused/);
-assert.match(requests[1].systemPrompt, /waiting for RDK Studio review/);
+assert.match(requests[1].systemPrompt, /waiting for host review/);
 
 const resumed = await agent.resumeGoal(sessionKey);
 assert.equal(resumed?.status, 'active');

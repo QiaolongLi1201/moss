@@ -62,6 +62,13 @@ export interface ConfigFile {
   workspace?: string;
 }
 
+export interface CliConfigOverrides {
+  provider?: CliProviderPreset | string;
+  model?: string;
+  baseUrl?: string;
+  workspace?: string;
+}
+
 export function resolveConfigPath(configDir = resolveConfigDir()): string {
   return path.join(configDir, 'config.json');
 }
@@ -137,22 +144,30 @@ export interface ResolvedCliConfig {
 export function resolveCliConfig(
   env: NodeJS.ProcessEnv = process.env,
   config: ConfigFile = loadConfigFile(),
+  overrides: CliConfigOverrides = {},
 ): ResolvedCliConfig {
   const providerEnv = env.DMOSS_PROVIDER;
   const inferredProvider = inferProviderFromBaseUrl(
-    env.DMOSS_BASE_URL || env.OPENAI_BASE_URL || env.ANTHROPIC_BASE_URL || env.DASHSCOPE_BASE_URL || config.baseUrl,
+    overrides.baseUrl ||
+      env.DMOSS_BASE_URL ||
+      env.OPENAI_BASE_URL ||
+      env.ANTHROPIC_BASE_URL ||
+      env.DASHSCOPE_BASE_URL ||
+      config.baseUrl,
   );
-  const provider = providerEnv || config.provider
-    ? normalizeProvider(providerEnv || config.provider)
+  const provider = overrides.provider || providerEnv || config.provider
+    ? normalizeProvider(overrides.provider || providerEnv || config.provider)
     : inferredProvider || 'anthropic';
   const preset = PROVIDER_PRESETS[provider];
-  const providerSource = providerEnv
-    ? 'DMOSS_PROVIDER'
-    : config.provider
-      ? 'config'
-      : inferredProvider
-        ? 'baseUrl'
-        : 'default';
+  const providerSource = overrides.provider
+    ? 'cli'
+    : providerEnv
+      ? 'DMOSS_PROVIDER'
+      : config.provider
+        ? 'config'
+        : inferredProvider
+          ? 'baseUrl'
+          : 'default';
 
   const apiKeyEnv = firstEnv(env, [
     'DMOSS_API_KEY',
@@ -176,12 +191,12 @@ export function resolveCliConfig(
     providerSource,
     apiKey: apiKeyEnv?.value || config.apiKey || '',
     apiKeySource: apiKeyEnv?.source || (config.apiKey ? 'config' : 'missing'),
-    model: modelEnv || config.model || preset.defaultModel,
-    modelSource: modelEnv ? 'DMOSS_MODEL' : config.model ? 'config' : 'provider default',
-    baseUrl: baseUrlEnv?.value || config.baseUrl || preset.defaultBaseUrl,
-    baseUrlSource: baseUrlEnv?.source || (config.baseUrl ? 'config' : 'provider default'),
-    workspace: workspaceEnv || config.workspace || process.cwd(),
-    workspaceSource: workspaceEnv ? 'DMOSS_WORKSPACE' : config.workspace ? 'config' : 'cwd',
+    model: overrides.model || modelEnv || config.model || preset.defaultModel,
+    modelSource: overrides.model ? 'cli' : modelEnv ? 'DMOSS_MODEL' : config.model ? 'config' : 'provider default',
+    baseUrl: overrides.baseUrl || baseUrlEnv?.value || config.baseUrl || preset.defaultBaseUrl,
+    baseUrlSource: overrides.baseUrl ? 'cli' : baseUrlEnv?.source || (config.baseUrl ? 'config' : 'provider default'),
+    workspace: overrides.workspace || workspaceEnv || config.workspace || process.cwd(),
+    workspaceSource: overrides.workspace ? 'cli' : workspaceEnv ? 'DMOSS_WORKSPACE' : config.workspace ? 'config' : 'cwd',
     configPath: resolveConfigPath(),
   };
 }

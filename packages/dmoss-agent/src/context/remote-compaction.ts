@@ -1,5 +1,5 @@
 /**
- * Remote Compaction Provider (aligned with Codex /responses/compact strategy)
+ * Remote Compaction Provider.
  *
  * Instead of doing LLM summarization client-side (which consumes tokens and
  * is slower), this module supports delegating compaction to a remote endpoint

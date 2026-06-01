@@ -4,7 +4,6 @@ import * as readline from 'node:readline';
 import type { DmossAgent } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import { setCliApprovalAsker } from './approval.js';
-import { MODEL, WORKSPACE } from './config.js';
 import { runOneShot } from './oneshot.js';
 import {
   renderCliDetailHelp,
@@ -18,8 +17,10 @@ import {
 } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
 import { startCliUpdateCheck } from './update-check.js';
+import { compactPath, label, ui } from './ui.js';
+import { runInkInteractive } from './tui.js';
 
-let currentModel = MODEL;
+let currentModel = '';
 
 export const INTERACTIVE_COMMANDS = [
   '/help',
@@ -48,12 +49,21 @@ export async function runInteractive(
   agent: DmossAgent,
   skillLearner?: SkillLearner,
   runtime?: CliRuntimeStatus,
+  options: { sessionKey?: string } = {},
 ) {
+  if (process.stdin.isTTY && process.stdout.isTTY && process.env.DMOSS_CLI_TUI !== '0') {
+    await runInkInteractive(agent, skillLearner, runtime, options);
+    return;
+  }
+
+  currentModel = agent.config.model || currentModel;
+  const workspace = runtime?.workspace || process.cwd();
+  const sessionKey = options.sessionKey || 'cli';
   let closed = false;
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stderr,
-    prompt: '\n> ',
+    prompt: '\n› ',
     completer: completeInteractiveCommand,
   });
   setCliApprovalAsker((question) => new Promise((resolve) => {
@@ -68,8 +78,8 @@ export async function runInteractive(
     });
   }));
 
-  console.error(renderCliWelcome(agent, runtime));
-  console.error('');
+  console.error(renderCliWelcome(agent, { ...runtime, sessionKey }));
+  console.error(ui.dim(`${label('directory')} ${compactPath(workspace)}   ${label('exit')} Ctrl+D or /quit`));
   rl.prompt();
   if (runtime?.configDir) {
     startCliUpdateCheck({
@@ -159,7 +169,7 @@ export async function runInteractive(
     }
 
     if (msg === '/memory') {
-      const memDir = path.join(WORKSPACE, '.dmoss-runtime', 'memory');
+      const memDir = path.join(workspace, '.dmoss-runtime', 'memory');
       try {
         const indexPath = path.join(memDir, 'index.json');
         const raw = fs.readFileSync(indexPath, 'utf-8');
@@ -177,7 +187,7 @@ export async function runInteractive(
     }
 
     if (msg === '/skills') {
-      const learnedDir = path.join(WORKSPACE, 'skills', 'learned');
+      const learnedDir = path.join(workspace, 'skills', 'learned');
       try {
         const files = fs.readdirSync(learnedDir).filter((f: string) => f.endsWith('.md'));
         console.error(`[skills] ${files.length} learned skills:`);
@@ -198,7 +208,7 @@ export async function runInteractive(
       continue;
     }
 
-    await runOneShot(agent, msg, skillLearner);
+    await runOneShot(agent, msg, skillLearner, { sessionKey });
     rl.prompt();
   }
 

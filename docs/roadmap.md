@@ -33,12 +33,12 @@ every robotics product:
 - Knowledge, memory, skills, and teaching primitives that are explainable,
   testable, optional, and host-controlled.
 - Open-source boundary governance so public Moss packages do not absorb
-  RDK Studio product code, private credentials, deployment policy, desktop UI,
+  product-host code, private credentials, deployment policy, desktop UI,
   or host-owned integrations.
 
 ## Non-Goals
 
-Moss is not the RDK Studio product shell. It should not own Electron UI, desktop
+Moss is not a product shell. It should not own Electron UI, desktop
 settings, account flows, private deployment policy, model keys, device
 passwords, or proprietary service defaults.
 
@@ -71,7 +71,7 @@ This target is met when:
 - `@rdk-moss/memory`, `@rdk-moss/skills`, and `@rdk-moss/teaching` have focused unit
   tests for their public behavior before they are treated as release-ready
   packages.
-- Host Adapter v1 candidate compatibility checks pass for RDK Studio and at
+- Host Adapter v1 candidate compatibility checks pass for a downstream product host and at
   least one minimal external host.
 - Built-in tools declare side-effect metadata and produce approval/audit events
   that hosts can enforce consistently.
@@ -80,8 +80,8 @@ This target is met when:
 - Three representative workflows are covered by repeatable smoke tests or
   scenario tests: device diagnostics, code/workspace modification, and
   documentation or knowledge lookup.
-- Release notes record host adapter impact, verification commands, and RDK
-  Studio consumption status.
+- Release notes record host adapter impact, verification commands, and
+  downstream host consumption status.
 
 ## Current Gate
 
@@ -136,7 +136,7 @@ Turn the host boundary into the primary product surface.
 - Promote the Host Adapter contract to a v1 candidate.
 - Require hosts to declare capability kinds, provider families, tool names,
   side-effect classes, approval boundaries, and event schemas.
-- Add compatibility tests for RDK Studio and a minimal sample host.
+- Add compatibility tests for a downstream product host and a minimal sample host.
 - Add metadata to built-in tools so hosts can distinguish readonly work from
   local writes, device mutation, credential access, external messaging, memory
   writes, runtime state changes, and subagent activity.
@@ -159,7 +159,7 @@ When deciding whether a feature belongs in Moss, ask:
 1. Does this strengthen the host-neutral robotics-grade runtime?
 2. Can a product host inject policy, storage, credentials, and UI instead of
    Moss owning them?
-3. Can the behavior be tested without RDK Studio private services?
+3. Can the behavior be tested without private product-host services?
 4. Does it improve reliability, safety, observability, or long-task continuity?
 5. Would adding it make the Host Adapter clearer rather than leak product code
    into the runtime?

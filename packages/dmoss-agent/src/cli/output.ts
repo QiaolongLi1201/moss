@@ -1,5 +1,6 @@
 import type { DmossAgentEvent } from '../core/index.js';
 import { redactSensitiveData } from '../observability/redact.js';
+import { ui } from './ui.js';
 
 export type CliDetailMode = 'quiet' | 'progress' | 'verbose';
 
@@ -10,6 +11,7 @@ interface CliOutputStreams {
 
 interface CliRunRendererOptions extends Partial<CliOutputStreams> {
   detailMode?: CliDetailMode;
+  interactive?: boolean;
 }
 
 interface RendererState {
@@ -55,6 +57,7 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
   const detailMode = options.detailMode ?? resolveCliDetailMode();
+  const interactive = options.interactive ?? Boolean((stderr as NodeJS.WriteStream).isTTY);
   const state: RendererState = {
     answerOpen: false,
     thinkingOpen: false,
@@ -64,6 +67,17 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
 
   const isQuiet = detailMode === 'quiet';
   const isVerbose = detailMode === 'verbose';
+
+  function mark(kind: 'info' | 'ok' | 'fail' = 'info'): string {
+    if (!interactive) {
+      if (kind === 'ok') return 'ok';
+      if (kind === 'fail') return 'err';
+      return '-';
+    }
+    if (kind === 'ok') return ui.green('✓');
+    if (kind === 'fail') return ui.yellow('!');
+    return ui.cyan('•');
+  }
 
   function stderrLine(line: string): void {
     stderr.write(`${line}\n`);
@@ -85,7 +99,7 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
       case 'turn_start':
         if (!isQuiet) {
           breakAnswerForStatus();
-          stderrLine(`[thinking] planning turn ${event.turn}...`);
+          stderrLine(`${mark()} thinking ${ui.dim(`turn ${event.turn}`)}`);
           state.thinkingNoted = true;
         }
         break;
@@ -99,7 +113,7 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
           }
           stderr.write(String(redactSensitiveData(event.delta)));
         } else if (!state.thinkingNoted) {
-          stderrLine('[thinking] reasoning...');
+          stderrLine(`${mark()} thinking ${ui.dim('reasoning')}`);
           state.thinkingNoted = true;
         }
         break;
@@ -117,9 +131,9 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
           breakAnswerForStatus();
           if (isVerbose) {
             const input = summarizeForCli(event.input);
-            stderrLine(input ? `[tool] ${event.toolName} input ${input}` : `[tool] ${event.toolName} started`);
+            stderrLine(input ? `${mark()} ${ui.bold(event.toolName)} ${ui.dim('input')} ${input}` : `${mark()} ${ui.bold(event.toolName)} ${ui.dim('running')}`);
           } else {
-            stderrLine(`[tool] ${event.toolName} started`);
+            stderrLine(`${mark()} ${ui.bold(event.toolName)} ${ui.dim('running')}`);
           }
         }
         break;
@@ -134,42 +148,43 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
             : event.isError
               ? 'failed'
               : 'ok';
+          const statusKind = event.isError || event.aborted ? 'fail' : 'ok';
           if (isVerbose) {
             const result = summarizeForCli(event.result);
-            stderrLine(result ? `[tool] ${event.toolName} ${status}${elapsed} ${result}` : `[tool] ${event.toolName} ${status}${elapsed}`);
+            stderrLine(result ? `${mark(statusKind)} ${ui.bold(event.toolName)} ${status}${ui.dim(elapsed)} ${result}` : `${mark(statusKind)} ${ui.bold(event.toolName)} ${status}${ui.dim(elapsed)}`);
           } else {
-            stderrLine(`[tool] ${event.toolName} ${status}${elapsed}`);
+            stderrLine(`${mark(statusKind)} ${ui.bold(event.toolName)} ${status}${ui.dim(elapsed)}`);
           }
         }
         break;
       case 'compaction':
         if (!isQuiet) {
           breakAnswerForStatus();
-          stderrLine(`[context] compacted ${event.droppedMessages} messages into ${event.summaryChars} chars`);
+          stderrLine(`${mark()} context ${ui.dim(`compacted ${event.droppedMessages} messages into ${event.summaryChars} chars`)}`);
         }
         break;
       case 'working_context_checkpoint':
         if (!isQuiet) {
           breakAnswerForStatus();
-          stderrLine(`[context] ${event.status}: ${summarizeForCli(event.nextAction, 160)}`);
+          stderrLine(`${mark()} context ${event.status}: ${summarizeForCli(event.nextAction, 160)}`);
         }
         break;
       case 'microcompact':
         if (!isQuiet) {
           breakAnswerForStatus();
-          stderrLine(`[context] compressed ${event.compressedCount} items, saved ~${event.savedTokens} tokens`);
+          stderrLine(`${mark()} context ${ui.dim(`compressed ${event.compressedCount} items, saved ~${event.savedTokens} tokens`)}`);
         }
         break;
       case 'turn_end':
         if (!isQuiet && (isVerbose || (event.totalToolCalls ?? 0) > 0)) {
           breakAnswerForStatus();
           const tools = event.totalToolCalls ? `, tools=${event.totalToolCalls}` : '';
-          stderrLine(`[turn] ${event.turn} finished: ${event.stopReason}${tools}`);
+          stderrLine(`${mark('ok')} turn ${event.turn} ${ui.dim(`finished: ${event.stopReason}${tools}`)}`);
         }
         break;
       case 'error':
         breakAnswerForStatus();
-        stderrLine(`[error] ${event.retriable ? 'retryable ' : ''}${summarizeForCli(event.error, 400)}`);
+        stderrLine(`${mark('fail')} error ${event.retriable ? 'retryable ' : ''}${summarizeForCli(event.error, 400)}`);
         break;
       case 'done':
         if (state.thinkingOpen) {

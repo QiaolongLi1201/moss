@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Self-test for normalizeTeachingDepth and createStudioTeachingHooks.
+ * Self-test for normalizeTeachingDepth and createTeachingHooks.
  *
  * Run:
  *   npm run build -w @rdk-moss/teaching
@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index.js';
+import { normalizeTeachingDepth, createTeachingHooks } from '../dist/index.js';
 
 // ── normalizeTeachingDepth ──
 
@@ -30,11 +30,11 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.equal(normalizeTeachingDepth({}), 'off');
 }
 
-// ── createStudioTeachingHooks: return shape ──
+// ── createTeachingHooks: return shape ──
 
 {
   // Always returns an object with onBeforeToolExec and onToolResult
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'off',
     teachingConfirmRequested: false,
     teachingConfirmInteractive: false,
@@ -52,12 +52,12 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.equal(typeof hooks.onToolResult, 'function');
 }
 
-// ── createStudioTeachingHooks: depth=off, no confirm ──
+// ── createTeachingHooks: depth=off, no confirm ──
 
 {
   // When depth is off and teachingConfirmRequested is false, hooks are pass-through
   let metaCalled = false;
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'off',
     teachingConfirmRequested: false,
     teachingConfirmInteractive: false,
@@ -88,12 +88,12 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.equal(metaCalled, false, 'emitTeachingMeta should not be called when depth=off');
 }
 
-// ── createStudioTeachingHooks: depth=concise with read-only tool ──
+// ── createTeachingHooks: depth=concise with read-only tool ──
 
 {
   // With concise depth, non-mutation tools should not trigger annotation
   let metaCalls = [];
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'concise',
     teachingConfirmRequested: false,
     teachingConfirmInteractive: false,
@@ -123,14 +123,14 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.equal(preAnnotations.length, 0, 'concise depth should not annotate read-only tools');
 }
 
-// ── createStudioTeachingHooks: abortSignal ──
+// ── createTeachingHooks: abortSignal ──
 
 {
   // When abortSignal is already aborted, onBeforeToolExec returns approved immediately
   const abortController = new AbortController();
   abortController.abort();
 
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'detailed',
     teachingConfirmRequested: false,
     teachingConfirmInteractive: false,
@@ -161,7 +161,7 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   abortController.abort();
 
   let metaCalled = false;
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'detailed',
     teachingConfirmRequested: false,
     teachingConfirmInteractive: false,
@@ -185,11 +185,11 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.equal(metaCalled, false, 'onToolResult should not emit meta when aborted');
 }
 
-// ── createStudioTeachingHooks: onBeforeToolExec always approves ──
+// ── createTeachingHooks: onBeforeToolExec always approves ──
 
 {
   // Even for mutation tools, the hook approves by default (no teachingConfirmRequested)
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'concise',
     teachingConfirmRequested: false,
     teachingConfirmInteractive: false,
@@ -213,13 +213,13 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.deepEqual(decision, { approved: true });
 }
 
-// ── createStudioTeachingHooks: teachingConfirmRequested with non-interactive ──
+// ── createTeachingHooks: teachingConfirmRequested with non-interactive ──
 
 {
   // When teachingConfirmRequested=true but teachingConfirmInteractive=false,
   // dry_run is emitted but does NOT block (auto-approved)
   const metaCalls = [];
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'off',
     teachingConfirmRequested: true,
     teachingConfirmInteractive: false,
@@ -249,12 +249,12 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.equal(dryRunMetas[0].confirmToken, undefined, 'confirmToken should be undefined when non-interactive');
 }
 
-// ── createStudioTeachingHooks: dry_run emitted only on first mutation ──
+// ── createTeachingHooks: dry_run emitted only on first mutation ──
 
 {
   // dry_run_summary is only emitted once for the first mutation tool
   const metaCalls = [];
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'off',
     teachingConfirmRequested: true,
     teachingConfirmInteractive: false,
@@ -279,12 +279,12 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.equal(dryRunMetas.length, 1, 'dry_run_summary should be emitted only once');
 }
 
-// ── createStudioTeachingHooks: dry_run not emitted for read-only tools ──
+// ── createTeachingHooks: dry_run not emitted for read-only tools ──
 
 {
   // dry_run_summary is NOT emitted when the first tool is read-only
   const metaCalls = [];
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'off',
     teachingConfirmRequested: true,
     teachingConfirmInteractive: false,
@@ -306,12 +306,12 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.equal(dryRunMetas.length, 0, 'dry_run_summary should NOT be emitted for read-only tools');
 }
 
-// ── createStudioTeachingHooks: emitTeachingMeta receives correct shape ──
+// ── createTeachingHooks: emitTeachingMeta receives correct shape ──
 
 {
   // dry_run_summary patch contains expected keys
   const metaCalls = [];
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'off',
     teachingConfirmRequested: true,
     teachingConfirmInteractive: false,
@@ -341,12 +341,12 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   assert.equal(dryRun.streamDone, true);
 }
 
-// ── createStudioTeachingHooks: classifyPlanMutation used for rollback hint ──
+// ── createTeachingHooks: classifyPlanMutation used for rollback hint ──
 
 {
   // When classifyPlanMutation returns false, dry_run rollback says "N/A (read-only)"
   const metaCalls = [];
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'off',
     teachingConfirmRequested: true,
     teachingConfirmInteractive: false,
@@ -380,7 +380,7 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
     `mutation rollback should mention review/depends, got: ${dryRun.patch.rollback}`);
 }
 
-// ── createStudioTeachingHooks: teachingConfirmRequested+interactive blocks ──
+// ── createTeachingHooks: teachingConfirmRequested+interactive blocks ──
 
 {
   // When teachingConfirmRequested and teachingConfirmInteractive are both true,
@@ -389,7 +389,7 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
   let confirmTokenReceived = null;
   const metaCalls = [];
 
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'off',
     teachingConfirmRequested: true,
     teachingConfirmInteractive: true,
@@ -427,7 +427,7 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
 
 {
   // When user rejects in interactive confirm, returns { approved: false }
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'off',
     teachingConfirmRequested: true,
     teachingConfirmInteractive: true,
@@ -454,11 +454,11 @@ import { normalizeTeachingDepth, createStudioTeachingHooks } from '../dist/index
     `rejection reason should mention user stop, got: ${decision.reason}`);
 }
 
-// ── createStudioTeachingHooks: onToolResult with error ──
+// ── createTeachingHooks: onToolResult with error ──
 
 {
   // onToolResult should handle error results without throwing
-  const hooks = createStudioTeachingHooks({
+  const hooks = createTeachingHooks({
     depth: 'concise',
     teachingConfirmRequested: false,
     teachingConfirmInteractive: false,

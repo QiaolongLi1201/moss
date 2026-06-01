@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DmossAgent } from '../core/index.js';
 import type { Tool } from '../core/tools/tool-types.js';
-import { BASE_URL, resolveCliConfig, resolveConfigDir, WORKSPACE } from './config.js';
+import { BASE_URL, resolveCliConfig, resolveConfigDir, WORKSPACE, type ResolvedCliConfig } from './config.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
 import { getPackageVersion } from './package-info.js';
+import { compactPath, label, statusDot, ui } from './ui.js';
 
 export interface CliDeviceStatus {
   host: string;
@@ -22,6 +23,8 @@ export interface CliRuntimeStatus {
   dockerImage?: string;
   meshEnabled?: boolean;
   device?: CliDeviceStatus | null;
+  sessionKey?: string;
+  config?: ResolvedCliConfig;
 }
 
 interface ToolGroupSummary {
@@ -43,6 +46,8 @@ const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage'>
   safetyMode: process.env.DMOSS_SAFETY_MODE || process.env.DMOSS_CLI_SAFETY_MODE || 'workspace-write',
   dockerImage: process.env.DMOSS_DOCKER_IMAGE,
   meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || process.argv.includes('--mesh'),
+  sessionKey: 'cli',
+  config: resolveCliConfig(),
   device: null,
 };
 
@@ -78,9 +83,9 @@ function shortBaseUrl(value: string): string {
 }
 
 function describeDetail(mode: CliDetailMode): string {
-  if (mode === 'quiet') return 'quiet: only final answers and errors';
-  if (mode === 'verbose') return 'verbose: redacted tool inputs/results';
-  return 'progress: thinking and tool lifecycle';
+  if (mode === 'quiet') return 'quiet';
+  if (mode === 'verbose') return 'verbose';
+  return 'progress';
 }
 
 function oneLine(value: string, maxChars = 96): string {
@@ -129,24 +134,10 @@ function groupTools(tools: Tool[]): ToolGroupSummary[] {
   return groups;
 }
 
-function formatToolNames(tools: Tool[], limit = 6): string {
-  const names = tools.map((t) => t.name);
-  const shown = names.slice(0, limit).join(', ');
-  if (names.length <= limit) return shown;
-  return `${shown}, +${names.length - limit} more`;
-}
-
-function box(title: string, rows: string[]): string {
-  const content = [title, ...rows];
-  const width = Math.max(...content.map((line) => line.length), 48);
-  const border = `+${'-'.repeat(width + 2)}+`;
-  return [
-    border,
-    `| ${title.padEnd(width)} |`,
-    border,
-    ...rows.map((line) => `| ${line.padEnd(width)} |`),
-    border,
-  ].join('\n');
+function formatEnabledGroups(groups: ToolGroupSummary[]): string {
+  return groups
+    .map((g) => `${g.title.toLowerCase()} ${g.tools.length}`)
+    .join('  ');
 }
 
 export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = {}): string {
@@ -156,30 +147,23 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const groups = groupTools(tools).filter((g) => g.enabled);
   const memoryCount = countJsonIndex(path.join(rt.runtimeDir, 'memory', 'index.json'));
   const skillCount = countMarkdownFiles(path.join(rt.workspace, 'skills', 'learned'));
-  const auth = resolveCliConfig();
+  const auth = rt.config;
 
-  const title = `D-Moss Agent v${getPackageVersion()}`;
-  const rows = [
-    `Model: ${agent.config.model}`,
-    `Provider: ${shortBaseUrl(rt.baseUrl)}`,
-    `Workspace: ${path.basename(rt.workspace) || rt.workspace}`,
-    `Detail: ${describeDetail(detailMode)}`,
-    `Auth: ${auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing - run dmoss-agent setup'}`,
-    `Runtime: memory ${memoryCount} | learned skills ${skillCount} | tools ${tools.length}`,
-    `Device: ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}` : 'not connected - set DMOSS_DEVICE_HOST'}`,
-    `Mesh: ${rt.meshEnabled ? 'enabled' : 'disabled'}`,
-    '',
-    `Capabilities: ${groups.length ? groups.map((g) => g.title).join(', ') : 'none'}`,
-  ];
+  const authState = auth.apiKey ? `auth ${auth.apiKeySource}` : 'auth missing';
+  const deviceState = rt.device
+    ? `device ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
+    : 'device not configured';
+  const meshState = rt.meshEnabled ? 'mesh on' : 'mesh off';
 
-  for (const group of groups) {
-    rows.push(`  ${group.title}: ${formatToolNames(group.tools)}`);
-  }
-
-  rows.push('');
-  rows.push('Try: /tools | /status | /examples | /upgrade | /help');
-  rows.push('Ask naturally, e.g. "检查板端资源并给出建议" or "分析当前工程结构".');
-  return box(title, rows);
+  return [
+    `${ui.bold('D-Moss Agent')} ${ui.dim(`v${getPackageVersion()}`)}`,
+    `${label('model')} ${agent.config.model}   ${label('provider')} ${shortBaseUrl(rt.baseUrl)}   ${label('session')} ${rt.sessionKey}`,
+    `${label('workspace')} ${compactPath(rt.workspace)}   ${label('safety')} ${rt.safetyMode}   ${label('detail')} ${describeDetail(detailMode)}`,
+    `${statusDot(auth.apiKey ? 'ok' : 'warn')} ${authState}   ${statusDot('info')} tools ${tools.length}   ${statusDot('info')} memory ${memoryCount}   ${statusDot('info')} skills ${skillCount}`,
+    `${statusDot(rt.device ? 'ok' : 'warn')} ${deviceState}   ${statusDot(rt.meshEnabled ? 'ok' : 'info')} ${meshState}`,
+    groups.length ? `${label('capabilities')} ${formatEnabledGroups(groups)}` : `${label('capabilities')} none`,
+    `${ui.dim('commands')} /help  /tools  /status  /examples  /model  /detail`,
+  ].join('\n');
 }
 
 export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {}): string {
@@ -189,39 +173,39 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
   const sessionDir = path.join(rt.runtimeDir, 'sessions');
   const detailMode = resolveCliDetailMode();
   const toolGroups = groupTools(agent.tools.getAll()).filter((g) => g.enabled);
-  const auth = resolveCliConfig();
+  const auth = rt.config;
 
   return [
-    '[status]',
-    `  provider preset: ${auth.provider} (${auth.providerSource})`,
-    `  model: ${agent.config.model}`,
-    `  provider: ${shortBaseUrl(rt.baseUrl)}`,
-    `  apiKey: ${auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
-    `  workspace: ${rt.workspace}`,
-    `  config: ${rt.configDir}`,
-    `  sessions: ${sessionDir}`,
-    `  detail: ${describeDetail(detailMode)}`,
-    `  safety: ${rt.safetyMode}`,
-    `  exec backend: ${rt.execBackend}${rt.execBackend === 'docker' && rt.dockerImage ? ` (${rt.dockerImage})` : ''}`,
-    `  memory: ${memoryCount} entries`,
-    `  learned skills: ${skillCount}`,
-    `  tools: ${agent.tools.size} (${toolGroups.map((g) => g.title).join(', ')})`,
-    `  device: ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}` : 'not connected'}`,
-    `  mesh: ${rt.meshEnabled ? 'enabled' : 'disabled'}`,
+    ui.bold('Status'),
+    `  ${label('session')} ${rt.sessionKey}`,
+    `  ${label('model')} ${agent.config.model}`,
+    `  ${label('provider')} ${auth.provider} (${auth.providerSource}) via ${shortBaseUrl(rt.baseUrl)}`,
+    `  ${label('api key')} ${auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
+    `  ${label('workspace')} ${rt.workspace}`,
+    `  ${label('config')} ${rt.configDir}`,
+    `  ${label('sessions')} ${sessionDir}`,
+    `  ${label('detail')} ${describeDetail(detailMode)}`,
+    `  ${label('safety')} ${rt.safetyMode}`,
+    `  ${label('exec')} ${rt.execBackend}${rt.execBackend === 'docker' && rt.dockerImage ? ` (${rt.dockerImage})` : ''}`,
+    `  ${label('memory')} ${memoryCount} entries`,
+    `  ${label('skills')} ${skillCount}`,
+    `  ${label('tools')} ${agent.tools.size} (${toolGroups.map((g) => g.title).join(', ')})`,
+    `  ${label('device')} ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}` : 'not connected'}`,
+    `  ${label('mesh')} ${rt.meshEnabled ? 'enabled' : 'disabled'}`,
   ].join('\n');
 }
 
 export function renderCliTools(agent: DmossAgent): string {
   const groups = groupTools(agent.tools.getAll()).filter((g) => g.enabled);
-  const lines = ['[tools]'];
+  const lines = [ui.bold('Tools')];
   for (const group of groups) {
-    lines.push(`  ${group.title}`);
+    lines.push(`  ${ui.bold(group.title)}`);
     for (const tool of group.tools.sort((a, b) => a.name.localeCompare(b.name))) {
-      lines.push(`    - ${tool.name}: ${oneLine(tool.description)}`);
+      lines.push(`    ${ui.cyan(tool.name)} ${ui.dim(oneLine(tool.description))}`);
     }
   }
   lines.push('');
-  lines.push('Use /detail verbose to see redacted tool inputs and outputs during a run.');
+  lines.push(`${ui.dim('tip')} /detail verbose shows redacted tool inputs and outputs during a run.`);
   return lines.join('\n');
 }
 
@@ -248,12 +232,12 @@ export function renderCliExamples(agent: DmossAgent, runtime: CliRuntimeStatus =
     examples.push('列出 mesh peer，看看有没有其他 agent 可以协作');
   }
 
-  return ['[examples]', ...examples.slice(0, 6).map((e) => `  - ${e}`)].join('\n');
+  return [ui.bold('Examples'), ...examples.slice(0, 6).map((e) => `  - ${e}`)].join('\n');
 }
 
 export function renderCliInteractiveHelp(): string {
   return [
-    '[help]',
+    ui.bold('Commands'),
     '  Inspect',
     '    /tools               show registered tools grouped by capability',
     '    /status              show model, workspace, runtime, device, and tool state',
@@ -276,7 +260,11 @@ export function renderCliInteractiveHelp(): string {
 
 export function renderCliUpgradeHelp(): string {
   return [
-    '[upgrade]',
+    ui.bold('Upgrade'),
+    '  Built-in update:',
+    '    dmoss-agent update',
+    '    dmoss-agent doctor',
+    '',
     '  Global install:',
     '    npm i -g @rdk-moss/agent@latest',
     '    dmoss-agent --version',
@@ -293,7 +281,7 @@ export function renderCliUpgradeHelp(): string {
 
 export function renderCliDetailHelp(): string {
   return [
-    `[detail] current: ${describeDetail(resolveCliDetailMode())}`,
+    `${ui.bold('Detail')} current: ${describeDetail(resolveCliDetailMode())}`,
     '  quiet    final answers only; useful for scripts',
     '  progress thinking markers, tool names, status, and elapsed time; safe default',
     '  verbose  redacted/truncated tool inputs and results for debugging',

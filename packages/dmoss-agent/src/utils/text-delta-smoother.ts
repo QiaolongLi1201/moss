@@ -20,7 +20,7 @@ export class TextDeltaSmoother {
     emitDelta: (chunk: string) => void,
     opts?: { tickMs?: number; minPerTick?: number; fastPathFirstN?: number },
   ): TextDeltaSmoother {
-    // 放宽上下限：studio 档希望 tick 更短 / chunk 更大。以前卡在 [8,22] / [1,3]，
+    // 放宽上下限：rich UI 档希望 tick 更短 / chunk 更大。以前卡在 [8,22] / [1,3]，
     // 导致外部即使传 4/12 也被截成 8/3，速度拉不起来。
     const tickMs = Math.max(4, Math.min(30, opts?.tickMs ?? 10));
     const minPerTick = Math.max(1, Math.min(24, opts?.minPerTick ?? 1));

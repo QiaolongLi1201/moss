@@ -2,7 +2,7 @@
 
 > 生成时间: 2026-05-23
 > 前置: Phase 5 (P0安全/P1架构/P2测试/P3可扩展) 全部完成
-> 审阅: Claude Opus 4.7 + Claude Sonnet 4.6 + RDK Studio 宿主方
+> 审阅: Claude Opus 4.7 + Claude Sonnet 4.6 + 下游宿主方
 > 预计: 15-20 天
 
 ---
@@ -15,7 +15,7 @@
 |--------|---------|
 | **Opus 4.7** | Host Adapter 必须先锁，E2E 在编排之前，Tree-sitter 推迟到 Phase 7，spawn-profile 有全局状态 bug 需修 |
 | **Sonnet 4.6** | A.3 运行时协议是最大风险，quick win 用 grep search_code 替代 tree-sitter，cut Tree-sitter 保其他四个 |
-| **RDK Studio** | contract-first + fixture host + conformance tests；mesh 需稳定事件协议；E2E 需可回放素材；observability 默认脱敏 |
+| **下游宿主** | contract-first + fixture host + conformance tests；mesh 需稳定事件协议；E2E 需可回放素材；observability 默认脱敏 |
 
 **行动**: Tree-sitter 整体移入 Phase 7。Host Adapter 升为 Week 1 唯一焦点。Mesh 补事件协议。E2E 补 mock/golden 素材。Observability 补 redaction layer。
 
@@ -99,15 +99,15 @@
 ### A.3 最小 CLI 宿主（fixture host）
 
 - 不是 `create-dmoss-app` 完整脚手架——先做一个 fixture 级别的 host
-- 仅依赖 `@rdk-moss/agent` + `@rdk-moss/core`，不引 RDK Studio 代码
+- 仅依赖 `@rdk-moss/agent` + `@rdk-moss/core`，不引产品宿主代码
 - 目标：能用它跑通一轮 agent 对话 = 合约合格
 - 产出：mock LLM provider + mock session store + mock tool set
 
-### A.4 RDK Studio 对接
+### A.4 下游宿主对接
 
-- RDK Studio 侧 `moss:update` 通过 → 记录宿主适配器变更清单
+- 下游宿主侧 Moss 更新验证通过 → 记录宿主适配器变更清单
 - 确认所有 capability kind 至少有一个宿主实现
-- 向后兼容：RDK Studio 运行 pre-v1 Moss 时的降级路径
+- 向后兼容：下游宿主运行 pre-v1 Moss 时的降级路径
 
 ---
 
@@ -121,7 +121,7 @@
 
 ### B.1 稳定事件协议（对外合约）
 
-Agent Mesh 不靠文本解析，而是靠结构化事件。Studio UI 和日志系统直接消费：
+Agent Mesh 不靠文本解析，而是靠结构化事件。Host UI 和日志系统直接消费：
 
 ```
 child_run_started      { runId, parentRunId, scope, toolSet }
@@ -177,7 +177,7 @@ cancellation_propagated { runId, source, targetRuns }
 
 ### D.1 可回放测试素材
 
-给 RDK Studio（和所有宿主）提供无设备可运行的测试素材：
+给下游产品宿主（和所有宿主）提供无设备可运行的测试素材：
 
 - **Mock host**: 不依赖真实 LLM / SSH / 设备的完整 mock
 - **Mock tool responses**: 固定的、确定性的工具输出
@@ -203,7 +203,7 @@ Mock: 本地文件系统，无需网络
 
 **场景 3 — Documentation/Knowledge Lookup**
 ```
-用户: "查一下 RDK Studio 的 Host Adapter 有哪些 capability"
+用户: "查一下当前宿主的 Host Adapter 有哪些 capability"
 Agent: knowledge 检索 → 文档摘要 → 引用原文
 Mock: 固定 knowledge base
 ```
@@ -260,7 +260,7 @@ Mock: 固定 knowledge base
 ```
 Week 1:   A.1 + A.2 (合约产物 + conformance 测试) ── 唯一天花板
 Week 1:   B.0 (spawn-profile bug 修复) + C.1 (grep search_code) ── 并行快赢
-Week 2:   A.3 + A.4 (fixture host + RDK Studio 对接)
+Week 2:   A.3 + A.4 (fixture host + 下游宿主对接)
 Week 2:   B.1 + B.2 (mesh 事件协议 + 协议补全) ── 并行
 Week 3:   B.3 + B.4 (子智能体编排 + 集成测试) ── 并行 ── D.1 + D.2 (E2E 素材 + 场景)
 Week 3-4: E.0 + E.1 + E.2 + E.3 (脱敏 → tracing → 面板 → 发布)
@@ -273,7 +273,7 @@ Week 3-4: E.0 + E.1 + E.2 + E.3 (脱敏 → tracing → 面板 → 发布)
 | Host Adapter 独占 Week 1 | Opus: "lock host adapter first, block everything else on this" |
 | Tree-sitter 移入 Phase 7 | Opus + Sonnet 共识: 高不确定性、WASM 工具链风险、可被 grep 覆盖 80% |
 | B.0 spawn-profile 前置修复 | Opus 发现的全局状态 bug——不修会导致并发子智能体互相污染 |
-| E2E 补 mock/golden | RDK Studio 需求: CI 和无设备环境可运行 |
-| Observability 默认脱敏 | RDK Studio 安全需求: prompt/token/IP 不可默认泄露 |
+| E2E 补 mock/golden | 下游宿主需求: CI 和无设备环境可运行 |
+| Observability 默认脱敏 | 下游宿主安全需求: prompt/token/IP 不可默认泄露 |
 
 每个 P 级子任务完成后都必须跑 `npm run verify`。每周五做一次全量 verify + 手动场景冒烟。

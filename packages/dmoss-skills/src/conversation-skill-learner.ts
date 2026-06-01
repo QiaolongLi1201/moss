@@ -2,6 +2,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { LLMMessage } from "./llm-message.js";
+import { MOSS_SKILL_META_FILE } from "./skill-metadata.js";
 
 type LearnedToolCall = {
   id: string;
@@ -54,7 +55,7 @@ const STRICT_MIN_USER_CHARS = 12;
 const STRICT_MAX_USER_CHARS = 600;
 /** intent 门槛：用户明确要求时只需 2+ 工具调用，仍要求成功。 */
 const INTENT_MIN_TOOL_CALLS = 2;
-const GENERATED_META_FILE = ".rdkstudio-skill.json";
+const GENERATED_META_FILE = MOSS_SKILL_META_FILE;
 
 /**
  * env 开关：
@@ -199,7 +200,7 @@ function userMessageLooksLikeTask(userMessage: string): boolean {
 function inferRisk(toolNames: string[]): "low" | "medium" | "high" {
   const joined = toolNames.join(" ");
   if (/flash|delete|rm|format|danger|deploy|install|upgrade/i.test(joined)) return "medium";
-  if (/device_|board_|exec|write|upload|studio_open|community_|forum_|mail|im/i.test(joined)) return "medium";
+  if (/device_|board_|exec|write|upload|open_url|community_|forum_|mail|im/i.test(joined)) return "medium";
   return "low";
 }
 
@@ -344,7 +345,7 @@ function buildSkillMarkdown(input: {
     : titleFromUserMessage(input.userMessage);
   const name = `对话沉淀 ${baseTitle}`;
   const description = [
-    "从一次已完成的 RDK Studio 对话沉淀下来的可复用流程。",
+    "从一次已完成的宿主对话沉淀下来的可复用流程。",
     `适用于再次处理类似需求：${titleFromUserMessage(input.userMessage)}。`,
     "不适用：未验证完成、设备状态变化较大或用户要求重新探索的任务。",
   ].join(" ");

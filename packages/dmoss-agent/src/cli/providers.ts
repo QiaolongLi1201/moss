@@ -1,4 +1,4 @@
-import { API_KEY, MODEL, BASE_URL, PROVIDER } from './config.js';
+import { API_KEY, MODEL, BASE_URL, PROVIDER, type CliProviderPreset } from './config.js';
 import type {
   LLMProvider,
   LLMRequestOptions,
@@ -6,6 +6,13 @@ import type {
   LLMStreamEvent,
   LLMContentBlock,
 } from '../core/llm/llm-provider.js';
+
+export interface CliProviderRuntimeConfig {
+  provider: CliProviderPreset;
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+}
 
 interface AnthropicResponse {
   content: Array<{
@@ -30,25 +37,34 @@ interface OpenAIResponse {
   usage?: { prompt_tokens: number; completion_tokens: number };
 }
 
-export const cliProvider: LLMProvider = {
-  id: 'cli-provider',
-  displayName: 'CLI LLM Provider',
-  capabilities: { streaming: false },
+export function createCliProvider(config: CliProviderRuntimeConfig): LLMProvider {
+  return {
+    id: 'cli-provider',
+    displayName: 'CLI LLM Provider',
+    capabilities: { streaming: false },
 
-  async complete(opts: LLMRequestOptions): Promise<LLMResponse> {
-    return this.stream(opts, () => {});
-  },
+    async complete(opts: LLMRequestOptions): Promise<LLMResponse> {
+      return this.stream(opts, () => {});
+    },
 
-  async stream(
-    opts: LLMRequestOptions,
-    onEvent: (e: LLMStreamEvent) => void,
-  ): Promise<LLMResponse> {
-    if (PROVIDER === 'anthropic') {
-      return callAnthropic(opts, onEvent);
-    }
-    return callOpenAI(opts, onEvent);
-  },
-};
+    async stream(
+      opts: LLMRequestOptions,
+      onEvent: (e: LLMStreamEvent) => void,
+    ): Promise<LLMResponse> {
+      if (config.provider === 'anthropic') {
+        return callAnthropic(config, opts, onEvent);
+      }
+      return callOpenAI(config, opts, onEvent);
+    },
+  };
+}
+
+export const cliProvider: LLMProvider = createCliProvider({
+  provider: PROVIDER,
+  apiKey: API_KEY,
+  model: MODEL,
+  baseUrl: BASE_URL,
+});
 
 function providerError(provider: string, status: number, text: string): Error {
   const compact = text.replace(/\s+/g, ' ').trim();
@@ -57,11 +73,12 @@ function providerError(provider: string, status: number, text: string): Error {
 }
 
 async function callAnthropic(
+  config: CliProviderRuntimeConfig,
   opts: LLMRequestOptions,
   _onEvent: (e: LLMStreamEvent) => void,
 ): Promise<LLMResponse> {
   const body = {
-    model: opts.model || MODEL,
+    model: opts.model || config.model,
     max_tokens: opts.maxTokens || 4096,
     system: opts.systemPrompt,
     messages: opts.messages.map((m) => ({
@@ -76,11 +93,11 @@ async function callAnthropic(
     stream: false,
   };
 
-  const res = await fetch(`${BASE_URL}/v1/messages`, {
+  const res = await fetch(`${config.baseUrl}/v1/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': API_KEY,
+      'x-api-key': config.apiKey,
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
@@ -115,6 +132,7 @@ async function callAnthropic(
 }
 
 async function callOpenAI(
+  config: CliProviderRuntimeConfig,
   opts: LLMRequestOptions,
   _onEvent: (e: LLMStreamEvent) => void,
 ): Promise<LLMResponse> {
@@ -168,7 +186,7 @@ async function callOpenAI(
   }
 
   const body: Record<string, unknown> = {
-    model: opts.model || MODEL,
+    model: opts.model || config.model,
     max_tokens: opts.maxTokens || 4096,
     messages: openaiMessages,
   };
@@ -180,11 +198,11 @@ async function callOpenAI(
     }));
   }
 
-  const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+  const res = await fetch(`${config.baseUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${API_KEY}`,
+      Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(body),
     signal: opts.abortSignal,

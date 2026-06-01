@@ -14,7 +14,7 @@
 2. **Phase 2**：并行派发 4 个 agent，各持独立视角，必须读源码：
    - 2-A **Style/Lint**（VERIFIED）
    2-B **Comment/Doc**（VERIFIED）
-   - 2-C **Dead code & Duplication**（含跨仓 rdstudio-web 检查，VERIFIED）
+   - 2-C **Dead code & Duplication**（含跨仓下游宿主检查，VERIFIED）
    - 2-D **Contrarian + 框架对标**（成功挑战 2 条、新增 3 条）
 3. **Phase 3**：主线手工再核验 4 处关键证据（execFileSync 全量分布、DMOSS_TELEMETRY_ALLOW 旁路真伪、缺失 README、redact 拦截规则）。
 
@@ -39,7 +39,7 @@
 | **C12** | `formatToolStep` 在 dmoss-skills 重复定义两次，语义不同 | Dead-code VERIFIED：建议不合并、改名消除隐形重名 | **P2** | `conversation-skill-learner.ts:295` & `skill-distiller.ts:101` |
 | **C13** | `catch (err: any)` 在 device tools 频繁绕过 DmossError 体系 | Style 间接证实 | **P2** | `device-ssh.ts:79,112,144,168`；`docker-exec.ts:77` |
 | **C14** | `src/core/index.ts` 用 `export * from '...'` 扩散内部符号 | Style VERIFIED | **P2** | `src/core/index.ts:1-8` |
-| **C15** | `@deprecated` 全家桶在 rdstudio-web 有 4 文件 × 多函数活跃调用 | Dead-code 关键发现 + 校正上一轮主线误判 | **P1**（不可删；需 milestone 化） | `rdstudio-web/server/robot-hub-routes.ts:7-9`；`knowledge-modules/index.ts:9` 等 |
+| **C15** | `@deprecated` 全家桶在下游宿主有 4 文件 × 多函数活跃调用 | Dead-code 关键发现 + 校正上一轮主线误判 | **P1**（不可删；需 milestone 化） | 宿主路由与知识模块入口等 |
 | **C16** | `noUnusedLocals` / `noUnusedParameters` 未启用 | Dead-code 新增 | **P3** | 所有 `tsconfig.json` 仅 `strict: true` |
 | **C17** | `@internal` 符号混在主 barrel，semver 模糊 | Doc VERIFIED | **P2** | `src/index.ts:75-130` 共 4 块 8 符号 |
 | **C18** | `DMOSS_TELEMETRY_ALLOW` 可被绕过敏感字段 | Contrarian 提出，**主线核验部分推翻**：`PROMPT_FIELD_PATTERN` 拦截 `prompt/text/body/content`，`SENSITIVE_FIELD_PATTERN` 拦截 `token/secret/key/password` 等 | **P3**（仅文档化欠缺） | `redact.ts:188-200` |
@@ -52,7 +52,7 @@
 |---|---|
 | **不要拆 `compaction.ts (733)` / `session-manager.ts (731)`** | dead-code agent CHALLENGED 整体规模：函数内聚清晰，注释质量高（G-new-8 VERIFIED）。只需把 `compactHistoryIfNeeded` 抽 2 个子函数即可 |
 | **不要"统一" `sanitizeCustomSlug` 与 `sanitizeSkillId`** | 字符集差异有意为之（一个允许中文 slug、一个用于 LLM 输出去重），合并会破坏 UX 边界 |
-| **不要删 deprecated 全家桶** | rdstudio-web 实际 4 文件 × 7+ 函数活跃使用；删除直接 break 生产。*正上一轮主线的判断盲点** |
+| **不要删 deprecated 全家桶** | 下游宿主实际 4 文件 × 7+ 函数活跃使用；删除直接 break 生产。*正上一轮主线的判断盲点** |
 | **不要把 `agent-mesh.ts` 的 `console.error` 替换| 已被 `isMeshVerboseEnabled()` 保护，是 verbose debug 路径；改成 logger 反而打破"verbose-only stderr"约定 |
 | **不要为了 lint 一刀切**让 1140 行中文注释报错 | 应该新增 lint 时排除已存在注释或分阶段（先翻译公开 API 文件） |
 | **不要因 `DMOSS_TELEMETRY_ALLOW` 被指控就改设计** | 双拦截器已经覆盖了攻击向量；只需在 README/JSDoc 中显式说明哪些字段不可放行 |
@@ -175,7 +175,7 @@
 ## 6. 方法论备注
 
 - **碰撞 agent 也会错**：Contrarian 关于 `DMOSS_TELEMETRY_ALLOW` 旁路的指控被主线 Read 推翻，证明"对抗 agent → 主线收线"的两层闭环不可省。
-- **跨仓校验救场**：dead-code agent 主动检查了 rdstudio-web，避免重蹈上次"误判 deprecated 为可删"。
+- **跨仓校验救场**：dead-code agent 主动检查了下游宿主，避免重蹈上次"误判 deprecated 为可删"。
 - **找强项也要碰撞**：G-new-3 "AbortSignal 全链路" 被 Contrarian 反证为"局部强项"，直接催生了 P0-3。Phase 1 的"强项"不能直接收口。
 - 4 agent 并行 vs 串行：本轮 4 个 agent ~3 分钟出结果，串行至少要 12 分钟，证明 dispatch-parallel-agents 模式对 architecture-assessment 是必要工具。
 

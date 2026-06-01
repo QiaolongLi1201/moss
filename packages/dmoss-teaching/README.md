@@ -19,9 +19,9 @@ npm install @rdk-moss/teaching
 ## Usage
 
 ```typescript
-import { createStudioTeachingHooks } from '@rdk-moss/teaching';
+import { createTeachingHooks } from '@rdk-moss/teaching';
 
-const { onBeforeToolExec, onToolResult } = createStudioTeachingHooks({
+const { onBeforeToolExec, onToolResult } = createTeachingHooks({
   depth: 'concise', // 'off' | 'concise' | 'detailed'
   llmProvider: provider,
   modelId: 'claude-sonnet-4-20250514',

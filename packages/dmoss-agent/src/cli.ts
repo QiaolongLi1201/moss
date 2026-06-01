@@ -5,12 +5,17 @@ import { execSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { createCliToolApprovalHook, resolveCliSafetyMode } from './cli/approval.js';
-import { resolveConfigDir, API_KEY, MODEL, WORKSPACE, BASE_URL } from './cli/config.js';
+import { loadConfigFile, loadEnvFromAncestors, resolveCliConfig, resolveConfigDir } from './cli/config.js';
+import { parseCliArgs } from './cli/args.js';
+import { renderCliDoctor } from './cli/doctor.js';
 import { displayHelp, displayVersion } from './cli/help.js';
-import { cliProvider } from './cli/providers.js';
+import { createCliProvider } from './cli/providers.js';
 import { createMemoryTools } from './cli/tools.js';
 import { runOneShot } from './cli/oneshot.js';
 import { runInteractive } from './cli/repl.js';
+import { resolveCliSession } from './cli/session.js';
+import { runCliUpdate } from './cli/update.js';
+import { getPackageVersion } from './cli/package-info.js';
 import {
   offerSetupForInteractiveMissingConfig,
   printMissingConfigGuidance,
@@ -35,7 +40,23 @@ import { MeshEventBus } from './mesh/index.js';
 import { LanDiscovery } from './mesh/lan-discovery.js';
 import { setTracer } from './observability/tracing.js';
 import { redactSensitiveData } from './observability/redact.js';
+import { resolveCliDetailMode } from './cli/output.js';
 import type { DeviceSshConfig } from './tools/device-ssh.js';
+
+const parsedArgs = parseCliArgs(process.argv.slice(2));
+
+const originalEmitWarning = process.emitWarning.bind(process);
+process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
+  const message = typeof warning === 'string' ? warning : warning.message;
+  const warningType = typeof args[0] === 'string' ? args[0] : warning instanceof Error ? warning.name : '';
+  if (
+    warningType === 'ExperimentalWarning' &&
+    message.includes('SOCKS5 proxy support is experimental')
+  ) {
+    return;
+  }
+  return originalEmitWarning(warning as never, ...(args as never[]));
+}) as typeof process.emitWarning;
 
 const colorEnabled = (() => {
   if (process.argv.includes('--no-color')) return false;
@@ -56,8 +77,10 @@ export const c = {
   gray: (s: string) => (colorEnabled ? pc.gray(s) : s),
 };
 
-const argv = process.argv.slice(2);
-const safetyMode = resolveCliSafetyMode(argv);
+const argv = parsedArgs.rawArgv;
+if (parsedArgs.detailMode) process.env.DMOSS_CLI_DETAIL = parsedArgs.detailMode;
+if (parsedArgs.approvalPolicy === 'never') process.env.DMOSS_CLI_AUTO_APPROVE = '1';
+const safetyMode = parsedArgs.safetyModeOverride ?? resolveCliSafetyMode(argv);
 
 function resolveCliLogLevel(): LogLevel {
   if (argv.includes('--debug')) return 'debug';
@@ -82,8 +105,8 @@ if (process.env.DMOSS_TRACE === 'console' || process.env.DMOSS_TRACE === '1' || 
   setTracer('console');
 }
 
-if (argv.includes('--help') || argv.includes('-h')) displayHelp(c);
-if (argv.includes('--version') || argv.includes('-v')) displayVersion(c);
+if (parsedArgs.help) displayHelp(c);
+if (parsedArgs.version) displayVersion(c);
 
 async function setupMesh(agent: DmossAgent, deviceConfig: DeviceSshConfig | null) {
   const meshPort = parseInt(process.env.DMOSS_MESH_PORT || '9090', 10);
@@ -142,25 +165,53 @@ async function main() {
     try { execSync('chcp 65001', { stdio: 'ignore' }); } catch { /* best-effort UTF-8 */ }
   }
 
-  if (argv[0] === 'setup' || argv.includes('--setup')) {
+  if (parsedArgs.command === 'setup' || argv.includes('--setup')) {
     await runSetupWizard();
     return;
   }
-  if (argv[0] === 'auth' && argv[1] === 'status') {
+  if (parsedArgs.command === 'auth' && parsedArgs.commandArgs[0] === 'status') {
     console.error(renderAuthStatus());
     return;
   }
-  if (argv[0] === 'auth' && argv[1] === 'logout') {
+  if (parsedArgs.command === 'auth' && parsedArgs.commandArgs[0] === 'logout') {
     await runAuthLogout();
     return;
   }
-  if (argv[0] === 'config' && argv[1] === 'set') {
-    runConfigSet(argv.slice(2));
+  if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'set') {
+    runConfigSet(parsedArgs.commandArgs.slice(1));
     return;
   }
 
-  const oneShotMessage = process.argv.slice(2).filter((a) => !a.startsWith('-')).join(' ').trim();
-  if (!API_KEY) {
+  if (parsedArgs.configOverrides.workspace) {
+    loadEnvFromAncestors(parsedArgs.configOverrides.workspace);
+  }
+  const resolvedConfig = resolveCliConfig(process.env, loadConfigFile(), parsedArgs.configOverrides);
+  const workspace = resolvedConfig.workspace;
+  const model = resolvedConfig.model;
+  const baseUrl = resolvedConfig.baseUrl;
+  const runtimeDir = path.join(workspace, '.dmoss-runtime');
+
+  if (parsedArgs.command === 'doctor') {
+    console.error(await renderCliDoctor({
+      config: resolvedConfig,
+      configDir: resolveConfigDir(),
+      runtimeDir,
+      currentVersion: getPackageVersion(),
+      safetyMode,
+      detailMode: resolveCliDetailMode(argv),
+    }));
+    return;
+  }
+  if (parsedArgs.command === 'update') {
+    const code = await runCliUpdate({
+      configDir: resolveConfigDir(),
+      currentVersion: getPackageVersion(),
+    });
+    process.exit(code);
+  }
+
+  const oneShotMessage = parsedArgs.prompt;
+  if (!resolvedConfig.apiKey) {
     if (process.stdin.isTTY && !oneShotMessage) {
       await offerSetupForInteractiveMissingConfig();
       return;
@@ -169,34 +220,41 @@ async function main() {
     process.exit(1);
   }
 
-  const runtimeDir = path.join(WORKSPACE, '.dmoss-runtime');
   const sessionStore = new JsonlSessionStore({ dir: path.join(runtimeDir, 'sessions') });
+  const session = await resolveCliSession({
+    command: parsedArgs.command === 'resume' || parsedArgs.command === 'fork' ? parsedArgs.command : 'chat',
+    store: sessionStore,
+    sessionKey: parsedArgs.sessionKey,
+    useLast: parsedArgs.sessionLast,
+    forkSource: parsedArgs.forkSource,
+  });
+  if (session.notice) console.error(`[session] ${session.notice}`);
   const memoryManager = new MemoryManager(path.join(runtimeDir, 'memory'));
-  const skillLearner = new SkillLearner({ skillsDir: path.join(WORKSPACE, 'skills') });
-  const skillPipeline = new SkillPipeline({ workspaceDir: WORKSPACE, model: MODEL });
-  const workspaceMemory = new WorkspaceMemory({ workspaceDir: WORKSPACE });
+  const skillLearner = new SkillLearner({ skillsDir: path.join(workspace, 'skills') });
+  const skillPipeline = new SkillPipeline({ workspaceDir: workspace, model });
+  const workspaceMemory = new WorkspaceMemory({ workspaceDir: workspace });
   const wsContext = await workspaceMemory.loadContext();
   const wsPromptLayer = workspaceMemory.buildPromptLayer(wsContext);
   const extraPromptLayers: string[] = [];
   if (wsPromptLayer) extraPromptLayers.push(wsPromptLayer);
 
   const agent = new DmossAgent({
-    llmProvider: cliProvider, sessionStore, model: MODEL,
+    llmProvider: createCliProvider(resolvedConfig), sessionStore, model,
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
     hooks: {
-      enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: WORKSPACE }),
+      enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: workspace }),
       onBeforeToolExec: createCliToolApprovalHook(safetyMode),
     },
   });
   registerBuiltinTools(agent);
 
   if ((process.env.DMOSS_EXEC_BACKEND || 'local') === 'docker') {
-    agent.tools.register(createDockerExecTool({ workspaceDir: WORKSPACE, image: process.env.DMOSS_DOCKER_IMAGE }));
+    agent.tools.register(createDockerExecTool({ workspaceDir: workspace, image: process.env.DMOSS_DOCKER_IMAGE }));
   }
   for (const tool of createMemoryTools(memoryManager)) agent.tools.register(tool);
 
   const deviceConfig = getDeviceConfigFromEnv();
-  if (process.env.DMOSS_MESH_ENABLED === 'true' || argv.includes('--mesh')) {
+  if (process.env.DMOSS_MESH_ENABLED === 'true' || parsedArgs.mesh) {
     await setupMesh(agent, deviceConfig);
   }
 
@@ -207,27 +265,29 @@ async function main() {
     for (const tool of createRos2Tools(deviceConfig)) agent.tools.register(tool);
   }
 
-  if (oneShotMessage) { await runOneShot(agent, oneShotMessage, skillLearner); return; }
+  if (oneShotMessage) { await runOneShot(agent, oneShotMessage, skillLearner, { sessionKey: session.sessionKey }); return; }
 
   if (!process.stdin.isTTY) {
     let piped = '';
     for await (const chunk of process.stdin) piped += chunk;
-    if (piped.trim()) await runOneShot(agent, piped.trim(), skillLearner);
+    if (piped.trim()) await runOneShot(agent, piped.trim(), skillLearner, { sessionKey: session.sessionKey });
     return;
   }
   await runInteractive(agent, skillLearner, {
-    workspace: WORKSPACE,
+    workspace,
     runtimeDir,
     configDir: resolveConfigDir(),
-    baseUrl: BASE_URL,
+    baseUrl,
     execBackend: process.env.DMOSS_EXEC_BACKEND || 'local',
     safetyMode,
     dockerImage: process.env.DMOSS_DOCKER_IMAGE,
-    meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || argv.includes('--mesh'),
+    meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || parsedArgs.mesh,
+    sessionKey: session.sessionKey,
+    config: resolvedConfig,
     device: deviceConfig
       ? { host: deviceConfig.host, user: deviceConfig.user, port: deviceConfig.port }
       : null,
-  });
+  }, { sessionKey: session.sessionKey });
 }
 
 main().catch((err) => { console.error('Fatal:', err); process.exit(1); });

@@ -64,7 +64,7 @@ function inferRisk(toolNames: string[]): "low" | "medium" | "high" {
   if (/flash|delete|rm|format|danger|deploy|install|upgrade/i.test(joined))
     return "medium";
   if (
-    /device_|board_|exec|write|upload|studio_open|community_|forum_|mail|im/i.test(
+    /device_|board_|exec|write|upload|open_url|community_|forum_|mail|im/i.test(
       joined,
     )
   )
@@ -122,7 +122,7 @@ function buildDraftMarkdown(
   const name = `对话沉淀 ${titleFromText(userMessage)}`;
 
   const description = [
-    "从一次已完成的 RDK Studio 对话沉淀下来的可复用流程。",
+    "从一次已完成的宿主对话沉淀下来的可复用流程。",
     `适用于再次处理类似需求：${titleFromText(userMessage)}。`,
     "不适用：未验证完成、设备状态变化较大或用户要求重新探索的任务。",
   ].join(" ");

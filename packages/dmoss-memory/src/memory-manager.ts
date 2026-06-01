@@ -108,7 +108,7 @@ export function buildMemorySearchQueryVariants(query: string): string[] {
 
 /**
  * MemoryScope 四档分层，`workspace` 默认：
- * - `workspace` 绑当前 Studio workspace（由 Studio 侧 projectHash 提供，本地落盘为 scopeRef）
+ * - `workspace` binds the current host workspace (with host-provided projectHash persisted as scopeRef)
  * - `user` 跨 workspace 共享
  * - `device` 仅在当前选定 deviceId 下注入；`scopeRef` 存 deviceId
  * - `learning` 个人学习沉淀库（不进 system-prompt 默认注入；与 workspace/user/device 并列存储）
@@ -116,7 +116,7 @@ export function buildMemorySearchQueryVariants(query: string): string[] {
  */
 export type MemoryScope = 'workspace' | 'user' | 'device' | 'learning';
 
-/** Learning tab topic slugs (PATCH / UI whitelist). Order matches `aidock.memory.learning.topicLabels` lines in Studio i18n. */
+/** Learning tab topic slugs (PATCH / UI whitelist). Order matches the host UI topic labels. */
 export const LEARNING_TOPIC_SLUGS = [
   'usb',
   'ros',

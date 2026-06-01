@@ -1,10 +1,10 @@
 /**
- * Apply Patch core logic (filesystem-agnostic, aligned with Codex apply_patch).
+ * Apply Patch core logic (filesystem-agnostic).
  *
- * Splits Codex-compatible patch text into typed hunks and applies updates.
+ * Splits structured patch text into typed hunks and applies updates.
  * Concrete I/O (workspace vs device, etc.) is provided by the caller.
  *
- * Format reference (compatible with OpenAI apply_patch grammar):
+ * Format reference:
  *
  *   *** Begin Patch
  *   *** Update File: path/to/file.ts

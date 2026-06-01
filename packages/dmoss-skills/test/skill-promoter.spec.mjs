@@ -17,6 +17,7 @@ import {
   getCandidatesRoot,
 } from '../dist/skill-candidate-store.js';
 import { promoteSkillCandidate } from '../dist/skill-promoter.js';
+import { MOSS_SKILL_META_FILE } from '../dist/skill-metadata.js';
 
 const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmoss-promoter-'));
 
@@ -62,7 +63,7 @@ const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmoss-promoter-'));
 
   // Verify metadata file was written
   const skillDir = path.dirname(result.skillPath);
-  const metaPath = path.join(skillDir, '.rdkstudio-skill.json');
+  const metaPath = path.join(skillDir, MOSS_SKILL_META_FILE);
   const metaRaw = await fs.readFile(metaPath, 'utf-8');
   const meta = JSON.parse(metaRaw);
   assert.equal(meta.sourceKind, 'conversation');

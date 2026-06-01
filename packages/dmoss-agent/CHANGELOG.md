@@ -78,10 +78,10 @@ to help identify call sites that need migration.
 ### Added
 
 - **`MemoryScope`** — fourth tier `'learning'` (personal learning corpus; stored like other scopes,
-  excluded from default system-prompt memory injection on the Studio host — see harness task).
+  excluded from default system-prompt memory injection on the host — see harness task).
 - **`MemoryEntry.topic` / `MemoryEntry.starred`** — optional fields for learning-topic slug and starred flag;
   omit/undefined behaves as no topic / not starred on read paths.
-- **`LEARNING_TOPIC_SLUGS`** — exported fixed slug list aligned with Memory Drawer Studio UI whitelist.
+- **`LEARNING_TOPIC_SLUGS`** — exported fixed slug list aligned with the host memory UI whitelist.
   Source: **`2026-05-01-memory-learning-scope-add`**.
 
 ### Compatibility
@@ -138,7 +138,7 @@ to help identify call sites that need migration.
 
 - All additions are **non-breaking** (additive types, new exports, new helper).
 - `renderProviderErrorSurface` behavior is unchanged for backwards compatibility
-  with the CLI and microsoft Teams / 微信 / 飞书 channels. The Studio host
+  with the CLI and Microsoft Teams / 微信 / 飞书 channels. The product host
   consumes the structured surface object directly via SSE error payload + a
   forthcoming `ProviderErrorBlock` for clickable buttons; the markdown text
   rendering remains the fallback for non-rich channels.

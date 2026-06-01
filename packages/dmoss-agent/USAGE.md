@@ -8,7 +8,7 @@ D-Moss Agent is a vendor-neutral, open-source framework for building AI-powered 
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Your Product (e.g. Jetson DevKit, Pi IDE, Robot Studio)     │
+│  Your Product (e.g. Jetson DevKit, Pi IDE, Robot Lab)        │
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │  Product Layer                                         │  │
 │  │  • Custom tools (SSH, file upload, diagnostics)        │  │

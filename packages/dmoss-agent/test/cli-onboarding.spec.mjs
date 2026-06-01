@@ -50,6 +50,19 @@ const runtime = {
   safetyMode: 'workspace-write',
   meshEnabled: true,
   device: { host: '10.64.1.10', user: 'root', port: 22 },
+  config: {
+    provider: 'qwen',
+    providerSource: 'config',
+    apiKey: 'test-key',
+    apiKeySource: 'config',
+    model: 'qwen3.7-max',
+    modelSource: 'config',
+    baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
+    baseUrlSource: 'config',
+    workspace: '/tmp/dmoss-workspace',
+    workspaceSource: 'config',
+    configPath: '/tmp/dmoss-config/config.json',
+  },
 };
 
 const disconnectedRuntime = {
@@ -70,25 +83,25 @@ const agent = createAgent([
 {
   const welcome = renderCliWelcome(agent, runtime);
   assert.match(welcome, /D-Moss Agent/);
-  assert.match(welcome, /Model: qwen3\.7-max/);
-  assert.match(welcome, /\+-+\+/);
-  assert.match(welcome, /Workspace: read_file, write_file/);
-  assert.match(welcome, /Device SSH: device_resources/);
-  assert.match(welcome, /ROS2\/TROS: ros2_topic_list/);
-  assert.match(welcome, /Mesh: enabled/);
-  assert.match(welcome, /Try: \/tools \| \/status \| \/examples \| \/upgrade/);
+  assert.match(welcome, /model: qwen3\.7-max/);
+  assert.match(welcome, /session: cli/);
+  assert.doesNotMatch(welcome, /\+-+\+/);
+  assert.match(welcome, /capabilities: workspace 2/);
+  assert.match(welcome, /device root@10\.64\.1\.10:22/);
+  assert.match(welcome, /mesh on/);
+  assert.match(welcome, /commands.*\/help.*\/tools.*\/status/);
 }
 
 {
   const welcome = renderCliWelcome(agent, disconnectedRuntime);
-  assert.match(welcome, /Device: not connected - set DMOSS_DEVICE_HOST/);
+  assert.match(welcome, /device not configured/);
 }
 
 {
   const tools = renderCliTools(agent);
-  assert.match(tools, /\[tools\]/);
+  assert.match(tools, /Tools/);
   assert.match(tools, /Workspace/);
-  assert.match(tools, /- read_file: Read a file/);
+  assert.match(tools, /read_file Read a file/);
   assert.match(tools, /Memory/);
   assert.match(tools, /Device SSH/);
   assert.match(tools, /ROS2\/TROS/);
@@ -97,7 +110,9 @@ const agent = createAgent([
 
 {
   const status = renderCliStatus(agent, runtime);
-  assert.match(status, /provider: token-plan\.cn-beijing\.maas\.aliyuncs\.com/);
+  assert.match(status, /session: cli/);
+  assert.match(status, /provider: qwen/);
+  assert.match(status, /token-plan\.cn-beijing\.maas\.aliyuncs\.com/);
   assert.match(status, /device: root@10\.64\.1\.10:22/);
   assert.match(status, /safety: workspace-write/);
   assert.match(status, /tools: 7/);
@@ -138,6 +153,7 @@ const agent = createAgent([
 
 {
   const upgrade = renderCliUpgradeHelp();
+  assert.match(upgrade, /dmoss-agent update/);
   assert.match(upgrade, /npm i -g @rdk-moss\/agent@latest/);
   assert.match(upgrade, /npx -y @rdk-moss\/agent@latest/);
   assert.doesNotMatch(upgrade, /API key/);

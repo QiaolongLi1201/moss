@@ -132,7 +132,7 @@ const localSummarize = async ({ system, userPrompt, maxTokens }) => {
 
 console.log('[PASS] Remote Compaction: remote-first with local fallback');
 
-// 5. URL normalization matches RDK Studio /api/d-moss/compact routes
+// 5. URL normalization matches host /api/d-moss/compact routes
 {
   const a = resolveRemoteCompactUrls('http://localhost:5174/api/d-moss');
   assert.equal(a.compactUrl, 'http://localhost:5174/api/d-moss/compact');

@@ -130,7 +130,7 @@ async function collectEvents(agent, sessionKey, prompt) {
           {
             type: 'tool_use',
             id: 'open-call-1',
-            name: 'studio_open_url',
+            name: 'host_open_url',
             input: { url: 'https://example.com/page#section' },
           },
         ],
@@ -166,7 +166,7 @@ async function collectEvents(agent, sessionKey, prompt) {
     maxAgentTurns: 5,
   });
   agent.tools.register({
-    name: 'studio_open_url',
+    name: 'host_open_url',
     description: 'Open URL',
     inputSchema: {
       type: 'object',

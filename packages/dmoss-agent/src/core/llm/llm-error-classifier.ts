@@ -127,7 +127,7 @@ export function classifyLlmError(error: unknown): LlmErrorClassification {
 }
 
 /**
- * Exponential backoff for rate limits (aligned with Codex strategy):
+ * Exponential backoff for rate limits:
  * base_delay * 2^(attempt-1), capped at 60s. Also parses server-suggested
  * retry-after hints from the error message (e.g. "try again in 1.3s").
  *

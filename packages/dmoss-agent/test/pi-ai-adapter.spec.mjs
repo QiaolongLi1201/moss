@@ -127,7 +127,7 @@ import { PiAiFirstEventTimeoutError } from '../dist/provider/pi-ai-adapter.js';
         type: 'toolCall',
         toolCall: {
           id: 'call_1',
-          name: 'studio_open_url',
+          name: 'host_open_url',
           partialArgs: '{"url":"https://developer"',
         },
       };

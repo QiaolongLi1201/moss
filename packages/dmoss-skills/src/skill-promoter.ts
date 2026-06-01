@@ -20,6 +20,7 @@ import {
   validateSkillContent,
   type SkillValidationResult,
 } from "./skill-validation.js";
+import { MOSS_SKILL_META_FILE } from "./skill-metadata.js";
 
 async function atomicWriteFile(
   filePath: string,
@@ -56,7 +57,7 @@ export interface PromoteOptions {
  * 2. Read SKILL.draft.md (or generate one from evidence)
  * 3. Validate the SKILL.md content
  * 4. Write to `<workspaceDir>/skills/<skillId>/SKILL.md`
- * 5. Write `.rdkstudio-skill.json` with `status: "promoted"` + quality metadata
+ * 5. Write `.moss-skill.json` with `status: "promoted"` + quality metadata
  * 6. Remove the candidate
  */
 export async function promoteSkillCandidate(
@@ -105,7 +106,7 @@ export async function promoteSkillCandidate(
 
   await fs.promises.mkdir(skillDir, { recursive: true });
   const skillPath = path.join(skillDir, "SKILL.md");
-  const metaPath = path.join(skillDir, ".rdkstudio-skill.json");
+  const metaPath = path.join(skillDir, MOSS_SKILL_META_FILE);
   const promotedAt = Date.now();
 
   try {
@@ -176,7 +177,7 @@ function generateMinimalSkillMd(
 
   return `---
 name: 对话沉淀 ${evidence.userMessage.slice(0, 40)}
-description: 从一次 RDK Studio 对话沉淀的可复用流程
+description: 从一次宿主对话沉淀的可复用流程
 version: 1.0.0
 trigger: ${[evidence.candidateId, ...evidence.toolNames, "对话沉淀"].join(",")}
 risk: low

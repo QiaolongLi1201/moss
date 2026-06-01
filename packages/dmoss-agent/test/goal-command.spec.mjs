@@ -76,10 +76,10 @@ assert.equal(isGoalCommand('please /goal status'), false);
 assert.deepEqual(parseGoalCommand('hello'), { handled: false });
 assert.deepEqual(parseGoalCommand('/goal'), { handled: true, action: 'status' });
 assert.deepEqual(parseGoalCommand('/goal status'), { handled: true, action: 'status' });
-assert.deepEqual(parseGoalCommand('/goal set ship RDK Studio integration'), {
+assert.deepEqual(parseGoalCommand('/goal set ship host integration'), {
   handled: true,
   action: 'set',
-  objective: 'ship RDK Studio integration',
+  objective: 'ship host integration',
 });
 assert.deepEqual(parseGoalCommand('/goal pause waiting for review'), {
   handled: true,
@@ -163,10 +163,10 @@ assert.equal(
 const secondSet = await handleGoalCommand({
   agent,
   sessionKey,
-  input: '/goal set finish RDK Studio adapter',
+  input: '/goal set finish host adapter',
 });
 assertStructuredResult(secondSet, { handled: true, action: 'set', goal: true });
-assert.equal(secondSet.goal?.objective, 'finish RDK Studio adapter');
+assert.equal(secondSet.goal?.objective, 'finish host adapter');
 assert.equal(secondSet.replaced, true);
 assert.match(secondSet.message, /Goal replaced/);
 assert.match(formatGoalCommandResult(secondSet), /Goal replaced/);
@@ -174,7 +174,7 @@ assert.match(formatGoalCommandResult(secondSet), /Goal replaced/);
 const status = await handleGoalCommand({ agent, sessionKey, input: '/goal status' });
 assertStructuredResult(status, { handled: true, action: 'status', goal: true });
 assert.equal(status.action, 'status');
-assert.equal(status.goal?.objective, 'finish RDK Studio adapter');
+assert.equal(status.goal?.objective, 'finish host adapter');
 assert.match(status.message, /Current goal/);
 
 const paused = await handleGoalCommand({

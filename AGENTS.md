@@ -104,13 +104,13 @@ Use this before turning an architecture review into another repair loop. The poi
 
 Trigger this workflow when a task asks for architecture evaluation, roadmap cleanup, multi-agent review synthesis, "what else is wrong", "what should we fix next", or any broad refactor proposal.
 
-1. **Diverge first, then judge.** Generate candidate concerns from at least three viewpoints: Moss maintainer, current RDK Studio host, and a minimal future external host. Keep candidates as hypotheses until source or runtime evidence supports them.
+1. **Diverge first, then judge.** Generate candidate concerns from at least three viewpoints: Moss maintainer, current downstream host, and a minimal future external host. Keep candidates as hypotheses until source or runtime evidence supports them.
 2. **Classify the concern.**
    - A: blocks the current goal or a committed near-term roadmap item.
    - B: may block a plausible future direction, but no concrete host or user is blocked today.
    - C: is mostly taste, style, framework comparison, or "best practice" drift.
 3. **Apply the five rejection gates.** Downgrade the concern unless it survives all five:
-   - Roadmap gate: which committed Moss/RDK Studio goal does this block?
+   - Roadmap gate: which committed Moss/downstream-host goal does this block?
    - Host gate: which real host or integration path can hit it?
    - Cost gate: is the cost data loss, security risk, silent wrong behavior, leak, or hard evolution block?
    - Anti-speculation gate: does the fix add general resilience, or does it predict an uncommitted future?
@@ -122,7 +122,7 @@ Trigger this workflow when a task asks for architecture evaluation, roadmap clea
    - Do not fix: style-only concern, abstraction preference, or "mainstream frameworks do X" comparison without a Moss scenario.
 5. **Record rejected ideas.** A good assessment must include "do not touch" and "deferred until trigger" items. This prevents every later agent from rediscovering the same non-problems and extending the bug-hunting loop forever.
 
-When using multi-agent review, assign distinct roles instead of asking several agents the same broad question: maintainer simplicity, RDK Studio delivery risk, external-host onboarding, and contrarian "why not fix this" review. The coordinator owns the final call and must cite evidence for every fix-now item.
+When using multi-agent review, assign distinct roles instead of asking several agents the same broad question: maintainer simplicity, downstream-host delivery risk, external-host onboarding, and contrarian "why not fix this" review. The coordinator owns the final call and must cite evidence for every fix-now item.
 
 ## Bug Fix Discipline: Declare + Enforce + Test
 
@@ -180,7 +180,7 @@ These are mechanical steps that don't require experience — just discipline. Ru
    - Counter for total calls (so migration progress is measurable)
    - Target version in the JSDoc (e.g., "removed in 0.5.0")
 
-5. **Tool boundary awareness**: when a tool says "no callers found," that means "no callers found within the tool's search scope." Cross-repo callers, downstream consumers, and external scripts are invisible to CodeGraph/monorepo grep. Always `rg` the full workspace (e.g., `~/Desktop/RDK_Studio/`) before declaring something dead code.
+5. **Tool boundary awareness**: when a tool says "no callers found," that means "no callers found within the tool's search scope." Cross-repo callers, downstream consumers, and external scripts are invisible to CodeGraph/monorepo grep. Always `rg` the full workspace root before declaring something dead code.
 
 6. **Spec as checklist**: when working from a spec or assessment document, treat each action item as a checkbox. For each item: grep for the implementation, grep for the reader, grep for the test. Three greps per item, zero reliance on memory.
 

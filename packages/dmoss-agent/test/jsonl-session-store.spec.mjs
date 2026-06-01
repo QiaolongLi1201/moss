@@ -16,7 +16,7 @@ import { JsonlSessionStore } from '../dist/core/session/jsonl-session-store.js';
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmoss-jsonl-session-'));
 const store = new JsonlSessionStore({ dir });
-const sessionKey = 'local:studio:test-session';
+const sessionKey = 'local:host:test-session';
 
 const oldUser = { role: 'user', content: 'old user detail must stay on disk' };
 const oldAssistant = { role: 'assistant', content: 'old assistant detail must stay on disk' };
@@ -59,8 +59,8 @@ console.log('  [PASS] JsonlSessionStore replaceMessages is append-only and repla
 {
   const collisionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmoss-jsonl-session-collision-'));
   const collisionStore = new JsonlSessionStore({ dir: collisionDir });
-  const colonKey = 'local:studio:test-session';
-  const underscoreKey = 'local_studio_test-session';
+  const colonKey = 'local:host:test-session';
+  const underscoreKey = 'local_host_test-session';
 
   await collisionStore.appendMessage(colonKey, { role: 'user', content: 'colon session only' });
   await collisionStore.appendMessage(underscoreKey, { role: 'user', content: 'underscore session only' });
@@ -87,7 +87,7 @@ console.log('  [PASS] JsonlSessionStore replaceMessages is append-only and repla
 {
   const legacyDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmoss-jsonl-session-legacy-'));
   const legacyStore = new JsonlSessionStore({ dir: legacyDir });
-  const legacyKey = 'local_studio_legacy-session';
+  const legacyKey = 'local_host_legacy-session';
   const legacyFile = path.join(legacyDir, `${legacyKey.replace(/[^a-zA-Z0-9_-]/g, '_')}.jsonl`);
   await fs.writeFile(
     legacyFile,
@@ -101,7 +101,7 @@ console.log('  [PASS] JsonlSessionStore replaceMessages is append-only and repla
     'legacy lossy filenames remain readable by their exact listed key',
   );
 
-  const ambiguousKey = 'local:studio:legacy-session';
+  const ambiguousKey = 'local:host:legacy-session';
   assert.deepEqual(
     await legacyStore.loadMessages(ambiguousKey),
     [],

@@ -1,7 +1,7 @@
 /**
  * Provider 透明自动重试 helper —— `2026-05-01-moss-reliability-fallback-ux` G-2 引入。
  *
- * 用途：在 caller（例如 `pi-ai-adapter.ts` 的 stream 错误分支 / Studio 侧
+ * 用途：在 caller（例如 `pi-ai-adapter.ts` 的 stream 错误分支 / host 侧
  *  `ErrorClassifyBroker`）拿到一个 `ProviderErrorSurface` 后，根据
  *  `surface.retryable` 字段决定是否做**最多 1 次**透明重试，避免用户看到
  *  瞬时 `aborted_by_server` / `rate_limit` / `network` / `timeout` 报错。

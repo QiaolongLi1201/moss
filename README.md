@@ -1,10 +1,10 @@
 # Moss
 
-Moss is the host-neutral agent runtime extracted from RDK Studio. It is designed
+Moss is a host-neutral agent runtime extracted from a robotics product host. It is designed
 to evolve as an open-source package set while product hosts keep their own UI,
 credentials, device integrations, private services, and deployment policy.
 
-The practical goal is simple: a host such as RDK Studio should usually get a new
+The practical goal is simple: a downstream product host should usually get a new
 conversation experience by updating the Moss packages or the `external/moss`
 submodule. Host code changes should be needed only when the Host Adapter
 contract changes or when Moss explicitly requires new host capabilities.
@@ -23,7 +23,7 @@ from a product shell.
 | `@rdk-moss/teaching` | Teach-while-solve annotations and tool digest helpers |
 | `create-dmoss-app` | Minimal project scaffolding for external Moss users |
 
-RDK Studio is one host for Moss. It is not part of this repository.
+Product hosts are outside this repository.
 
 ## Architecture
 
@@ -134,13 +134,13 @@ Keep product-specific code in the host repository.
 
 Do not add:
 
-- RDK Studio `server/**`, `src/**`, or `electron/**` code.
+- Product-host `server/**`, `src/**`, or native-shell code.
 - Product configuration defaults, local sessions, logs, or generated desktop
   artifacts.
 - Supabase keys, model keys, image provider keys, device passwords, SSH
   credentials, or user account details.
-- Host-owned integrations such as OpenClaw deployment, Feishu, Weixin, desktop
-  IPC, Electron packaging, or RDK Studio settings UI.
+- Host-owned integrations such as board deployment, external chat channels,
+  desktop IPC, native packaging, or product settings UI.
 - Built `dist/` directories as tracked source.
 
 RDK-specific domain knowledge may live in a separate optional package. The Moss
@@ -185,8 +185,8 @@ npm run check:boundaries
 5. Run `evaluateMossHostCompatibility()` in CI before adopting a new Moss
    release.
 
-For RDK Studio, the host adapter lives in the RDK Studio repository and is
-validated by its `moss:update` flow.
+For a downstream product host, the host adapter lives in that host repository
+and should be validated by its own Moss upgrade flow.
 
 ## Version Policy
 
@@ -199,7 +199,7 @@ Moss follows semver for the public package surface.
 - Major releases may change required Host Adapter fields or required
   capabilities. Hosts must update their adapter before adopting the release.
 
-For RDK Studio specifically, a Moss patch or minor update should normally be a
+For downstream product hosts, a Moss patch or minor update should normally be a
 submodule/package update plus validation. Adapter changes are required only when
 `MOSS_HOST_ADAPTER_CONTRACT_VERSION` changes incompatibly or a release declares
 new required host capabilities, event schemas, or provider families.
@@ -216,5 +216,5 @@ At minimum, maintainers run:
 npm run verify
 ```
 
-If the release is intended for RDK Studio, update `external/moss` in the Studio
-repository and run the host upgrade verification there.
+If the release is intended for a downstream host, update its Moss dependency or
+vendored subtree and run the host upgrade verification there.

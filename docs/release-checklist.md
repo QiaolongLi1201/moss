@@ -51,19 +51,21 @@ Required host changes:
 - Add event schema ...
 ```
 
-## RDK Studio Consumption Check
+## Downstream Host Consumption Check
 
-When the release is intended to be consumed by RDK Studio, update the Studio
-repository submodule and run:
+When the release is intended to be consumed by a downstream host, update the
+host repository dependency or vendored subtree and run its Moss upgrade flow:
 
 ```bash
 npm run moss:update -- --ref <tag-or-commit>
 ```
 
-That flow updates `external/moss`, rebuilds workspace packages when needed, and
-runs the host adapter compatibility checks plus the Studio integration smoke.
+That flow should update the consumed Moss code, rebuild workspace packages when
+needed, and run the host adapter compatibility checks plus host integration
+smoke tests.
 
-For a verification-only pass after manually changing `external/moss`, run:
+For a verification-only pass after manually changing the consumed Moss code, run
+the downstream host's Moss verification command, for example:
 
 ```bash
 npm run moss:update:verify
@@ -84,7 +86,7 @@ Verification:
 Host adapter impact:
 - none | required
 
-RDK Studio consumption:
+Downstream host consumption:
 - npm run moss:update -- --ref <tag-or-commit>
 - result: pass | not run
 ```

@@ -15,7 +15,7 @@ function category(message) {
 }
 
 {
-  // Rate limit: exponential backoff aligned with Codex (base 2.5s, doubling each attempt).
+  // Rate limit: exponential backoff with a 2.5s base, doubling each attempt.
   const c = classifyLlmError(new Error('429 rate_limit: too many requests'));
   assert.equal(c.category, 'rate_limit');
   assert.equal(c.retryable, true);

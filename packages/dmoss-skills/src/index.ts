@@ -45,6 +45,10 @@ export {
 } from "./conversation-skill-learner.js";
 
 export {
+  MOSS_SKILL_META_FILE,
+} from "./skill-metadata.js";
+
+export {
   mergeSkillFrontmatterDefaults,
   validateSkillContent,
   generateSkillTemplate,

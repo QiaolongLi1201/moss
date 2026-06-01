@@ -7,15 +7,25 @@ export function dmossVerboseTools(): boolean {
   return resolveCliDetailMode() === 'verbose';
 }
 
-export async function runOneShot(agent: DmossAgent, message: string, learner?: SkillLearner) {
+export interface RunOneShotOptions {
+  sessionKey?: string;
+}
+
+export async function runOneShot(
+  agent: DmossAgent,
+  message: string,
+  learner?: SkillLearner,
+  options: RunOneShotOptions = {},
+) {
+  const sessionKey = options.sessionKey || 'cli';
   const renderer = createCliRunRenderer();
-  for await (const event of agent.streamChat('cli', message)) {
+  for await (const event of agent.streamChat(sessionKey, message)) {
     renderer.handle(event);
     if (event.type === 'done') {
       if (learner && event.result?.toolCalls && event.result.toolCalls.length >= 2) {
         try {
-          const messages = await agent.config.sessionStore.loadMessages('cli');
-          const skillPath = await learner.maybeLearnFromSession('cli', messages);
+          const messages = await agent.config.sessionStore.loadMessages(sessionKey);
+          const skillPath = await learner.maybeLearnFromSession(sessionKey, messages);
           if (skillPath && dmossVerboseTools()) {
             process.stderr.write(`\n[learned] Skill saved: ${path.basename(skillPath)}\n`);
           }

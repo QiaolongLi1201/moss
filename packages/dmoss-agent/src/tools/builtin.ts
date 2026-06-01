@@ -342,7 +342,7 @@ function restoreDominantLineEndings(content: string, original: string): string {
 export const applyPatchTool: Tool = {
   name: 'apply_patch',
   description:
-    'Apply a Codex-compatible patch within the workspace. Supports add, update, and delete hunks. ' +
+    'Apply a structured patch within the workspace. Supports add, update, and delete hunks. ' +
     'All hunks are parsed and conflict-checked before files are touched; applied files are restored on execution failure.',
   metadata: {
     sideEffectClass: 'local_write',

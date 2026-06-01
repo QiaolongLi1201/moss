@@ -2,7 +2,7 @@
  * Tracks tool_use IDs whose execution was aborted before a tool_result could be
  * written, so the next LLM call can satisfy provider tool round-trip contracts.
  *
- * Aligned with Codex: aborted tool outputs include structured metadata
+ * Aborted tool outputs include structured metadata
  * (exit_code, duration_seconds) so the model can reason about what happened
  * rather than just seeing a bare "aborted" string.
  */
@@ -61,8 +61,8 @@ export function notePendingAbortedToolCalls(
  * Build synthetic user messages (one combined message with all tool_result blocks)
  * and clear pending state for the session.
  *
- * Output format includes structured metadata (aligned with Codex's pattern)
- * so the model can understand the abort context.
+ * Output format includes structured metadata so the model can understand the
+ * abort context.
  */
 export function consumePendingAbortedToolSyntheticMessages(
   sessionKey: string,

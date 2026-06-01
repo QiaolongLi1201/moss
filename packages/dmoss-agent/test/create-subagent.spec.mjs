@@ -16,7 +16,7 @@
 
 import assert from 'node:assert/strict';
 import { createInMemoryMossAsyncTaskRegistry } from '@rdk-moss/core/contracts/async-task';
-import { createSubagentTool, subagentStatusTool } from '../dist/tools/create-subagent.js';
+import { createSubagentTool, subagentStatusTool, subagentStopTool } from '../dist/tools/create-subagent.js';
 import {
   SpawnProfileRegistry,
   resolveSpawnToolSet,
@@ -249,7 +249,90 @@ import {
   console.log('  [PASS] subagent_status reports missing registry and unknown task ids');
 }
 
-// ── Test 9: resolveSpawnToolSet filters by scope ──
+// ── Test 9: subagent_stop cancels a running background task ──
+{
+  const registry = createInMemoryMossAsyncTaskRegistry();
+  let capturedSignal = null;
+  const ctx = {
+    workspaceDir: '/tmp',
+    runId: 'parent-run-stop',
+    sessionKey: 'test',
+    asyncTaskRegistry: registry,
+    spawnSubagent: async (params) => {
+      capturedSignal = params.abortSignal;
+      await new Promise((resolve) => {
+        if (params.abortSignal.aborted) {
+          resolve();
+          return;
+        }
+        params.abortSignal.addEventListener('abort', resolve, { once: true });
+      });
+      return {
+        runId: 'child-stop',
+        sessionKey: 'subagent:child-stop',
+        summary: 'should not complete normally',
+        success: true,
+      };
+    },
+  };
+
+  const started = await createSubagentTool.execute({ task: 'stoppable task', background: true }, ctx);
+  const taskId = started.match(/\[Sub-agent task ([^\]]+)\]/)?.[1];
+  assert.ok(taskId, `expected task id in result: ${started}`);
+  const stopped = await subagentStopTool.execute({ taskId }, ctx);
+  assert.ok(stopped.includes('STOPPED'), stopped);
+  assert.ok(stopped.includes('status: cancelled'), stopped);
+  assert.ok(capturedSignal?.aborted, 'stop should abort the child run signal');
+  const status = await subagentStatusTool.execute({ taskId }, ctx);
+  assert.ok(status.includes('CANCELLED'), status);
+  assert.ok(status.includes('Task cancelled.'), status);
+  console.log('  [PASS] subagent_stop cancels a running background task');
+}
+
+// ── Test 10: subagent_stop handles missing registry and unknown tasks ──
+{
+  const missingRegistry = await subagentStopTool.execute(
+    { taskId: 'missing' },
+    { workspaceDir: '/tmp', sessionKey: 'test' },
+  );
+  assert.ok(missingRegistry.includes('not available'), missingRegistry);
+
+  const registry = createInMemoryMossAsyncTaskRegistry();
+  const unknownTask = await subagentStopTool.execute(
+    { taskId: 'unknown' },
+    { workspaceDir: '/tmp', sessionKey: 'test', asyncTaskRegistry: registry },
+  );
+  assert.ok(unknownTask.includes('not found'), unknownTask);
+  console.log('  [PASS] subagent_stop reports missing registry and unknown task ids');
+}
+
+// ── Test 11: subagent_stop reports terminal tasks without re-stopping them ──
+{
+  const registry = createInMemoryMossAsyncTaskRegistry();
+  const ctx = {
+    workspaceDir: '/tmp',
+    runId: 'parent-run-stop-completed',
+    sessionKey: 'test',
+    asyncTaskRegistry: registry,
+    spawnSubagent: async () => ({
+      runId: 'child-completed',
+      sessionKey: 'subagent:child-completed',
+      summary: 'already complete',
+      success: true,
+    }),
+  };
+
+  const started = await createSubagentTool.execute({ task: 'fast task', background: true }, ctx);
+  const taskId = started.match(/\[Sub-agent task ([^\]]+)\]/)?.[1];
+  assert.ok(taskId, `expected task id in result: ${started}`);
+  await registry.wait(taskId);
+  const stopped = await subagentStopTool.execute({ taskId }, ctx);
+  assert.ok(stopped.includes('ALREADY COMPLETED'), stopped);
+  assert.ok(stopped.includes('already complete'), stopped);
+  console.log('  [PASS] subagent_stop reports terminal tasks without re-stopping them');
+}
+
+// ── Test 12: resolveSpawnToolSet filters by scope ──
 {
   const exploreTools = resolveSpawnToolSet('explore');
   assert.ok(exploreTools, 'explore scope should return a tool set');
@@ -270,7 +353,7 @@ import {
   console.log('  [PASS] resolveSpawnToolSet filters correctly by scope');
 }
 
-// ── Test 10: SpawnProfileRegistry isolates host extensions per agent ──
+// ── Test 13: SpawnProfileRegistry isolates host extensions per agent ──
 {
   const registryA = new SpawnProfileRegistry();
   registryA.registerSpawnToolExtensions({ explore: ['host_a_status'] });
@@ -287,7 +370,7 @@ import {
   console.log('  [PASS] SpawnProfileRegistry isolates host extensions per instance');
 }
 
-// ── Test 11: buildSubagentPromptAddon injects scope constraints ──
+// ── Test 14: buildSubagentPromptAddon injects scope constraints ──
 {
   const exploreAddon = buildSubagentPromptAddon('explore');
   assert.ok(exploreAddon.length > 0, 'explore addon should not be empty');
@@ -311,7 +394,7 @@ import {
   console.log('  [PASS] buildSubagentPromptAddon injects correct constraints per scope');
 }
 
-// ── Test 12: Tool defaults scope, maxTurns, and timeoutMs ──
+// ── Test 15: Tool defaults scope, maxTurns, and timeoutMs ──
 {
   let capturedParams = null;
   const ctx = {
@@ -330,7 +413,7 @@ import {
   console.log('  [PASS] tool defaults scope, maxTurns, and timeoutMs');
 }
 
-// ── Test 13: Tool metadata is correct ──
+// ── Test 16: Tool metadata is correct ──
 {
   assert.equal(createSubagentTool.name, 'create_subagent');
   assert.equal(createSubagentTool.metadata?.sideEffectClass, 'subagent');
@@ -338,18 +421,23 @@ import {
   assert.equal(subagentStatusTool.name, 'subagent_status');
   assert.equal(subagentStatusTool.metadata?.sideEffectClass, 'readonly');
   assert.equal(subagentStatusTool.metadata?.planMode, 'allow');
+  assert.equal(subagentStopTool.name, 'subagent_stop');
+  assert.equal(subagentStopTool.metadata?.sideEffectClass, 'subagent');
+  assert.equal(subagentStopTool.metadata?.planMode, 'allow');
   assert.ok(createSubagentTool.inputSchema.properties.task, 'schema should have task property');
   assert.ok(createSubagentTool.inputSchema.properties.scope, 'schema should have scope property');
   assert.ok(createSubagentTool.inputSchema.properties.timeoutMs, 'schema should have timeoutMs property');
   assert.ok(createSubagentTool.inputSchema.properties.background, 'schema should have background property');
   assert.ok(subagentStatusTool.inputSchema.properties.taskId, 'status schema should have taskId property');
+  assert.ok(subagentStopTool.inputSchema.properties.taskId, 'stop schema should have taskId property');
   assert.ok(!createSubagentTool.inputSchema.properties.mode, 'schema should not have unimplemented mode property');
   assert.deepEqual(createSubagentTool.inputSchema.required, ['task']);
   assert.deepEqual(subagentStatusTool.inputSchema.required, ['taskId']);
+  assert.deepEqual(subagentStopTool.inputSchema.required, ['taskId']);
   console.log('  [PASS] tool metadata and schema are correct');
 }
 
-// ── Test 14: Scope filtering prevents recursion ──
+// ── Test 17: Scope filtering prevents recursion ──
 {
   // Simulate what the runner does: filter out create_subagent from any scope
   const allToolNames = ['read', 'write', 'exec', 'create_subagent', 'grep'];
@@ -372,4 +460,4 @@ import {
   console.log('  [PASS] recursion prevention: create_subagent filtered from all scopes');
 }
 
-console.log('\n[pass] create-subagent: 14/14');
+console.log('\n[pass] create-subagent: 17/17');

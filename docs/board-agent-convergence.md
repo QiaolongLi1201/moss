@@ -122,10 +122,12 @@ feel complete through Moss.
    being redirected to a separate OpenClaw mental model: inspect a machine,
    operate files, run commands, use a browser/web source, process attachments,
    call board tools, and report verified results.
-2. Moss has a runtime capability manifest that can declare and inspect the
-   actual tool surfaces available in a host: desktop/local, board/device,
+2. Moss has a runtime capability manifest that can declare, project, and inspect
+   the actual tool surfaces available in a host: desktop/local, board/device,
    browser/web, attachment/media, messaging/channel, task/subagent, memory/skill,
-   and OpenClaw channel.
+   and OpenClaw channel. Hosts must also expose the effective per-session tool
+   inventory so configured-but-unavailable tools have structured reasons instead
+   of disappearing silently.
 3. Moss can route tasks by capability, not by product name. When the same action
    can be done locally, on the board, or through OpenClaw, Moss chooses based on
    availability, safety, expected quality, and fallback behavior.
@@ -212,15 +214,16 @@ Deliverables:
 - Host prompts and capability manifests speak in Moss terms first, with
   OpenClaw named only as an implementation where useful for diagnostics.
 
-## Smallest Safe Next Implementation
+## Current Tool-Layer Implementation
 
-The next code change should start with capability coverage, not only subagent
-state. The smallest safe slice is to extend the host-adapter contract with a
-Moss-owned tool-surface taxonomy and manifest validation, then use it to map RDK
-the host's existing P0 tool buckets. That makes the desired OpenClaw-like coverage
-explicit and testable before wiring new execution behavior.
+The first safe slice started with capability coverage, not only subagent state.
+Moss now has a Moss-owned tool-surface taxonomy, static runtime projection, and
+effective per-session tool inventory. This borrows the strongest OpenClaw tool
+layer idea: distinguish the catalog a host declares from the tools that are
+actually usable right now, with reasons for policy, profile, runtime, and
+readiness filtering.
 
-Suggested first slice:
+Implemented slice:
 
 1. Extend `moss/packages/dmoss/src/contracts/host-adapter.ts` with stable tool
    surface/result-surface constants and optional fields on host tool
@@ -230,19 +233,27 @@ Suggested first slice:
    the optional fields.
 3. Add conformance coverage for all P0/P1 surface constants, missing-surface
    diagnostics, invalid-surface rejection, and legacy compatibility.
-4. Map a product host's existing P0 tool buckets into the taxonomy in the host
-   host adapter, then assert that the host manifest declares at least:
-   computer/workspace, computer/shell, board/device, robotics runtime,
-   browser/web, attachment/media, task/subagent, memory/skill, channel
-   messaging, and OpenClaw channel.
-5. Only after the inventory is verified, add the async task/subagent handle as
-   the first lifecycle primitive under the same capability model.
+4. Add `projectMossHostRuntimeCapabilities()` so compatibility checks and host
+   diagnostics read the same projected capability sets instead of rebuilding
+   hidden local sets.
+5. Add `buildMossHostEffectiveToolInventory()` so product hosts can expose a
+   session-scoped "available right now" view with notices for disabled,
+   policy-denied, profile-hidden, and readiness-blocked tools.
+6. Add async task/subagent handles as the first lifecycle primitive under the
+   same capability model.
 
 Current local progress:
 
 - Moss now declares and validates the tool-surface/result-surface taxonomy in
   the host-adapter contract, with conformance tests for invalid values,
   missing required surfaces, and legacy manifests that omit optional fields.
+- Moss now exposes a runtime capability projection helper and uses it from the
+  compatibility evaluator. This makes the tool-layer declarations observable by
+  code, not only by documentation.
+- Moss now exposes an effective tool inventory helper for the OpenClaw-inspired
+  "catalog vs available right now" split. It keeps OpenClaw-specific execution
+  out of core Moss while letting Studio explain why board, browser, attachment,
+  task, or OpenClaw-channel tools are not currently usable.
 - A product host now maps its declared D-Moss tool buckets into those surfaces in
   the host adapter implementation and verifies that the P0
   surface inventory is present.
@@ -263,9 +274,15 @@ Current local progress:
   immediately. This proves the contract is no longer only a declaration; the
   existing subagent tool can execute through it without changing the default
   synchronous user path.
-- The background path now has a matching `subagent_status` tool. It can inspect
-  a non-blocking status snapshot or wait for final completion, giving Moss the
-  first start/status/wait loop needed for OpenClaw-like long-running work.
+- The background path now has matching `subagent_status` and `subagent_stop`
+  tools. They can inspect a non-blocking status snapshot, wait for final
+  completion, or cancel a no-longer-useful child run, giving Moss the first
+  start/status/wait/control loop needed for OpenClaw-like long-running work.
+- The CLI TUI `!cmd` path is deliberately a local `computer_shell` surface. It
+  is useful for host-side diagnostics and repair loops, but it is not evidence
+  that `openclaw_channel` is connected. OpenClaw channel/backplane availability
+  must come from declared channel tools and effective inventory readiness such
+  as `openclaw_gateway_ready`.
 
 ## Things Not To Change Yet
 

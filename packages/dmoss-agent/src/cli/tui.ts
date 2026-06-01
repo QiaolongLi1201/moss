@@ -120,7 +120,7 @@ export function runLocalShellCommand(options: {
     const child = spawn(options.command, {
       cwd: options.cwd,
       shell: true,
-      env: { ...process.env, OPENCLAW_SHELL: 'dmoss-tui-local' },
+      env: { ...process.env, DMOSS_TUI_LOCAL_SHELL: '1' },
     });
     const cleanup = () => {
       options.signal?.removeEventListener('abort', onAbort);

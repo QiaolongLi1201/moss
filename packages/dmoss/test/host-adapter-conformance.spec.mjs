@@ -20,7 +20,9 @@ import {
   MOSS_HOST_TASK_SURFACE_CAPABILITIES,
   MOSS_HOST_TOOL_RESULT_SURFACES,
   MOSS_HOST_TOOL_SURFACE_KINDS,
+  buildMossHostEffectiveToolInventory,
   evaluateMossHostCompatibility,
+  projectMossHostRuntimeCapabilities,
 } from '../dist/contracts/host-adapter.js';
 
 /* ---- Shared fixture: a fully populated MossHostRuntimeManifest ---- */
@@ -1157,6 +1159,132 @@ total++;
   assert.ok(mutatingHealthToolResult.reasons[0].includes('healthTools must reference read-only tools'));
 
   console.log('  [PASS] tool surface primary/health tools must exist and match declared surfaces');
+  passed++;
+}
+
+/* ---- Test 44: runtime projection exposes the tool-layer capability sets Moss reads ---- */
+
+total++;
+{
+  const projection = projectMossHostRuntimeCapabilities(fixtureManifest);
+  assert.ok(projection.capabilityKinds.includes('llm_provider'));
+  assert.ok(projection.toolSurfaces.includes('openclaw_channel'));
+  assert.ok(projection.toolSurfaceDetails.includes('board_device'));
+  assert.deepEqual(projection.taskSurfaceCapabilities, [
+    'start',
+    'status',
+    'wait',
+    'completion',
+    'control',
+  ]);
+  assert.deepEqual(projection.channelBackplaneCapabilities, [
+    'status',
+    'health',
+    'chat',
+    'delegate',
+    'configure',
+    'pairing',
+    'skills',
+    'logs',
+    'fleet',
+  ]);
+  assert.ok(projection.eventSchemas.includes('agent.action'));
+  assert.ok(projection.providerFamilies.includes('claude'));
+
+  const invalidTaskManifest = {
+    ...fixtureManifest,
+    tools: [
+      ...fixtureManifest.tools,
+      {
+        name: 'host_task_status_wrong_surface',
+        boundaryId: 'host-task',
+        sideEffectClass: 'readonly',
+        approval: 'not_required',
+        source: 'host',
+        surface: 'board_device',
+        resultSurface: 'background_task',
+      },
+    ],
+  };
+  const invalidProjection = projectMossHostRuntimeCapabilities(invalidTaskManifest);
+  assert.deepEqual(
+    invalidProjection.taskSurfaceCapabilities,
+    projection.taskSurfaceCapabilities,
+    'task lifecycle capabilities are scoped to task_subagent tools only',
+  );
+  console.log('  [PASS] runtime projection exposes the tool-layer capability sets Moss reads');
+  passed++;
+}
+
+/* ---- Test 45: effective tool inventory reports declared-but-unavailable tools ---- */
+
+total++;
+{
+  const inventory = buildMossHostEffectiveToolInventory(fixtureManifest, {
+    readySignals: ['device_selected', 'device_reachable'],
+    disabledTools: ['read_attachment'],
+    policyDeniedTools: ['board_openclaw_delegate'],
+    profileHiddenTools: ['web_fetch', 'missing_runtime_tool'],
+  });
+
+  assert.equal(inventory.valid, true);
+  const byName = new Map(inventory.tools.map((tool) => [tool.name, tool]));
+  assert.equal(byName.get('device_exec').effective, true);
+  assert.equal(byName.get('read_attachment').effective, false);
+  assert.equal(
+    byName.get('read_attachment').unavailableReasons[0].code,
+    'tool_disabled_by_runtime',
+  );
+  assert.equal(byName.get('web_fetch').effective, false);
+  assert.equal(byName.get('web_fetch').unavailableReasons[0].code, 'tool_hidden_by_profile');
+  assert.equal(byName.get('board_openclaw_status').effective, false);
+  assert.ok(
+    byName.get('board_openclaw_status').unavailableReasons.some(
+      (notice) =>
+        notice.code === 'surface_readiness_missing' &&
+        notice.readinessSignal === 'openclaw_gateway_ready',
+    ),
+  );
+  assert.ok(
+    byName.get('board_openclaw_delegate').unavailableReasons.some(
+      (notice) => notice.code === 'tool_denied_by_policy',
+    ),
+  );
+
+  const surfacesByKind = new Map(inventory.toolSurfaces.map((surface) => [surface.kind, surface]));
+  assert.equal(surfacesByKind.get('board_device').effective, true);
+  assert.equal(surfacesByKind.get('openclaw_channel').effective, false);
+  assert.ok(
+    surfacesByKind.get('openclaw_channel').notices.some(
+      (notice) => notice.code === 'surface_without_effective_tools',
+    ),
+  );
+  assert.ok(
+    inventory.notices.some(
+      (notice) => notice.code === 'runtime_unknown_tool' && notice.tool === 'missing_runtime_tool',
+    ),
+  );
+
+  const staticInventory = buildMossHostEffectiveToolInventory(fixtureManifest);
+  assert.equal(staticInventory.valid, true);
+  assert.ok(staticInventory.tools.every((tool) => tool.effective));
+
+  const legacyManifest = {
+    ...fixtureManifest,
+    toolSurfaces: undefined,
+    capabilityCoverage: undefined,
+  };
+  const legacyInventory = buildMossHostEffectiveToolInventory(legacyManifest);
+  const legacySurfaces = new Map(legacyInventory.toolSurfaces.map((surface) => [surface.kind, surface]));
+  assert.equal(legacyInventory.valid, true);
+  assert.ok(legacySurfaces.get('computer_workspace').effective);
+  assert.deepEqual(legacySurfaces.get('computer_workspace').effectiveTools, ['read_file']);
+
+  const invalidInventory = buildMossHostEffectiveToolInventory({ ...fixtureManifest, tools: undefined });
+  assert.equal(invalidInventory.valid, false);
+  assert.equal(invalidInventory.tools.length, 0);
+  assert.equal(invalidInventory.notices[0].code, 'manifest_invalid');
+  console.log('  [PASS] effective tool inventory reports declared-but-unavailable tools');
   passed++;
 }
 

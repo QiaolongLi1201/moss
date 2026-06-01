@@ -146,6 +146,30 @@ export const MOSS_HOST_CAPABILITY_COVERAGE_STATUSES = [
 export type MossHostCapabilityCoverageStatus =
   (typeof MOSS_HOST_CAPABILITY_COVERAGE_STATUSES)[number];
 
+export const MOSS_HOST_EFFECTIVE_TOOL_NOTICE_CODES = [
+  'manifest_invalid',
+  'runtime_unknown_tool',
+  'surface_readiness_missing',
+  'surface_without_effective_tools',
+  'tool_disabled_by_runtime',
+  'tool_denied_by_policy',
+  'tool_hidden_by_profile',
+] as const;
+
+export type MossHostEffectiveToolNoticeCode =
+  (typeof MOSS_HOST_EFFECTIVE_TOOL_NOTICE_CODES)[number];
+
+export type MossHostEffectiveToolNoticeSeverity = 'info' | 'warning' | 'error';
+
+export interface MossHostEffectiveToolNotice {
+  code: MossHostEffectiveToolNoticeCode;
+  severity: MossHostEffectiveToolNoticeSeverity;
+  message: string;
+  tool?: string;
+  surface?: MossHostToolSurfaceKind;
+  readinessSignal?: MossHostToolSurfaceReadinessSignal;
+}
+
 export const MOSS_HOST_CAPABILITY_COVERAGE_STATUS_DEFINITIONS = {
   covered:
     'The host registers the named tools and may advertise the user outcome without caveats.',
@@ -369,6 +393,53 @@ export interface MossHostCompatibilityReport {
   missingProviderFamilies: readonly string[];
 }
 
+export interface MossHostEffectiveToolInventoryContext {
+  /**
+   * Readiness signals that are true for the current session/device/channel.
+   *
+   * When omitted, Moss builds a static projection from declarations only. When
+   * present, surface readiness is enforced so product UIs can explain why a
+   * declared board, browser, attachment, task, or OpenClaw backplane surface is
+   * unavailable right now.
+   */
+  readySignals?: readonly MossHostToolSurfaceReadinessSignal[];
+  /** Tools present in the manifest but temporarily unavailable at runtime. */
+  disabledTools?: readonly string[];
+  /** Tools blocked by policy for this user/session. */
+  policyDeniedTools?: readonly string[];
+  /** Tools hidden by the active tool profile or mode. */
+  profileHiddenTools?: readonly string[];
+}
+
+export interface MossHostEffectiveToolRef extends MossHostToolRef {
+  effective: boolean;
+  unavailableReasons: readonly MossHostEffectiveToolNotice[];
+}
+
+export interface MossHostEffectiveToolSurfaceRef extends MossHostToolSurfaceRef {
+  effective: boolean;
+  effectiveTools: readonly string[];
+  unavailableTools: readonly string[];
+  notices: readonly MossHostEffectiveToolNotice[];
+}
+
+export interface MossHostEffectiveToolInventory {
+  valid: boolean;
+  notices: readonly MossHostEffectiveToolNotice[];
+  tools: readonly MossHostEffectiveToolRef[];
+  toolSurfaces: readonly MossHostEffectiveToolSurfaceRef[];
+}
+
+export interface MossHostRuntimeCapabilityProjection {
+  capabilityKinds: readonly MossHostCapabilityKind[];
+  toolSurfaces: readonly MossHostToolSurfaceKind[];
+  toolSurfaceDetails: readonly MossHostToolSurfaceKind[];
+  taskSurfaceCapabilities: readonly MossHostTaskSurfaceCapability[];
+  channelBackplaneCapabilities: readonly MossHostChannelBackplaneCapability[];
+  eventSchemas: readonly string[];
+  providerFamilies: readonly string[];
+}
+
 function parseSemver(value: string): [number, number, number] | null {
   const match = value.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
   if (!match) return null;
@@ -396,6 +467,10 @@ function isStringArray(value: unknown): value is readonly string[] {
 
 function isOneOf<const T extends readonly string[]>(value: unknown, allowed: T): value is T[number] {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value);
+}
+
+function unique<T>(values: readonly T[]): readonly T[] {
+  return [...new Set(values)];
 }
 
 function validateMossCapabilityCoverageShape(
@@ -766,6 +841,236 @@ function emptyFailureReport(
   };
 }
 
+export function projectMossHostRuntimeCapabilities(
+  manifest: MossHostRuntimeManifest,
+): MossHostRuntimeCapabilityProjection {
+  return {
+    capabilityKinds: unique(manifest.capabilities.map((capability) => capability.kind)),
+    toolSurfaces: unique(
+      manifest.tools.flatMap((tool) => (tool.surface ? [tool.surface] : [])),
+    ),
+    toolSurfaceDetails: unique((manifest.toolSurfaces ?? []).map((surface) => surface.kind)),
+    taskSurfaceCapabilities: unique(
+      manifest.tools
+        .filter((tool) => tool.surface === 'task_subagent')
+        .flatMap((tool) => [
+          ...(tool.taskSurfaceCapability ? [tool.taskSurfaceCapability] : []),
+          ...(tool.taskSurfaceCapabilities ?? []),
+        ]),
+    ),
+    channelBackplaneCapabilities: unique(
+      manifest.tools
+        .filter((tool) => tool.surface === 'openclaw_channel')
+        .flatMap((tool) => [
+          ...(tool.channelBackplaneCapability ? [tool.channelBackplaneCapability] : []),
+          ...(tool.channelBackplaneCapabilities ?? []),
+        ]),
+    ),
+    eventSchemas: unique(manifest.eventSinks.flatMap((sink) => [...sink.schemas])),
+    providerFamilies: unique(manifest.providers.flatMap((provider) => [...provider.families])),
+  };
+}
+
+function createEffectiveNotice(params: {
+  code: MossHostEffectiveToolNoticeCode;
+  severity: MossHostEffectiveToolNoticeSeverity;
+  message: string;
+  tool?: string;
+  surface?: MossHostToolSurfaceKind;
+  readinessSignal?: MossHostToolSurfaceReadinessSignal;
+}): MossHostEffectiveToolNotice {
+  return { ...params };
+}
+
+function collectToolRuntimeNotices(
+  tool: MossHostToolRef,
+  context: MossHostEffectiveToolInventoryContext,
+): MossHostEffectiveToolNotice[] {
+  const notices: MossHostEffectiveToolNotice[] = [];
+  const surface = tool.surface;
+
+  if (new Set(context.disabledTools ?? []).has(tool.name)) {
+    notices.push(createEffectiveNotice({
+      code: 'tool_disabled_by_runtime',
+      severity: 'warning',
+      message: `tool is declared but disabled by the current host runtime: ${tool.name}`,
+      tool: tool.name,
+      surface,
+    }));
+  }
+  if (new Set(context.policyDeniedTools ?? []).has(tool.name)) {
+    notices.push(createEffectiveNotice({
+      code: 'tool_denied_by_policy',
+      severity: 'warning',
+      message: `tool is declared but denied by policy for this session: ${tool.name}`,
+      tool: tool.name,
+      surface,
+    }));
+  }
+  if (new Set(context.profileHiddenTools ?? []).has(tool.name)) {
+    notices.push(createEffectiveNotice({
+      code: 'tool_hidden_by_profile',
+      severity: 'info',
+      message: `tool is declared but hidden by the active tool profile: ${tool.name}`,
+      tool: tool.name,
+      surface,
+    }));
+  }
+
+  return notices;
+}
+
+function missingReadinessSignals(
+  surface: MossHostToolSurfaceRef,
+  context: MossHostEffectiveToolInventoryContext,
+): MossHostToolSurfaceReadinessSignal[] {
+  if (context.readySignals === undefined) return [];
+  const readySignals = new Set(context.readySignals);
+  return surface.readiness.filter(
+    (signal) =>
+      signal !== 'always_available' &&
+      signal !== 'approval_required' &&
+      !readySignals.has(signal),
+  );
+}
+
+function synthesizeToolSurfaces(
+  manifest: MossHostRuntimeManifest,
+): readonly MossHostToolSurfaceRef[] {
+  const declaredSurfaces = new Set((manifest.toolSurfaces ?? []).map((surface) => surface.kind));
+  const synthesized = MOSS_HOST_TOOL_SURFACE_KINDS
+    .filter((kind) => !declaredSurfaces.has(kind))
+    .map((kind): MossHostToolSurfaceRef | null => {
+      const tools = manifest.tools.filter((tool) => tool.surface === kind).map((tool) => tool.name);
+      if (tools.length === 0) return null;
+      return {
+        kind,
+        summary: `Host-declared ${kind} tool surface.`,
+        readiness: ['always_available'],
+        progressMode: 'none',
+        primaryTools: tools,
+      };
+    })
+    .filter((surface): surface is MossHostToolSurfaceRef => surface !== null);
+
+  return [...(manifest.toolSurfaces ?? []), ...synthesized];
+}
+
+function collectUnknownRuntimeToolNotices(
+  manifest: MossHostRuntimeManifest,
+  context: MossHostEffectiveToolInventoryContext,
+): MossHostEffectiveToolNotice[] {
+  const knownTools = new Set(manifest.tools.map((tool) => tool.name));
+  const runtimeToolNames = [
+    ...(context.disabledTools ?? []),
+    ...(context.policyDeniedTools ?? []),
+    ...(context.profileHiddenTools ?? []),
+  ];
+  const unknownTools = [...new Set(runtimeToolNames)].filter((tool) => !knownTools.has(tool));
+  return unknownTools.map((tool) => createEffectiveNotice({
+    code: 'runtime_unknown_tool',
+    severity: 'warning',
+    message: `runtime state references a tool that is not declared in the host manifest: ${tool}`,
+    tool,
+  }));
+}
+
+export function buildMossHostEffectiveToolInventory(
+  manifest: unknown,
+  context: MossHostEffectiveToolInventoryContext = {},
+): MossHostEffectiveToolInventory {
+  const compatibility = evaluateMossHostCompatibility(manifest);
+  if (!compatibility.compatible) {
+    const notices = compatibility.reasons.map((reason) => createEffectiveNotice({
+      code: 'manifest_invalid',
+      severity: 'error',
+      message: reason,
+    }));
+    return {
+      valid: false,
+      notices,
+      tools: [],
+      toolSurfaces: [],
+    };
+  }
+
+  const runtimeManifest = manifest as MossHostRuntimeManifest;
+  const notices: MossHostEffectiveToolNotice[] = [
+    ...collectUnknownRuntimeToolNotices(runtimeManifest, context),
+  ];
+  const surfaceDetails = synthesizeToolSurfaces(runtimeManifest);
+  const surfaceReadinessNotices = new Map<MossHostToolSurfaceKind, MossHostEffectiveToolNotice[]>();
+
+  for (const surface of surfaceDetails) {
+    const missingSignals = missingReadinessSignals(surface, context);
+    surfaceReadinessNotices.set(
+      surface.kind,
+      missingSignals.map((signal) => createEffectiveNotice({
+        code: 'surface_readiness_missing',
+        severity: 'warning',
+        message: `tool surface is declared but not ready for this session: ${surface.kind} requires ${signal}`,
+        surface: surface.kind,
+        readinessSignal: signal,
+      })),
+    );
+  }
+
+  const effectiveTools = runtimeManifest.tools.map((tool): MossHostEffectiveToolRef => {
+    const runtimeNotices = collectToolRuntimeNotices(tool, context);
+    const readinessNotices = tool.surface
+      ? surfaceReadinessNotices.get(tool.surface) ?? []
+      : [];
+    const unavailableReasons = [...runtimeNotices, ...readinessNotices];
+    return {
+      ...tool,
+      effective: unavailableReasons.length === 0,
+      unavailableReasons,
+    };
+  });
+
+  const effectiveToolsByName = new Map(effectiveTools.map((tool) => [tool.name, tool]));
+  const effectiveSurfaces = surfaceDetails.map((surface): MossHostEffectiveToolSurfaceRef => {
+    const toolsForSurface = runtimeManifest.tools
+      .filter((tool) => tool.surface === surface.kind)
+      .map((tool) => tool.name);
+    const primaryToolNames = surface.primaryTools.length > 0 ? surface.primaryTools : toolsForSurface;
+    const effectiveToolNames = primaryToolNames.filter(
+      (toolName) => effectiveToolsByName.get(toolName)?.effective,
+    );
+    const unavailableToolNames = primaryToolNames.filter(
+      (toolName) => !effectiveToolsByName.get(toolName)?.effective,
+    );
+    const surfaceNotices = [...(surfaceReadinessNotices.get(surface.kind) ?? [])];
+    if (primaryToolNames.length > 0 && effectiveToolNames.length === 0) {
+      surfaceNotices.push(createEffectiveNotice({
+        code: 'surface_without_effective_tools',
+        severity: 'warning',
+        message: `tool surface has no effective primary tools in this session: ${surface.kind}`,
+        surface: surface.kind,
+      }));
+    }
+    notices.push(...surfaceNotices);
+    return {
+      ...surface,
+      effective: surfaceNotices.length === 0 && effectiveToolNames.length > 0,
+      effectiveTools: effectiveToolNames,
+      unavailableTools: unavailableToolNames,
+      notices: surfaceNotices,
+    };
+  });
+
+  for (const tool of effectiveTools) {
+    notices.push(...tool.unavailableReasons);
+  }
+
+  return {
+    valid: true,
+    notices,
+    tools: effectiveTools,
+    toolSurfaces: effectiveSurfaces,
+  };
+}
+
 export function evaluateMossHostCompatibility(
   manifest: unknown,
   requirement: MossHostCompatibilityRequirement = {},
@@ -779,6 +1084,7 @@ export function evaluateMossHostCompatibility(
   }
 
   const runtimeManifest = manifest as MossHostRuntimeManifest;
+  const projection = projectMossHostRuntimeCapabilities(runtimeManifest);
 
   if (requirement.contractVersion !== undefined) {
     if (runtimeManifest.contractVersion !== requirement.contractVersion) {
@@ -830,9 +1136,7 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const capabilityKinds = new Set(
-    runtimeManifest.capabilities.map((capability) => capability.kind),
-  );
+  const capabilityKinds = new Set(projection.capabilityKinds);
   const missingCapabilities = (requirement.requiredCapabilities ?? []).filter(
     (kind) => !capabilityKinds.has(kind),
   );
@@ -852,9 +1156,7 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const toolSurfaces = new Set(
-    runtimeManifest.tools.flatMap((tool) => (tool.surface ? [tool.surface] : [])),
-  );
+  const toolSurfaces = new Set(projection.toolSurfaces);
   const missingToolSurfaces = (requirement.requiredToolSurfaces ?? []).filter(
     (surface) => !toolSurfaces.has(surface),
   );
@@ -874,9 +1176,7 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const toolSurfaceDetails = new Set(
-    (runtimeManifest.toolSurfaces ?? []).map((surface) => surface.kind),
-  );
+  const toolSurfaceDetails = new Set(projection.toolSurfaceDetails);
   const missingToolSurfaceDetails = (requirement.requiredToolSurfaceDetails ?? []).filter(
     (surface) => !toolSurfaceDetails.has(surface),
   );
@@ -896,14 +1196,7 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const taskSurfaceCapabilities = new Set(
-    runtimeManifest.tools
-      .filter((tool) => tool.surface === 'task_subagent')
-      .flatMap((tool) => [
-        ...(tool.taskSurfaceCapability ? [tool.taskSurfaceCapability] : []),
-        ...(tool.taskSurfaceCapabilities ?? []),
-      ]),
-  );
+  const taskSurfaceCapabilities = new Set(projection.taskSurfaceCapabilities);
   const missingTaskSurfaceCapabilities = (requirement.requiredTaskSurfaceCapabilities ?? []).filter(
     (capability) => !taskSurfaceCapabilities.has(capability),
   );
@@ -923,14 +1216,7 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const channelBackplaneCapabilities = new Set(
-    runtimeManifest.tools
-      .filter((tool) => tool.surface === 'openclaw_channel')
-      .flatMap((tool) => [
-        ...(tool.channelBackplaneCapability ? [tool.channelBackplaneCapability] : []),
-        ...(tool.channelBackplaneCapabilities ?? []),
-      ]),
-  );
+  const channelBackplaneCapabilities = new Set(projection.channelBackplaneCapabilities);
   const missingChannelBackplaneCapabilities = (
     requirement.requiredChannelBackplaneCapabilities ?? []
   ).filter((capability) => !channelBackplaneCapabilities.has(capability));
@@ -952,7 +1238,7 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const eventSchemas = new Set(runtimeManifest.eventSinks.flatMap((sink) => [...sink.schemas]));
+  const eventSchemas = new Set(projection.eventSchemas);
   const missingEventSchemas = (requirement.requiredEventSchemas ?? []).filter(
     (schema) => !eventSchemas.has(schema),
   );
@@ -972,9 +1258,7 @@ export function evaluateMossHostCompatibility(
     };
   }
 
-  const providerFamilies = new Set(
-    runtimeManifest.providers.flatMap((provider) => [...provider.families]),
-  );
+  const providerFamilies = new Set(projection.providerFamilies);
   const missingProviderFamilies = (requirement.requiredProviderFamilies ?? []).filter(
     (family) => !providerFamilies.has(family),
   );

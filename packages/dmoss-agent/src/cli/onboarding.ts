@@ -110,7 +110,13 @@ function classifyTool(tool: Tool): string {
   ) {
     return 'workspace';
   }
-  if (tool.name === 'create_subagent') return 'agent';
+  if (
+    tool.name === 'create_subagent' ||
+    tool.name === 'subagent_status' ||
+    tool.name === 'subagent_stop'
+  ) {
+    return 'agent';
+  }
   return 'other';
 }
 

@@ -107,4 +107,13 @@ assert.match(footerHint('running'), /\/stop cancel/);
   assert.equal(streamed, 'tui-ok');
 }
 
+{
+  const result = await runLocalShellCommand({
+    command: "node -e 'process.stdout.write((process.env.DMOSS_TUI_LOCAL_SHELL || \"\") + \":\" + (process.env.OPENCLAW_SHELL || \"\"))'",
+    cwd: process.cwd(),
+  });
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.output, '1:');
+}
+
 console.log('[PASS] CLI TUI sanitizes output and controls local shell execution');

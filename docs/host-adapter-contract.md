@@ -128,18 +128,24 @@ memory_write, runtime_state, subagent
 ### Tool Surfaces (10)
 
 Host Adapter v1 now has an optional `tools[].surface` field so Moss can evaluate
-OpenClaw-style capability coverage at the level users experience. This is
-backward compatible: older manifests without `surface` still validate, while
-newer Moss requirements can ask for specific surfaces through
-`requiredToolSurfaces`. When a host does provide `surface`, the value must be
-one of the known strings below; unknown strings make the manifest invalid so a
-misspelled capability does not degrade into a vague missing-capability report.
+user-visible capability coverage inspired by OpenClaw's tool layer without
+copying OpenClaw's product shape. This is backward compatible: older manifests
+without `surface` still validate, while newer Moss requirements can ask for
+specific surfaces through `requiredToolSurfaces`. When a host does provide
+`surface`, the value must be one of the known strings below; unknown strings make
+the manifest invalid so a misspelled capability does not degrade into a vague
+missing-capability report.
 
 ```
 computer_workspace, computer_shell, browser_web, attachment_media,
 board_device, robotics_runtime, channel_messaging, task_subagent,
 memory_skill, openclaw_channel
 ```
+
+`openclaw_channel` is reserved for actual channel/backplane tools such as
+gateway status, health checks, delegation, pairing, skills, logs, and fleet
+dispatch. A local TUI shell command remains `computer_shell`; it is not an
+OpenClaw gateway just because the workflow was inspired by OpenClaw.
 
 ### Result Surfaces (7)
 
@@ -151,6 +157,32 @@ below.
 assistant_text, timeline_summary, terminal_output, artifact, media_or_file,
 channel_delivery, background_task
 ```
+
+### Runtime Projection And Effective Inventory
+
+`projectMossHostRuntimeCapabilities(manifest)` returns the capability sets that
+Moss actually reads from the manifest: capability kinds, tool surfaces, surface
+details, task lifecycle capabilities, channel/backplane capabilities, event
+schemas, and provider families. `evaluateMossHostCompatibility()` uses this
+projection, so a declaration is not merely documentation.
+
+`buildMossHostEffectiveToolInventory(manifest, context)` builds the session-level
+"available right now" view. It starts from the declared manifest, then applies
+runtime inputs such as:
+
+```ts
+{
+  readySignals: ['device_selected', 'device_reachable'],
+  disabledTools: ['read_attachment'],
+  policyDeniedTools: ['board_openclaw_delegate'],
+  profileHiddenTools: ['web_fetch'],
+}
+```
+
+The result keeps each declared tool visible and annotates unavailable tools with
+structured notices such as `tool_denied_by_policy`, `tool_hidden_by_profile`,
+`tool_disabled_by_runtime`, or `surface_readiness_missing`. Product UIs should
+render these notices in diagnostics instead of hiding configured tools silently.
 
 ### Semver Handling
 

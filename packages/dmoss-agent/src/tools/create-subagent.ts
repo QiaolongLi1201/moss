@@ -26,9 +26,19 @@ interface SubagentStatusInput {
   wait?: boolean;
 }
 
+interface SubagentStopInput {
+  taskId: string;
+}
+
 const DEFAULT_SUBAGENT_TIMEOUT_MS = 120_000;
 const MIN_SUBAGENT_TIMEOUT_MS = 100;
 const MAX_SUBAGENT_TIMEOUT_MS = 30 * 60_000;
+const TERMINAL_SUBAGENT_TASK_STATUSES = new Set([
+  'completed',
+  'failed',
+  'cancelled',
+  'timed_out',
+]);
 
 function resolveSubagentTimeoutMs(timeoutMs: number | undefined): number {
   if (timeoutMs === undefined || !Number.isFinite(timeoutMs)) {
@@ -219,6 +229,65 @@ export const subagentStatusTool: Tool<SubagentStatusInput> = {
       ...(snapshot.label ? [`label: ${snapshot.label}`] : []),
       ...(snapshot.startedAt ? [`startedAt: ${snapshot.startedAt}`] : []),
       `updatedAt: ${snapshot.updatedAt}`,
+    ].join('\n');
+  },
+};
+
+export const subagentStopTool: Tool<SubagentStopInput> = {
+  name: 'subagent_stop',
+  description: [
+    'Stop a background sub-agent task started by create_subagent with background=true.',
+    'Use when a long-running sub-agent is no longer useful or should yield control back to the parent task.',
+  ].join(' '),
+  metadata: {
+    sideEffectClass: 'subagent',
+    planMode: 'allow',
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      taskId: {
+        type: 'string',
+        description: 'Task id returned by create_subagent background mode',
+      },
+    },
+    required: ['taskId'],
+  },
+
+  async execute(input: SubagentStopInput, ctx: ToolContext): Promise<string> {
+    if (!ctx.asyncTaskRegistry) {
+      return 'Error: background sub-agent tasks are not available in this context.';
+    }
+
+    const taskId = String(input.taskId ?? '').trim();
+    if (!taskId) return 'Error: taskId is required.';
+
+    const snapshot = ctx.asyncTaskRegistry.status(taskId);
+    if (!snapshot) return `Error: background sub-agent task not found: ${taskId}`;
+
+    if (TERMINAL_SUBAGENT_TASK_STATUSES.has(snapshot.status)) {
+      const completion = ctx.asyncTaskRegistry.readCompletion(taskId);
+      return [
+        `[Sub-agent task ${taskId}] ALREADY ${snapshot.status.toUpperCase()}`,
+        `status: ${snapshot.status}`,
+        ...(completion ? ['', completion.summary || completion.error || '(no output)'] : []),
+      ].join('\n');
+    }
+
+    ctx.asyncTaskRegistry.stop(taskId, 'user_cancelled');
+    const completion = ctx.asyncTaskRegistry.readCompletion(taskId);
+    if (completion) {
+      return [
+        `[Sub-agent task ${taskId}] STOPPED`,
+        `status: ${completion.status}`,
+        '',
+        completion.summary || completion.error || 'Task cancelled.',
+      ].join('\n');
+    }
+
+    return [
+      `[Sub-agent task ${taskId}] STOP REQUESTED`,
+      `previousStatus: ${snapshot.status}`,
     ].join('\n');
   },
 };

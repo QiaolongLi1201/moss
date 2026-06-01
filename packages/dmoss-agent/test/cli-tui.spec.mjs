@@ -20,6 +20,10 @@ import {
   visibleText,
 } from '../dist/cli/tui.js';
 
+function nodeCommand(source) {
+  return `"${process.execPath}" -e ${JSON.stringify(source)}`;
+}
+
 {
   const rendered = sanitizeRenderableText('\x1b[31mred\x1b[0m\x00\nok');
   assert.equal(rendered, 'red\nok');
@@ -110,7 +114,7 @@ assert.match(footerHint('running'), /\/stop cancel/);
 {
   let streamed = '';
   const result = await runLocalShellCommand({
-    command: 'printf tui-ok',
+    command: nodeCommand("process.stdout.write('tui-ok')"),
     cwd: process.cwd(),
     onChunk: (chunk) => {
       streamed += chunk;
@@ -124,7 +128,7 @@ assert.match(footerHint('running'), /\/stop cancel/);
 
 {
   const result = await runLocalShellCommand({
-    command: "node -e 'process.stdout.write((process.env.DMOSS_TUI_LOCAL_SHELL || \"\") + \":\" + (process.env.OPENCLAW_SHELL || \"\"))'",
+    command: nodeCommand("process.stdout.write((process.env.DMOSS_TUI_LOCAL_SHELL || '') + ':' + (process.env.OPENCLAW_SHELL || ''))"),
     cwd: process.cwd(),
   });
   assert.equal(result.exitCode, 0);

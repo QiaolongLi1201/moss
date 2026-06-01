@@ -25,6 +25,7 @@ import {
   statusBadge,
   statusLine,
   stopRequestedMessage,
+  transcriptViewportRows,
   visibleText,
 } from '../dist/cli/tui.js';
 
@@ -128,6 +129,83 @@ assert.equal(stopRequestedMessage(0), 'Stop requested for the current run.');
 assert.equal(stopRequestedMessage(1), 'Stop requested. Queue paused (1 item); send any message to resume.');
 assert.equal(stopRequestedMessage(2), 'Stop requested. Queue paused (2 items); send any message to resume.');
 assert.equal(stopRequestedMessage(10), 'Stop requested. Queue paused (10 items); send any message to resume.');
+assert.equal(transcriptViewportRows({
+  transcriptLength: 0,
+  terminalRows: 57,
+  headerRows: 6,
+  promptRows: 3,
+  queueRows: 0,
+  footerRows: 0,
+  approvalRows: 0,
+  noticeRows: 0,
+}), undefined);
+assert.equal(transcriptViewportRows({
+  transcriptLength: 2,
+  terminalRows: 57,
+  headerRows: 6,
+  promptRows: 3,
+  queueRows: 0,
+  footerRows: 0,
+  approvalRows: 0,
+  noticeRows: 0,
+}), 46);
+{
+  const emptyRows = transcriptViewportRows({
+    transcriptLength: 0,
+    terminalRows: 40,
+    headerRows: 6,
+    promptRows: 3,
+    queueRows: 0,
+    footerRows: 0,
+    approvalRows: 0,
+    noticeRows: 0,
+  });
+  const filledRows = transcriptViewportRows({
+    transcriptLength: 1,
+    terminalRows: 40,
+    headerRows: 6,
+    promptRows: 3,
+    queueRows: 0,
+    footerRows: 0,
+    approvalRows: 0,
+    noticeRows: 0,
+  });
+  assert.equal(emptyRows, undefined);
+  assert.equal(filledRows, 29);
+}
+{
+  const withoutChrome = transcriptViewportRows({
+    transcriptLength: 1,
+    terminalRows: 40,
+    headerRows: 6,
+    promptRows: 3,
+    queueRows: 0,
+    footerRows: 0,
+    approvalRows: 0,
+    noticeRows: 0,
+  });
+  const withChrome = transcriptViewportRows({
+    transcriptLength: 1,
+    terminalRows: 40,
+    headerRows: 6,
+    promptRows: 3,
+    queueRows: 0,
+    footerRows: 0,
+    approvalRows: 4,
+    noticeRows: 2,
+  });
+  assert.equal((withoutChrome ?? 0) - (withChrome ?? 0), 6);
+}
+assert.equal(transcriptViewportRows({
+  transcriptLength: 1,
+  terminalRows: 12,
+  headerRows: 6,
+  promptRows: 6,
+  queueRows: 5,
+  footerRows: 0,
+  approvalRows: 10,
+  noticeRows: 1,
+}), 1);
 
 {
   const line = statusLine({

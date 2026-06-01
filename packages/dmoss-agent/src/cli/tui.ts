@@ -62,6 +62,17 @@ export interface QueueDrainState {
   queueLength: number;
 }
 
+export interface TranscriptViewportRowsOptions {
+  transcriptLength: number;
+  terminalRows: number;
+  headerRows: number;
+  promptRows: number;
+  queueRows: number;
+  footerRows: number;
+  approvalRows: number;
+  noticeRows: number;
+}
+
 export interface AttachmentRef {
   index: number;
   kind: 'image' | 'file';
@@ -307,6 +318,23 @@ export function stopRequestedMessage(queueLength: number): string {
     return `Stop requested. Queue paused (${queueLength} item${queueLength === 1 ? '' : 's'}); send any message to resume.`;
   }
   return 'Stop requested for the current run.';
+}
+
+export function transcriptViewportRows(options: TranscriptViewportRowsOptions): number | undefined {
+  if (options.transcriptLength === 0) return undefined;
+  // Reserve a little vertical slack for Box margins/borders that Ink does not
+  // expose as rows in the surrounding chrome estimates.
+  return Math.max(
+    1,
+    options.terminalRows
+      - options.headerRows
+      - options.promptRows
+      - options.queueRows
+      - options.footerRows
+      - options.approvalRows
+      - options.noticeRows
+      - 2,
+  );
 }
 
 export function extractAttachmentRefs(text: string): AttachmentRef[] {
@@ -1741,7 +1769,16 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const headerRows = 6;
   const approvalRows = approval ? Math.min(10, approval.question.split('\n').length + 4) : 0;
   const noticeRows = notice ? 1 : 0;
-  const transcriptRows = Math.max(1, terminalRows - headerRows - promptRows - queueRows - footerRows - approvalRows - noticeRows - 2);
+  const transcriptRows = transcriptViewportRows({
+    transcriptLength: transcript.length,
+    terminalRows,
+    headerRows,
+    promptRows,
+    queueRows,
+    footerRows,
+    approvalRows,
+    noticeRows,
+  });
 
   // Compose footer hint based on state (drives footerHint text used in tests).
   const footerHintText = footerHint(runState)
@@ -1765,7 +1802,10 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     }),
     React.createElement(
       Box,
-      { flexDirection: 'column', height: transcriptRows, overflow: 'hidden' },
+      {
+        flexDirection: 'column',
+        ...(transcriptRows === undefined ? {} : { height: transcriptRows, overflow: 'hidden' }),
+      },
       transcript.length === 0
         ? React.createElement(WelcomePanel, { workspace, device, model: currentModel, cacheMode, profile })
         : null,

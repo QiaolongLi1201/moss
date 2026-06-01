@@ -221,4 +221,81 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
   }
 }
 
+{
+  const oldIsTty = process.stdin.isTTY;
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+  let promptCount = 0;
+  const answers = ['a', ''];
+  setCliApprovalAsker(async () => {
+    promptCount++;
+    return answers.shift() ?? '';
+  });
+  try {
+    const approve = createCliToolApprovalHook('workspace-write', {});
+    assert.deepEqual(
+      await approve({
+        tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+        input: { command: 'npm test' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'a should approve the current tool call',
+    );
+    assert.deepEqual(
+      await approve({
+        tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+        input: { command: 'npm run build' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'a should trust the same tool for the rest of the session',
+    );
+    const deniedOtherTool = await approve({
+      tool: tool('write_file', 'local_write', 'requires_user_confirmation'),
+      input: { path: 'a.txt', content: 'x' },
+      sessionKey: 's',
+    });
+    assert.equal(deniedOtherTool.approved, false, 'trusting one tool must not trust other tools');
+    assert.equal(promptCount, 2, 'session-trusted tools should not prompt again, but other tools should');
+  } finally {
+    setCliApprovalAsker(null);
+    Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });
+  }
+}
+
+{
+  const oldIsTty = process.stdin.isTTY;
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+  let promptCount = 0;
+  setCliApprovalAsker(async () => {
+    promptCount++;
+    return 'always';
+  });
+  try {
+    const approve = createCliToolApprovalHook('workspace-write', {});
+    assert.deepEqual(
+      await approve({
+        tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+        input: { command: 'npm test' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'always should approve the current tool call',
+    );
+    assert.deepEqual(
+      await approve({
+        tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+        input: { command: 'npm run build' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'always should trust the same tool for the rest of the session',
+    );
+    assert.equal(promptCount, 1, 'always should not prompt again for the same tool in the same hook session');
+  } finally {
+    setCliApprovalAsker(null);
+    Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });
+  }
+}
+
 console.log('[PASS] CLI approval safety modes gate mutating tools');

@@ -266,6 +266,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '',
     '  Approval policies:',
     '    prompt           ask before side-effectful tools',
+    '    prompt + a       trust the approved tool for the current session',
     '    never            auto-approve allowed side-effectful tools',
     '',
     '  Persist changes:',

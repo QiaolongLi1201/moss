@@ -136,9 +136,14 @@ export function createCliToolApprovalHook(
   env: NodeJS.ProcessEnv = process.env,
   options: CliToolApprovalOptions = {},
 ): NonNullable<AgentHooks['onBeforeToolExec']> {
+  const sessionTrustedTools = new Set<string>();
+
   return async (request: ToolApprovalRequest) => {
     const { tool } = request;
-    const preview = describeCliToolApproval(request, mode, env, options);
+    const preview = describeCliToolApproval(request, mode, env, {
+      ...options,
+      trustedTools: [...(options.trustedTools ?? []), ...sessionTrustedTools],
+    });
     if (!isAllowedInMode(mode, preview.sideEffect)) {
       return {
         approved: false,
@@ -171,11 +176,16 @@ export function createCliToolApprovalHook(
       `policy: ${preview.decisionContext}`,
       'input:',
       preview.inputPreview,
-      `Allow once? [y/N] `,
+      `Allow once, or always for this session? [y/a/N] `,
     ].join('\n');
     const answer = (await (interactiveAsker ?? defaultAskUser)(prompt)).trim().toLowerCase();
-    return answer === 'y' || answer === 'yes'
-      ? { approved: true }
-      : { approved: false, reason: `User denied ${tool.name}.` };
+    if (answer === 'a' || answer === 'always') {
+      sessionTrustedTools.add(tool.name);
+      return { approved: true };
+    }
+    if (answer === 'y' || answer === 'yes') {
+      return { approved: true };
+    }
+    return { approved: false, reason: `User denied ${tool.name}.` };
   };
 }

@@ -153,6 +153,7 @@ const agent = createAgent([
   assert.match(permissions, /dmoss config set profile/);
   assert.match(permissions, /dmoss config set trustedTools/);
   assert.match(permissions, /dmoss config set promptCacheDebug/);
+  assert.match(permissions, /trust the approved tool for the current session/);
   assert.match(permissions, /DMOSS_PROFILE/);
   assert.match(permissions, /DMOSS_SAFETY_MODE/);
   assert.match(permissions, /DMOSS_TRUSTED_TOOLS/);

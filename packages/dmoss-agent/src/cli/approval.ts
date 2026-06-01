@@ -15,6 +15,17 @@ export interface CliToolApprovalOptions {
   trustedTools?: readonly string[];
 }
 
+export interface CliToolApprovalPreview {
+  toolName: string;
+  sideEffect: ToolSideEffectClass;
+  safetyMode: CliSafetyMode;
+  inputPreview: string;
+  decisionContext: string;
+  requiresApproval: boolean;
+  trusted: boolean;
+  autoApproved: boolean;
+}
+
 export function setCliApprovalAsker(asker: AskUser | null): void {
   interactiveAsker = asker;
 }
@@ -65,6 +76,48 @@ function previewInput(input: Record<string, unknown>): string {
   return raw.length > 1200 ? `${raw.slice(0, 1200)}\n... [truncated ${raw.length} chars]` : raw;
 }
 
+function hasAutoApproval(env: NodeJS.ProcessEnv, options: CliToolApprovalOptions): boolean {
+  return options.approvalPolicy === 'never' ||
+    env.DMOSS_CLI_AUTO_APPROVE === '1' ||
+    env.DMOSS_AUTO_APPROVE === '1';
+}
+
+export function describeCliToolApproval(
+  request: ToolApprovalRequest,
+  mode: CliSafetyMode,
+  env: NodeJS.ProcessEnv = process.env,
+  options: CliToolApprovalOptions = {},
+): CliToolApprovalPreview {
+  const sideEffect = inferSideEffectClass(request.tool);
+  const trusted = new Set(options.trustedTools ?? []).has(request.tool.name);
+  const autoApprovalConfigured = hasAutoApproval(env, options);
+  const allowedBySafety = isAllowedInMode(mode, sideEffect);
+  const requiresApproval = needsApproval(request.tool, sideEffect);
+  const autoApproved = allowedBySafety && requiresApproval && autoApprovalConfigured;
+  let decisionContext = 'readonly tool; approval is not required';
+
+  if (!allowedBySafety) {
+    decisionContext = `blocked by ${mode} safety mode`;
+  } else if (requiresApproval && trusted) {
+    decisionContext = 'trusted by configured trustedTools';
+  } else if (requiresApproval && autoApproved) {
+    decisionContext = 'auto-approved by approval policy after safety checks';
+  } else if (requiresApproval) {
+    decisionContext = `${mode} safety mode allows ${sideEffect}, but approval is required`;
+  }
+
+  return {
+    toolName: request.tool.name,
+    sideEffect,
+    safetyMode: mode,
+    inputPreview: previewInput(request.input),
+    decisionContext,
+    requiresApproval,
+    trusted,
+    autoApproved,
+  };
+}
+
 async function defaultAskUser(question: string): Promise<string> {
   if (!process.stdin.isTTY) return '';
   return new Promise((resolve) => {
@@ -83,25 +136,22 @@ export function createCliToolApprovalHook(
   env: NodeJS.ProcessEnv = process.env,
   options: CliToolApprovalOptions = {},
 ): NonNullable<AgentHooks['onBeforeToolExec']> {
-  return async ({ tool, input }: ToolApprovalRequest) => {
-    const sideEffect = inferSideEffectClass(tool);
-    if (!isAllowedInMode(mode, sideEffect)) {
+  return async (request: ToolApprovalRequest) => {
+    const { tool } = request;
+    const preview = describeCliToolApproval(request, mode, env, options);
+    if (!isAllowedInMode(mode, preview.sideEffect)) {
       return {
         approved: false,
-        reason: `Tool "${tool.name}" is blocked by ${mode} safety mode (side effect: ${sideEffect}).`,
+        reason: `Tool "${tool.name}" is blocked by ${mode} safety mode (side effect: ${preview.sideEffect}).`,
       };
     }
-    if (!needsApproval(tool, sideEffect)) return { approved: true };
+    if (!preview.requiresApproval) return { approved: true };
 
-    if (new Set(options.trustedTools ?? []).has(tool.name)) {
+    if (preview.trusted) {
       return { approved: true };
     }
 
-    if (
-      options.approvalPolicy === 'never' ||
-      env.DMOSS_CLI_AUTO_APPROVE === '1' ||
-      env.DMOSS_AUTO_APPROVE === '1'
-    ) {
+    if (preview.autoApproved) {
       return { approved: true };
     }
 
@@ -116,8 +166,11 @@ export function createCliToolApprovalHook(
 
     const prompt = [
       '',
-      `[approval] ${tool.name} (${sideEffect}) wants to run:`,
-      previewInput(input),
+      `[approval] ${preview.toolName}`,
+      `side effect: ${preview.sideEffect}`,
+      `policy: ${preview.decisionContext}`,
+      'input:',
+      preview.inputPreview,
       `Allow once? [y/N] `,
     ].join('\n');
     const answer = (await (interactiveAsker ?? defaultAskUser)(prompt)).trim().toLowerCase();

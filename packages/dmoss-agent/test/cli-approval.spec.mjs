@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {
   createCliToolApprovalHook,
+  describeCliToolApproval,
   resolveCliSafetyMode,
   setCliApprovalAsker,
 } from '../dist/cli/approval.js';
@@ -26,6 +27,56 @@ assert.equal(resolveCliSafetyMode(['--workspace-write'], {}), 'workspace-write')
 assert.equal(resolveCliSafetyMode(['--full-access'], {}), 'full-access');
 assert.equal(resolveCliSafetyMode([], { DMOSS_SAFETY_MODE: 'full' }), 'full-access');
 assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
+
+{
+  const preview = describeCliToolApproval(
+    {
+      tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+      input: { command: 'npm test' },
+      sessionKey: 's',
+    },
+    'workspace-write',
+    {},
+  );
+  assert.equal(preview.toolName, 'exec');
+  assert.equal(preview.sideEffect, 'local_write');
+  assert.equal(preview.safetyMode, 'workspace-write');
+  assert.equal(preview.requiresApproval, true);
+  assert.equal(preview.trusted, false);
+  assert.equal(preview.autoApproved, false);
+  assert.match(preview.decisionContext, /workspace-write safety mode allows local_write/);
+  assert.match(preview.inputPreview, /npm test/);
+}
+
+{
+  const preview = describeCliToolApproval(
+    {
+      tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+      input: { command: 'npm test' },
+      sessionKey: 's',
+    },
+    'workspace-write',
+    {},
+    { trustedTools: ['exec'] },
+  );
+  assert.equal(preview.trusted, true);
+  assert.equal(preview.autoApproved, false);
+  assert.match(preview.decisionContext, /trustedTools/);
+}
+
+{
+  const preview = describeCliToolApproval(
+    {
+      tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+      input: { command: 'npm test' },
+      sessionKey: 's',
+    },
+    'read-only',
+    { DMOSS_CLI_AUTO_APPROVE: '1' },
+  );
+  assert.equal(preview.autoApproved, false);
+  assert.match(preview.decisionContext, /blocked by read-only safety mode/);
+}
 
 {
   const approve = createCliToolApprovalHook('read-only', {});
@@ -160,6 +211,9 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     });
     assert.equal(denied.approved, false, 'blank approval response should default to deny');
     assert.match(prompt, /\[approval\]/);
+    assert.match(prompt, /side effect: local_write/);
+    assert.match(prompt, /policy: workspace-write safety mode allows local_write, but approval is required/);
+    assert.match(prompt, /input:/);
     assert.doesNotMatch(prompt, /sk-test-00000000000000000000/);
   } finally {
     setCliApprovalAsker(null);

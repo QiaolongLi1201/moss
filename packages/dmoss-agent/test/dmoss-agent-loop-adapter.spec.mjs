@@ -68,6 +68,8 @@ import {
       toolName: 'probe',
       result: 'ok',
       isError: false,
+      outcome: 'ok',
+      durationMs: 12,
     }),
     [
       {
@@ -76,6 +78,8 @@ import {
         toolName: 'probe',
         result: 'ok',
         isError: false,
+        outcome: 'ok',
+        durationMs: 12,
       },
     ],
   );
@@ -125,7 +129,7 @@ import {
   assert.equal(done.result.response, 'hello');
   assert.equal(done.result.stopReason, 'max_tokens');
   assert.deepEqual(done.result.toolCalls, [{ id: 'call-1', name: 'probe', input: { value: 1 } }]);
-  assert.deepEqual(done.result.toolResults, [{ toolUseId: 'call-1', content: 'ok', isError: false }]);
+  assert.deepEqual(done.result.toolResults, [{ toolUseId: 'call-1', content: 'ok', isError: false, outcome: 'ok', durationMs: 12 }]);
   assert.deepEqual(done.result.usage, { inputTokens: 7, outputTokens: 11 });
   assert.deepEqual(done.result.thinking, ['plan']);
 }

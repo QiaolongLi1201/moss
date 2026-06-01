@@ -107,6 +107,8 @@ export function createDmossAgentLoopEventAdapter(
             toolUseId: event.toolCallId,
             content,
             isError: event.isError,
+            ...(event.outcome ? { outcome: event.outcome } : {}),
+            ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
             ...(event.aborted ? { aborted: event.aborted } : {}),
             ...(event.structuredContent ? { structuredContent: event.structuredContent } : {}),
           });
@@ -117,6 +119,8 @@ export function createDmossAgentLoopEventAdapter(
               toolName: event.toolName,
               result: event.result,
               isError: event.isError,
+              ...(event.outcome ? { outcome: event.outcome } : {}),
+              ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
               ...(event.aborted ? { aborted: event.aborted } : {}),
               ...(event.structuredContent ? { structuredContent: event.structuredContent } : {}),
             },

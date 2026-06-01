@@ -204,6 +204,8 @@ export type DmossAgentEvent =
       toolCallId: string;
       result: string;
       isError: boolean;
+      outcome?: ToolResult['outcome'];
+      durationMs?: number;
       aborted?: { by: 'user' | 'timeout' };
       structuredContent?: ToolContentBlock[];
     }

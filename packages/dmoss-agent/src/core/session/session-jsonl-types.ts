@@ -1,4 +1,4 @@
-import type { ToolContentBlock } from '../tools/tool-types.js';
+import type { ToolContentBlock, ToolResultOutcome } from '../tools/tool-types.js';
 
 // ============== 类型定义 ==============
 
@@ -49,6 +49,10 @@ export interface ContentBlock {
   content?: string;
   /** 工具结果是否为错误 (type=tool_result 时) */
   is_error?: boolean;
+  /** Terminal execution classification for audit/UI consumers (type=tool_result 时) */
+  outcome?: ToolResultOutcome;
+  /** Wall-clock execution time in milliseconds when known (type=tool_result 时) */
+  durationMs?: number;
   /** Host-provided cancellation metadata for user/timeout aborts (type=tool_result 时) */
   aborted?: { by: 'user' | 'timeout' };
   /** Marks blocks synthesized by the agent to repair broken tool_use/tool_result pairs. Not a real tool invocation or result. */

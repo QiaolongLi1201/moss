@@ -51,6 +51,7 @@ async function collectEvents(agent, sessionKey, prompt) {
 {
   const store = new InMemorySessionStore();
   let executeCount = 0;
+  const toolResults = [];
   const { provider } = createModelEventProvider((options) => {
     const results = toolResultCount(options);
     if (results < 3) {
@@ -80,6 +81,11 @@ async function collectEvents(agent, sessionKey, prompt) {
     domainPrompt: false,
     includeRegisteredKnowledgePrompts: false,
     maxAgentTurns: 5,
+    hooks: {
+      onToolResult(call, result) {
+        toolResults.push({ call, result });
+      },
+    },
   });
   agent.tools.register({
     name: 'preset_probe',
@@ -105,11 +111,24 @@ async function collectEvents(agent, sessionKey, prompt) {
   assert.equal(done.result.toolResults[0].content, 'probe:1');
   assert.equal(done.result.toolResults[1].content, 'probe:1');
   assert.match(done.result.toolResults[2].content, /Tool loop guard stopped another preset_probe/);
+  assert.equal(done.result.toolResults[0].outcome, 'ok');
+  assert.equal(done.result.toolResults[1].outcome, 'replayed');
+  assert.equal(done.result.toolResults[1].durationMs, 0);
+  assert.equal(done.result.toolResults[2].outcome, 'blocked');
+  assert.equal(done.result.toolResults[2].durationMs, 0);
+  assert.equal(toolResults.length, 3);
+  assert.deepEqual(toolResults.map((entry) => entry.call.input), [
+    { value: 1 },
+    { value: 1 },
+    { value: 1 },
+  ]);
+  assert.deepEqual(toolResults.map((entry) => entry.result.outcome), ['ok', 'replayed', 'blocked']);
   assert(
     events.some(
       (event) =>
         event.type === 'tool_end' &&
         event.toolName === 'preset_probe' &&
+        event.outcome === 'blocked' &&
         event.isError &&
         /Tool loop guard stopped/.test(event.result),
     ),
@@ -121,6 +140,7 @@ async function collectEvents(agent, sessionKey, prompt) {
   const store = new InMemorySessionStore();
   let openCount = 0;
   let fetchCount = 0;
+  const toolResults = [];
   const { provider } = createModelEventProvider((options) => {
     const results = toolResultCount(options);
     if (results === 0) {
@@ -164,6 +184,11 @@ async function collectEvents(agent, sessionKey, prompt) {
     domainPrompt: false,
     includeRegisteredKnowledgePrompts: false,
     maxAgentTurns: 5,
+    hooks: {
+      onToolResult(call, result) {
+        toolResults.push({ call, result });
+      },
+    },
   });
   agent.tools.register({
     name: 'host_open_url',
@@ -200,11 +225,18 @@ async function collectEvents(agent, sessionKey, prompt) {
   assert.equal(fetchCount, 0, 'redundant web_fetch should be suppressed after open_url success');
   assert.equal(done.result.toolResults.length, 2);
   assert.match(done.result.toolResults[1].content, /web_fetch_suppressed/);
+  assert.equal(done.result.toolResults[1].outcome, 'suppressed');
+  assert.equal(done.result.toolResults[1].durationMs, 0);
+  assert.equal(toolResults.length, 2);
+  assert.deepEqual(toolResults[1].call.input, { url: 'https://example.com/page' });
+  assert.equal(toolResults[1].result.outcome, 'suppressed');
+  assert.equal(toolResults[1].result.durationMs, 0);
   assert(
     events.some(
       (event) =>
         event.type === 'tool_end' &&
         event.toolName === 'web_fetch' &&
+        event.outcome === 'suppressed' &&
         event.isError === false &&
         /web_fetch_suppressed/.test(event.result),
     ),

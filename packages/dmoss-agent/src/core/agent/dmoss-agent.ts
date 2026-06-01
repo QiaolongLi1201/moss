@@ -752,15 +752,21 @@ export class DmossAgent {
       } else if (miniEvent.type === 'tool_execution_end') {
         state.completedToolCalls += 1;
         const resultContent = miniEvent.content ?? miniEvent.result;
+        const fallbackInput =
+          miniEvent.args && typeof miniEvent.args === 'object' && !Array.isArray(miniEvent.args)
+            ? (miniEvent.args as Record<string, unknown>)
+            : {};
         const call = state.activeToolCalls.get(miniEvent.toolCallId) ?? {
           id: miniEvent.toolCallId,
           name: miniEvent.toolName,
-          input: {},
+          input: fallbackInput,
         };
         const result: ToolResult = {
           toolUseId: miniEvent.toolCallId,
           content: resultContent,
           isError: miniEvent.isError,
+          ...(miniEvent.outcome ? { outcome: miniEvent.outcome } : {}),
+          ...(miniEvent.durationMs !== undefined ? { durationMs: miniEvent.durationMs } : {}),
           ...(miniEvent.aborted ? { aborted: miniEvent.aborted } : {}),
           ...(miniEvent.structuredContent ? { structuredContent: miniEvent.structuredContent } : {}),
         };

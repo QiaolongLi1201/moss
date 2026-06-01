@@ -249,6 +249,7 @@ function getDone(events) {
   const store = new InMemorySessionStore();
   let executeCount = 0;
   const approvals = [];
+  const toolResults = [];
   const { provider, requests } = createModelEventProvider((options) => {
     const hasToolResult = options.messages.some((message) =>
       Array.isArray(message.content) &&
@@ -279,6 +280,9 @@ function getDone(events) {
         approvals.push(request);
         return { approved: false, reason: 'blocked by test' };
       },
+      onToolResult(call, result) {
+        toolResults.push({ call, result });
+      },
     },
   });
   agent.tools.register({
@@ -299,6 +303,8 @@ function getDone(events) {
 
   assert(toolEnd, 'expected denied tool_end event');
   assert.equal(toolEnd.isError, true);
+  assert.equal(toolEnd.outcome, 'denied');
+  assert.equal(toolEnd.durationMs, 0);
   assert.match(toolEnd.result, /denied/i);
   assert.match(toolEnd.result, /blocked by test/);
   assert.equal(executeCount, 0);
@@ -310,13 +316,21 @@ function getDone(events) {
   assert.equal(done.result.toolCalls[0].name, 'danger_probe');
   assert.equal(done.result.toolResults.length, 1);
   assert.equal(done.result.toolResults[0].isError, true);
+  assert.equal(done.result.toolResults[0].outcome, 'denied');
+  assert.equal(done.result.toolResults[0].durationMs, 0);
   assert.match(done.result.toolResults[0].content, /denied/i);
   assert.match(done.result.toolResults[0].content, /blocked by test/);
+  assert.equal(toolResults.length, 1);
+  assert.deepEqual(toolResults[0].call.input, { value: 9 });
+  assert.equal(toolResults[0].result.outcome, 'denied');
+  assert.equal(toolResults[0].result.durationMs, 0);
   const storedToolResult = (await store.loadMessages('bridge-approval-denied'))
     .flatMap((message) => Array.isArray(message.content) ? message.content : [])
     .find((block) => block.type === 'tool_result' && block.tool_use_id === 'call-denied-1');
   assert(storedToolResult, 'expected denied tool_result to be persisted');
   assert.equal(storedToolResult.is_error, true);
+  assert.equal(storedToolResult.outcome, 'denied');
+  assert.equal(storedToolResult.durationMs, 0);
   assert.match(String(storedToolResult.content), /blocked by test/);
   assert(requests.length >= 2, 'expected provider tool-call round and follow-up round');
   assert(

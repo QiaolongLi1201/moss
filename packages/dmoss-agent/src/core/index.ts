@@ -264,7 +264,7 @@ export {
 } from './subagent/index.js';
 
 // --- Tools ---
-export type { ToolContext, Tool, ToolCall, ToolResult, ToolContentBlock, StructuredToolResult } from './tools/index.js';
+export type { ToolContext, Tool, ToolCall, ToolResult, ToolResultOutcome, ToolContentBlock, StructuredToolResult } from './tools/index.js';
 export { canHostInjectToolWithEmptyInput } from './tools/index.js';
 export { ToolRegistry } from './tools/index.js';
 export type { ToolGroup, ToolRegistryOptions } from './tools/index.js';

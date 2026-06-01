@@ -1,4 +1,4 @@
-export type { ToolContext, Tool, ToolCall, ToolResult, ToolContentBlock, StructuredToolResult } from './tool-types.js';
+export type { ToolContext, Tool, ToolCall, ToolResult, ToolResultOutcome, ToolContentBlock, StructuredToolResult } from './tool-types.js';
 export { canHostInjectToolWithEmptyInput } from './tool-types.js';
 export { ToolRegistry } from './tool-registry.js';
 export type { ToolGroup, ToolRegistryOptions } from './tool-registry.js';

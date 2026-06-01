@@ -14,7 +14,7 @@ import type {
   ContextBudgetActionReason,
 } from '../loop/context-budget-planner.js';
 import type { LlmErrorCategory } from '../llm/llm-error-classifier.js';
-import type { ToolContentBlock } from '../tools/tool-types.js';
+import type { ToolContentBlock, ToolResultOutcome } from '../tools/tool-types.js';
 
 export const MINI_AGENT_EVENT_VERSION = 1 as const;
 
@@ -41,7 +41,7 @@ type MiniAgentEventPayload =
   | { type: 'thinking_delta'; delta: string }
 
   | { type: 'tool_execution_start'; toolCallId: string; toolName: string; args: unknown }
-  | { type: 'tool_execution_end'; toolCallId: string; toolName: string; result: string; isError: boolean; content?: string; aborted?: { by: 'user' | 'timeout' }; structuredContent?: ToolContentBlock[] }
+  | { type: 'tool_execution_end'; toolCallId: string; toolName: string; result: string; isError: boolean; content?: string; args?: unknown; outcome?: ToolResultOutcome; durationMs?: number; aborted?: { by: 'user' | 'timeout' }; structuredContent?: ToolContentBlock[] }
   | { type: 'tool_execution_progress'; toolCallId: string; toolName: string; elapsed_sec: number }
   | { type: 'tool_skipped'; toolCallId: string; toolName: string }
 

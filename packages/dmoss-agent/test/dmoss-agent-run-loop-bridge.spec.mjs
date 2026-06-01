@@ -403,7 +403,10 @@ function createModelEventProvider(handler) {
   }
 
   assert(events.some((event) => event.type === 'tool_start' && event.toolName === 'probe'));
-  assert(events.some((event) => event.type === 'tool_end' && event.result.includes('ok:7')));
+  const toolEnd = events.find((event) => event.type === 'tool_end' && event.result.includes('ok:7'));
+  assert(toolEnd, 'expected successful tool_end event');
+  assert.equal(toolEnd.outcome, 'ok');
+  assert.equal(typeof toolEnd.durationMs, 'number');
   const turnEnds = events.filter((event) => event.type === 'turn_end');
   assert.equal(turnEnds[0]?.stopReason, 'tool_use');
   assert.equal(turnEnds.at(-1)?.stopReason, 'end_turn');
@@ -412,9 +415,14 @@ function createModelEventProvider(handler) {
   assert.equal(done.result.response, 'tool says ok');
   assert.equal(done.result.toolCalls.length, 1);
   assert.equal(done.result.toolResults.length, 1);
+  assert.equal(done.result.toolResults[0].outcome, 'ok');
+  assert.equal(typeof done.result.toolResults[0].durationMs, 'number');
   assert.equal(requests.length, 2);
   assert.equal(seenToolResults.length, 1);
   assert.equal(seenToolResults[0].call.name, 'probe');
+  assert.deepEqual(seenToolResults[0].call.input, { value: 7 });
+  assert.equal(seenToolResults[0].result.outcome, 'ok');
+  assert.equal(typeof seenToolResults[0].result.durationMs, 'number');
 }
 
 {

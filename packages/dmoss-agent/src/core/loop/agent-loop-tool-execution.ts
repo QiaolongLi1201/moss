@@ -10,7 +10,7 @@ import {
 import { maybeSuppressRedundantWebFetchAfterOpenUrl } from '../tools/open-url-web-fetch-guard.js';
 import { notePendingAbortedToolCalls } from './pending-tool-aborts.js';
 import type { Message, ContentBlock } from '../session/session-jsonl.js';
-import type { Tool, ToolContext } from '../tools/tool-types.js';
+import type { Tool, ToolContext, ToolResultOutcome } from '../tools/tool-types.js';
 import type { ToolHookRegistry } from '../tools/tool-hooks.js';
 import { findReplayableToolResultContent } from '../tools/tool-idempotent-replay.js';
 import {
@@ -127,6 +127,7 @@ export async function executeAgentLoopToolCalls(
         text: fetchSuppressed,
         isError: false,
         durationMs: 0,
+        outcome: 'suppressed',
       };
     }
 
@@ -148,6 +149,7 @@ export async function executeAgentLoopToolCalls(
         text: replayed,
         isError: false,
         durationMs: 0,
+        outcome: 'replayed',
       };
     }
 
@@ -169,6 +171,13 @@ export async function executeAgentLoopToolCalls(
     }
 
     const { text: result, isError, structuredContent: rawStructuredContent } = outcomeToResult(outcome);
+    const toolOutcome: ToolResultOutcome =
+      outcome.kind === 'completed'
+        ? outcome.outcome ?? (isError ? 'error' : 'ok')
+        : outcome.kind === 'denied'
+          ? 'denied'
+          : 'blocked';
+    const durationMs = outcome.kind === 'completed' ? outcome.durationMs : 0;
     const MAX_STRUCTURED_SIZE = 12_000;
     let structuredContent = rawStructuredContent;
     if (structuredContent && structuredContent.length > 0) {
@@ -198,6 +207,9 @@ export async function executeAgentLoopToolCalls(
       toolName: call.name,
       result: preview,
       isError,
+      args: call.input,
+      outcome: toolOutcome,
+      durationMs,
       content: truncatedResult,
       ...(outcome.kind === 'completed' && outcome.aborted
         ? { aborted: outcome.aborted }
@@ -210,6 +222,8 @@ export async function executeAgentLoopToolCalls(
       name: call.name,
       content: truncatedResult,
       is_error: isError,
+      outcome: toolOutcome,
+      durationMs,
       ...(outcome.kind === 'completed' && outcome.aborted
         ? { aborted: outcome.aborted }
         : {}),

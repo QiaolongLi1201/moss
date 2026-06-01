@@ -109,11 +109,17 @@ export interface ToolCall {
   input: Record<string, unknown>;
 }
 
+export type ToolResultOutcome = 'ok' | 'error' | 'denied' | 'blocked' | 'replayed' | 'suppressed';
+
 /** Result of tool execution, returned to the LLM */
 export interface ToolResult {
   toolUseId: string;
   content: string;
   isError?: boolean;
+  /** Terminal execution classification for audit/UI consumers. */
+  outcome?: ToolResultOutcome;
+  /** Wall-clock execution time in milliseconds when known. */
+  durationMs?: number;
   /** Host-provided metadata for user/timeout cancellation; consumers may ignore it. */
   aborted?: { by: 'user' | 'timeout' };
   structuredContent?: ToolContentBlock[];

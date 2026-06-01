@@ -244,11 +244,15 @@ async function collectBridgeEvents(agent, sessionKey, prompt, options = {}) {
   const toolEnd = events.find((event) => event.type === 'tool_end' && event.toolName === 'slow_probe');
   assert(toolEnd, 'expected tool_end after per-tool abort');
   assert.equal(toolEnd.isError, true);
+  assert.equal(toolEnd.outcome, 'error');
+  assert.equal(typeof toolEnd.durationMs, 'number');
   assert.deepEqual(toolEnd.aborted, { by: 'user' });
   assert.match(toolEnd.result, /aborted_by_user|cancelled/i);
   const done = events.find((event) => event.type === 'done');
   assert(done, 'expected done after per-tool abort follow-up');
   assert.equal(done.result.response, 'saw per-tool abort');
+  assert.equal(done.result.toolResults[0].outcome, 'error');
+  assert.equal(typeof done.result.toolResults[0].durationMs, 'number');
   assert.deepEqual(done.result.toolResults[0].aborted, { by: 'user' });
 }
 

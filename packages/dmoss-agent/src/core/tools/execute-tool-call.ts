@@ -21,7 +21,7 @@
  * they affect cross-call decisions (skipping siblings, etc.).
  */
 
-import type { Tool, ToolContext, ToolContentBlock } from './tool-types.js';
+import type { Tool, ToolContext, ToolContentBlock, ToolResultOutcome } from './tool-types.js';
 import type { ToolHookRegistry } from './tool-hooks.js';
 import type { MiniAgentEvent } from '../subagent/agent-events.js';
 import { abortable, combineAbortSignals } from '../agent/abort.js';
@@ -120,6 +120,7 @@ export type ExecuteToolCallOutcome =
       text: string;
       isError: boolean;
       durationMs: number;
+      outcome?: ToolResultOutcome;
       aborted?: { by: 'user' | 'timeout' };
       structuredContent?: ToolContentBlock[];
     }

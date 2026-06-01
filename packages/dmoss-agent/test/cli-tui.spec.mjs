@@ -17,6 +17,7 @@ import {
   sanitizeRenderableText,
   statusBadge,
   statusLine,
+  visibleText,
 } from '../dist/cli/tui.js';
 
 {
@@ -39,6 +40,20 @@ import {
 {
   const url = 'https://example.com/' + 'a'.repeat(40);
   assert.equal(sanitizeRenderableText(url), url);
+}
+
+{
+  const link = '[developer.d-robotics.cc](https://developer.d-robotics.cc)';
+  assert.equal(sanitizeRenderableText(link), link);
+}
+
+{
+  const text = Array.from({ length: 18 }, (_, index) => `line ${index + 1}`).join('\n');
+  assert.equal(visibleText(text), text);
+  assert.equal(
+    visibleText(text, 3),
+    ['... 15 earlier lines hidden ...', 'line 16', 'line 17', 'line 18'].join('\n'),
+  );
 }
 
 assert.equal(isLocalShellLine('!pwd'), true);

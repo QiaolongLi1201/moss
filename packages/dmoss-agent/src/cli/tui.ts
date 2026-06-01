@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
-import type { DmossAgent, DmossAgentEvent } from '../core/index.js';
+import type { DmossAgent, DmossAgentEvent, ToolResultOutcome } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import { setCliApprovalAsker } from './approval.js';
 import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
@@ -28,6 +28,7 @@ interface TranscriptItem {
   toolInputRaw?: unknown;
   startedAt?: number;
   elapsedMs?: number;
+  outcome?: ToolResultOutcome;
   finalized?: boolean;
 }
 
@@ -39,6 +40,7 @@ interface ActivityItem {
   status: 'running' | 'ok' | 'failed';
   inputSummary?: string;
   elapsedMs?: number;
+  outcome?: ToolResultOutcome;
   inputRaw?: unknown;
 }
 
@@ -612,6 +614,12 @@ function activityLabel(event: DmossAgentEvent): string | null {
   return null;
 }
 
+function toolOutcomeLabel(item: ActivityItem): string {
+  if (!item.outcome) return '';
+  if (item.outcome === 'ok') return '';
+  return `${item.outcome} · `;
+}
+
 function transcriptColor(kind: TranscriptKind): 'cyan' | 'red' | 'gray' | 'green' | 'magenta' | undefined {
   if (kind === 'user') return 'cyan';
   if (kind === 'error') return 'red';
@@ -823,7 +831,7 @@ export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): Rea
   const headline = item.inputSummary || '';
   const elapsedText = item.status === 'running'
     ? '…'
-    : ` ${item.elapsedMs ?? 0}ms`;
+    : ` ${toolOutcomeLabel(item)}${item.elapsedMs ?? 0}ms`;
   const failedMark = item.status === 'failed' ? ' !' : '';
 
   // Build the headline string. Keep the test-required tokens explicit.
@@ -949,6 +957,7 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
         status: item.status ?? 'ok',
         inputSummary: item.toolInput,
         elapsedMs: item.elapsedMs,
+        outcome: item.outcome,
         inputRaw: item.toolInputRaw,
       },
       expanded: toolsExpanded,
@@ -1577,7 +1586,8 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
             const next: TranscriptItem = {
               ...item,
               status: event.isError || event.aborted ? 'failed' : 'ok',
-              elapsedMs: item.startedAt ? Date.now() - item.startedAt : undefined,
+              elapsedMs: event.durationMs ?? (item.startedAt ? Date.now() - item.startedAt : undefined),
+              outcome: event.outcome,
             };
             // quiet mode: collapse successful tool calls to keep the transcript tidy.
             // Failures stay visible regardless.

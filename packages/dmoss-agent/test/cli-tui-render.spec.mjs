@@ -172,6 +172,26 @@ test('ActivityItemLine renders a completed tool with elapsed time', () => {
   cleanup();
 });
 
+test('ActivityItemLine renders non-ok tool outcome before elapsed time', () => {
+  const { lastFrame } = render(
+    React.createElement(ActivityItemLine, {
+      item: {
+        id: '2b',
+        toolName: 'web_fetch',
+        toolCallId: '2b',
+        startedAt: 0,
+        status: 'ok',
+        outcome: 'suppressed',
+        elapsedMs: 0,
+      },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /web_fetch/);
+  assert.match(frame, /suppressed\s+·\s+0ms/);
+  cleanup();
+});
+
 test('ActivityItemLine renders a failed tool with the failed glyph', () => {
   const { lastFrame } = render(
     React.createElement(ActivityItemLine, {
@@ -181,12 +201,14 @@ test('ActivityItemLine renders a failed tool with the failed glyph', () => {
         toolCallId: '3',
         startedAt: 0,
         status: 'failed',
+        outcome: 'denied',
         elapsedMs: 32,
       },
     }),
   );
   const frame = lastFrame();
   assert.match(frame, /http_get/);
+  assert.match(frame, /denied\s+·\s+32ms/);
   assert.match(frame, /!/);
   cleanup();
 });
@@ -251,12 +273,14 @@ test('TranscriptMessage renders a tool message via ActivityItemLine', () => {
         text: '',
         toolName: 'list_directory',
         status: 'ok',
+        outcome: 'replayed',
         elapsedMs: 12,
       },
     }),
   );
   const frame = lastFrame();
   assert.match(frame, /list_directory/);
+  assert.match(frame, /replayed\s+·\s+12ms/);
   assert.match(frame, /12ms/);
   cleanup();
 });

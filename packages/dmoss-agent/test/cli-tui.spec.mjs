@@ -12,10 +12,12 @@ import {
   editorPreviewLines,
   extractAttachmentRefs,
   footerHint,
+  formatQueueWait,
   formatAttachmentChip,
   isLocalShellLine,
   promptCacheModeLabel,
   promptPlaceholder,
+  queueItemMeta,
   runLocalShellCommand,
   sanitizeRenderableText,
   statusBadge,
@@ -98,6 +100,14 @@ assert.equal(statusBadge('approval'), 'approval needed');
 assert.match(footerHint('ready'), /Ctrl\+O tools/);
 assert.match(footerHint('running'), /Esc cancel/);
 assert.match(footerHint('running'), /Enter queue/);
+
+assert.equal(formatQueueWait(undefined, 10_000), null);
+assert.equal(formatQueueWait(9_750, 10_000), '<1s');
+assert.equal(formatQueueWait(5_000, 10_000), '5s');
+assert.equal(formatQueueWait(60_000, 180_000), '2m');
+assert.match(queueItemMeta({ raw: 'plain prompt', message: 'plain prompt', enqueuedAt: 5_000 }, 10_000), /prompt .*waiting 5s .*1 line .*12 chars/);
+assert.match(queueItemMeta({ raw: '/tools', message: '/tools' }, 10_000), /command .*1 line .*6 chars/);
+assert.match(queueItemMeta({ raw: '!pwd', message: '!pwd' }, 10_000), /local shell .*1 line .*4 chars/);
 
 {
   const line = statusLine({

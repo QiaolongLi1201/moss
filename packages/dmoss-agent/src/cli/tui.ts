@@ -50,6 +50,7 @@ interface ApprovalState {
 export interface QueuedInput {
   raw: string;
   message: string;
+  enqueuedAt?: number;
 }
 
 export interface AttachmentRef {
@@ -259,6 +260,33 @@ export function visibleText(text: string, maxLines = Number.POSITIVE_INFINITY): 
     `... ${lines.length - maxLines} earlier lines hidden ...`,
     ...lines.slice(-maxLines),
   ].join('\n');
+}
+
+export function formatQueueWait(enqueuedAt: number | undefined, now = Date.now()): string | null {
+  if (enqueuedAt === undefined || !Number.isFinite(enqueuedAt)) return null;
+  const waitMs = Math.max(0, now - enqueuedAt);
+  if (waitMs < 1000) return '<1s';
+  if (waitMs < 60_000) return `${Math.floor(waitMs / 1000)}s`;
+  if (waitMs < 3_600_000) return `${Math.floor(waitMs / 60_000)}m`;
+  return `${Math.floor(waitMs / 3_600_000)}h`;
+}
+
+function queueItemKind(item: QueuedInput): string {
+  if (isLocalShellLine(item.raw)) return 'local shell';
+  if (item.message.startsWith('/')) return 'command';
+  return 'prompt';
+}
+
+export function queueItemMeta(item: QueuedInput, now = Date.now()): string {
+  const lineCount = sanitizeRenderableText(item.message).split('\n').length;
+  const charCount = sanitizeRenderableText(item.message).length;
+  const wait = formatQueueWait(item.enqueuedAt, now);
+  return [
+    queueItemKind(item),
+    wait ? `waiting ${wait}` : null,
+    `${lineCount} line${lineCount === 1 ? '' : 's'}`,
+    `${charCount} chars`,
+  ].filter(Boolean).join(' · ');
 }
 
 export function extractAttachmentRefs(text: string): AttachmentRef[] {
@@ -1155,9 +1183,10 @@ export function PromptEditor({
 
 export interface QueuePreviewProps {
   items: QueuedInput[];
+  now?: number;
 }
 
-export function QueuePreview({ items }: QueuePreviewProps): React.ReactElement | null {
+export function QueuePreview({ items, now = Date.now() }: QueuePreviewProps): React.ReactElement | null {
   if (items.length === 0) return null;
   const visible = items.slice(0, 3);
   const hiddenCount = items.length - visible.length;
@@ -1165,11 +1194,11 @@ export function QueuePreview({ items }: QueuePreviewProps): React.ReactElement |
     Box,
     { flexDirection: 'column', marginTop: 1 },
     React.createElement(Text, { color: theme.textMuted },
-      `  queued ${items.length} · /queue clear to discard`),
+      `  queued ${items.length} · next runs when current task finishes · /queue clear to discard`),
     ...visible.map((item, index) => React.createElement(Text, {
       key: `${index}-${item.message}`,
       color: theme.textMuted,
-    }, `  ${index + 1}. ${visibleText(item.message, 1)}`)),
+    }, `  ${index === 0 ? 'next' : `#${index + 1}`} · ${queueItemMeta(item, now)} · ${visibleText(item.message, 1)}`)),
     hiddenCount > 0 ? React.createElement(Text, { color: theme.textMuted },
       `  ... ${hiddenCount} more queued prompt${hiddenCount === 1 ? '' : 's'}`) : null,
   );
@@ -1355,11 +1384,12 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     }
     if (message === '/queue' || message === '/queued') {
       const queue = queuedInputsRef.current;
+      const now = Date.now();
       addTranscript('system', queue.length === 0
         ? 'Queue is empty.'
         : [
             `Queued prompts (${queue.length})`,
-            ...queue.map((item, index) => `  ${index + 1}. ${item.message}`),
+            ...queue.map((item, index) => `  ${index === 0 ? 'next' : `#${index + 1}`} · ${queueItemMeta(item, now)} · ${item.message}`),
             '',
             'Use /queue clear to discard queued prompts.',
           ].join('\n'));
@@ -1631,9 +1661,9 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       return;
     }
     if (busyRef.current) {
-      const nextQueue = [...queuedInputsRef.current, { raw, message }];
+      const nextQueue = [...queuedInputsRef.current, { raw, message, enqueuedAt: Date.now() }];
       setQueuedInputs(nextQueue);
-      addTranscript('system', `Queued #${nextQueue.length}: ${message}`);
+      addTranscript('system', `Queued #${nextQueue.length}; next runs when the current task finishes: ${message}`);
       return;
     }
     runInput(raw);

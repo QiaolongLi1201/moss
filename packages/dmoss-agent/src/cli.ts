@@ -18,6 +18,7 @@ import { runInteractive } from './cli/repl.js';
 import { resolveCliSession } from './cli/session.js';
 import { runCliUpdate } from './cli/update.js';
 import { getPackageVersion } from './cli/package-info.js';
+import { registerConfiguredMcpTools } from './cli/mcp.js';
 import {
   offerSetupForInteractiveMissingConfig,
   printMissingConfigGuidance,
@@ -48,6 +49,7 @@ import { setTracer } from './observability/tracing.js';
 import { redactSensitiveData } from './observability/redact.js';
 import { resolveCliDetailMode } from './cli/output.js';
 import type { DeviceSshConfig } from './tools/device-ssh.js';
+import type { McpConnection } from './mcp/index.js';
 
 const parsedArgs = parseCliArgs(process.argv.slice(2));
 
@@ -112,6 +114,12 @@ configureRootLogger({
   level: resolveCliLogLevel(),
   json: argv.includes('--json') || process.env.DMOSS_LOG_JSON === '1',
 });
+
+async function closeMcpConnections(connections: McpConnection[]): Promise<void> {
+  for (const connection of connections) {
+    await connection.close().catch(() => {});
+  }
+}
 
 if (process.env.DMOSS_TRACE === 'console' || process.env.DMOSS_TRACE === '1' || process.env.DMOSS_TRACE === 'true') {
   setTracer('console');
@@ -291,47 +299,55 @@ async function main() {
     hooks,
   });
   registerBuiltinTools(agent);
+  const mcpConnections = await registerConfiguredMcpTools(agent, resolvedConfig);
 
-  if ((process.env.DMOSS_EXEC_BACKEND || 'local') === 'docker') {
-    agent.tools.register(createDockerExecTool({ workspaceDir: workspace, image: process.env.DMOSS_DOCKER_IMAGE }));
+  try {
+    if ((process.env.DMOSS_EXEC_BACKEND || 'local') === 'docker') {
+      agent.tools.register(createDockerExecTool({ workspaceDir: workspace, image: process.env.DMOSS_DOCKER_IMAGE }));
+    }
+    for (const tool of createMemoryTools(memoryManager)) agent.tools.register(tool);
+
+    const deviceConfig = getDeviceConfigFromEnv();
+    if (process.env.DMOSS_MESH_ENABLED === 'true' || parsedArgs.mesh) {
+      await setupMesh(agent, deviceConfig);
+    }
+
+    if (deviceConfig) {
+      console.error(`[device] Connected to ${deviceConfig.host} (${deviceConfig.user || 'root'}@${deviceConfig.host}:${deviceConfig.port || 22})`);
+      for (const tool of createDeviceSshTools(deviceConfig)) agent.tools.register(tool);
+      for (const tool of createDeviceDiagnosticsTools(deviceConfig)) agent.tools.register(tool);
+      for (const tool of createRos2Tools(deviceConfig)) agent.tools.register(tool);
+    }
+
+    if (oneShotMessage) {
+      await runOneShot(agent, oneShotMessage, skillLearner, { sessionKey: session.sessionKey });
+      return;
+    }
+
+    if (!process.stdin.isTTY) {
+      let piped = '';
+      for await (const chunk of process.stdin) piped += chunk;
+      if (piped.trim()) await runOneShot(agent, piped.trim(), skillLearner, { sessionKey: session.sessionKey });
+      return;
+    }
+    await runInteractive(agent, skillLearner, {
+      workspace,
+      runtimeDir,
+      configDir: resolveConfigDir(),
+      baseUrl,
+      execBackend: process.env.DMOSS_EXEC_BACKEND || 'local',
+      safetyMode,
+      dockerImage: process.env.DMOSS_DOCKER_IMAGE,
+      meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || parsedArgs.mesh,
+      sessionKey: session.sessionKey,
+      config: resolvedConfig,
+      device: deviceConfig
+        ? { host: deviceConfig.host, user: deviceConfig.user, port: deviceConfig.port }
+        : null,
+    }, { sessionKey: session.sessionKey });
+  } finally {
+    await closeMcpConnections(mcpConnections);
   }
-  for (const tool of createMemoryTools(memoryManager)) agent.tools.register(tool);
-
-  const deviceConfig = getDeviceConfigFromEnv();
-  if (process.env.DMOSS_MESH_ENABLED === 'true' || parsedArgs.mesh) {
-    await setupMesh(agent, deviceConfig);
-  }
-
-  if (deviceConfig) {
-    console.error(`[device] Connected to ${deviceConfig.host} (${deviceConfig.user || 'root'}@${deviceConfig.host}:${deviceConfig.port || 22})`);
-    for (const tool of createDeviceSshTools(deviceConfig)) agent.tools.register(tool);
-    for (const tool of createDeviceDiagnosticsTools(deviceConfig)) agent.tools.register(tool);
-    for (const tool of createRos2Tools(deviceConfig)) agent.tools.register(tool);
-  }
-
-  if (oneShotMessage) { await runOneShot(agent, oneShotMessage, skillLearner, { sessionKey: session.sessionKey }); return; }
-
-  if (!process.stdin.isTTY) {
-    let piped = '';
-    for await (const chunk of process.stdin) piped += chunk;
-    if (piped.trim()) await runOneShot(agent, piped.trim(), skillLearner, { sessionKey: session.sessionKey });
-    return;
-  }
-  await runInteractive(agent, skillLearner, {
-    workspace,
-    runtimeDir,
-    configDir: resolveConfigDir(),
-    baseUrl,
-    execBackend: process.env.DMOSS_EXEC_BACKEND || 'local',
-    safetyMode,
-    dockerImage: process.env.DMOSS_DOCKER_IMAGE,
-    meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || parsedArgs.mesh,
-    sessionKey: session.sessionKey,
-    config: resolvedConfig,
-    device: deviceConfig
-      ? { host: deviceConfig.host, user: deviceConfig.user, port: deviceConfig.port }
-      : null,
-  }, { sessionKey: session.sessionKey });
 }
 
 main().catch((err) => { console.error('Fatal:', err); process.exit(1); });

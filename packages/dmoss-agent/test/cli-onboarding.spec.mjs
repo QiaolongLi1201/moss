@@ -76,6 +76,10 @@ const runtime = {
     promptCacheSource: 'config',
     promptCacheDebug: true,
     promptCacheDebugSource: 'config',
+    mcpEnabled: true,
+    mcpEnabledSource: 'config',
+    mcpConfigPath: '/tmp/dmoss-config/mcp.json',
+    mcpConfigPathSource: 'config',
     guardrails: {
       input: { blockPatterns: ['forbidden input'], redactPatterns: ['SECRET=[^\\s]+'] },
       output: { blockPatterns: [], redactPatterns: ['TOKEN=[^\\s]+'] },
@@ -169,6 +173,8 @@ const agent = createAgent([
   assert.match(permissions, /denied tools: device_exec \(config\)/);
   assert.match(permissions, /prompt cache: disabled \(config\)/);
   assert.match(permissions, /prompt cache debug: enabled \(config\)/);
+  assert.match(permissions, /mcp: enabled \(config\)/);
+  assert.match(permissions, /mcp config: \/tmp\/dmoss-config\/mcp\.json \(config\)/);
   assert.match(permissions, /guardrails: input 2, output 1 \(config\)/);
   assert.match(permissions, /max turns: 18 \(config\)/);
   assert.match(permissions, /context tokens: 96000 \(config\)/);
@@ -185,6 +191,8 @@ const agent = createAgent([
   assert.match(permissions, /dmoss config set trustedTools/);
   assert.match(permissions, /dmoss config set deniedTools/);
   assert.match(permissions, /dmoss config set promptCacheDebug/);
+  assert.match(permissions, /dmoss config set mcp\.enabled/);
+  assert.match(permissions, /dmoss config set mcp\.configPath/);
   assert.match(permissions, /dmoss config unset --project safetyMode/);
   assert.match(permissions, /dmoss config unset approvalPolicy/);
   assert.match(permissions, /trust the approved tool for the current session/);
@@ -192,6 +200,8 @@ const agent = createAgent([
   assert.match(permissions, /DMOSS_SAFETY_MODE/);
   assert.match(permissions, /DMOSS_TRUSTED_TOOLS/);
   assert.match(permissions, /DMOSS_PROMPT_CACHE_DEBUG/);
+  assert.match(permissions, /DMOSS_MCP_ENABLED/);
+  assert.match(permissions, /DMOSS_MCP_CONFIG/);
   assert.match(permissions, /DMOSS_MAX_AGENT_TURNS/);
   assert.match(permissions, /DMOSS_CONTEXT_TOKENS/);
   assert.doesNotMatch(permissions, /test-key/);

@@ -168,6 +168,10 @@ function serializeResolvedConfig(resolved: ReturnType<typeof resolveCliConfig>):
     contextTokensSource: resolved.contextTokensSource,
     compactionSettings: { ...resolved.compactionSettings },
     compactionSettingsSource: resolved.compactionSettingsSource,
+    mcpEnabled: resolved.mcpEnabled,
+    mcpEnabledSource: resolved.mcpEnabledSource,
+    mcpConfigPath: resolved.mcpConfigPath,
+    mcpConfigPathSource: resolved.mcpConfigPathSource,
     configPath: resolved.configPath,
     projectConfigPath: resolved.projectConfigPath ?? null,
   };
@@ -207,6 +211,8 @@ export function renderAuthStatus(
     `  maxAgentTurns: ${resolved.maxAgentTurns} (${resolved.maxAgentTurnsSource})`,
     `  contextTokens: ${resolved.contextTokens} (${resolved.contextTokensSource})`,
     `  compaction: reserve ${resolved.compactionSettings.reserveTokens}, keepRecent ${resolved.compactionSettings.keepRecentTokens} (${resolved.compactionSettingsSource})`,
+    `  mcp: ${resolved.mcpEnabled ? 'enabled' : 'disabled'} (${resolved.mcpEnabledSource})`,
+    `  mcpConfig: ${resolved.mcpConfigPath} (${resolved.mcpConfigPathSource})`,
     `  config: ${resolved.configPath}`,
     `  projectConfig: ${resolved.projectConfigPath || 'none'}`,
   ].join('\n');
@@ -229,7 +235,7 @@ export function renderConfigUsage(): string {
     '  dmoss config init [--project] [--force]',
     '  dmoss config show',
     '  dmoss config show --json',
-    '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
+    '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|mcp.enabled|mcp.configPath|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
     '  dmoss config set --project <key> <value>',
     '  dmoss config unset <key>',
     '  dmoss config unset --project <key>',
@@ -246,6 +252,8 @@ export function renderConfigUsage(): string {
     '  dmoss config set approvalPolicy prompt',
     '  dmoss config set trustedTools exec,write_file',
     '  dmoss config set deniedTools device_exec,write_file',
+    '  dmoss config set mcp.enabled true',
+    '  dmoss config set mcp.configPath .dmoss/mcp.json',
     '  dmoss config set agent.maxTurns 96',
     '  dmoss config set agent.contextTokens 200000',
     '  dmoss config set agent.compaction.reserveTokens 20000',
@@ -386,6 +394,10 @@ function buildUserConfigTemplate(): ConfigFile {
       enabled: resolved.promptCacheEnabled,
       debug: resolved.promptCacheDebug,
     },
+    mcp: {
+      enabled: resolved.mcpEnabled,
+      configPath: resolved.mcpConfigPath,
+    },
     agent: {
       maxTurns: resolved.maxAgentTurns,
       contextTokens: resolved.contextTokens,
@@ -406,6 +418,10 @@ function buildProjectConfigTemplate(): ConfigFile {
       enabled: resolved.promptCacheEnabled,
       debug: resolved.promptCacheDebug,
     },
+    mcp: {
+      enabled: resolved.mcpEnabled,
+      configPath: '.dmoss/mcp.json',
+    },
     agent: {
       maxTurns: resolved.maxAgentTurns,
       contextTokens: resolved.contextTokens,
@@ -415,7 +431,7 @@ function buildProjectConfigTemplate(): ConfigFile {
 }
 
 function supportedConfigKeys(): string {
-  return 'Supported keys: profile, provider, model, baseUrl, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
+  return 'Supported keys: profile, provider, model, baseUrl, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, mcp.enabled, mcp.configPath, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
 }
 
 function removeEmptyNestedConfig(config: ConfigFile): ConfigFile {
@@ -433,6 +449,9 @@ function removeEmptyNestedConfig(config: ConfigFile): ConfigFile {
   }
   if (next.agent && Object.keys(next.agent).length === 0) {
     delete next.agent;
+  }
+  if (next.mcp && Object.keys(next.mcp).length === 0) {
+    delete next.mcp;
   }
   return next;
 }
@@ -530,6 +549,16 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
       ? current.promptCache
       : { enabled: typeof current.promptCache === 'boolean' ? current.promptCache : true };
     next.promptCache = { ...previous, debug };
+  } else if (key === 'mcp.enabled') {
+    const enabled = parseConfigBoolean(value);
+    if (enabled === null) {
+      print('Supported mcp.enabled values: true, false');
+      process.exitCode = 1;
+      return;
+    }
+    next.mcp = { ...current.mcp, enabled };
+  } else if (key === 'mcp.configPath') {
+    next.mcp = { ...current.mcp, configPath: value };
   } else if (key === 'agent.maxTurns' || key === 'agent.contextTokens') {
     const parsed = parseConfigPositiveInteger(value, key);
     if (parsed === null) return;
@@ -593,6 +622,12 @@ export function runConfigUnset(args: string[], startDir = process.cwd()): void {
       next.promptCache = { ...current.promptCache };
       delete next.promptCache.debug;
     }
+  } else if (key === 'mcp.enabled') {
+    next.mcp = { ...current.mcp };
+    delete next.mcp.enabled;
+  } else if (key === 'mcp.configPath') {
+    next.mcp = { ...current.mcp };
+    delete next.mcp.configPath;
   } else if (key === 'agent.maxTurns') {
     next.agent = { ...current.agent };
     delete next.agent.maxTurns;

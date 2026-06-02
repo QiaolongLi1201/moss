@@ -90,6 +90,7 @@ export interface ConfigFile {
   promptCache?: PromptCacheConfig | boolean;
   guardrails?: GuardrailsConfig;
   agent?: AgentRuntimeConfig;
+  mcp?: McpCliConfig;
 }
 
 export interface LoadedCliConfigFile {
@@ -121,6 +122,11 @@ export interface AgentRuntimeConfig {
   maxTurns?: number;
   contextTokens?: number;
   compaction?: Partial<Pick<CompactionSettings, 'reserveTokens' | 'keepRecentTokens'>>;
+}
+
+export interface McpCliConfig {
+  enabled?: boolean;
+  configPath?: string;
 }
 
 export interface ResolvedTextGuardrailConfig {
@@ -280,6 +286,17 @@ function mergeAgentRuntimeConfig(
   };
 }
 
+function mergeMcpConfig(
+  projectMcp: ConfigFile['mcp'],
+  userMcp: ConfigFile['mcp'],
+): ConfigFile['mcp'] {
+  if (!projectMcp && !userMcp) return undefined;
+  return {
+    ...projectMcp,
+    ...userMcp,
+  };
+}
+
 export function mergeConfigFiles(projectConfig: ConfigFile, userConfig: ConfigFile): ConfigFile {
   return {
     ...projectConfig,
@@ -287,6 +304,7 @@ export function mergeConfigFiles(projectConfig: ConfigFile, userConfig: ConfigFi
     promptCache: mergePromptCacheConfig(projectConfig.promptCache, userConfig.promptCache),
     guardrails: mergeGuardrailsConfig(projectConfig.guardrails, userConfig.guardrails),
     agent: mergeAgentRuntimeConfig(projectConfig.agent, userConfig.agent),
+    mcp: mergeMcpConfig(projectConfig.mcp, userConfig.mcp),
   };
 }
 
@@ -468,6 +486,26 @@ function firstEnv(env: NodeJS.ProcessEnv, names: string[]): { value: string; sou
   return null;
 }
 
+function resolveMcpConfigPath(
+  mcpPath: string | undefined,
+  source: 'env' | 'config' | 'default',
+  configPaths: Pick<LoadedCliConfigFile, 'configPath' | 'projectConfigPath'> | undefined,
+  env: NodeJS.ProcessEnv,
+): string {
+  if (mcpPath && path.isAbsolute(mcpPath)) return mcpPath;
+  if (source === 'env' && mcpPath) return path.resolve(mcpPath);
+
+  const configPath = configPaths?.configPath ?? resolveConfigPath(undefined, env);
+  if (source === 'config' && mcpPath) {
+    const baseDir = configPaths?.projectConfigPath
+      ? path.dirname(path.dirname(configPaths.projectConfigPath))
+      : path.dirname(configPath);
+    return path.resolve(baseDir, mcpPath);
+  }
+
+  return path.join(path.dirname(configPath), 'mcp.json');
+}
+
 export interface ResolvedCliConfig {
   profile: CliConfigProfile;
   profileSource: string;
@@ -501,6 +539,10 @@ export interface ResolvedCliConfig {
   contextTokensSource: string;
   compactionSettings: Pick<CompactionSettings, 'reserveTokens' | 'keepRecentTokens'>;
   compactionSettingsSource: string;
+  mcpEnabled: boolean;
+  mcpEnabledSource: string;
+  mcpConfigPath: string;
+  mcpConfigPathSource: string;
   configPath: string;
   projectConfigPath?: string;
 }
@@ -696,6 +738,33 @@ export function resolveCliConfig(
   };
   const compactionSettingsSource =
     configCompactionReserve !== undefined || configCompactionKeepRecent !== undefined ? 'config' : 'default';
+  const mcpEnabledEnv = parseConfigBoolean(env.DMOSS_MCP_ENABLED);
+  const configMcpEnabled =
+    activeConfig.mcp && typeof activeConfig.mcp === 'object' && typeof activeConfig.mcp.enabled === 'boolean'
+      ? activeConfig.mcp.enabled
+      : undefined;
+  const mcpEnabled = mcpEnabledEnv ?? configMcpEnabled ?? false;
+  const mcpEnabledSource = mcpEnabledEnv !== null
+    ? 'DMOSS_MCP_ENABLED'
+    : configMcpEnabled !== undefined
+      ? 'config'
+      : 'default';
+  const configMcpPath =
+    activeConfig.mcp && typeof activeConfig.mcp === 'object' && typeof activeConfig.mcp.configPath === 'string'
+      ? activeConfig.mcp.configPath
+      : undefined;
+  const envMcpPath = env.DMOSS_MCP_CONFIG || env.DMOSS_MCP_CONFIG_FILE;
+  const mcpConfigPathSource = envMcpPath
+    ? (env.DMOSS_MCP_CONFIG ? 'DMOSS_MCP_CONFIG' : 'DMOSS_MCP_CONFIG_FILE')
+    : configMcpPath
+      ? 'config'
+      : 'default';
+  const mcpConfigPath = resolveMcpConfigPath(
+    envMcpPath || configMcpPath,
+    envMcpPath ? 'env' : configMcpPath ? 'config' : 'default',
+    configPaths,
+    env,
+  );
 
   return {
     profile,
@@ -730,6 +799,10 @@ export function resolveCliConfig(
     contextTokensSource,
     compactionSettings,
     compactionSettingsSource,
+    mcpEnabled,
+    mcpEnabledSource,
+    mcpConfigPath,
+    mcpConfigPathSource,
     configPath: configPaths?.configPath ?? resolveConfigPath(undefined, env),
     projectConfigPath: configPaths?.projectConfigPath,
   };

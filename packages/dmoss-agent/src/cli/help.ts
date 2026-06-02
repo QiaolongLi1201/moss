@@ -48,6 +48,8 @@ export function displayHelp(c: Colors): void {
     `    ${c.green('config set trustedTools')} ${c.dim('<csv>')} auto-approve exact tool names after safety checks`,
     `    ${c.green('config set deniedTools')} ${c.dim('<csv>')} always block exact tool names`,
     `    ${c.green('config set promptCacheDebug')} ${c.dim('<bool>')} enable prompt-prefix cache diagnostics`,
+    `    ${c.green('config set mcp.enabled')} ${c.dim('<bool>')} enable MCP servers from config`,
+    `    ${c.green('config set mcp.configPath')} ${c.dim('<path>')} set MCP server config path`,
     `    ${c.green('config set agent.maxTurns')} ${c.dim('<n>')} set per-request agent turn budget`,
     `    ${c.green('config set agent.contextTokens')} ${c.dim('<n>')} set context budget used by pruning/compaction`,
     `    ${c.green('config unset')} ${c.dim('<key>')}   remove a stored user/project override`,

@@ -257,6 +257,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
   const deniedTools = configuredDeniedTools.length ? configuredDeniedTools.join(', ') : 'none';
   const cache = auth.promptCacheEnabled === false ? 'disabled' : 'enabled';
   const cacheDebug = auth.promptCacheDebug === true ? 'enabled' : 'disabled';
+  const mcp = auth.mcpEnabled === true ? 'enabled' : 'disabled';
   const inputGuardrails = auth.guardrails.input.blockPatterns.length + auth.guardrails.input.redactPatterns.length;
   const outputGuardrails = auth.guardrails.output.blockPatterns.length + auth.guardrails.output.redactPatterns.length;
   return [
@@ -270,6 +271,8 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     `  ${label('denied tools')} ${deniedTools} (${auth.deniedToolsSource ?? 'default'})`,
     `  ${label('prompt cache')} ${cache} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${cacheDebug} (${auth.promptCacheDebugSource ?? 'default'})`,
+    `  ${label('mcp')} ${mcp} (${auth.mcpEnabledSource ?? 'default'})`,
+    `  ${label('mcp config')} ${auth.mcpConfigPath} (${auth.mcpConfigPathSource ?? 'default'})`,
     `  ${label('guardrails')} input ${inputGuardrails}, output ${outputGuardrails} (${auth.guardrailsSource ?? 'default'})`,
     `  ${label('max turns')} ${auth.maxAgentTurns} (${auth.maxAgentTurnsSource ?? 'default'})`,
     `  ${label('context tokens')} ${auth.contextTokens} (${auth.contextTokensSource ?? 'default'})`,
@@ -301,6 +304,8 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    dmoss config set deniedTools device_exec,write_file',
     '    dmoss config set promptCache true|false',
     '    dmoss config set promptCacheDebug true|false',
+    '    dmoss config set mcp.enabled true|false',
+    '    dmoss config set mcp.configPath .dmoss/mcp.json',
     '    edit guardrails.input/output blockPatterns or redactPatterns in config JSON',
     '    dmoss config set agent.maxTurns 96',
     '    dmoss config set agent.contextTokens 200000',
@@ -309,7 +314,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    dmoss config unset approvalPolicy',
     '',
     '  Environment overrides:',
-    '    DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG, DMOSS_MAX_AGENT_TURNS, DMOSS_CONTEXT_TOKENS',
+    '    DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG, DMOSS_MCP_ENABLED, DMOSS_MCP_CONFIG, DMOSS_MAX_AGENT_TURNS, DMOSS_CONTEXT_TOKENS',
   ].join('\n');
 }
 

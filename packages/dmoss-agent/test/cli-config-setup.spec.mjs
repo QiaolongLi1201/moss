@@ -87,6 +87,8 @@ try {
     DMOSS_DENIED_TOOLS: 'device_exec',
     DMOSS_PROMPT_CACHE: 'false',
     DMOSS_PROMPT_CACHE_DEBUG: 'true',
+    DMOSS_MCP_ENABLED: 'true',
+    DMOSS_MCP_CONFIG: '/tmp/dmoss-mcp-env.json',
     DMOSS_MAX_AGENT_TURNS: '12',
     DMOSS_CONTEXT_TOKENS: '64000',
   }, loadConfigFile());
@@ -108,6 +110,10 @@ try {
   assert.equal(envResolved.promptCacheSource, 'DMOSS_PROMPT_CACHE');
   assert.equal(envResolved.promptCacheDebug, true);
   assert.equal(envResolved.promptCacheDebugSource, 'DMOSS_PROMPT_CACHE_DEBUG');
+  assert.equal(envResolved.mcpEnabled, true);
+  assert.equal(envResolved.mcpEnabledSource, 'DMOSS_MCP_ENABLED');
+  assert.equal(envResolved.mcpConfigPath, '/tmp/dmoss-mcp-env.json');
+  assert.equal(envResolved.mcpConfigPathSource, 'DMOSS_MCP_CONFIG');
   assert.equal(envResolved.maxAgentTurns, 12);
   assert.equal(envResolved.maxAgentTurnsSource, 'DMOSS_MAX_AGENT_TURNS');
   assert.equal(envResolved.contextTokens, 64000);
@@ -173,6 +179,8 @@ try {
   assert.match(status, /deniedTools: none/);
   assert.match(status, /promptCache: enabled/);
   assert.match(status, /promptCacheDebug: disabled/);
+  assert.match(status, /mcp: disabled \(default\)/);
+  assert.match(status, /mcpConfig: .*mcp\.json \(default\)/);
   assert.match(status, /guardrails: none \(default\)/);
   assert.match(status, /maxAgentTurns: 64 \(default\)/);
   assert.match(status, /contextTokens: 200000 \(default\)/);
@@ -232,14 +240,17 @@ try {
     DMOSS_API_KEY: '',
     DASHSCOPE_API_KEY: '',
     ALIYUN_API_KEY: '',
-        OPENAI_API_KEY: '',
-        ANTHROPIC_API_KEY: '',
-        DMOSS_DENIED_TOOLS: '',
-        DMOSS_MODEL: '',
+    OPENAI_API_KEY: '',
+    ANTHROPIC_API_KEY: '',
+    DMOSS_DENIED_TOOLS: '',
+    DMOSS_MODEL: '',
     DMOSS_BASE_URL: '',
     OPENAI_BASE_URL: '',
     ANTHROPIC_BASE_URL: '',
     DASHSCOPE_BASE_URL: '',
+    DMOSS_MCP_ENABLED: '',
+    DMOSS_MCP_CONFIG: '',
+    DMOSS_MCP_CONFIG_FILE: '',
     NO_COLOR: '1',
   };
   for (const args of [['config'], ['config', 'show']]) {
@@ -296,6 +307,9 @@ try {
     'DMOSS_DENIED_TOOLS',
     'DMOSS_PROMPT_CACHE',
     'DMOSS_PROMPT_CACHE_DEBUG',
+    'DMOSS_MCP_ENABLED',
+    'DMOSS_MCP_CONFIG',
+    'DMOSS_MCP_CONFIG_FILE',
     'DMOSS_MAX_AGENT_TURNS',
     'DMOSS_CONTEXT_TOKENS',
   ];
@@ -314,6 +328,7 @@ try {
     assert.deepEqual(initialized.trustedTools, []);
     assert.deepEqual(initialized.deniedTools, []);
     assert.deepEqual(initialized.promptCache, { enabled: true, debug: false });
+    assert.deepEqual(initialized.mcp, { enabled: false, configPath: path.join(initConfigDir, 'mcp.json') });
     assert.equal(initialized.agent.maxTurns, 64);
     assert.equal(initialized.agent.contextTokens, 200000);
     assert.deepEqual(initialized.agent.compaction, { reserveTokens: 20000, keepRecentTokens: 20000 });
@@ -360,6 +375,7 @@ try {
     assert.equal(initializedProject.safetyMode, 'workspace-write');
     assert.equal(initializedProject.approvalPolicy, 'prompt');
     assert.deepEqual(initializedProject.promptCache, { enabled: true, debug: false });
+    assert.deepEqual(initializedProject.mcp, { enabled: false, configPath: '.dmoss/mcp.json' });
     assert.equal(Object.hasOwn(initializedProject, 'provider'), false, 'project init should not persist user provider');
     assert.equal(Object.hasOwn(initializedProject, 'model'), false, 'project init should not persist user model');
     assert.equal(Object.hasOwn(initializedProject, 'baseUrl'), false, 'project init should not persist user baseUrl');
@@ -392,6 +408,10 @@ try {
     approvalPolicy: 'never',
     deniedTools: ['device_exec'],
     promptCache: { debug: true },
+    mcp: {
+      enabled: true,
+      configPath: '.dmoss/mcp.json',
+    },
     guardrails: {
       input: { redactPatterns: ['PROJECT_SECRET=[^\\s]+'] },
       output: { blockPatterns: ['project leak'] },
@@ -414,6 +434,7 @@ try {
     assert.equal(loadedProject.config.provider, 'qwen');
     assert.equal(loadedProject.config.model, 'qwen3.7-max');
     assert.deepEqual(loadedProject.config.promptCache, { debug: true });
+    assert.deepEqual(loadedProject.config.mcp, { enabled: true, configPath: '.dmoss/mcp.json' });
     assert.deepEqual(loadedProject.config.guardrails, {
       input: { redactPatterns: ['PROJECT_SECRET=[^\\s]+'] },
       output: { blockPatterns: ['project leak'] },
@@ -437,6 +458,10 @@ try {
     assert.equal(projectResolved.deniedToolsSource, 'config');
     assert.equal(projectResolved.promptCacheDebug, true);
     assert.equal(projectResolved.promptCacheDebugSource, 'config');
+    assert.equal(projectResolved.mcpEnabled, true);
+    assert.equal(projectResolved.mcpEnabledSource, 'config');
+    assert.equal(projectResolved.mcpConfigPath, path.join(projectRoot, '.dmoss', 'mcp.json'));
+    assert.equal(projectResolved.mcpConfigPathSource, 'config');
     assert.deepEqual(projectResolved.guardrails.input.redactPatterns, ['PROJECT_SECRET=[^\\s]+']);
     assert.deepEqual(projectResolved.guardrails.output.blockPatterns, ['project leak']);
     assert.equal(projectResolved.guardrailsSource, 'config');
@@ -480,6 +505,8 @@ try {
     assert.equal(projectJson.profileSource, 'config');
     assert.equal(projectJson.projectConfigPath, projectConfigPath);
     assert.deepEqual(projectJson.deniedTools, ['device_exec']);
+    assert.equal(projectJson.mcpEnabled, true);
+    assert.equal(projectJson.mcpConfigPath, path.join(projectRoot, '.dmoss', 'mcp.json'));
     assert.equal(projectJson.guardrails.input.redactPatterns[0], 'PROJECT_SECRET=[^\\s]+');
     assert.equal(projectJson.maxAgentTurns, 24);
     assert.deepEqual(projectJson.compactionSettings, { reserveTokens: 10000, keepRecentTokens: 20000 });
@@ -601,6 +628,7 @@ try {
     trustedTools: ['exec'],
     deniedTools: ['device_exec'],
     promptCache: { enabled: false, debug: true },
+    mcp: { enabled: true, configPath: '/tmp/dmoss-mcp.json' },
     guardrails: {
       input: {
         redactPatterns: ['SECRET=[^\\s]+', 'SECRET=[^\\s]+'],
@@ -630,6 +658,10 @@ try {
   assert.equal(filePolicyResolved.promptCacheSource, 'config');
   assert.equal(filePolicyResolved.promptCacheDebug, true);
   assert.equal(filePolicyResolved.promptCacheDebugSource, 'config');
+  assert.equal(filePolicyResolved.mcpEnabled, true);
+  assert.equal(filePolicyResolved.mcpEnabledSource, 'config');
+  assert.equal(filePolicyResolved.mcpConfigPath, '/tmp/dmoss-mcp.json');
+  assert.equal(filePolicyResolved.mcpConfigPathSource, 'config');
   assert.deepEqual(filePolicyResolved.guardrails.input.redactPatterns, ['SECRET=[^\\s]+']);
   assert.deepEqual(filePolicyResolved.guardrails.output.blockPatterns, ['private token']);
   assert.equal(filePolicyResolved.guardrailsSource, 'config');
@@ -716,6 +748,10 @@ try {
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
   runConfigSet(['promptCacheDebug', 'true']);
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
+  runConfigSet(['mcp.enabled', 'true']);
+  assert.deepEqual(loadConfigFile().mcp, { enabled: true, configPath: '/tmp/dmoss-mcp.json' });
+  runConfigSet(['mcp.configPath', '.dmoss/mcp.json']);
+  assert.deepEqual(loadConfigFile().mcp, { enabled: true, configPath: '.dmoss/mcp.json' });
   runConfigSet(['agent.maxTurns', '96']);
   assert.equal(loadConfigFile().agent.maxTurns, 96);
   runConfigSet(['agent.contextTokens', '160000']);
@@ -725,7 +761,12 @@ try {
   runConfigSet(['agent.compaction.keepRecentTokens', '12000']);
   assert.deepEqual(loadConfigFile().agent.compaction, { reserveTokens: 24000, keepRecentTokens: 12000 });
 
-  const configSetResolved = resolveCliConfig({}, loadConfigFile());
+  const configSetResolved = resolveCliConfig(
+    { DMOSS_CONFIG_DIR: tmp },
+    loadConfigFile(),
+    {},
+    { configPath: path.join(tmp, 'config.json') },
+  );
   assert.equal(configSetResolved.maxAgentTurns, 96);
   assert.deepEqual(configSetResolved.deniedTools, ['device_exec', 'write_file']);
   assert.equal(configSetResolved.deniedToolsSource, 'config');
@@ -734,6 +775,8 @@ try {
   assert.equal(configSetResolved.contextTokensSource, 'config');
   assert.deepEqual(configSetResolved.compactionSettings, { reserveTokens: 24000, keepRecentTokens: 12000 });
   assert.equal(configSetResolved.compactionSettingsSource, 'config');
+  assert.equal(configSetResolved.mcpEnabled, true);
+  assert.equal(configSetResolved.mcpConfigPath, path.join(tmp, '.dmoss', 'mcp.json'));
 
   runConfigUnset(['approvalPolicy']);
   assert.equal(Object.hasOwn(loadConfigFile(), 'approvalPolicy'), false);
@@ -749,6 +792,10 @@ try {
   assert.equal(resolveCliConfig({}, loadConfigFile()).promptCacheSource, 'profile:autonomous');
   runConfigUnset(['promptCacheDebug']);
   assert.equal(Object.hasOwn(loadConfigFile(), 'promptCache'), false);
+  runConfigUnset(['mcp.enabled']);
+  assert.deepEqual(loadConfigFile().mcp, { configPath: '.dmoss/mcp.json' });
+  runConfigUnset(['mcp.configPath']);
+  assert.equal(Object.hasOwn(loadConfigFile(), 'mcp'), false);
   runConfigUnset(['agent.compaction.reserveTokens']);
   assert.deepEqual(loadConfigFile().agent.compaction, { keepRecentTokens: 12000 });
   runConfigUnset(['agent.compaction.keepRecentTokens']);

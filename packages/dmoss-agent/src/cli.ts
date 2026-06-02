@@ -26,6 +26,7 @@ import {
   runAuthLogout,
   runConfigShow,
   runConfigSet,
+  runConfigUnset,
   runSetupWizard,
 } from './cli/setup.js';
 import { DmossAgent, JsonlSessionStore, MemoryManager } from './core/index.js';
@@ -198,6 +199,10 @@ async function main() {
   }
   if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'set') {
     runConfigSet(parsedArgs.commandArgs.slice(1), parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd());
+    return;
+  }
+  if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'unset') {
+    runConfigUnset(parsedArgs.commandArgs.slice(1), parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd());
     return;
   }
   if (parsedArgs.command === 'config') {

@@ -225,8 +225,10 @@ export function renderConfigUsage(): string {
     '  dmoss config',
     '  dmoss config show',
     '  dmoss config show --json',
-    '  dmoss config set <profile|provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
+    '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
     '  dmoss config set --project <key> <value>',
+    '  dmoss config unset <key>',
+    '  dmoss config unset --project <key>',
     '',
     'Config file:',
     '  dmoss reads .dmoss/config.json from the current workspace as project defaults',
@@ -326,7 +328,7 @@ export async function runAuthLogout(): Promise<void> {
   print('[auth] Stored API key removed. Model and baseUrl were preserved.');
 }
 
-function resolveConfigSetTarget(args: string[], startDir: string): { args: string[]; configPath: string; scope: 'user' | 'project' } {
+function resolveConfigEditTarget(args: string[], startDir: string): { args: string[]; configPath: string; scope: 'user' | 'project' } {
   if (args[0] !== '--project') {
     return { args, configPath: resolveConfigPath(), scope: 'user' };
   }
@@ -338,8 +340,31 @@ function resolveConfigSetTarget(args: string[], startDir: string): { args: strin
   };
 }
 
+function supportedConfigKeys(): string {
+  return 'Supported keys: profile, provider, model, baseUrl, workspace, safetyMode, approvalPolicy, trustedTools, promptCache, promptCacheDebug, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
+}
+
+function removeEmptyNestedConfig(config: ConfigFile): ConfigFile {
+  const next = { ...config };
+  if (
+    next.promptCache &&
+    typeof next.promptCache === 'object' &&
+    Object.keys(next.promptCache).length === 0
+  ) {
+    delete next.promptCache;
+  }
+  if (next.agent?.compaction && Object.keys(next.agent.compaction).length === 0) {
+    next.agent = { ...next.agent };
+    delete next.agent.compaction;
+  }
+  if (next.agent && Object.keys(next.agent).length === 0) {
+    delete next.agent;
+  }
+  return next;
+}
+
 export function runConfigSet(args: string[], startDir = process.cwd()): void {
-  const target = resolveConfigSetTarget(args, startDir);
+  const target = resolveConfigEditTarget(args, startDir);
   args = target.args;
   const [key, ...rest] = args;
   const value = rest.join(' ').trim();
@@ -362,6 +387,7 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
   else if (key === 'provider') next.provider = normalizeProvider(value);
   else if (key === 'model') next.model = value;
   else if (key === 'baseUrl') next.baseUrl = sanitizeBaseUrl(value);
+  else if (key === 'workspace') next.workspace = path.resolve(value);
   else if (key === 'safetyMode') {
     const mode = normalizeSafetyModeConfig(value);
     if (!mode) {
@@ -430,13 +456,67 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
     }
   }
   else {
-    print('Supported keys: profile, provider, model, baseUrl, safetyMode, approvalPolicy, trustedTools, promptCache, promptCacheDebug, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens');
+    print(supportedConfigKeys());
     process.exitCode = 1;
     return;
   }
   saveConfigFileAtPath(next, target.configPath);
   const scope = target.scope === 'project' ? 'project ' : '';
   print(`[config] ${scope}${key} updated in ${target.configPath}`);
+}
+
+export function runConfigUnset(args: string[], startDir = process.cwd()): void {
+  const target = resolveConfigEditTarget(args, startDir);
+  args = target.args;
+  const [key, ...rest] = args;
+  if (!key || rest.length > 0) {
+    print(renderConfigUsage());
+    process.exitCode = 1;
+    return;
+  }
+  const current = loadConfigFile(target.configPath);
+  let next: ConfigFile = { ...current };
+  if (key === 'profile') delete next.profile;
+  else if (key === 'provider') delete next.provider;
+  else if (key === 'model') delete next.model;
+  else if (key === 'baseUrl') delete next.baseUrl;
+  else if (key === 'workspace') delete next.workspace;
+  else if (key === 'safetyMode') delete next.safetyMode;
+  else if (key === 'approvalPolicy') delete next.approvalPolicy;
+  else if (key === 'trustedTools') delete next.trustedTools;
+  else if (key === 'promptCache') {
+    if (typeof current.promptCache === 'object' && current.promptCache !== null) {
+      next.promptCache = { ...current.promptCache };
+      delete next.promptCache.enabled;
+    } else {
+      delete next.promptCache;
+    }
+  } else if (key === 'promptCacheDebug') {
+    if (typeof current.promptCache === 'object' && current.promptCache !== null) {
+      next.promptCache = { ...current.promptCache };
+      delete next.promptCache.debug;
+    }
+  } else if (key === 'agent.maxTurns') {
+    next.agent = { ...current.agent };
+    delete next.agent.maxTurns;
+  } else if (key === 'agent.contextTokens') {
+    next.agent = { ...current.agent };
+    delete next.agent.contextTokens;
+  } else if (key === 'agent.compaction.reserveTokens') {
+    next.agent = { ...current.agent, compaction: { ...current.agent?.compaction } };
+    delete next.agent.compaction?.reserveTokens;
+  } else if (key === 'agent.compaction.keepRecentTokens') {
+    next.agent = { ...current.agent, compaction: { ...current.agent?.compaction } };
+    delete next.agent.compaction?.keepRecentTokens;
+  } else {
+    print(supportedConfigKeys());
+    process.exitCode = 1;
+    return;
+  }
+  next = removeEmptyNestedConfig(next);
+  saveConfigFileAtPath(next, target.configPath);
+  const scope = target.scope === 'project' ? 'project ' : '';
+  print(`[config] ${scope}${key} removed from ${target.configPath}`);
 }
 
 export function printMissingConfigGuidance(interactive: boolean): void {

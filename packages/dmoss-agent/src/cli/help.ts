@@ -48,6 +48,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.green('config set promptCacheDebug')} ${c.dim('<bool>')} enable prompt-prefix cache diagnostics`,
     `    ${c.green('config set agent.maxTurns')} ${c.dim('<n>')} set per-request agent turn budget`,
     `    ${c.green('config set agent.contextTokens')} ${c.dim('<n>')} set context budget used by pruning/compaction`,
+    `    ${c.green('config unset')} ${c.dim('<key>')}   remove a stored user/project override`,
     '',
     `  ${c.bold('Interactive commands')}`,
     `    ${c.green('/help')}            show interactive commands`,

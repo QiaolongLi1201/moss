@@ -175,9 +175,12 @@ const agent = createAgent([
   assert.match(permissions, /dmoss config set agent\.compaction\.reserveTokens/);
   assert.match(permissions, /dmoss config set safetyMode/);
   assert.match(permissions, /dmoss config set --project safetyMode/);
+  assert.match(permissions, /dmoss config set workspace/);
   assert.match(permissions, /dmoss config set profile/);
   assert.match(permissions, /dmoss config set trustedTools/);
   assert.match(permissions, /dmoss config set promptCacheDebug/);
+  assert.match(permissions, /dmoss config unset --project safetyMode/);
+  assert.match(permissions, /dmoss config unset approvalPolicy/);
   assert.match(permissions, /trust the approved tool for the current session/);
   assert.match(permissions, /DMOSS_PROFILE/);
   assert.match(permissions, /DMOSS_SAFETY_MODE/);

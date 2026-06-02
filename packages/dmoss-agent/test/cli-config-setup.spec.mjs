@@ -24,6 +24,7 @@ import {
   renderConfigJson,
   renderConfigUsage,
   runConfigSet,
+  runConfigUnset,
 } from '../dist/cli/setup.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-config-'));
@@ -200,6 +201,8 @@ try {
   assert.match(usage, /dmoss config show --json/);
   assert.match(usage, /dmoss config set profile autonomous/);
   assert.match(usage, /dmoss config set --project safetyMode workspace-write/);
+  assert.match(usage, /dmoss config unset <key>/);
+  assert.match(usage, /dmoss config unset --project <key>/);
   assert.match(usage, /\.dmoss\/config\.json/);
   assert.match(usage, /DMOSS_CONFIG_FILE/);
   assert.match(usage, /promptCacheDebug/);
@@ -362,12 +365,14 @@ try {
 
     runConfigSet(['--project', 'safetyMode', 'read-only'], projectChild);
     assert.equal(JSON.parse(fs.readFileSync(projectConfigPath, 'utf8')).safetyMode, 'read-only');
+    runConfigUnset(['--project', 'safetyMode'], projectChild);
+    assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(projectConfigPath, 'utf8')), 'safetyMode'), false);
     const projectOnlyConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-project-only-config-'));
     try {
       const projectOnlyLoaded = loadCliConfigFile({ DMOSS_CONFIG_DIR: projectOnlyConfigDir }, [], projectChild);
       const projectOnlyResolved = resolveCliConfig({ DMOSS_CONFIG_DIR: projectOnlyConfigDir }, projectOnlyLoaded.config, {}, projectOnlyLoaded);
-      assert.equal(projectOnlyResolved.safetyMode, 'read-only');
-      assert.equal(projectOnlyResolved.safetyModeSource, 'config');
+      assert.equal(projectOnlyResolved.safetyMode, 'workspace-write');
+      assert.equal(projectOnlyResolved.safetyModeSource, 'profile:autonomous');
     } finally {
       fs.rmSync(projectOnlyConfigDir, { recursive: true, force: true });
     }
@@ -572,6 +577,8 @@ try {
   assert.equal(loadConfigFile().baseUrl, 'https://example.com');
   runConfigSet(['baseUrl', 'https://user:pass@example.com/compatible-mode/v1?api_key=secret#frag']);
   assert.equal(loadConfigFile().baseUrl, 'https://example.com/compatible-mode');
+  runConfigSet(['workspace', '/tmp/dmoss-config-workspace']);
+  assert.equal(loadConfigFile().workspace, '/tmp/dmoss-config-workspace');
   runConfigSet(['safetyMode', 'read-only']);
   assert.equal(loadConfigFile().safetyMode, 'read-only');
   runConfigSet(['approvalPolicy', 'never']);
@@ -598,6 +605,44 @@ try {
   assert.equal(configSetResolved.contextTokensSource, 'config');
   assert.deepEqual(configSetResolved.compactionSettings, { reserveTokens: 24000, keepRecentTokens: 12000 });
   assert.equal(configSetResolved.compactionSettingsSource, 'config');
+
+  runConfigUnset(['approvalPolicy']);
+  assert.equal(Object.hasOwn(loadConfigFile(), 'approvalPolicy'), false);
+  assert.equal(resolveCliConfig({}, loadConfigFile()).approvalPolicySource, 'profile:autonomous');
+  runConfigUnset(['trustedTools']);
+  assert.equal(Object.hasOwn(loadConfigFile(), 'trustedTools'), false);
+  assert.deepEqual(resolveCliConfig({}, loadConfigFile()).trustedTools, ['exec', 'apply_patch']);
+  runConfigUnset(['promptCache']);
+  assert.deepEqual(loadConfigFile().promptCache, { debug: true });
+  assert.equal(resolveCliConfig({}, loadConfigFile()).promptCacheSource, 'profile:autonomous');
+  runConfigUnset(['promptCacheDebug']);
+  assert.equal(Object.hasOwn(loadConfigFile(), 'promptCache'), false);
+  runConfigUnset(['agent.compaction.reserveTokens']);
+  assert.deepEqual(loadConfigFile().agent.compaction, { keepRecentTokens: 12000 });
+  runConfigUnset(['agent.compaction.keepRecentTokens']);
+  assert.equal(Object.hasOwn(loadConfigFile().agent, 'compaction'), false);
+  runConfigUnset(['agent.maxTurns']);
+  assert.equal(Object.hasOwn(loadConfigFile().agent, 'maxTurns'), false);
+  runConfigUnset(['agent.contextTokens']);
+  assert.equal(Object.hasOwn(loadConfigFile(), 'agent'), false);
+  runConfigUnset(['workspace']);
+  assert.equal(Object.hasOwn(loadConfigFile(), 'workspace'), false);
+
+  const unsetCliConfigPath = path.join(tmp, 'unset-cli.json');
+  fs.writeFileSync(unsetCliConfigPath, `${JSON.stringify({ model: 'temporary-model' }, null, 2)}\n`);
+  const unsetResult = spawnSync(process.execPath, [
+    cliPath,
+    '--config-file',
+    unsetCliConfigPath,
+    'config',
+    'unset',
+    'model',
+  ], {
+    env: cleanCliEnv,
+    encoding: 'utf8',
+  });
+  assert.equal(unsetResult.status, 0, `config unset should exit cleanly: ${unsetResult.stderr || unsetResult.stdout}`);
+  assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(unsetCliConfigPath, 'utf8')), 'model'), false);
 
   console.log('[PASS] CLI setup config resolves safely');
 } finally {

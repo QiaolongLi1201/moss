@@ -275,6 +275,7 @@ async function main() {
     onBeforeToolExec: createCliToolApprovalHook(safetyMode, process.env, {
       approvalPolicy: resolvedConfig.approvalPolicy,
       trustedTools: resolvedConfig.trustedTools,
+      deniedTools: resolvedConfig.deniedTools,
     }),
   });
 

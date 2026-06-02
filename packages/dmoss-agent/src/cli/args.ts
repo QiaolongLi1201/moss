@@ -43,6 +43,7 @@ function normalizeConfigKey(key: string): keyof CliConfigOverrides | null {
   if (raw === 'safetymode' || raw === 'safety') return 'safetyMode';
   if (raw === 'approvalpolicy' || raw === 'approval') return 'approvalPolicy';
   if (raw === 'trustedtools' || raw === 'trusttools') return 'trustedTools';
+  if (raw === 'deniedtools' || raw === 'denytools') return 'deniedTools';
   if (raw === 'promptcache' || raw === 'promptcacheenabled') return 'promptCacheEnabled';
   if (raw === 'promptcachedebug' || raw === 'promptprefixdebug') return 'promptCacheDebug';
   if (raw === 'maxagentturns' || raw === 'maxturns') return 'maxAgentTurns';
@@ -86,6 +87,10 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
   }
   if (key === 'trustedTools') {
     target.trustedTools = parseTrustedTools(value) ?? [];
+    return;
+  }
+  if (key === 'deniedTools') {
+    target.deniedTools = parseTrustedTools(value) ?? [];
     return;
   }
   if (key === 'promptCacheDebug') {

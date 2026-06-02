@@ -86,6 +86,7 @@ export interface ConfigFile {
   safetyMode?: CliSafetyModeConfig | string;
   approvalPolicy?: ConfigApprovalPolicy | string;
   trustedTools?: string[];
+  deniedTools?: string[];
   promptCache?: PromptCacheConfig | boolean;
   guardrails?: GuardrailsConfig;
   agent?: AgentRuntimeConfig;
@@ -141,6 +142,7 @@ export interface CliConfigOverrides {
   safetyMode?: CliSafetyModeConfig;
   approvalPolicy?: ConfigApprovalPolicy;
   trustedTools?: string[];
+  deniedTools?: string[];
   promptCacheEnabled?: boolean;
   promptCacheDebug?: boolean;
   maxAgentTurns?: number;
@@ -485,6 +487,8 @@ export interface ResolvedCliConfig {
   approvalPolicySource: string;
   trustedTools: string[];
   trustedToolsSource: string;
+  deniedTools: string[];
+  deniedToolsSource: string;
   promptCacheEnabled: boolean;
   promptCacheSource: string;
   promptCacheDebug: boolean;
@@ -613,6 +617,18 @@ export function resolveCliConfig(
       : configTrustedTools
         ? 'config'
         : `profile:${profile}`;
+  const envDeniedTools = parseTrustedTools(env.DMOSS_DENIED_TOOLS);
+  const configDeniedTools = Array.isArray(activeConfig.deniedTools)
+    ? parseTrustedTools(activeConfig.deniedTools)
+    : undefined;
+  const deniedTools = overrides.deniedTools ?? envDeniedTools ?? configDeniedTools ?? [];
+  const deniedToolsSource = overrides.deniedTools
+    ? 'cli'
+    : envDeniedTools
+      ? 'DMOSS_DENIED_TOOLS'
+      : configDeniedTools
+        ? 'config'
+        : 'default';
 
   const promptCacheEnv = env.DMOSS_PROMPT_CACHE ?? env.DMOSS_PROMPT_CACHE_ENABLED;
   const envPromptCache = parseConfigBoolean(promptCacheEnv);
@@ -700,6 +716,8 @@ export function resolveCliConfig(
     approvalPolicySource,
     trustedTools: [...trustedTools],
     trustedToolsSource,
+    deniedTools: [...deniedTools],
+    deniedToolsSource,
     promptCacheEnabled,
     promptCacheSource,
     promptCacheDebug,

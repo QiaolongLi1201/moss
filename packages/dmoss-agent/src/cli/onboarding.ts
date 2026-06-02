@@ -216,6 +216,7 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     `  ${label('safety')} ${rt.safetyMode}`,
     `  ${label('approval')} ${auth.approvalPolicy ?? 'prompt'} (${auth.approvalPolicySource ?? 'default'})`,
     `  ${label('trusted tools')} ${(auth.trustedTools ?? []).length ? (auth.trustedTools ?? []).join(', ') : 'none'} (${auth.trustedToolsSource ?? 'default'})`,
+    `  ${label('denied tools')} ${(auth.deniedTools ?? []).length ? (auth.deniedTools ?? []).join(', ') : 'none'} (${auth.deniedToolsSource ?? 'default'})`,
     `  ${label('prompt cache')} ${auth.promptCacheEnabled === false ? 'disabled' : 'enabled'} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${auth.promptCacheDebug === true ? 'enabled' : 'disabled'} (${auth.promptCacheDebugSource ?? 'default'})`,
     `  ${label('guardrails')} ${guardrailLine(auth)} (${auth.guardrailsSource ?? 'default'})`,
@@ -252,6 +253,8 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
   const approval = auth.approvalPolicy ?? 'prompt';
   const configuredTrustedTools = auth.trustedTools ?? [];
   const trustedTools = configuredTrustedTools.length ? configuredTrustedTools.join(', ') : 'none';
+  const configuredDeniedTools = auth.deniedTools ?? [];
+  const deniedTools = configuredDeniedTools.length ? configuredDeniedTools.join(', ') : 'none';
   const cache = auth.promptCacheEnabled === false ? 'disabled' : 'enabled';
   const cacheDebug = auth.promptCacheDebug === true ? 'enabled' : 'disabled';
   const inputGuardrails = auth.guardrails.input.blockPatterns.length + auth.guardrails.input.redactPatterns.length;
@@ -264,6 +267,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     `  ${label('safety')} ${safety} (${auth.safetyModeSource ?? 'default'})`,
     `  ${label('approval')} ${approval} (${auth.approvalPolicySource ?? 'default'})`,
     `  ${label('trusted tools')} ${trustedTools} (${auth.trustedToolsSource ?? 'default'})`,
+    `  ${label('denied tools')} ${deniedTools} (${auth.deniedToolsSource ?? 'default'})`,
     `  ${label('prompt cache')} ${cache} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${cacheDebug} (${auth.promptCacheDebugSource ?? 'default'})`,
     `  ${label('guardrails')} input ${inputGuardrails}, output ${outputGuardrails} (${auth.guardrailsSource ?? 'default'})`,
@@ -293,6 +297,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    dmoss config set safetyMode read-only|workspace-write|full-access',
     '    dmoss config set approvalPolicy prompt|never',
     '    dmoss config set trustedTools exec,write_file',
+    '    dmoss config set deniedTools device_exec,write_file',
     '    dmoss config set promptCache true|false',
     '    dmoss config set promptCacheDebug true|false',
     '    edit guardrails.input/output blockPatterns or redactPatterns in config JSON',

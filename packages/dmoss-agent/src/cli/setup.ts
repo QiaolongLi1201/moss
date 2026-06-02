@@ -145,6 +145,8 @@ function serializeResolvedConfig(resolved: ReturnType<typeof resolveCliConfig>):
     approvalPolicySource: resolved.approvalPolicySource,
     trustedTools: [...resolved.trustedTools],
     trustedToolsSource: resolved.trustedToolsSource,
+    deniedTools: [...resolved.deniedTools],
+    deniedToolsSource: resolved.deniedToolsSource,
     promptCacheEnabled: resolved.promptCacheEnabled,
     promptCacheSource: resolved.promptCacheSource,
     promptCacheDebug: resolved.promptCacheDebug,
@@ -198,6 +200,7 @@ export function renderAuthStatus(
     `  safetyMode: ${resolved.safetyMode} (${resolved.safetyModeSource})`,
     `  approvalPolicy: ${resolved.approvalPolicy} (${resolved.approvalPolicySource})`,
     `  trustedTools: ${resolved.trustedTools.length ? resolved.trustedTools.join(', ') : 'none'} (${resolved.trustedToolsSource})`,
+    `  deniedTools: ${resolved.deniedTools.length ? resolved.deniedTools.join(', ') : 'none'} (${resolved.deniedToolsSource})`,
     `  promptCache: ${resolved.promptCacheEnabled ? 'enabled' : 'disabled'} (${resolved.promptCacheSource})`,
     `  promptCacheDebug: ${resolved.promptCacheDebug ? 'enabled' : 'disabled'} (${resolved.promptCacheDebugSource})`,
     `  guardrails: ${guardrailSummary(resolved)}`,
@@ -225,7 +228,7 @@ export function renderConfigUsage(): string {
     '  dmoss config',
     '  dmoss config show',
     '  dmoss config show --json',
-    '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
+    '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
     '  dmoss config set --project <key> <value>',
     '  dmoss config unset <key>',
     '  dmoss config unset --project <key>',
@@ -240,6 +243,7 @@ export function renderConfigUsage(): string {
     '  dmoss config set --project safetyMode workspace-write',
     '  dmoss config set approvalPolicy prompt',
     '  dmoss config set trustedTools exec,write_file',
+    '  dmoss config set deniedTools device_exec,write_file',
     '  dmoss config set agent.maxTurns 96',
     '  dmoss config set agent.contextTokens 200000',
     '  dmoss config set agent.compaction.reserveTokens 20000',
@@ -341,7 +345,7 @@ function resolveConfigEditTarget(args: string[], startDir: string): { args: stri
 }
 
 function supportedConfigKeys(): string {
-  return 'Supported keys: profile, provider, model, baseUrl, workspace, safetyMode, approvalPolicy, trustedTools, promptCache, promptCacheDebug, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
+  return 'Supported keys: profile, provider, model, baseUrl, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
 }
 
 function removeEmptyNestedConfig(config: ConfigFile): ConfigFile {
@@ -407,6 +411,14 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
   } else if (key === 'trustedTools') {
     try {
       next.trustedTools = parseTrustedTools(value) ?? [];
+    } catch (err) {
+      print(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+      return;
+    }
+  } else if (key === 'deniedTools') {
+    try {
+      next.deniedTools = parseTrustedTools(value) ?? [];
     } catch (err) {
       print(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
@@ -484,6 +496,7 @@ export function runConfigUnset(args: string[], startDir = process.cwd()): void {
   else if (key === 'safetyMode') delete next.safetyMode;
   else if (key === 'approvalPolicy') delete next.approvalPolicy;
   else if (key === 'trustedTools') delete next.trustedTools;
+  else if (key === 'deniedTools') delete next.deniedTools;
   else if (key === 'promptCache') {
     if (typeof current.promptCache === 'object' && current.promptCache !== null) {
       next.promptCache = { ...current.promptCache };

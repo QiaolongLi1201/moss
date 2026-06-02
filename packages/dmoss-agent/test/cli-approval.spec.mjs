@@ -43,6 +43,7 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
   assert.equal(preview.safetyMode, 'workspace-write');
   assert.equal(preview.requiresApproval, true);
   assert.equal(preview.trusted, false);
+  assert.equal(preview.denied, false);
   assert.equal(preview.autoApproved, false);
   assert.match(preview.decisionContext, /workspace-write safety mode allows local_write/);
   assert.match(preview.inputPreview, /npm test/);
@@ -60,8 +61,26 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     { trustedTools: ['exec'] },
   );
   assert.equal(preview.trusted, true);
+  assert.equal(preview.denied, false);
   assert.equal(preview.autoApproved, false);
   assert.match(preview.decisionContext, /trustedTools/);
+}
+
+{
+  const preview = describeCliToolApproval(
+    {
+      tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+      input: { command: 'npm test' },
+      sessionKey: 's',
+    },
+    'workspace-write',
+    { DMOSS_CLI_AUTO_APPROVE: '1' },
+    { trustedTools: ['exec'], deniedTools: ['exec'] },
+  );
+  assert.equal(preview.trusted, true);
+  assert.equal(preview.denied, true);
+  assert.equal(preview.autoApproved, false);
+  assert.match(preview.decisionContext, /deniedTools/);
 }
 
 {
@@ -116,6 +135,27 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
   });
   assert.equal(denied.approved, false);
   assert.match(denied.reason, /workspace-write/);
+}
+
+{
+  const oldIsTty = process.stdin.isTTY;
+  Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+  try {
+    const approve = createCliToolApprovalHook('workspace-write', { DMOSS_CLI_AUTO_APPROVE: '1' }, {
+      approvalPolicy: 'never',
+      trustedTools: ['exec'],
+      deniedTools: ['exec'],
+    });
+    const denied = await approve({
+      tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+      input: { command: 'npm test' },
+      sessionKey: 's',
+    });
+    assert.equal(denied.approved, false, 'deniedTools must override trustedTools and auto approval');
+    assert.match(denied.reason, /deniedTools/);
+  } finally {
+    Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });
+  }
 }
 
 {

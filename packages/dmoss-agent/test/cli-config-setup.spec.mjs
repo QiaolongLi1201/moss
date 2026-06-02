@@ -58,6 +58,8 @@ try {
   assert.equal(resolved.approvalPolicy, 'prompt');
   assert.deepEqual(resolved.trustedTools, []);
   assert.equal(resolved.trustedToolsSource, 'profile:balanced');
+  assert.deepEqual(resolved.deniedTools, []);
+  assert.equal(resolved.deniedToolsSource, 'default');
   assert.equal(resolved.promptCacheEnabled, true);
   assert.equal(resolved.promptCacheDebug, false);
   assert.deepEqual(resolved.guardrails, {
@@ -81,6 +83,7 @@ try {
     DMOSS_SAFETY_MODE: 'read-only',
     DMOSS_APPROVAL_POLICY: 'never',
     DMOSS_TRUSTED_TOOLS: 'exec,write_file',
+    DMOSS_DENIED_TOOLS: 'device_exec',
     DMOSS_PROMPT_CACHE: 'false',
     DMOSS_PROMPT_CACHE_DEBUG: 'true',
     DMOSS_MAX_AGENT_TURNS: '12',
@@ -98,6 +101,8 @@ try {
   assert.equal(envResolved.approvalPolicySource, 'DMOSS_APPROVAL_POLICY');
   assert.deepEqual(envResolved.trustedTools, ['exec', 'write_file']);
   assert.equal(envResolved.trustedToolsSource, 'DMOSS_TRUSTED_TOOLS');
+  assert.deepEqual(envResolved.deniedTools, ['device_exec']);
+  assert.equal(envResolved.deniedToolsSource, 'DMOSS_DENIED_TOOLS');
   assert.equal(envResolved.promptCacheEnabled, false);
   assert.equal(envResolved.promptCacheSource, 'DMOSS_PROMPT_CACHE');
   assert.equal(envResolved.promptCacheDebug, true);
@@ -127,6 +132,7 @@ try {
     safetyMode: 'full-access',
     approvalPolicy: 'never',
     trustedTools: ['exec', 'memory_write'],
+    deniedTools: ['device_exec'],
     promptCacheEnabled: false,
     promptCacheDebug: true,
     maxAgentTurns: 9,
@@ -145,6 +151,8 @@ try {
   assert.equal(cliResolved.approvalPolicySource, 'cli');
   assert.deepEqual(cliResolved.trustedTools, ['exec', 'memory_write']);
   assert.equal(cliResolved.trustedToolsSource, 'cli');
+  assert.deepEqual(cliResolved.deniedTools, ['device_exec']);
+  assert.equal(cliResolved.deniedToolsSource, 'cli');
   assert.equal(cliResolved.promptCacheEnabled, false);
   assert.equal(cliResolved.promptCacheSource, 'cli');
   assert.equal(cliResolved.promptCacheDebug, true);
@@ -161,6 +169,7 @@ try {
   assert.match(status, /safetyMode: workspace-write/);
   assert.match(status, /approvalPolicy: prompt/);
   assert.match(status, /trustedTools: none/);
+  assert.match(status, /deniedTools: none/);
   assert.match(status, /promptCache: enabled/);
   assert.match(status, /promptCacheDebug: disabled/);
   assert.match(status, /guardrails: none \(default\)/);
@@ -185,6 +194,7 @@ try {
     baseUrl: 'https://user:pass@example.com/compatible-mode/v1?api_key=secret',
     apiKey: 'stored-secret',
     trustedTools: ['exec'],
+    deniedTools: ['device_exec'],
     agent: { maxTurns: 42 },
   }, {}));
   assert.equal(redactedJson.schema, 'dmoss_cli_config.v1');
@@ -194,6 +204,7 @@ try {
   assert.equal(redactedJson.baseUrl, 'https://example.com/compatible-mode/v1');
   assert.equal(redactedJson.maxAgentTurns, 42);
   assert.deepEqual(redactedJson.trustedTools, ['exec']);
+  assert.deepEqual(redactedJson.deniedTools, ['device_exec']);
   assert.doesNotMatch(JSON.stringify(redactedJson), /stored-secret|user|pass|api_key|secret/);
 
   const usage = renderConfigUsage();
@@ -201,6 +212,7 @@ try {
   assert.match(usage, /dmoss config show --json/);
   assert.match(usage, /dmoss config set profile autonomous/);
   assert.match(usage, /dmoss config set --project safetyMode workspace-write/);
+  assert.match(usage, /dmoss config set deniedTools device_exec,write_file/);
   assert.match(usage, /dmoss config unset <key>/);
   assert.match(usage, /dmoss config unset --project <key>/);
   assert.match(usage, /\.dmoss\/config\.json/);
@@ -217,9 +229,10 @@ try {
     DMOSS_API_KEY: '',
     DASHSCOPE_API_KEY: '',
     ALIYUN_API_KEY: '',
-    OPENAI_API_KEY: '',
-    ANTHROPIC_API_KEY: '',
-    DMOSS_MODEL: '',
+        OPENAI_API_KEY: '',
+        ANTHROPIC_API_KEY: '',
+        DMOSS_DENIED_TOOLS: '',
+        DMOSS_MODEL: '',
     DMOSS_BASE_URL: '',
     OPENAI_BASE_URL: '',
     ANTHROPIC_BASE_URL: '',
@@ -253,6 +266,8 @@ try {
     assert.equal(parsed.apiKeyConfigured, true);
     assert.equal(parsed.apiKeySource, 'config');
     assert.equal(Object.hasOwn(parsed, 'apiKey'), false);
+    assert.deepEqual(parsed.deniedTools, []);
+    assert.equal(parsed.deniedToolsSource, 'default');
     assert.equal(parsed.promptCacheEnabled, true);
     assert.equal(parsed.maxAgentTurns, 64);
     assert.deepEqual(parsed.compactionSettings, { reserveTokens: 20000, keepRecentTokens: 20000 });
@@ -273,6 +288,7 @@ try {
     model: 'project-model',
     safetyMode: 'full-access',
     approvalPolicy: 'never',
+    deniedTools: ['device_exec'],
     promptCache: { debug: true },
     guardrails: {
       input: { redactPatterns: ['PROJECT_SECRET=[^\\s]+'] },
@@ -292,6 +308,7 @@ try {
     assert.equal(loadedProject.config.profile, 'autonomous');
     assert.equal(loadedProject.config.safetyMode, 'full-access');
     assert.equal(loadedProject.config.approvalPolicy, 'never');
+    assert.deepEqual(loadedProject.config.deniedTools, ['device_exec']);
     assert.equal(loadedProject.config.provider, 'qwen');
     assert.equal(loadedProject.config.model, 'qwen3.7-max');
     assert.deepEqual(loadedProject.config.promptCache, { debug: true });
@@ -314,6 +331,8 @@ try {
     assert.equal(projectResolved.safetyMode, 'full-access');
     assert.equal(projectResolved.safetyModeSource, 'config');
     assert.equal(projectResolved.promptCacheEnabled, true);
+    assert.deepEqual(projectResolved.deniedTools, ['device_exec']);
+    assert.equal(projectResolved.deniedToolsSource, 'config');
     assert.equal(projectResolved.promptCacheDebug, true);
     assert.equal(projectResolved.promptCacheDebugSource, 'config');
     assert.deepEqual(projectResolved.guardrails.input.redactPatterns, ['PROJECT_SECRET=[^\\s]+']);
@@ -358,6 +377,7 @@ try {
     assert.equal(projectJson.profile, 'autonomous');
     assert.equal(projectJson.profileSource, 'config');
     assert.equal(projectJson.projectConfigPath, projectConfigPath);
+    assert.deepEqual(projectJson.deniedTools, ['device_exec']);
     assert.equal(projectJson.guardrails.input.redactPatterns[0], 'PROJECT_SECRET=[^\\s]+');
     assert.equal(projectJson.maxAgentTurns, 24);
     assert.deepEqual(projectJson.compactionSettings, { reserveTokens: 10000, keepRecentTokens: 20000 });
@@ -477,6 +497,7 @@ try {
     safetyMode: 'read-only',
     approvalPolicy: 'never',
     trustedTools: ['exec'],
+    deniedTools: ['device_exec'],
     promptCache: { enabled: false, debug: true },
     guardrails: {
       input: {
@@ -501,6 +522,8 @@ try {
   assert.equal(filePolicyResolved.approvalPolicySource, 'config');
   assert.deepEqual(filePolicyResolved.trustedTools, ['exec']);
   assert.equal(filePolicyResolved.trustedToolsSource, 'config');
+  assert.deepEqual(filePolicyResolved.deniedTools, ['device_exec']);
+  assert.equal(filePolicyResolved.deniedToolsSource, 'config');
   assert.equal(filePolicyResolved.promptCacheEnabled, false);
   assert.equal(filePolicyResolved.promptCacheSource, 'config');
   assert.equal(filePolicyResolved.promptCacheDebug, true);
@@ -585,6 +608,8 @@ try {
   assert.equal(loadConfigFile().approvalPolicy, 'never');
   runConfigSet(['trustedTools', 'exec,write_file']);
   assert.deepEqual(loadConfigFile().trustedTools, ['exec', 'write_file']);
+  runConfigSet(['deniedTools', 'device_exec,write_file']);
+  assert.deepEqual(loadConfigFile().deniedTools, ['device_exec', 'write_file']);
   runConfigSet(['promptCache', 'false']);
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
   runConfigSet(['promptCacheDebug', 'true']);
@@ -600,6 +625,8 @@ try {
 
   const configSetResolved = resolveCliConfig({}, loadConfigFile());
   assert.equal(configSetResolved.maxAgentTurns, 96);
+  assert.deepEqual(configSetResolved.deniedTools, ['device_exec', 'write_file']);
+  assert.equal(configSetResolved.deniedToolsSource, 'config');
   assert.equal(configSetResolved.maxAgentTurnsSource, 'config');
   assert.equal(configSetResolved.contextTokens, 160000);
   assert.equal(configSetResolved.contextTokensSource, 'config');
@@ -612,6 +639,9 @@ try {
   runConfigUnset(['trustedTools']);
   assert.equal(Object.hasOwn(loadConfigFile(), 'trustedTools'), false);
   assert.deepEqual(resolveCliConfig({}, loadConfigFile()).trustedTools, ['exec', 'apply_patch']);
+  runConfigUnset(['deniedTools']);
+  assert.equal(Object.hasOwn(loadConfigFile(), 'deniedTools'), false);
+  assert.deepEqual(resolveCliConfig({}, loadConfigFile()).deniedTools, []);
   runConfigUnset(['promptCache']);
   assert.deepEqual(loadConfigFile().promptCache, { debug: true });
   assert.equal(resolveCliConfig({}, loadConfigFile()).promptCacheSource, 'profile:autonomous');

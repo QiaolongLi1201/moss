@@ -32,6 +32,8 @@ import { parseCliArgs } from '../dist/cli/args.js';
     '-c',
     'trustedTools=exec,write_file',
     '-c',
+    'deniedTools=device_exec',
+    '-c',
     'promptCache=false',
     '-c',
     'promptCacheDebug=true',
@@ -49,6 +51,7 @@ import { parseCliArgs } from '../dist/cli/args.js';
   assert.equal(parsed.configOverrides.safetyMode, 'read-only');
   assert.equal(parsed.configOverrides.approvalPolicy, 'never');
   assert.deepEqual(parsed.configOverrides.trustedTools, ['exec', 'write_file']);
+  assert.deepEqual(parsed.configOverrides.deniedTools, ['device_exec']);
   assert.equal(parsed.configOverrides.promptCacheEnabled, false);
   assert.equal(parsed.configOverrides.promptCacheDebug, true);
   assert.equal(parsed.configOverrides.maxAgentTurns, 17);

@@ -13,6 +13,7 @@ let interactiveAsker: AskUser | null = null;
 export interface CliToolApprovalOptions {
   approvalPolicy?: ConfigApprovalPolicy;
   trustedTools?: readonly string[];
+  deniedTools?: readonly string[];
 }
 
 export interface CliToolApprovalPreview {
@@ -23,6 +24,7 @@ export interface CliToolApprovalPreview {
   decisionContext: string;
   requiresApproval: boolean;
   trusted: boolean;
+  denied: boolean;
   autoApproved: boolean;
 }
 
@@ -89,14 +91,17 @@ export function describeCliToolApproval(
   options: CliToolApprovalOptions = {},
 ): CliToolApprovalPreview {
   const sideEffect = inferSideEffectClass(request.tool);
+  const denied = new Set(options.deniedTools ?? []).has(request.tool.name);
   const trusted = new Set(options.trustedTools ?? []).has(request.tool.name);
   const autoApprovalConfigured = hasAutoApproval(env, options);
   const allowedBySafety = isAllowedInMode(mode, sideEffect);
   const requiresApproval = needsApproval(request.tool, sideEffect);
-  const autoApproved = allowedBySafety && requiresApproval && autoApprovalConfigured;
+  const autoApproved = !denied && allowedBySafety && requiresApproval && autoApprovalConfigured;
   let decisionContext = 'readonly tool; approval is not required';
 
-  if (!allowedBySafety) {
+  if (denied) {
+    decisionContext = 'blocked by configured deniedTools';
+  } else if (!allowedBySafety) {
     decisionContext = `blocked by ${mode} safety mode`;
   } else if (requiresApproval && trusted) {
     decisionContext = 'trusted by configured trustedTools';
@@ -114,6 +119,7 @@ export function describeCliToolApproval(
     decisionContext,
     requiresApproval,
     trusted,
+    denied,
     autoApproved,
   };
 }
@@ -144,6 +150,12 @@ export function createCliToolApprovalHook(
       ...options,
       trustedTools: [...(options.trustedTools ?? []), ...sessionTrustedTools],
     });
+    if (preview.denied) {
+      return {
+        approved: false,
+        reason: `Tool "${tool.name}" is blocked by configured deniedTools.`,
+      };
+    }
     if (!isAllowedInMode(mode, preview.sideEffect)) {
       return {
         approved: false,

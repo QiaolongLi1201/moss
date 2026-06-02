@@ -61,9 +61,11 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     { trustedTools: ['exec'] },
   );
   assert.equal(preview.trusted, true);
+  assert.equal(preview.trustedPattern, 'exec');
   assert.equal(preview.denied, false);
+  assert.equal(preview.deniedPattern, undefined);
   assert.equal(preview.autoApproved, false);
-  assert.match(preview.decisionContext, /trustedTools/);
+  assert.match(preview.decisionContext, /trustedTools \(exec\)/);
 }
 
 {
@@ -78,9 +80,11 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     { trustedTools: ['filesystem__*'] },
   );
   assert.equal(preview.trusted, true);
+  assert.equal(preview.trustedPattern, 'filesystem__*');
   assert.equal(preview.denied, false);
+  assert.equal(preview.deniedPattern, undefined);
   assert.equal(preview.autoApproved, false);
-  assert.match(preview.decisionContext, /trustedTools/);
+  assert.match(preview.decisionContext, /trustedTools \(filesystem__\*\)/);
 }
 
 {
@@ -95,9 +99,11 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     { trustedTools: ['write_*'], deniedTools: ['write_file'] },
   );
   assert.equal(preview.trusted, true);
+  assert.equal(preview.trustedPattern, 'write_*');
   assert.equal(preview.denied, true);
+  assert.equal(preview.deniedPattern, 'write_file');
   assert.equal(preview.autoApproved, false);
-  assert.match(preview.decisionContext, /deniedTools/);
+  assert.match(preview.decisionContext, /deniedTools \(write_file\)/);
 }
 
 {
@@ -112,9 +118,11 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     { trustedTools: ['exec'], deniedTools: ['exec'] },
   );
   assert.equal(preview.trusted, true);
+  assert.equal(preview.trustedPattern, 'exec');
   assert.equal(preview.denied, true);
+  assert.equal(preview.deniedPattern, 'exec');
   assert.equal(preview.autoApproved, false);
-  assert.match(preview.decisionContext, /deniedTools/);
+  assert.match(preview.decisionContext, /deniedTools \(exec\)/);
 }
 
 {
@@ -301,6 +309,32 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     assert.match(prompt, /policy: workspace-write safety mode allows local_write, but approval is required/);
     assert.match(prompt, /input:/);
     assert.doesNotMatch(prompt, /sk-test-00000000000000000000/);
+  } finally {
+    setCliApprovalAsker(null);
+    Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });
+  }
+}
+
+{
+  const oldIsTty = process.stdin.isTTY;
+  Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+  let prompt = '';
+  setCliApprovalAsker(async (question) => {
+    prompt = question;
+    return '';
+  });
+  try {
+    const approve = createCliToolApprovalHook('workspace-write', {}, { trustedTools: ['filesystem__*'] });
+    assert.deepEqual(
+      await approve({
+        tool: tool('filesystem__write_file', 'local_write', 'requires_user_confirmation'),
+        input: { path: 'notes.md' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'configured trusted glob should approve before prompting',
+    );
+    assert.equal(prompt, '', 'trusted glob should not prompt');
   } finally {
     setCliApprovalAsker(null);
     Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });

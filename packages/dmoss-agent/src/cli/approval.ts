@@ -25,7 +25,9 @@ export interface CliToolApprovalPreview {
   decisionContext: string;
   requiresApproval: boolean;
   trusted: boolean;
+  trustedPattern?: string;
   denied: boolean;
+  deniedPattern?: string;
   autoApproved: boolean;
 }
 
@@ -85,10 +87,16 @@ function hasAutoApproval(env: NodeJS.ProcessEnv, options: CliToolApprovalOptions
     env.DMOSS_AUTO_APPROVE === '1';
 }
 
-function matchesConfiguredTool(toolName: string, patterns: readonly string[]): boolean {
-  return patterns.some((pattern) => (
+function findConfiguredToolPattern(toolName: string, patterns: readonly string[]): string | undefined {
+  return patterns.find((pattern) => (
     pattern === toolName ||
-    micromatch.isMatch(toolName, pattern, { contains: false, dot: true, nocase: false })
+    micromatch.isMatch(toolName, pattern, {
+      contains: false,
+      dot: true,
+      nocase: false,
+      noextglob: true,
+      nonegate: true,
+    })
   ));
 }
 
@@ -99,8 +107,10 @@ export function describeCliToolApproval(
   options: CliToolApprovalOptions = {},
 ): CliToolApprovalPreview {
   const sideEffect = inferSideEffectClass(request.tool);
-  const denied = matchesConfiguredTool(request.tool.name, options.deniedTools ?? []);
-  const trusted = matchesConfiguredTool(request.tool.name, options.trustedTools ?? []);
+  const deniedPattern = findConfiguredToolPattern(request.tool.name, options.deniedTools ?? []);
+  const trustedPattern = findConfiguredToolPattern(request.tool.name, options.trustedTools ?? []);
+  const denied = deniedPattern !== undefined;
+  const trusted = trustedPattern !== undefined;
   const autoApprovalConfigured = hasAutoApproval(env, options);
   const allowedBySafety = isAllowedInMode(mode, sideEffect);
   const requiresApproval = needsApproval(request.tool, sideEffect);
@@ -108,11 +118,11 @@ export function describeCliToolApproval(
   let decisionContext = 'readonly tool; approval is not required';
 
   if (denied) {
-    decisionContext = 'blocked by configured deniedTools';
+    decisionContext = `blocked by configured deniedTools (${deniedPattern})`;
   } else if (!allowedBySafety) {
     decisionContext = `blocked by ${mode} safety mode`;
   } else if (requiresApproval && trusted) {
-    decisionContext = 'trusted by configured trustedTools';
+    decisionContext = `trusted by configured trustedTools (${trustedPattern})`;
   } else if (requiresApproval && autoApproved) {
     decisionContext = 'auto-approved by approval policy after safety checks';
   } else if (requiresApproval) {
@@ -127,7 +137,9 @@ export function describeCliToolApproval(
     decisionContext,
     requiresApproval,
     trusted,
+    trustedPattern,
     denied,
+    deniedPattern,
     autoApproved,
   };
 }

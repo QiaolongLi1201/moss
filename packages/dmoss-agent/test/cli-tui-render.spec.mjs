@@ -480,7 +480,8 @@ test('QueuePreview renders queued prompts and overflow count', () => {
   const frame = lastFrame();
   assert.match(frame, /queued 4/);
   assert.match(frame, /next runs when current task finishes/);
-  assert.match(frame, /\/queue clear/);
+  assert.match(frame, /\/queue drop last/);
+  assert.match(frame, /\/queue clear all/);
   assert.match(frame, /next .*prompt .*waiting 9s .*1 line .*19 chars .*first queued prompt/);
   assert.match(frame, /#2 .*waiting 5s .*second queued prompt/);
   assert.match(frame, /\.\.\. 1 more queued prompt/);

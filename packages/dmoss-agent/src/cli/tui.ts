@@ -176,6 +176,8 @@ const KNOWN_COMMANDS = [
   '/models',
   '/detail',
   '/queue',
+  '/queue drop',
+  '/queue pop',
   '/clearqueue',
   '/memory',
   '/skills',
@@ -298,6 +300,14 @@ function queueItemKind(item: QueuedInput): string {
   if (isLocalShellLine(item.raw)) return 'local shell';
   if (item.message.startsWith('/')) return 'command';
   return 'prompt';
+}
+
+export function dropLastQueuedInput(items: QueuedInput[]): { next: QueuedInput[]; dropped?: QueuedInput } {
+  if (items.length === 0) return { next: [] };
+  return {
+    next: items.slice(0, -1),
+    dropped: items[items.length - 1],
+  };
 }
 
 export function queueItemMeta(item: QueuedInput, now = Date.now()): string {
@@ -541,17 +551,25 @@ function editorPreviewLinesWithCursor(
 export function commandSuggestion(command: string): string | null {
   const normalized = command.trim().toLowerCase();
   if (!normalized.startsWith('/')) return null;
+  const preferSubcommand = normalized.includes(' ');
   const scored = KNOWN_COMMANDS
-    .map((known) => {
-      if (known.startsWith(normalized) || normalized.startsWith(known)) return { known, score: 0 };
+    .map((known, index) => {
+      const prefixMatch = known.startsWith(normalized) || normalized.startsWith(known);
+      if (prefixMatch) return { known, score: 0, prefixMatch, index };
       let score = Math.abs(known.length - normalized.length);
       const limit = Math.min(known.length, normalized.length);
       for (let i = 0; i < limit; i += 1) {
         if (known[i] !== normalized[i]) score += 1;
       }
-      return { known, score };
+      return { known, score, prefixMatch, index };
     })
-    .sort((a, b) => a.score - b.score);
+    .sort((a, b) => (
+      a.score - b.score
+      || Number(b.prefixMatch) - Number(a.prefixMatch)
+      || (a.prefixMatch && b.prefixMatch
+        ? (preferSubcommand ? b.known.length - a.known.length : a.index - b.index)
+        : a.index - b.index)
+    ));
   const best = scored[0];
   return best && best.score <= 3 ? best.known : null;
 }
@@ -1143,7 +1161,7 @@ function commandRowsForInput(value: string): Array<[string, string]> {
     ['/tools', 'list available tools and permission surface'],
     ['/examples', 'starter tasks'],
     ['/detail', 'toggle quiet, progress, or verbose detail'],
-    ['/queue', 'show or clear queued prompts'],
+    ['/queue', 'show, drop, or clear queued prompts'],
     ['/sessions', 'show current and recent saved sessions'],
     ['/thinking', 'toggle thinking deltas'],
     ['/clear', 'clear visible transcript'],
@@ -1295,7 +1313,7 @@ export function QueuePreview({ items, now = Date.now() }: QueuePreviewProps): Re
     Box,
     { flexDirection: 'column', marginTop: 1 },
     React.createElement(Text, { color: theme.textMuted },
-      `  queued ${items.length} · next runs when current task finishes · /queue clear to discard`),
+      `  queued ${items.length} · next runs when current task finishes · /queue drop last · /queue clear all`),
     ...visible.map((item, index) => React.createElement(Text, {
       key: `${index}-${item.message}`,
       color: theme.textMuted,
@@ -1513,8 +1531,20 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
             `Queued prompts (${queue.length})`,
             ...queue.map((item, index) => `  ${index === 0 ? 'next' : `#${index + 1}`} · ${queueItemMeta(item, now)} · ${item.message}`),
             '',
-            'Use /queue clear to discard queued prompts.',
+            'Use /queue drop to discard the last queued prompt, or /queue clear to discard all.',
           ].join('\n'));
+      return true;
+    }
+    if (message === '/queue drop' || message === '/queue pop') {
+      const queue = queuedInputsRef.current;
+      const { next, dropped } = dropLastQueuedInput(queue);
+      if (!dropped) {
+        addTranscript('system', 'Queue is already empty.');
+        return true;
+      }
+      setQueuedInputs(next);
+      if (next.length === 0) setQueuePausedAfterCancel(false);
+      addTranscript('system', `Dropped queued prompt #${queue.length}: ${dropped.message}`);
       return true;
     }
     if (message === '/queue clear' || message === '/clearqueue') {
@@ -1792,6 +1822,8 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       || message === '/queued'
       || message === '/sessions'
       || message === '/session'
+      || message === '/queue drop'
+      || message === '/queue pop'
       || message === '/queue clear'
       || message === '/clearqueue';
     if (busyRef.current && isImmediateBusyCommand) {
@@ -1899,7 +1931,7 @@ function commandList(): string {
     '  /config            active config file and policy commands',
     '  /tools             available tools',
     '  /stop              stop the active run',
-    '  /queue [clear]     show or discard queued prompts',
+    '  /queue [drop|clear] show, drop last, or discard queued prompts',
     '  /sessions          show current and recent saved sessions',
     '',
     'Conversation',

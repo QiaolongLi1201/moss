@@ -10,6 +10,7 @@ import {
   approvalKeyDecision,
   completeSlashCommandInput,
   commandSuggestion,
+  dropLastQueuedInput,
   editorPreviewLines,
   extractAttachmentRefs,
   footerHint,
@@ -77,6 +78,7 @@ assert.equal(isLocalShellLine('  !pwd'), false);
 assert.equal(commandSuggestion('/staus'), '/status');
 assert.equal(commandSuggestion('/tool'), '/tools');
 assert.equal(commandSuggestion('/queu'), '/queue');
+assert.equal(commandSuggestion('/queue dr'), '/queue drop');
 assert.equal(commandSuggestion('/sess'), '/sessions');
 assert.equal(commandSuggestion('status'), null);
 
@@ -121,6 +123,12 @@ assert.equal(formatQueueWait(60_000, 180_000), '2m');
 assert.match(queueItemMeta({ raw: 'plain prompt', message: 'plain prompt', enqueuedAt: 5_000 }, 10_000), /prompt .*waiting 5s .*1 line .*12 chars/);
 assert.match(queueItemMeta({ raw: '/tools', message: '/tools' }, 10_000), /command .*1 line .*6 chars/);
 assert.match(queueItemMeta({ raw: '!pwd', message: '!pwd' }, 10_000), /local shell .*1 line .*4 chars/);
+{
+  const first = { raw: 'first', message: 'first', enqueuedAt: 1 };
+  const second = { raw: 'second', message: 'second', enqueuedAt: 2 };
+  assert.deepEqual(dropLastQueuedInput([]), { next: [] });
+  assert.deepEqual(dropLastQueuedInput([first, second]), { next: [first], dropped: second });
+}
 assert.equal(shouldDrainQueue({ busy: false, approvalActive: false, pausedAfterCancel: false, queueLength: 1 }), true);
 assert.equal(shouldDrainQueue({ busy: true, approvalActive: false, pausedAfterCancel: false, queueLength: 1 }), false);
 assert.equal(shouldDrainQueue({ busy: false, approvalActive: true, pausedAfterCancel: false, queueLength: 1 }), false);

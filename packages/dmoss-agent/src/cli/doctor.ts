@@ -76,6 +76,39 @@ function renderMcpDoctor(config: ResolvedCliConfig): string {
   return ok('mcp', `enabled (${config.mcpEnabledSource}); ${serverNames.length} server(s) from ${config.mcpConfigPath}`);
 }
 
+function hasWildcard(pattern: string): boolean {
+  return pattern.includes('*') || pattern.includes('?');
+}
+
+function isBroadTrustedToolPattern(pattern: string): boolean {
+  const compact = pattern.trim();
+  if (compact === '*' || compact === '**') return true;
+  if (compact === '*_*' || compact === '*__*') return true;
+  if (compact.endsWith('_*') && !compact.endsWith('__*')) return true;
+  return false;
+}
+
+function renderApprovalDoctor(config: ResolvedCliConfig): string[] {
+  const lines: string[] = [
+    ok('approval', `${config.approvalPolicy} (${config.approvalPolicySource})`),
+  ];
+
+  if (config.approvalPolicy === 'never') {
+    lines.push(warn('approval policy', `auto-approval is enabled via ${config.approvalPolicySource}; keep deniedTools current for risky tools`));
+  }
+
+  const broadTrustedPatterns = config.trustedTools.filter(isBroadTrustedToolPattern);
+  if (broadTrustedPatterns.length > 0) {
+    lines.push(warn('trustedTools', `broad trusted pattern(s): ${broadTrustedPatterns.join(', ')}; prefer exact tool names or narrow server__tool globs`));
+  } else if (config.trustedTools.some(hasWildcard)) {
+    lines.push(ok('trustedTools', `${config.trustedTools.length} configured (${config.trustedToolsSource}); wildcard patterns are narrow`));
+  } else {
+    lines.push(ok('trustedTools', `${config.trustedTools.length ? config.trustedTools.join(', ') : 'none'} (${config.trustedToolsSource})`));
+  }
+
+  return lines;
+}
+
 export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
   const lines = ['[doctor] dmoss'];
   const nodeMajor = Number.parseInt(process.versions.node.split('.')[0] || '0', 10);
@@ -95,6 +128,7 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
     : fail('runtime', `${options.runtimeDir} is not writable`));
   lines.push(ok('config', path.join(options.configDir, 'config.json')));
   lines.push(ok('safety', options.safetyMode));
+  lines.push(...renderApprovalDoctor(options.config));
   lines.push(ok('detail', options.detailMode));
   lines.push(renderMcpDoctor(options.config));
 

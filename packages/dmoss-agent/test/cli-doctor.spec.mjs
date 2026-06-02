@@ -76,7 +76,40 @@ async function doctor(config) {
   const fixture = resolvedConfig();
   try {
     const output = await doctor(fixture.config);
+    assert.match(output, /ok\s+approval: prompt \(profile:balanced\)/);
+    assert.match(output, /ok\s+trustedTools: none \(profile:balanced\)/);
     assert.match(output, /ok\s+mcp: disabled \(default\); config .*mcp\.json/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+{
+  const fixture = resolvedConfig({
+    approvalPolicy: 'never',
+    approvalPolicySource: 'config',
+    trustedTools: ['filesystem__*', 'read_file'],
+    trustedToolsSource: 'config',
+  });
+  try {
+    const output = await doctor(fixture.config);
+    assert.match(output, /warn\s+approval policy: auto-approval is enabled via config; keep deniedTools current for risky tools/);
+    assert.match(output, /ok\s+trustedTools: 2 configured \(config\); wildcard patterns are narrow/);
+    assert.doesNotMatch(output, /broad trusted pattern/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+{
+  const fixture = resolvedConfig({
+    trustedTools: ['device_*', '*__*', 'exec'],
+    trustedToolsSource: 'config',
+  });
+  try {
+    const output = await doctor(fixture.config);
+    assert.match(output, /warn\s+trustedTools: broad trusted pattern\(s\): device_\*, \*__\*/);
+    assert.doesNotMatch(output, /broad trusted pattern\(s\): .*exec/);
   } finally {
     fixture.cleanup();
   }

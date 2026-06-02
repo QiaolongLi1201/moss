@@ -8,6 +8,7 @@ import { markedTerminal } from 'marked-terminal';
 import type { DmossAgent, DmossAgentEvent, ToolResultOutcome } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import type { SessionMeta } from '../core/session/session.js';
+import { SkillRegistry, type SkillMeta } from '../skills/index.js';
 import { setCliApprovalAsker } from './approval.js';
 import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
@@ -655,14 +656,50 @@ function renderMemory(workspace: string): string {
   }
 }
 
-function renderSkills(workspace: string): string {
+function formatSkillLine(skill: SkillMeta): string {
+  const tags = skill.tags.length > 0 ? ` · ${skill.tags.slice(0, 3).join(', ')}` : '';
+  const disabled = skill.enabled ? '' : ' · disabled';
+  const description = visibleText(skill.description, 1);
+  return `  • ${skill.name} · ${skill.risk}${disabled}${tags} - ${description}`;
+}
+
+function listLearnedSkillFiles(workspace: string): string[] {
   const learnedDir = path.join(workspace, 'skills', 'learned');
   try {
-    const files = fs.readdirSync(learnedDir).filter((file) => file.endsWith('.md'));
-    return [`Skills: ${files.length} learned`, ...files.map((file) => `  • ${file}`)].join('\n');
+    return fs.readdirSync(learnedDir)
+      .filter((file) => file.endsWith('.md'))
+      .sort((left, right) => left.localeCompare(right));
   } catch {
-    return 'Skills: none learned yet.';
+    return [];
   }
+}
+
+export function renderSkills(workspace: string): string {
+  const learned = listLearnedSkillFiles(workspace);
+  let registered: SkillMeta[] = [];
+  try {
+    registered = new SkillRegistry({ workspaceDir: workspace }).list();
+  } catch {
+    registered = [];
+  }
+  const lines = [
+    `Skills: ${registered.length} available, ${learned.length} learned`,
+  ];
+  if (registered.length > 0) {
+    lines.push('Available SKILL.md entries:');
+    lines.push(...registered.slice(0, 8).map(formatSkillLine));
+    if (registered.length > 8) lines.push(`  ... ${registered.length - 8} more available skill${registered.length - 8 === 1 ? '' : 's'}`);
+  } else {
+    lines.push('Available SKILL.md entries: none found in skills/ or agent/skills/.');
+  }
+  if (learned.length > 0) {
+    lines.push('Learned skills:');
+    lines.push(...learned.slice(0, 8).map((file) => `  • ${file}`));
+    if (learned.length > 8) lines.push(`  ... ${learned.length - 8} more learned skill${learned.length - 8 === 1 ? '' : 's'}`);
+  } else {
+    lines.push('Learned skills: none yet.');
+  }
+  return lines.join('\n');
 }
 
 function modelExamples(currentModel: string): string {

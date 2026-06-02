@@ -19,7 +19,7 @@ import {
 import { getPackageVersion } from './package-info.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, label, ui } from './ui.js';
-import { runInkInteractive } from './tui.js';
+import { renderSkills, runInkInteractive } from './tui.js';
 
 let currentModel = '';
 
@@ -196,16 +196,7 @@ export async function runInteractive(
     }
 
     if (msg === '/skills') {
-      const learnedDir = path.join(workspace, 'skills', 'learned');
-      try {
-        const files = fs.readdirSync(learnedDir).filter((f: string) => f.endsWith('.md'));
-        console.error(`[skills] ${files.length} learned skills:`);
-        for (const f of files) {
-          console.error(`  - ${f}`);
-        }
-      } catch {
-        console.error('[skills] No learned skills yet.');
-      }
+      console.error(renderSkills(workspace));
       rl.prompt();
       continue;
     }

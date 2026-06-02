@@ -5,6 +5,9 @@
  *   node packages/dmoss-agent/test/cli-tui.spec.mjs
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   applyPromptEdit,
   approvalKeyDecision,
@@ -24,6 +27,7 @@ import {
   promptPlaceholder,
   queueItemMeta,
   queueResumedMessage,
+  renderSkills,
   runLocalShellCommand,
   sanitizeRenderableText,
   shouldDrainQueue,
@@ -285,6 +289,37 @@ assert.equal(transcriptViewportRows({
     { index: 2, kind: 'file', label: 'File #2' },
   ]);
   assert.equal(formatAttachmentChip(refs[0]), '[Image #1] image');
+}
+
+{
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-tui-skills-'));
+  try {
+    const availableDir = path.join(workspace, 'skills', 'rdk-camera');
+    const learnedDir = path.join(workspace, 'skills', 'learned');
+    fs.mkdirSync(availableDir, { recursive: true });
+    fs.mkdirSync(learnedDir, { recursive: true });
+    fs.writeFileSync(path.join(availableDir, 'SKILL.md'), [
+      '---',
+      'name: rdk-camera',
+      'description: Diagnose RDK camera pipelines.',
+      'tags: rdk,camera',
+      'risk: low',
+      'enabled: false',
+      '---',
+      '',
+      '# RDK Camera',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(learnedDir, 'recover-usb.md'), '# Recover USB\n');
+    const rendered = renderSkills(workspace);
+    assert.match(rendered, /Skills: 1 available, 1 learned/);
+    assert.match(rendered, /Available SKILL\.md entries:/);
+    assert.match(rendered, /rdk-camera · low · disabled · rdk, camera .*Diagnose RDK camera pipelines/);
+    assert.match(rendered, /Learned skills:/);
+    assert.match(rendered, /recover-usb\.md/);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
 }
 
 {

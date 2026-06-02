@@ -83,8 +83,8 @@ try {
     DMOSS_BASE_URL: 'https://api.openai.com',
     DMOSS_SAFETY_MODE: 'read-only',
     DMOSS_APPROVAL_POLICY: 'never',
-    DMOSS_TRUSTED_TOOLS: 'exec,write_file',
-    DMOSS_DENIED_TOOLS: 'device_exec',
+    DMOSS_TRUSTED_TOOLS: 'exec,filesystem__*',
+    DMOSS_DENIED_TOOLS: 'device_*',
     DMOSS_PROMPT_CACHE: 'false',
     DMOSS_PROMPT_CACHE_DEBUG: 'true',
     DMOSS_MCP_ENABLED: 'true',
@@ -102,9 +102,9 @@ try {
   assert.equal(envResolved.safetyModeSource, 'DMOSS_SAFETY_MODE');
   assert.equal(envResolved.approvalPolicy, 'never');
   assert.equal(envResolved.approvalPolicySource, 'DMOSS_APPROVAL_POLICY');
-  assert.deepEqual(envResolved.trustedTools, ['exec', 'write_file']);
+  assert.deepEqual(envResolved.trustedTools, ['exec', 'filesystem__*']);
   assert.equal(envResolved.trustedToolsSource, 'DMOSS_TRUSTED_TOOLS');
-  assert.deepEqual(envResolved.deniedTools, ['device_exec']);
+  assert.deepEqual(envResolved.deniedTools, ['device_*']);
   assert.equal(envResolved.deniedToolsSource, 'DMOSS_DENIED_TOOLS');
   assert.equal(envResolved.promptCacheEnabled, false);
   assert.equal(envResolved.promptCacheSource, 'DMOSS_PROMPT_CACHE');
@@ -138,8 +138,8 @@ try {
     workspace: '/tmp/dmoss-workspace',
     safetyMode: 'full-access',
     approvalPolicy: 'never',
-    trustedTools: ['exec', 'memory_write'],
-    deniedTools: ['device_exec'],
+    trustedTools: ['exec', 'filesystem__*'],
+    deniedTools: ['device_*'],
     promptCacheEnabled: false,
     promptCacheDebug: true,
     maxAgentTurns: 9,
@@ -156,9 +156,9 @@ try {
   assert.equal(cliResolved.safetyModeSource, 'cli');
   assert.equal(cliResolved.approvalPolicy, 'never');
   assert.equal(cliResolved.approvalPolicySource, 'cli');
-  assert.deepEqual(cliResolved.trustedTools, ['exec', 'memory_write']);
+  assert.deepEqual(cliResolved.trustedTools, ['exec', 'filesystem__*']);
   assert.equal(cliResolved.trustedToolsSource, 'cli');
-  assert.deepEqual(cliResolved.deniedTools, ['device_exec']);
+  assert.deepEqual(cliResolved.deniedTools, ['device_*']);
   assert.equal(cliResolved.deniedToolsSource, 'cli');
   assert.equal(cliResolved.promptCacheEnabled, false);
   assert.equal(cliResolved.promptCacheSource, 'cli');
@@ -223,7 +223,7 @@ try {
   assert.match(usage, /dmoss config init --project/);
   assert.match(usage, /dmoss config set profile autonomous/);
   assert.match(usage, /dmoss config set --project safetyMode workspace-write/);
-  assert.match(usage, /dmoss config set deniedTools device_exec,write_file/);
+  assert.match(usage, /dmoss config set deniedTools device_\*,write_file/);
   assert.match(usage, /dmoss config unset <key>/);
   assert.match(usage, /dmoss config unset --project <key>/);
   assert.match(usage, /\.dmoss\/config\.json/);
@@ -740,10 +740,10 @@ try {
   assert.equal(loadConfigFile().safetyMode, 'read-only');
   runConfigSet(['approvalPolicy', 'never']);
   assert.equal(loadConfigFile().approvalPolicy, 'never');
-  runConfigSet(['trustedTools', 'exec,write_file']);
-  assert.deepEqual(loadConfigFile().trustedTools, ['exec', 'write_file']);
-  runConfigSet(['deniedTools', 'device_exec,write_file']);
-  assert.deepEqual(loadConfigFile().deniedTools, ['device_exec', 'write_file']);
+  runConfigSet(['trustedTools', 'exec,filesystem__*']);
+  assert.deepEqual(loadConfigFile().trustedTools, ['exec', 'filesystem__*']);
+  runConfigSet(['deniedTools', 'device_*,write_file']);
+  assert.deepEqual(loadConfigFile().deniedTools, ['device_*', 'write_file']);
   runConfigSet(['promptCache', 'false']);
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
   runConfigSet(['promptCacheDebug', 'true']);
@@ -768,7 +768,7 @@ try {
     { configPath: path.join(tmp, 'config.json') },
   );
   assert.equal(configSetResolved.maxAgentTurns, 96);
-  assert.deepEqual(configSetResolved.deniedTools, ['device_exec', 'write_file']);
+  assert.deepEqual(configSetResolved.deniedTools, ['device_*', 'write_file']);
   assert.equal(configSetResolved.deniedToolsSource, 'config');
   assert.equal(configSetResolved.maxAgentTurnsSource, 'config');
   assert.equal(configSetResolved.contextTokens, 160000);

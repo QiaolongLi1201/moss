@@ -406,7 +406,7 @@ export function parseTrustedTools(value: string | string[] | undefined): string[
   const seen = new Set<string>();
   const unique: string[] = [];
   for (const tool of tools) {
-    if (!/^[A-Za-z0-9_.:/-]+$/.test(tool)) {
+    if (!/^[A-Za-z0-9_.:/\-*?]+$/.test(tool)) {
       throw new Error(`Unsupported trusted tool name "${tool}"`);
     }
     if (!seen.has(tool)) {

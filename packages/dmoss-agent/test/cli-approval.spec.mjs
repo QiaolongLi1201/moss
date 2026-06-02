@@ -69,6 +69,40 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
 {
   const preview = describeCliToolApproval(
     {
+      tool: tool('filesystem__write_file', 'local_write', 'requires_user_confirmation'),
+      input: { path: 'notes.md' },
+      sessionKey: 's',
+    },
+    'workspace-write',
+    {},
+    { trustedTools: ['filesystem__*'] },
+  );
+  assert.equal(preview.trusted, true);
+  assert.equal(preview.denied, false);
+  assert.equal(preview.autoApproved, false);
+  assert.match(preview.decisionContext, /trustedTools/);
+}
+
+{
+  const preview = describeCliToolApproval(
+    {
+      tool: tool('write_file', 'local_write', 'requires_user_confirmation'),
+      input: { path: 'notes.md' },
+      sessionKey: 's',
+    },
+    'workspace-write',
+    {},
+    { trustedTools: ['write_*'], deniedTools: ['write_file'] },
+  );
+  assert.equal(preview.trusted, true);
+  assert.equal(preview.denied, true);
+  assert.equal(preview.autoApproved, false);
+  assert.match(preview.decisionContext, /deniedTools/);
+}
+
+{
+  const preview = describeCliToolApproval(
+    {
       tool: tool('exec', 'local_write', 'requires_user_confirmation'),
       input: { command: 'npm test' },
       sessionKey: 's',
@@ -181,7 +215,7 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
   const oldIsTty = process.stdin.isTTY;
   Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
   try {
-    const approve = createCliToolApprovalHook('workspace-write', {}, { trustedTools: ['exec'] });
+    const approve = createCliToolApprovalHook('workspace-write', {}, { trustedTools: ['exec', 'filesystem__*'] });
     assert.deepEqual(
       await approve({
         tool: tool('exec', 'local_write', 'requires_user_confirmation'),
@@ -190,6 +224,15 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
       }),
       { approved: true },
       'trustedTools should approve exact allowed tool names without interactive stdin',
+    );
+    assert.deepEqual(
+      await approve({
+        tool: tool('filesystem__write_file', 'local_write', 'requires_user_confirmation'),
+        input: { path: 'notes.md' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'trustedTools should approve matching allowed tool glob patterns without interactive stdin',
     );
     const denied = await approve({
       tool: tool('write_file', 'local_write', 'requires_user_confirmation'),

@@ -30,9 +30,9 @@ import { parseCliArgs } from '../dist/cli/args.js';
     '-c',
     'approvalPolicy=never',
     '-c',
-    'trustedTools=exec,write_file',
+    'trustedTools=exec,filesystem__*',
     '-c',
-    'deniedTools=device_exec',
+    'deniedTools=device_*',
     '-c',
     'promptCache=false',
     '-c',
@@ -50,8 +50,8 @@ import { parseCliArgs } from '../dist/cli/args.js';
   assert.equal(parsed.configOverrides.model, 'deepseek-v4-pro');
   assert.equal(parsed.configOverrides.safetyMode, 'read-only');
   assert.equal(parsed.configOverrides.approvalPolicy, 'never');
-  assert.deepEqual(parsed.configOverrides.trustedTools, ['exec', 'write_file']);
-  assert.deepEqual(parsed.configOverrides.deniedTools, ['device_exec']);
+  assert.deepEqual(parsed.configOverrides.trustedTools, ['exec', 'filesystem__*']);
+  assert.deepEqual(parsed.configOverrides.deniedTools, ['device_*']);
   assert.equal(parsed.configOverrides.promptCacheEnabled, false);
   assert.equal(parsed.configOverrides.promptCacheDebug, true);
   assert.equal(parsed.configOverrides.maxAgentTurns, 17);
@@ -117,6 +117,7 @@ import { parseCliArgs } from '../dist/cli/args.js';
 
 assert.throws(() => parseCliArgs(['-c', 'temperature=0.7']), /Unsupported --config key/);
 assert.throws(() => parseCliArgs(['-c', 'profile=reckless']), /Unsupported profile/);
+assert.throws(() => parseCliArgs(['-c', 'trustedTools=!write_*']), /Unsupported trusted tool name/);
 assert.throws(() => parseCliArgs(['-c', 'maxTurns=0']), /Unsupported maxAgentTurns/);
 assert.throws(() => parseCliArgs(['-c', 'contextTokens=1.5']), /Unsupported contextTokens/);
 

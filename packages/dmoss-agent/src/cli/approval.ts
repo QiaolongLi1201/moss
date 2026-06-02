@@ -1,4 +1,5 @@
 import * as readline from 'node:readline';
+import micromatch from 'micromatch';
 import type { AgentHooks, ToolApprovalRequest } from '../core/agent/agent-hooks.js';
 import type { Tool, ToolSideEffectClass } from '../core/tools/tool-types.js';
 import { sanitizeSecrets } from '../safety/secret-sanitizer.js';
@@ -84,6 +85,13 @@ function hasAutoApproval(env: NodeJS.ProcessEnv, options: CliToolApprovalOptions
     env.DMOSS_AUTO_APPROVE === '1';
 }
 
+function matchesConfiguredTool(toolName: string, patterns: readonly string[]): boolean {
+  return patterns.some((pattern) => (
+    pattern === toolName ||
+    micromatch.isMatch(toolName, pattern, { contains: false, dot: true, nocase: false })
+  ));
+}
+
 export function describeCliToolApproval(
   request: ToolApprovalRequest,
   mode: CliSafetyMode,
@@ -91,8 +99,8 @@ export function describeCliToolApproval(
   options: CliToolApprovalOptions = {},
 ): CliToolApprovalPreview {
   const sideEffect = inferSideEffectClass(request.tool);
-  const denied = new Set(options.deniedTools ?? []).has(request.tool.name);
-  const trusted = new Set(options.trustedTools ?? []).has(request.tool.name);
+  const denied = matchesConfiguredTool(request.tool.name, options.deniedTools ?? []);
+  const trusted = matchesConfiguredTool(request.tool.name, options.trustedTools ?? []);
   const autoApprovalConfigured = hasAutoApproval(env, options);
   const allowedBySafety = isAllowedInMode(mode, sideEffect);
   const requiresApproval = needsApproval(request.tool, sideEffect);

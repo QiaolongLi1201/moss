@@ -118,6 +118,22 @@ async function doctor(config) {
 
 {
   const fixture = resolvedConfig({
+    trustedTools: ['exec', 'read_file'],
+    trustedToolsSource: 'config',
+    deniedTools: ['exec', 'device_exec'],
+    deniedToolsSource: 'config',
+  });
+  try {
+    const output = await doctor(fixture.config);
+    assert.match(output, /warn\s+approval policy: trustedTools also appear in deniedTools: exec; deniedTools takes precedence/);
+    assert.match(output, /ok\s+trustedTools: exec, read_file \(config\)/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+{
+  const fixture = resolvedConfig({
     safetyMode: 'full-access',
     safetyModeSource: 'config',
     approvalPolicy: 'never',

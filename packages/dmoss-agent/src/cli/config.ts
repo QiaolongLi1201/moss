@@ -591,6 +591,11 @@ export function isBroadTrustedToolPattern(pattern: string): boolean {
   return false;
 }
 
+function findConflictingToolPatterns(trustedTools: readonly string[], deniedTools: readonly string[]): string[] {
+  const denied = new Set(deniedTools);
+  return trustedTools.filter((pattern) => denied.has(pattern));
+}
+
 export function auditResolvedCliConfig(config: Pick<
   ResolvedCliConfig,
   | 'approvalPolicy'
@@ -626,6 +631,16 @@ export function auditResolvedCliConfig(config: Pick<
       severity: 'warn',
       source: `${config.safetyModeSource}, ${config.approvalPolicySource}`,
       message: `full-access safety and auto-approval are both enabled; prefer workspace-write or prompt approval unless the workspace is fully trusted`,
+    });
+  }
+
+  const conflictingPatterns = findConflictingToolPatterns(config.trustedTools, config.deniedTools);
+  if (conflictingPatterns.length > 0) {
+    warnings.push({
+      code: 'approval.conflicting_tool_patterns',
+      severity: 'warn',
+      source: `${config.trustedToolsSource}, ${config.deniedToolsSource}`,
+      message: `trustedTools also appear in deniedTools: ${conflictingPatterns.join(', ')}; deniedTools takes precedence`,
     });
   }
 

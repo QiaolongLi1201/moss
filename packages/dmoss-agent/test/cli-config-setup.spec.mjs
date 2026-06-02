@@ -236,6 +236,18 @@ try {
   assert.match(JSON.stringify(riskyConfigJson.configWarnings), /device_\*/);
   assert.doesNotMatch(JSON.stringify(riskyConfigJson), /stored-secret/);
 
+  const conflictingPolicyJson = JSON.parse(renderConfigJson({
+    provider: 'openai-compatible',
+    trustedTools: ['exec', 'read_file'],
+    deniedTools: ['exec', 'device_exec'],
+  }, {}));
+  assert.deepEqual(
+    conflictingPolicyJson.configWarnings.map((warning) => warning.code),
+    ['approval.conflicting_tool_patterns'],
+  );
+  assert.match(conflictingPolicyJson.configWarnings[0].message, /exec/);
+  assert.match(conflictingPolicyJson.configWarnings[0].message, /deniedTools takes precedence/);
+
   const usage = renderConfigUsage();
   assert.match(usage, /dmoss config init \[--project\] \[--force\]/);
   assert.match(usage, /dmoss config show/);
@@ -743,6 +755,28 @@ try {
       strictRiskyJson.configWarnings.map((warning) => warning.code),
       ['approval.auto_approval', 'approval.no_denied_tools', 'trustedTools.broad_patterns'],
     );
+
+    const conflictingValidatePath = path.join(explicitDir, 'conflicting-validate.json');
+    fs.writeFileSync(conflictingValidatePath, `${JSON.stringify({
+      provider: 'qwen',
+      apiKey: 'file-secret',
+      trustedTools: ['exec', 'read_file'],
+      deniedTools: ['exec', 'device_exec'],
+    }, null, 2)}\n`);
+    const conflictingValidateResult = spawnSync(process.execPath, [cliPath, '--config-file', conflictingValidatePath, 'config', 'validate', '--strict', '--json'], {
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(conflictingValidateResult.status, 1, 'config validate --strict should fail when tool policy has conflicts');
+    const conflictingValidateJson = JSON.parse(conflictingValidateResult.stdout);
+    assert.deepEqual(
+      conflictingValidateJson.configWarnings.map((warning) => warning.code),
+      ['approval.conflicting_tool_patterns'],
+    );
+    assert.match(JSON.stringify(conflictingValidateJson.configWarnings), /deniedTools takes precedence/);
 
     const repairPath = path.join(explicitDir, 'repair-invalid.json');
     fs.writeFileSync(repairPath, '{bad json\n');

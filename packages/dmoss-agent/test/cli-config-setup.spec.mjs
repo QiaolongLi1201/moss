@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  auditResolvedCliConfig,
   loadCliConfigFile,
   loadConfigFile,
   resolveCliConfig,
@@ -19,6 +20,7 @@ import {
   saveConfigFile,
 } from '../dist/cli/config.js';
 import { resolveCliAgentRuntimeOptions } from '../dist/cli/agent-runtime.js';
+import { auditResolvedCliConfig as auditResolvedCliConfigFromRoot } from '../dist/index.js';
 import {
   renderAuthStatus,
   renderConfigJson,
@@ -214,7 +216,23 @@ try {
   assert.equal(redactedJson.maxAgentTurns, 42);
   assert.deepEqual(redactedJson.trustedTools, ['exec']);
   assert.deepEqual(redactedJson.deniedTools, ['device_exec']);
+  assert.deepEqual(redactedJson.configWarnings, []);
   assert.doesNotMatch(JSON.stringify(redactedJson), /stored-secret|user|pass|api_key|secret/);
+
+  const riskyConfigJson = JSON.parse(renderConfigJson({
+    provider: 'openai-compatible',
+    apiKey: 'stored-secret',
+    safetyMode: 'full-access',
+    approvalPolicy: 'never',
+    trustedTools: ['device_*', 'filesystem__*'],
+  }, {}));
+  assert.deepEqual(
+    riskyConfigJson.configWarnings.map((warning) => warning.code),
+    ['approval.auto_approval', 'approval.no_denied_tools', 'approval.full_access_auto_approval', 'trustedTools.broad_patterns'],
+  );
+  assert.equal(riskyConfigJson.configWarnings[0].severity, 'warn');
+  assert.match(JSON.stringify(riskyConfigJson.configWarnings), /device_\*/);
+  assert.doesNotMatch(JSON.stringify(riskyConfigJson), /stored-secret/);
 
   const usage = renderConfigUsage();
   assert.match(usage, /dmoss config init \[--project\] \[--force\]/);
@@ -282,6 +300,7 @@ try {
     assert.equal(Object.hasOwn(parsed, 'apiKey'), false);
     assert.deepEqual(parsed.deniedTools, []);
     assert.equal(parsed.deniedToolsSource, 'default');
+    assert.deepEqual(parsed.configWarnings, []);
     assert.equal(parsed.promptCacheEnabled, true);
     assert.equal(parsed.maxAgentTurns, 64);
     assert.deepEqual(parsed.compactionSettings, { reserveTokens: 20000, keepRecentTokens: 20000 });
@@ -685,6 +704,14 @@ try {
     provider: 'qwen',
     apiKey: 'stored-secret',
   });
+  assert.deepEqual(
+    auditResolvedCliConfig(autonomousResolved).map((warning) => warning.code),
+    ['approval.auto_approval', 'approval.no_denied_tools'],
+  );
+  assert.deepEqual(
+    auditResolvedCliConfigFromRoot(autonomousResolved).map((warning) => warning.code),
+    ['approval.auto_approval', 'approval.no_denied_tools'],
+  );
   assert.equal(autonomousResolved.safetyMode, 'workspace-write');
   assert.equal(autonomousResolved.safetyModeSource, 'profile:autonomous');
   assert.equal(autonomousResolved.approvalPolicy, 'never');

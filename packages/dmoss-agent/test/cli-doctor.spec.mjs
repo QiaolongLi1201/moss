@@ -94,6 +94,7 @@ async function doctor(config) {
   try {
     const output = await doctor(fixture.config);
     assert.match(output, /warn\s+approval policy: auto-approval is enabled via config; keep deniedTools current for risky tools/);
+    assert.match(output, /warn\s+approval policy: auto-approval has no deniedTools guardrail \(default\); add high-risk tools or globs to deniedTools/);
     assert.match(output, /ok\s+trustedTools: 2 configured \(config\); wildcard patterns are narrow/);
     assert.doesNotMatch(output, /broad trusted pattern/);
   } finally {
@@ -110,6 +111,21 @@ async function doctor(config) {
     const output = await doctor(fixture.config);
     assert.match(output, /warn\s+trustedTools: broad trusted pattern\(s\): device_\*, \*__\*/);
     assert.doesNotMatch(output, /broad trusted pattern\(s\): .*exec/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+{
+  const fixture = resolvedConfig({
+    safetyMode: 'full-access',
+    safetyModeSource: 'config',
+    approvalPolicy: 'never',
+    approvalPolicySource: 'config',
+  });
+  try {
+    const output = await doctor(fixture.config);
+    assert.match(output, /warn\s+approval policy: full-access safety and auto-approval are both enabled/);
   } finally {
     fixture.cleanup();
   }

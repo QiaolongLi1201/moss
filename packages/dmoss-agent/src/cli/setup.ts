@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as readline from 'node:readline';
 import { stdin as input, stderr as output, stdout as standardOutput } from 'node:process';
 import {
+  auditResolvedCliConfig,
   loadCliConfigFile,
   loadConfigFile,
   normalizeApprovalPolicyConfig,
@@ -124,6 +125,12 @@ function guardrailSummary(resolved: ReturnType<typeof resolveCliConfig>): string
   return `input ${inputCount}, output ${outputCount} (${resolved.guardrailsSource})`;
 }
 
+function configAuditSummary(resolved: ReturnType<typeof resolveCliConfig>): string {
+  const warnings = auditResolvedCliConfig(resolved);
+  if (warnings.length === 0) return 'none';
+  return warnings.map((warning) => `${warning.code}: ${warning.message}`).join('; ');
+}
+
 function serializeResolvedConfig(resolved: ReturnType<typeof resolveCliConfig>): Record<string, unknown> {
   return {
     schema: 'dmoss_cli_config.v1',
@@ -172,6 +179,7 @@ function serializeResolvedConfig(resolved: ReturnType<typeof resolveCliConfig>):
     mcpEnabledSource: resolved.mcpEnabledSource,
     mcpConfigPath: resolved.mcpConfigPath,
     mcpConfigPathSource: resolved.mcpConfigPathSource,
+    configWarnings: auditResolvedCliConfig(resolved),
     configPath: resolved.configPath,
     projectConfigPath: resolved.projectConfigPath ?? null,
   };
@@ -213,6 +221,7 @@ export function renderAuthStatus(
     `  compaction: reserve ${resolved.compactionSettings.reserveTokens}, keepRecent ${resolved.compactionSettings.keepRecentTokens} (${resolved.compactionSettingsSource})`,
     `  mcp: ${resolved.mcpEnabled ? 'enabled' : 'disabled'} (${resolved.mcpEnabledSource})`,
     `  mcpConfig: ${resolved.mcpConfigPath} (${resolved.mcpConfigPathSource})`,
+    `  configWarnings: ${configAuditSummary(resolved)}`,
     `  config: ${resolved.configPath}`,
     `  projectConfig: ${resolved.projectConfigPath || 'none'}`,
   ].join('\n');

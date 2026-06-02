@@ -547,6 +547,82 @@ export interface ResolvedCliConfig {
   projectConfigPath?: string;
 }
 
+export type CliConfigAuditSeverity = 'warn';
+
+export interface CliConfigAuditWarning {
+  code: string;
+  severity: CliConfigAuditSeverity;
+  source: string;
+  message: string;
+}
+
+function hasToolPatternWildcard(pattern: string): boolean {
+  return pattern.includes('*') || pattern.includes('?');
+}
+
+export function isBroadTrustedToolPattern(pattern: string): boolean {
+  const compact = pattern.trim();
+  if (compact === '*' || compact === '**') return true;
+  if (compact === '*_*' || compact === '*__*') return true;
+  if (compact.endsWith('_*') && !compact.endsWith('__*')) return true;
+  return false;
+}
+
+export function auditResolvedCliConfig(config: Pick<
+  ResolvedCliConfig,
+  | 'approvalPolicy'
+  | 'approvalPolicySource'
+  | 'safetyMode'
+  | 'safetyModeSource'
+  | 'trustedTools'
+  | 'trustedToolsSource'
+  | 'deniedTools'
+  | 'deniedToolsSource'
+>): CliConfigAuditWarning[] {
+  const warnings: CliConfigAuditWarning[] = [];
+  if (config.approvalPolicy === 'never') {
+    warnings.push({
+      code: 'approval.auto_approval',
+      severity: 'warn',
+      source: config.approvalPolicySource,
+      message: `auto-approval is enabled via ${config.approvalPolicySource}; keep deniedTools current for risky tools`,
+    });
+    if (config.deniedTools.length === 0) {
+      warnings.push({
+        code: 'approval.no_denied_tools',
+        severity: 'warn',
+        source: config.deniedToolsSource,
+        message: `auto-approval has no deniedTools guardrail (${config.deniedToolsSource}); add high-risk tools or globs to deniedTools`,
+      });
+    }
+  }
+
+  if (config.safetyMode === 'full-access' && config.approvalPolicy === 'never') {
+    warnings.push({
+      code: 'approval.full_access_auto_approval',
+      severity: 'warn',
+      source: `${config.safetyModeSource}, ${config.approvalPolicySource}`,
+      message: `full-access safety and auto-approval are both enabled; prefer workspace-write or prompt approval unless the workspace is fully trusted`,
+    });
+  }
+
+  const broadTrustedPatterns = config.trustedTools.filter(isBroadTrustedToolPattern);
+  if (broadTrustedPatterns.length > 0) {
+    warnings.push({
+      code: 'trustedTools.broad_patterns',
+      severity: 'warn',
+      source: config.trustedToolsSource,
+      message: `broad trusted pattern(s): ${broadTrustedPatterns.join(', ')}; prefer exact tool names or narrow server__tool globs`,
+    });
+  }
+
+  return warnings;
+}
+
+export function hasTrustedToolWildcard(config: Pick<ResolvedCliConfig, 'trustedTools'>): boolean {
+  return config.trustedTools.some(hasToolPatternWildcard);
+}
+
 export function resolveCliConfig(
   env: NodeJS.ProcessEnv = process.env,
   config?: ConfigFile,

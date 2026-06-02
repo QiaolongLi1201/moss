@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { checkForCliUpdate } from './update-check.js';
+import { auditResolvedCliConfig, hasTrustedToolWildcard } from './config.js';
 import type { ResolvedCliConfig } from './config.js';
 import { loadMcpConfig } from '../mcp/index.js';
 
@@ -76,31 +77,19 @@ function renderMcpDoctor(config: ResolvedCliConfig): string {
   return ok('mcp', `enabled (${config.mcpEnabledSource}); ${serverNames.length} server(s) from ${config.mcpConfigPath}`);
 }
 
-function hasWildcard(pattern: string): boolean {
-  return pattern.includes('*') || pattern.includes('?');
-}
-
-function isBroadTrustedToolPattern(pattern: string): boolean {
-  const compact = pattern.trim();
-  if (compact === '*' || compact === '**') return true;
-  if (compact === '*_*' || compact === '*__*') return true;
-  if (compact.endsWith('_*') && !compact.endsWith('__*')) return true;
-  return false;
-}
-
 function renderApprovalDoctor(config: ResolvedCliConfig): string[] {
   const lines: string[] = [
     ok('approval', `${config.approvalPolicy} (${config.approvalPolicySource})`),
   ];
 
-  if (config.approvalPolicy === 'never') {
-    lines.push(warn('approval policy', `auto-approval is enabled via ${config.approvalPolicySource}; keep deniedTools current for risky tools`));
+  const auditWarnings = auditResolvedCliConfig(config);
+  for (const auditWarning of auditWarnings) {
+    const label = auditWarning.code.startsWith('trustedTools.') ? 'trustedTools' : 'approval policy';
+    lines.push(warn(label, auditWarning.message));
   }
 
-  const broadTrustedPatterns = config.trustedTools.filter(isBroadTrustedToolPattern);
-  if (broadTrustedPatterns.length > 0) {
-    lines.push(warn('trustedTools', `broad trusted pattern(s): ${broadTrustedPatterns.join(', ')}; prefer exact tool names or narrow server__tool globs`));
-  } else if (config.trustedTools.some(hasWildcard)) {
+  const hasBroadTrustedPattern = auditWarnings.some((entry) => entry.code === 'trustedTools.broad_patterns');
+  if (config.trustedTools.length > 0 && hasTrustedToolWildcard(config) && !hasBroadTrustedPattern) {
     lines.push(ok('trustedTools', `${config.trustedTools.length} configured (${config.trustedToolsSource}); wildcard patterns are narrow`));
   } else {
     lines.push(ok('trustedTools', `${config.trustedTools.length ? config.trustedTools.join(', ') : 'none'} (${config.trustedToolsSource})`));

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { checkForCliUpdate } from './update-check.js';
 import type { ResolvedCliConfig } from './config.js';
+import { loadMcpConfig } from '../mcp/index.js';
 
 interface DoctorOptions {
   config: ResolvedCliConfig;
@@ -11,6 +12,7 @@ interface DoctorOptions {
   safetyMode: string;
   detailMode: string;
   npmLatest?: string;
+  updateFetchImpl?: typeof fetch;
 }
 
 function ok(label: string, detail: string): string {
@@ -44,6 +46,36 @@ function sourceLooksEnv(source: string): boolean {
     source === 'DASHSCOPE_BASE_URL';
 }
 
+function renderMcpDoctor(config: ResolvedCliConfig): string {
+  if (!config.mcpEnabled) {
+    return ok('mcp', `disabled (${config.mcpEnabledSource}); config ${config.mcpConfigPath}`);
+  }
+
+  if (!fs.existsSync(config.mcpConfigPath)) {
+    return fail('mcp', `enabled (${config.mcpEnabledSource}) but config is missing at ${config.mcpConfigPath}`);
+  }
+
+  const mcpConfig = loadMcpConfig(config.mcpConfigPath);
+  if (!mcpConfig) {
+    return fail('mcp', `enabled (${config.mcpEnabledSource}) but config is invalid at ${config.mcpConfigPath}`);
+  }
+
+  const serverNames = Object.keys(mcpConfig.mcpServers);
+  if (serverNames.length === 0) {
+    return warn('mcp', `enabled (${config.mcpEnabledSource}) but no servers are configured at ${config.mcpConfigPath}`);
+  }
+
+  const invalidServers = serverNames.filter((name) => {
+    const server = mcpConfig.mcpServers[name];
+    return !server || typeof server.command !== 'string' || server.command.trim() === '';
+  });
+  if (invalidServers.length > 0) {
+    return fail('mcp', `invalid server entries (${invalidServers.join(', ')}); each server needs a command`);
+  }
+
+  return ok('mcp', `enabled (${config.mcpEnabledSource}); ${serverNames.length} server(s) from ${config.mcpConfigPath}`);
+}
+
 export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
   const lines = ['[doctor] dmoss'];
   const nodeMajor = Number.parseInt(process.versions.node.split('.')[0] || '0', 10);
@@ -64,6 +96,7 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
   lines.push(ok('config', path.join(options.configDir, 'config.json')));
   lines.push(ok('safety', options.safetyMode));
   lines.push(ok('detail', options.detailMode));
+  lines.push(renderMcpDoctor(options.config));
 
   const envSources = [
     options.config.providerSource,
@@ -71,6 +104,8 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
     options.config.modelSource,
     options.config.baseUrlSource,
     options.config.workspaceSource,
+    options.config.mcpEnabledSource,
+    options.config.mcpConfigPathSource,
   ].filter(sourceLooksEnv);
   if (envSources.length > 0) {
     lines.push(warn('env overrides', [...new Set(envSources)].join(', ')));
@@ -80,6 +115,7 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
     configDir: options.configDir,
     currentVersion: options.currentVersion,
     timeoutMs: 1500,
+    fetchImpl: options.updateFetchImpl,
   });
   if (notice) {
     lines.push(warn('npm update', `${notice.currentVersion} -> ${notice.latestVersion}; run dmoss update`));

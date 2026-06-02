@@ -1,0 +1,134 @@
+#!/usr/bin/env node
+/**
+ * Run:
+ *   npm run build -w @rdk-moss/agent
+ *   node packages/dmoss-agent/test/cli-doctor.spec.mjs
+ */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { renderCliDoctor } from '../dist/cli/doctor.js';
+
+function resolvedConfig(overrides = {}) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-doctor-config-'));
+  return {
+    cleanup: () => fs.rmSync(tmp, { recursive: true, force: true }),
+    config: {
+      profile: 'balanced',
+      profileSource: 'default',
+      provider: 'qwen',
+      providerSource: 'config',
+      apiKey: 'test-key',
+      apiKeySource: 'config',
+      model: 'qwen3.7-max',
+      modelSource: 'config',
+      baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
+      baseUrlSource: 'config',
+      workspace: tmp,
+      workspaceSource: 'config',
+      safetyMode: 'workspace-write',
+      safetyModeSource: 'profile:balanced',
+      approvalPolicy: 'prompt',
+      approvalPolicySource: 'profile:balanced',
+      trustedTools: [],
+      trustedToolsSource: 'profile:balanced',
+      deniedTools: [],
+      deniedToolsSource: 'default',
+      promptCacheEnabled: true,
+      promptCacheSource: 'profile:balanced',
+      promptCacheDebug: false,
+      promptCacheDebugSource: 'profile:balanced',
+      guardrails: {
+        input: { blockPatterns: [], redactPatterns: [] },
+        output: { blockPatterns: [], redactPatterns: [] },
+      },
+      guardrailsSource: 'default',
+      maxAgentTurns: 64,
+      maxAgentTurnsSource: 'default',
+      contextTokens: 200000,
+      contextTokensSource: 'default',
+      compactionSettings: { reserveTokens: 20000, keepRecentTokens: 20000 },
+      compactionSettingsSource: 'default',
+      mcpEnabled: false,
+      mcpEnabledSource: 'default',
+      mcpConfigPath: path.join(tmp, 'mcp.json'),
+      mcpConfigPathSource: 'default',
+      configPath: path.join(tmp, 'config.json'),
+      ...overrides,
+    },
+  };
+}
+
+async function doctor(config) {
+  return renderCliDoctor({
+    config,
+    configDir: path.dirname(config.configPath),
+    runtimeDir: path.join(config.workspace, '.dmoss-runtime'),
+    currentVersion: '0.3.7',
+    safetyMode: config.safetyMode,
+    detailMode: 'progress',
+    updateFetchImpl: async () => ({ ok: false, async json() { return {}; } }),
+  });
+}
+
+{
+  const fixture = resolvedConfig();
+  try {
+    const output = await doctor(fixture.config);
+    assert.match(output, /ok\s+mcp: disabled \(default\); config .*mcp\.json/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+{
+  const fixture = resolvedConfig({
+    mcpEnabled: true,
+    mcpEnabledSource: 'config',
+  });
+  try {
+    fs.writeFileSync(
+      fixture.config.mcpConfigPath,
+      JSON.stringify({ mcpServers: { filesystem: { command: 'node', args: ['server.js'] } } }),
+    );
+    const output = await doctor(fixture.config);
+    assert.match(output, /ok\s+mcp: enabled \(config\); 1 server\(s\) from .*mcp\.json/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+{
+  const fixture = resolvedConfig({
+    mcpEnabled: true,
+    mcpEnabledSource: 'DMOSS_MCP_ENABLED',
+    mcpConfigPathSource: 'DMOSS_MCP_CONFIG',
+  });
+  try {
+    const output = await doctor(fixture.config);
+    assert.match(output, /fail\s+mcp: enabled \(DMOSS_MCP_ENABLED\) but config is missing at .*mcp\.json/);
+    assert.match(output, /warn\s+env overrides: DMOSS_MCP_ENABLED, DMOSS_MCP_CONFIG/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+{
+  const fixture = resolvedConfig({
+    mcpEnabled: true,
+    mcpEnabledSource: 'config',
+  });
+  try {
+    fs.writeFileSync(
+      fixture.config.mcpConfigPath,
+      JSON.stringify({ mcpServers: { broken: { args: ['server.js'] } } }),
+    );
+    const output = await doctor(fixture.config);
+    assert.match(output, /fail\s+mcp: invalid server entries \(broken\); each server needs a command/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+console.log('[PASS] CLI doctor surfaces MCP file configuration health');

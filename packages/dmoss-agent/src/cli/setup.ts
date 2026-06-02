@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as readline from 'node:readline';
-import { stdin as input, stderr as output } from 'node:process';
+import { stdin as input, stderr as output, stdout as standardOutput } from 'node:process';
 import {
   loadCliConfigFile,
   loadConfigFile,
@@ -124,6 +124,53 @@ function guardrailSummary(resolved: ReturnType<typeof resolveCliConfig>): string
   return `input ${inputCount}, output ${outputCount} (${resolved.guardrailsSource})`;
 }
 
+function serializeResolvedConfig(resolved: ReturnType<typeof resolveCliConfig>): Record<string, unknown> {
+  return {
+    schema: 'dmoss_cli_config.v1',
+    profile: resolved.profile,
+    profileSource: resolved.profileSource,
+    provider: resolved.provider,
+    providerSource: resolved.providerSource,
+    model: resolved.model,
+    modelSource: resolved.modelSource,
+    baseUrl: withoutSecret(resolved.baseUrl),
+    baseUrlSource: resolved.baseUrlSource,
+    apiKeyConfigured: Boolean(resolved.apiKey),
+    apiKeySource: resolved.apiKeySource,
+    workspace: resolved.workspace,
+    workspaceSource: resolved.workspaceSource,
+    safetyMode: resolved.safetyMode,
+    safetyModeSource: resolved.safetyModeSource,
+    approvalPolicy: resolved.approvalPolicy,
+    approvalPolicySource: resolved.approvalPolicySource,
+    trustedTools: [...resolved.trustedTools],
+    trustedToolsSource: resolved.trustedToolsSource,
+    promptCacheEnabled: resolved.promptCacheEnabled,
+    promptCacheSource: resolved.promptCacheSource,
+    promptCacheDebug: resolved.promptCacheDebug,
+    promptCacheDebugSource: resolved.promptCacheDebugSource,
+    guardrails: {
+      input: {
+        blockPatterns: [...resolved.guardrails.input.blockPatterns],
+        redactPatterns: [...resolved.guardrails.input.redactPatterns],
+      },
+      output: {
+        blockPatterns: [...resolved.guardrails.output.blockPatterns],
+        redactPatterns: [...resolved.guardrails.output.redactPatterns],
+      },
+    },
+    guardrailsSource: resolved.guardrailsSource,
+    maxAgentTurns: resolved.maxAgentTurns,
+    maxAgentTurnsSource: resolved.maxAgentTurnsSource,
+    contextTokens: resolved.contextTokens,
+    contextTokensSource: resolved.contextTokensSource,
+    compactionSettings: { ...resolved.compactionSettings },
+    compactionSettingsSource: resolved.compactionSettingsSource,
+    configPath: resolved.configPath,
+    projectConfigPath: resolved.projectConfigPath ?? null,
+  };
+}
+
 function parseConfigPositiveInteger(value: string, key: string): number | null {
   const parsed = Number(value.trim());
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -162,11 +209,22 @@ export function renderAuthStatus(
   ].join('\n');
 }
 
+export function renderConfigJson(
+  config?: ConfigFile,
+  env: NodeJS.ProcessEnv = process.env,
+  startDir = process.cwd(),
+): string {
+  const loaded = config === undefined ? loadCliConfigFile(env, process.argv.slice(2), startDir) : undefined;
+  const resolved = resolveCliConfig(env, config ?? loaded?.config, {}, loaded);
+  return JSON.stringify(serializeResolvedConfig(resolved), null, 2);
+}
+
 export function renderConfigUsage(): string {
   return [
     'Usage:',
     '  dmoss config',
     '  dmoss config show',
+    '  dmoss config show --json',
     '  dmoss config set <profile|provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
     '  dmoss config set --project <key> <value>',
     '',
@@ -186,7 +244,11 @@ export function renderConfigUsage(): string {
   ].join('\n');
 }
 
-export function runConfigShow(startDir = process.cwd()): void {
+export function runConfigShow(startDir = process.cwd(), options: { json?: boolean } = {}): void {
+  if (options.json) {
+    standardOutput.write(`${renderConfigJson(undefined, process.env, startDir)}\n`);
+    return;
+  }
   print(renderAuthStatus(undefined, process.env, startDir));
 }
 

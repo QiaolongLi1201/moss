@@ -21,6 +21,7 @@ import {
 import { resolveCliAgentRuntimeOptions } from '../dist/cli/agent-runtime.js';
 import {
   renderAuthStatus,
+  renderConfigJson,
   renderConfigUsage,
   runConfigSet,
 } from '../dist/cli/setup.js';
@@ -178,8 +179,25 @@ try {
   assert.match(redactedStatus, /baseUrl: https:\/\/example\.com\/compatible-mode\/v1/);
   assert.doesNotMatch(redactedStatus, /user|pass|api_key|secret/);
 
+  const redactedJson = JSON.parse(renderConfigJson({
+    provider: 'openai-compatible',
+    baseUrl: 'https://user:pass@example.com/compatible-mode/v1?api_key=secret',
+    apiKey: 'stored-secret',
+    trustedTools: ['exec'],
+    agent: { maxTurns: 42 },
+  }, {}));
+  assert.equal(redactedJson.schema, 'dmoss_cli_config.v1');
+  assert.equal(redactedJson.apiKeyConfigured, true);
+  assert.equal(redactedJson.apiKeySource, 'config');
+  assert.equal(Object.hasOwn(redactedJson, 'apiKey'), false);
+  assert.equal(redactedJson.baseUrl, 'https://example.com/compatible-mode/v1');
+  assert.equal(redactedJson.maxAgentTurns, 42);
+  assert.deepEqual(redactedJson.trustedTools, ['exec']);
+  assert.doesNotMatch(JSON.stringify(redactedJson), /stored-secret|user|pass|api_key|secret/);
+
   const usage = renderConfigUsage();
   assert.match(usage, /dmoss config show/);
+  assert.match(usage, /dmoss config show --json/);
   assert.match(usage, /dmoss config set profile autonomous/);
   assert.match(usage, /dmoss config set --project safetyMode workspace-write/);
   assert.match(usage, /\.dmoss\/config\.json/);
@@ -187,13 +205,27 @@ try {
   assert.match(usage, /promptCacheDebug/);
 
   const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/cli.js');
+  const cleanCliEnv = {
+    ...process.env,
+    DMOSS_CONFIG_DIR: tmp,
+    DMOSS_PROFILE: '',
+    DMOSS_CONFIG_PROFILE: '',
+    DMOSS_PROVIDER: '',
+    DMOSS_API_KEY: '',
+    DASHSCOPE_API_KEY: '',
+    ALIYUN_API_KEY: '',
+    OPENAI_API_KEY: '',
+    ANTHROPIC_API_KEY: '',
+    DMOSS_MODEL: '',
+    DMOSS_BASE_URL: '',
+    OPENAI_BASE_URL: '',
+    ANTHROPIC_BASE_URL: '',
+    DASHSCOPE_BASE_URL: '',
+    NO_COLOR: '1',
+  };
   for (const args of [['config'], ['config', 'show']]) {
     const result = spawnSync(process.execPath, [cliPath, ...args], {
-      env: {
-        ...process.env,
-        DMOSS_CONFIG_DIR: tmp,
-        NO_COLOR: '1',
-      },
+      env: cleanCliEnv,
       encoding: 'utf8',
     });
     assert.equal(result.status, 0, `${args.join(' ')} should exit cleanly: ${result.stderr || result.stdout}`);
@@ -201,6 +233,29 @@ try {
     assert.match(result.stderr, /profile: balanced \(default\)/);
     assert.match(result.stderr, /config: /);
     assert.doesNotMatch(result.stderr, /stored-secret/);
+  }
+
+  for (const args of [['config', '--json'], ['config', 'show', '--json']]) {
+    const result = spawnSync(process.execPath, [cliPath, ...args], {
+      env: cleanCliEnv,
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `${args.join(' ')} should exit cleanly: ${result.stderr || result.stdout}`);
+    assert.equal(result.stderr, '');
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.schema, 'dmoss_cli_config.v1');
+    assert.equal(parsed.profile, 'balanced');
+    assert.equal(parsed.profileSource, 'default');
+    assert.equal(parsed.provider, 'qwen');
+    assert.equal(parsed.apiKeyConfigured, true);
+    assert.equal(parsed.apiKeySource, 'config');
+    assert.equal(Object.hasOwn(parsed, 'apiKey'), false);
+    assert.equal(parsed.promptCacheEnabled, true);
+    assert.equal(parsed.maxAgentTurns, 64);
+    assert.deepEqual(parsed.compactionSettings, { reserveTokens: 20000, keepRecentTokens: 20000 });
+    assert.match(parsed.configPath, /config\.json$/);
+    assert.equal(parsed.projectConfigPath, null);
+    assert.doesNotMatch(result.stdout, /stored-secret/);
   }
 
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-project-config-'));
@@ -275,17 +330,35 @@ try {
       'config',
       'show',
     ], {
-      env: {
-        ...process.env,
-        DMOSS_CONFIG_DIR: tmp,
-        NO_COLOR: '1',
-      },
+      env: cleanCliEnv,
       encoding: 'utf8',
     });
     assert.equal(projectShow.status, 0, `config show with project config should exit cleanly: ${projectShow.stderr || projectShow.stdout}`);
     assert.match(projectShow.stderr, /profile: autonomous \(config\)/);
     assert.match(projectShow.stderr, new RegExp(`projectConfig: ${projectConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.doesNotMatch(projectShow.stderr, /stored-secret/);
+
+    const projectShowJson = spawnSync(process.execPath, [
+      cliPath,
+      '-C',
+      projectChild,
+      'config',
+      'show',
+      '--json',
+    ], {
+      env: cleanCliEnv,
+      encoding: 'utf8',
+    });
+    assert.equal(projectShowJson.status, 0, `config show --json with project config should exit cleanly: ${projectShowJson.stderr || projectShowJson.stdout}`);
+    assert.equal(projectShowJson.stderr, '');
+    const projectJson = JSON.parse(projectShowJson.stdout);
+    assert.equal(projectJson.profile, 'autonomous');
+    assert.equal(projectJson.profileSource, 'config');
+    assert.equal(projectJson.projectConfigPath, projectConfigPath);
+    assert.equal(projectJson.guardrails.input.redactPatterns[0], 'PROJECT_SECRET=[^\\s]+');
+    assert.equal(projectJson.maxAgentTurns, 24);
+    assert.deepEqual(projectJson.compactionSettings, { reserveTokens: 10000, keepRecentTokens: 20000 });
+    assert.doesNotMatch(projectShowJson.stdout, /stored-secret/);
 
     runConfigSet(['--project', 'safetyMode', 'read-only'], projectChild);
     assert.equal(JSON.parse(fs.readFileSync(projectConfigPath, 'utf8')).safetyMode, 'read-only');

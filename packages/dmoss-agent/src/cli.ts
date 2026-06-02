@@ -84,6 +84,14 @@ export const c = {
 const argv = parsedArgs.rawArgv;
 if (parsedArgs.detailMode) process.env.DMOSS_CLI_DETAIL = parsedArgs.detailMode;
 
+function usesJsonOutput(args: string[]): boolean {
+  return args.some((arg) => arg === '--json');
+}
+
+function isConfigShowCommand(args: string[]): boolean {
+  return args.length === 0 || args[0] === 'show' || args[0] === 'status';
+}
+
 function resolveCliLogLevel(): LogLevel {
   if (argv.includes('--debug')) return 'debug';
   if (argv.includes('--quiet')) return 'warn';
@@ -181,13 +189,11 @@ async function main() {
   }
   if (
     parsedArgs.command === 'config' &&
-    (
-      parsedArgs.commandArgs.length === 0 ||
-      parsedArgs.commandArgs[0] === 'show' ||
-      parsedArgs.commandArgs[0] === 'status'
-    )
+    isConfigShowCommand(parsedArgs.commandArgs)
   ) {
-    runConfigShow(parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd());
+    runConfigShow(parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd(), {
+      json: usesJsonOutput(argv),
+    });
     return;
   }
   if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'set') {

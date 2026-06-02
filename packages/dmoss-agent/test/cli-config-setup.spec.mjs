@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  CliConfigFileError,
   auditResolvedCliConfig,
   loadCliConfigFile,
   loadConfigFile,
@@ -569,6 +570,8 @@ try {
   const explicitConfigPath = path.join(explicitDir, 'named-config.json');
   const cliConfigPath = path.join(explicitDir, 'cli-config.json');
   const envIgnoredConfigPath = path.join(explicitDir, 'env-ignored-config.json');
+  const invalidConfigPath = path.join(explicitDir, 'invalid.json');
+  const nonObjectConfigPath = path.join(explicitDir, 'array-config.json');
   process.env.DMOSS_CONFIG_FILE = explicitConfigPath;
   try {
     assert.equal(resolveConfigPath(), explicitConfigPath);
@@ -633,6 +636,49 @@ try {
     assert.equal(showResult.status, 0, `config show with CLI file should exit cleanly: ${showResult.stderr || showResult.stdout}`);
     assert.match(showResult.stderr, /profile: autonomous \(config\)/);
     assert.match(showResult.stderr, new RegExp(`config: ${cliConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+
+    fs.writeFileSync(invalidConfigPath, '{bad json\n');
+    assert.throws(
+      () => loadConfigFile(invalidConfigPath),
+      (err) => err instanceof CliConfigFileError &&
+        err.configPath === invalidConfigPath &&
+        /Invalid dmoss config/.test(err.message),
+    );
+    fs.writeFileSync(nonObjectConfigPath, '[]\n');
+    assert.throws(
+      () => loadConfigFile(nonObjectConfigPath),
+      /expected a JSON object/,
+    );
+
+    const invalidShowResult = spawnSync(process.execPath, [cliPath, '--config-file', invalidConfigPath, 'config', 'show'], {
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.notEqual(invalidShowResult.status, 0, 'config show should fail when an explicit config file is invalid');
+    assert.match(invalidShowResult.stderr, /Invalid dmoss config/);
+    assert.match(invalidShowResult.stderr, new RegExp(invalidConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+    const repairPath = path.join(explicitDir, 'repair-invalid.json');
+    fs.writeFileSync(repairPath, '{bad json\n');
+    const repairResult = spawnSync(process.execPath, [
+      cliPath,
+      '--config-file',
+      repairPath,
+      'config',
+      'init',
+      '--force',
+    ], {
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(repairResult.status, 0, `config init --force should repair invalid config: ${repairResult.stderr || repairResult.stdout}`);
+    assert.equal(JSON.parse(fs.readFileSync(repairPath, 'utf8')).profile, 'balanced');
   } finally {
     if (oldConfigFile === undefined) delete process.env.DMOSS_CONFIG_FILE;
     else process.env.DMOSS_CONFIG_FILE = oldConfigFile;

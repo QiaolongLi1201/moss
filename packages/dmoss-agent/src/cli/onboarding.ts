@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DmossAgent } from '../core/index.js';
 import type { Tool } from '../core/tools/tool-types.js';
-import { auditResolvedCliConfig, BASE_URL, resolveCliConfig, resolveConfigDir, WORKSPACE, type ResolvedCliConfig } from './config.js';
+import { auditResolvedCliConfig, BASE_URL, resolveCliConfig, resolveConfigDir, resolveConfigPath, WORKSPACE, type ResolvedCliConfig } from './config.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
 import { getPackageVersion } from './package-info.js';
 import { compactPath, label, statusDot, ui } from './ui.js';
@@ -34,6 +34,14 @@ interface ToolGroupSummary {
   tools: Tool[];
 }
 
+function loadDefaultRuntimeConfig(): ResolvedCliConfig {
+  try {
+    return resolveCliConfig();
+  } catch {
+    return resolveCliConfig(process.env, {}, {}, { configPath: resolveConfigPath() });
+  }
+}
+
 const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage'>> & {
   dockerImage?: string;
   device: CliDeviceStatus | null;
@@ -47,7 +55,7 @@ const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage'>
   dockerImage: process.env.DMOSS_DOCKER_IMAGE,
   meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || process.argv.includes('--mesh'),
   sessionKey: 'cli',
-  config: resolveCliConfig(),
+  config: loadDefaultRuntimeConfig(),
   device: null,
 };
 

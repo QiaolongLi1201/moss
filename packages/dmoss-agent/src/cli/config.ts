@@ -99,6 +99,16 @@ export interface LoadedCliConfigFile {
   projectConfigPath?: string;
 }
 
+export class CliConfigFileError extends Error {
+  readonly configPath: string;
+
+  constructor(configPath: string, reason: string) {
+    super(`Invalid dmoss config at ${configPath}: ${reason}`);
+    this.name = 'CliConfigFileError';
+    this.configPath = configPath;
+  }
+}
+
 export type CliConfigProfile = 'cautious' | 'balanced' | 'autonomous';
 export type CliSafetyModeConfig = 'read-only' | 'workspace-write' | 'full-access';
 export type ConfigApprovalPolicy = 'prompt' | 'never';
@@ -226,12 +236,25 @@ export function resolveProjectConfigPath(startDir = process.cwd(), maxHops = 16)
 }
 
 export function loadConfigFile(configPath = resolveConfigPath()): ConfigFile {
+  if (!fs.existsSync(configPath)) return {};
+  let raw: string;
   try {
-    const raw = fs.readFileSync(configPath, 'utf-8');
-    return JSON.parse(raw) as ConfigFile;
-  } catch {
-    return {};
+    raw = fs.readFileSync(configPath, 'utf-8');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CliConfigFileError(configPath, message);
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CliConfigFileError(configPath, message);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new CliConfigFileError(configPath, 'expected a JSON object');
+  }
+  return parsed as ConfigFile;
 }
 
 function mergePromptCacheConfig(
@@ -918,8 +941,17 @@ export function loadEnvFromAncestors(startDir: string, maxHops = 16): void {
 loadEnvFromAncestors(process.cwd());
 loadEnvFromAncestors(path.dirname(fileURLToPath(import.meta.url)));
 
-const loadedConfigFile = loadCliConfigFile();
-const resolvedConfig = resolveCliConfig(process.env, loadedConfigFile.config, {}, loadedConfigFile);
+function loadResolvedConfigForModuleDefaults(): ResolvedCliConfig {
+  try {
+    const loadedConfigFile = loadCliConfigFile();
+    return resolveCliConfig(process.env, loadedConfigFile.config, {}, loadedConfigFile);
+  } catch {
+    const configPath = resolveConfigPath();
+    return resolveCliConfig(process.env, {}, {}, { configPath });
+  }
+}
+
+const resolvedConfig = loadResolvedConfigForModuleDefaults();
 
 export const PROVIDER = resolvedConfig.provider;
 export const API_KEY = resolvedConfig.apiKey;

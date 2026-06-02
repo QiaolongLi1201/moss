@@ -17,6 +17,7 @@ import type { Tool } from '../tools/tool-types.js';
 import type { Model, StreamFunction, ThinkingLevel } from '../../provider/pi-ai-types.js';
 import type { AgentLoopPlatformConfig } from '../loop/agent-loop-types.js';
 import type { Message } from '../session/session-jsonl.js';
+import type { LLMSystemPromptParts } from '../llm/llm-provider.js';
 import type { SubAgentConfig, SubAgentResult, SubAgentRunner } from './subagent-orchestrator.js';
 import { resolveSpawnToolSet, buildSubagentPromptAddon } from './spawn-profile.js';
 import type { SpawnProfileRegistry, SpawnToolScope } from './spawn-profile.js';
@@ -71,6 +72,8 @@ export interface SubAgentRunnerDeps {
   modelDef: Model<any>;
   /** Parent system prompt (scope addon is appended). */
   systemPrompt: string;
+  /** Cache-friendly parent system prompt split, when prompt caching is enabled. */
+  systemPromptParts?: LLMSystemPromptParts;
   /** Max output tokens per LLM call. */
   maxOutputTokens: number;
   /** Context window size in tokens. */
@@ -117,9 +120,15 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
     const prevStepAddon = config.previousStepResult
       ? `[Previous pipeline step result]\nrunId: ${config.previousStepResult.runId}\nsuccess: ${config.previousStepResult.success}\nsummary:\n${config.previousStepResult.summary}`
       : undefined;
-    const childSystemPrompt = [deps.systemPrompt, promptAddon, prevStepAddon]
-      .filter(Boolean)
-      .join('\n\n');
+    const childDynamicSystemPrompt = deps.systemPromptParts
+      ? [deps.systemPromptParts.dynamic, promptAddon, prevStepAddon].filter(Boolean).join('\n\n')
+      : undefined;
+    const childSystemPrompt = deps.systemPromptParts
+      ? [deps.systemPromptParts.stable, childDynamicSystemPrompt].filter(Boolean).join('\n\n')
+      : [deps.systemPrompt, promptAddon, prevStepAddon].filter(Boolean).join('\n\n');
+    const childSystemPromptParts = deps.systemPromptParts
+      ? { stable: deps.systemPromptParts.stable, dynamic: childDynamicSystemPrompt ?? '' }
+      : undefined;
 
     // 3. Initial message: the task description
     const childMessages: Message[] = [
@@ -151,6 +160,7 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
         currentMessages: childMessages,
         compactionSummary: undefined,
         systemPrompt: childSystemPrompt,
+        systemPromptParts: childSystemPromptParts,
         toolsForRun: filteredTools,
         getToolsForRun: () => filteredTools,
         toolCtx: {

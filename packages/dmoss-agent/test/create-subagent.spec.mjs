@@ -18,10 +18,15 @@ import assert from 'node:assert/strict';
 import { createInMemoryMossAsyncTaskRegistry } from '@rdk-moss/core/contracts/async-task';
 import { createSubagentTool, subagentStatusTool, subagentStopTool } from '../dist/tools/create-subagent.js';
 import {
+  createModelDefFromDmossConfig,
+  createStreamFunctionFromLlmProvider,
+} from '../dist/core/index.js';
+import {
   SpawnProfileRegistry,
   resolveSpawnToolSet,
   buildSubagentPromptAddon,
 } from '../dist/core/subagent/spawn-profile.js';
+import { createSubAgentRunner } from '../dist/core/subagent/subagent-runner.js';
 
 // ── Test 1: Tool rejects when ctx.spawnSubagent is not set ──
 {
@@ -396,6 +401,87 @@ import {
 
 // ── Test 15: Tool defaults scope, maxTurns, and timeoutMs ──
 {
+  const requests = [];
+  const provider = {
+    id: 'fake-provider',
+    displayName: 'Fake Provider',
+    capabilities: { streaming: true },
+    async complete() {
+      return {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: 'child done' }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    },
+    async stream(options) {
+      requests.push(options);
+      return {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: 'child done' }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    },
+  };
+  const streamFn = createStreamFunctionFromLlmProvider({ provider });
+  const modelDef = createModelDefFromDmossConfig({
+    llmProvider: provider,
+    model: 'fake-model',
+    maxTokens: 128,
+    contextTokens: 4096,
+  });
+  const runner = createSubAgentRunner({
+    parentTools: [],
+    streamFn,
+    modelDef,
+    systemPrompt: 'stable parent\n\nparent dynamic context',
+    systemPromptParts: {
+      stable: 'stable parent',
+      dynamic: 'parent dynamic context',
+    },
+    maxOutputTokens: 128,
+    contextTokens: 4096,
+  });
+
+  const result = await runner(
+    {
+      runId: 'cache-child',
+      parentRunId: 'parent',
+      scope: 'explore',
+      task: 'inspect cache behavior',
+      maxTurns: 1,
+      previousStepResult: {
+        runId: 'previous-step',
+        summary: 'previous summary',
+        success: true,
+      },
+    },
+    new AbortController().signal,
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(requests.length, 1);
+  assert.deepEqual(requests[0].systemPromptParts?.stable, 'stable parent');
+  assert.ok(
+    requests[0].systemPromptParts?.dynamic.includes('parent dynamic context'),
+    'child dynamic prompt should preserve parent dynamic context',
+  );
+  assert.ok(
+    requests[0].systemPromptParts?.dynamic.includes(buildSubagentPromptAddon('explore')),
+    'child dynamic prompt should include scope addon',
+  );
+  assert.ok(
+    requests[0].systemPromptParts?.dynamic.includes('[Previous pipeline step result]'),
+    'child dynamic prompt should include previous pipeline result',
+  );
+  assert.equal(
+    requests[0].systemPrompt,
+    `${requests[0].systemPromptParts.stable}\n\n${requests[0].systemPromptParts.dynamic}`,
+  );
+  console.log('  [PASS] sub-agent runner preserves cacheable parent system prompt split');
+}
+
+// ── Test 16: Tool defaults scope, maxTurns, and timeoutMs ──
+{
   let capturedParams = null;
   const ctx = {
     workspaceDir: '/tmp',
@@ -413,7 +499,7 @@ import {
   console.log('  [PASS] tool defaults scope, maxTurns, and timeoutMs');
 }
 
-// ── Test 16: Tool metadata is correct ──
+// ── Test 17: Tool metadata is correct ──
 {
   assert.equal(createSubagentTool.name, 'create_subagent');
   assert.equal(createSubagentTool.metadata?.sideEffectClass, 'subagent');
@@ -437,7 +523,7 @@ import {
   console.log('  [PASS] tool metadata and schema are correct');
 }
 
-// ── Test 17: Scope filtering prevents recursion ──
+// ── Test 18: Scope filtering prevents recursion ──
 {
   // Simulate what the runner does: filter out create_subagent from any scope
   const allToolNames = ['read', 'write', 'exec', 'create_subagent', 'grep'];
@@ -460,4 +546,4 @@ import {
   console.log('  [PASS] recursion prevention: create_subagent filtered from all scopes');
 }
 
-console.log('\n[pass] create-subagent: 17/17');
+console.log('\n[pass] create-subagent: 18/18');

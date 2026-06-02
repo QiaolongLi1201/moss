@@ -530,6 +530,7 @@ export class DmossAgent {
       reasoning: this.config.reasoning || undefined,
       toolHooks: this.toolHooks,
       spawnRegistry: this.spawnRegistry,
+      systemPromptParts,
     });
 
     const MAX_SUBAGENTS_PER_RUN = 8;

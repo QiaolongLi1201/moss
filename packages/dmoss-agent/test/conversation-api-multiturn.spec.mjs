@@ -218,6 +218,10 @@ async function testPromptCacheTelemetrySurfacesToolFollowupStability() {
   assert.equal(cacheMetrics.promptCacheDebug, true);
   assert(cacheMetrics.stableChars > 0, 'stable system prompt chars should be reported');
   assert(cacheMetrics.dynamicChars > 0, 'dynamic task-frame context chars should be reported');
+  assert.equal(cacheMetrics.eligible, false);
+  assert.equal(cacheMetrics.eligibilityReason, 'stable_prefix_too_short');
+  assert.equal(cacheMetrics.minStableChars, 2048);
+  assert.equal(cacheMetrics.maxDynamicCharsRatio, 0.25);
   assert.equal(cacheMetrics.prefixChecks, 2);
   assert.equal(cacheMetrics.toolOrderChecks, 2);
   assert.equal(cacheMetrics.prefixChanges, 0);

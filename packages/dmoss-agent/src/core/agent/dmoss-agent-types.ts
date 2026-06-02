@@ -232,6 +232,10 @@ export type DmossAgentEvent =
       promptCacheDebug: boolean;
       stableChars: number;
       dynamicChars: number;
+      eligible: boolean;
+      eligibilityReason: string;
+      minStableChars: number;
+      maxDynamicCharsRatio: number;
       prefixChecks: number;
       prefixChanges: number;
       toolOrderChecks: number;

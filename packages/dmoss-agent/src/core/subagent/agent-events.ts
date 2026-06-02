@@ -108,6 +108,10 @@ export interface RunMetrics {
   promptCacheDebug?: boolean;
   promptCacheStableChars?: number;
   promptCacheDynamicChars?: number;
+  promptCacheEligible?: boolean;
+  promptCacheEligibilityReason?: string;
+  promptCacheMinStableChars?: number;
+  promptCacheMaxDynamicCharsRatio?: number;
   promptPrefixChecks?: number;
   promptPrefixChanges?: number;
   promptToolOrderChecks?: number;

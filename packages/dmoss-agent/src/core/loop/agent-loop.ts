@@ -41,7 +41,7 @@ import {
   logLLMUsage,
 } from '../../observability/llm-usage.js';
 import { readEnv, readEnvFlag } from '../../utils/env-compat.js';
-import { isPromptPrefixDebugEnabled } from '../llm/prompt-prefix-cache.js';
+import { assessPromptCacheEligibility, isPromptPrefixDebugEnabled } from '../llm/prompt-prefix-cache.js';
 import {
   createToolLoopGuardState,
 } from '../tools/tool-loop-guard.js';
@@ -559,6 +559,9 @@ export function runAgentLoop(
 
       const maxOutMetrics = maxOutputTokensParam ?? modelDef.maxTokens ?? 8192;
       const effMetrics = getEffectiveContextWindowTokens(contextTokens, maxOutMetrics);
+      const promptCacheEligibility = assessPromptCacheEligibility(systemPromptParts, {
+        enabled: Boolean(systemPromptParts?.stable),
+      });
       stream.push({
         type: 'run_metrics',
         metrics: {
@@ -582,6 +585,10 @@ export function runAgentLoop(
           promptCacheDebug: prefixDebugEnabled,
           promptCacheStableChars: systemPromptParts?.stable.length ?? 0,
           promptCacheDynamicChars: systemPromptParts?.dynamic.length ?? 0,
+          promptCacheEligible: promptCacheEligibility.eligible,
+          promptCacheEligibilityReason: promptCacheEligibility.reason,
+          promptCacheMinStableChars: promptCacheEligibility.minStableChars,
+          promptCacheMaxDynamicCharsRatio: promptCacheEligibility.maxDynamicCharsRatio,
           promptPrefixChecks: promptCacheTelemetry.prefixChecks,
           promptPrefixChanges: promptCacheTelemetry.prefixChanges,
           promptToolOrderChecks: promptCacheTelemetry.toolOrderChecks,

@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { planContextBudgetActions } from '../dist/core/index.js';
 import { runPerTurnContextManagement } from '../dist/core/loop/per-turn-context-management.js';
 import {
+  assessPromptCacheEligibility,
   checkPromptPrefixStable,
   snapshotMessagesForPrefixCheck,
 } from '../dist/core/llm/prompt-prefix-cache.js';
@@ -142,6 +143,37 @@ import {
     `unexpected kind: ${issue.kind}`,
   );
   assert.ok(typeof issue.detail === 'string' && issue.detail.length > 0, 'detail must be populated');
+}
+
+{
+  assert.deepEqual(
+    assessPromptCacheEligibility(undefined, { enabled: false }),
+    {
+      eligible: false,
+      reason: 'disabled',
+      stableChars: 0,
+      dynamicChars: 0,
+      minStableChars: 2048,
+      maxDynamicCharsRatio: 0.25,
+    },
+  );
+  assert.equal(
+    assessPromptCacheEligibility({ stable: 'short', dynamic: '' }).reason,
+    'stable_prefix_too_short',
+  );
+  assert.equal(
+    assessPromptCacheEligibility({
+      stable: 's'.repeat(4096),
+      dynamic: 'd'.repeat(2048),
+    }).reason,
+    'dynamic_suffix_too_large',
+  );
+  const eligible = assessPromptCacheEligibility({
+    stable: 's'.repeat(4096),
+    dynamic: 'd'.repeat(128),
+  });
+  assert.equal(eligible.eligible, true);
+  assert.equal(eligible.reason, 'eligible');
 }
 
 console.log('[PASS] ContextBudgetPlanner returns stable action plans');

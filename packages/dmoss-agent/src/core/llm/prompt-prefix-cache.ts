@@ -21,8 +21,85 @@ export interface PromptPrefixStabilityIssue {
   detail?: string;
 }
 
+export interface PromptCacheEligibility {
+  eligible: boolean;
+  reason: 'disabled' | 'missing_stable_prefix' | 'stable_prefix_too_short' | 'dynamic_suffix_too_large' | 'eligible';
+  stableChars: number;
+  dynamicChars: number;
+  minStableChars: number;
+  maxDynamicCharsRatio: number;
+}
+
+export interface PromptCacheEligibilityOptions {
+  enabled?: boolean;
+  minStableChars?: number;
+  maxDynamicCharsRatio?: number;
+}
+
+export const DEFAULT_PROMPT_CACHE_MIN_STABLE_CHARS = 2_048;
+export const DEFAULT_PROMPT_CACHE_MAX_DYNAMIC_CHARS_RATIO = 0.25;
+
 export function isPromptPrefixDebugEnabled(): boolean {
   return readEnvFlag('DMOSS_PROMPT_PREFIX_DEBUG');
+}
+
+export function assessPromptCacheEligibility(
+  parts: { stable?: string; dynamic?: string } | undefined,
+  options: PromptCacheEligibilityOptions = {},
+): PromptCacheEligibility {
+  const minStableChars = options.minStableChars ?? DEFAULT_PROMPT_CACHE_MIN_STABLE_CHARS;
+  const maxDynamicCharsRatio = options.maxDynamicCharsRatio ?? DEFAULT_PROMPT_CACHE_MAX_DYNAMIC_CHARS_RATIO;
+  const stableChars = parts?.stable?.length ?? 0;
+  const dynamicChars = parts?.dynamic?.length ?? 0;
+
+  if (options.enabled === false) {
+    return {
+      eligible: false,
+      reason: 'disabled',
+      stableChars,
+      dynamicChars,
+      minStableChars,
+      maxDynamicCharsRatio,
+    };
+  }
+  if (stableChars === 0) {
+    return {
+      eligible: false,
+      reason: 'missing_stable_prefix',
+      stableChars,
+      dynamicChars,
+      minStableChars,
+      maxDynamicCharsRatio,
+    };
+  }
+  if (stableChars < minStableChars) {
+    return {
+      eligible: false,
+      reason: 'stable_prefix_too_short',
+      stableChars,
+      dynamicChars,
+      minStableChars,
+      maxDynamicCharsRatio,
+    };
+  }
+  if (stableChars > 0 && dynamicChars / stableChars > maxDynamicCharsRatio) {
+    return {
+      eligible: false,
+      reason: 'dynamic_suffix_too_large',
+      stableChars,
+      dynamicChars,
+      minStableChars,
+      maxDynamicCharsRatio,
+    };
+  }
+  return {
+    eligible: true,
+    reason: 'eligible',
+    stableChars,
+    dynamicChars,
+    minStableChars,
+    maxDynamicCharsRatio,
+  };
 }
 
 export function snapshotMessagesForPrefixCheck(messages: readonly Message[]): Message[] {

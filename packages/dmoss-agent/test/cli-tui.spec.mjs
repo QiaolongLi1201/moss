@@ -15,6 +15,7 @@ import {
   footerHint,
   formatQueueWait,
   formatAttachmentChip,
+  formatTuiSessions,
   isLocalShellLine,
   promptCacheModeLabel,
   promptPlaceholder,
@@ -76,6 +77,7 @@ assert.equal(isLocalShellLine('  !pwd'), false);
 assert.equal(commandSuggestion('/staus'), '/status');
 assert.equal(commandSuggestion('/tool'), '/tools');
 assert.equal(commandSuggestion('/queu'), '/queue');
+assert.equal(commandSuggestion('/sess'), '/sessions');
 assert.equal(commandSuggestion('status'), null);
 
 assert.deepEqual(
@@ -206,6 +208,26 @@ assert.equal(transcriptViewportRows({
   approvalRows: 10,
   noticeRows: 1,
 }), 1);
+{
+  const rendered = formatTuiSessions([
+    { sessionKey: 'older', createdAt: 0, updatedAt: 1_000, messageCount: 1 },
+    { sessionKey: 'current', createdAt: 0, updatedAt: 3_000, messageCount: 2 },
+    { sessionKey: 'newest', createdAt: 0, updatedAt: 5_000, messageCount: 3 },
+  ], 'current', { limit: 2 });
+  assert.match(rendered, /Sessions/);
+  assert.match(rendered, /current: current/);
+  assert.match(rendered, /recent \(2 of 3\)/);
+  assert.match(rendered, /\* current · 2 messages/);
+  assert.match(rendered, /newest · 3 messages/);
+  assert.doesNotMatch(rendered, /older/);
+  assert.match(rendered, /dmoss resume --last/);
+  assert.match(rendered, /dmoss fork --fork-from <key>/);
+}
+{
+  const rendered = formatTuiSessions([], 'cli');
+  assert.match(rendered, /current: cli/);
+  assert.match(rendered, /No saved sessions found yet/);
+}
 
 {
   const line = statusLine({

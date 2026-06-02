@@ -7,6 +7,7 @@ import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
 import type { DmossAgent, DmossAgentEvent, ToolResultOutcome } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
+import type { SessionMeta } from '../core/session/session.js';
 import { setCliApprovalAsker } from './approval.js';
 import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
@@ -178,6 +179,8 @@ const KNOWN_COMMANDS = [
   '/clearqueue',
   '/memory',
   '/skills',
+  '/sessions',
+  '/session',
   '/upgrade',
   '/stop',
   '/abort',
@@ -335,6 +338,39 @@ export function transcriptViewportRows(options: TranscriptViewportRowsOptions): 
       - options.noticeRows
       - 2,
   );
+}
+
+function formatSessionTimestamp(updatedAt: number): string {
+  if (!Number.isFinite(updatedAt) || updatedAt <= 0) return 'unknown time';
+  return new Date(updatedAt).toLocaleString();
+}
+
+export function formatTuiSessions(
+  sessions: SessionMeta[],
+  currentSessionKey: string,
+  options: { limit?: number } = {},
+): string {
+  const limit = Math.max(1, options.limit ?? 10);
+  const recent = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit);
+  const lines = [
+    'Sessions',
+    `  current: ${currentSessionKey}`,
+  ];
+  if (recent.length === 0) {
+    lines.push('  No saved sessions found yet.');
+  } else {
+    lines.push(`  recent (${recent.length}${sessions.length > recent.length ? ` of ${sessions.length}` : ''})`);
+    for (const session of recent) {
+      const marker = session.sessionKey === currentSessionKey ? '*' : ' ';
+      const count = `${session.messageCount} message${session.messageCount === 1 ? '' : 's'}`;
+      lines.push(`  ${marker} ${session.sessionKey} · ${count} · updated ${formatSessionTimestamp(session.updatedAt)}`);
+    }
+  }
+  lines.push('');
+  lines.push('Shell: dmoss resume --last');
+  lines.push('Shell: dmoss resume --session <key>');
+  lines.push('Shell: dmoss fork --fork-from <key>');
+  return lines.join('\n');
 }
 
 export function extractAttachmentRefs(text: string): AttachmentRef[] {
@@ -829,6 +865,7 @@ export function WelcomePanel({ workspace, device, model, cacheMode, profile }: W
     ['/tools', 'list available tools and permission surface'],
     ['/examples', 'starter tasks'],
     ['/detail', 'toggle quiet, progress, or verbose detail'],
+    ['/sessions', 'show current and recent saved sessions'],
     ['/thinking', 'toggle thinking deltas'],
     ['/clear', 'clear visible transcript'],
   ];
@@ -1107,6 +1144,7 @@ function commandRowsForInput(value: string): Array<[string, string]> {
     ['/examples', 'starter tasks'],
     ['/detail', 'toggle quiet, progress, or verbose detail'],
     ['/queue', 'show or clear queued prompts'],
+    ['/sessions', 'show current and recent saved sessions'],
     ['/thinking', 'toggle thinking deltas'],
     ['/clear', 'clear visible transcript'],
     ['/quit', 'exit D-Moss'],
@@ -1528,6 +1566,15 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       addTranscript('system', renderSkills(workspace));
       return true;
     }
+    if (message === '/sessions' || message === '/session') {
+      try {
+        const sessions = await agent.config.sessionStore.listSessions();
+        addTranscript('system', formatTuiSessions(sessions, sessionKey));
+      } catch (err) {
+        addTranscript('error', `Could not list sessions: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
     if (message === '/models') {
       addTranscript('system', modelExamples(currentModel));
       return true;
@@ -1743,6 +1790,8 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       || message === '/abort'
       || message === '/queue'
       || message === '/queued'
+      || message === '/sessions'
+      || message === '/session'
       || message === '/queue clear'
       || message === '/clearqueue';
     if (busyRef.current && isImmediateBusyCommand) {
@@ -1851,6 +1900,7 @@ function commandList(): string {
     '  /tools             available tools',
     '  /stop              stop the active run',
     '  /queue [clear]     show or discard queued prompts',
+    '  /sessions          show current and recent saved sessions',
     '',
     'Conversation',
     '  /clear             clear visible transcript',

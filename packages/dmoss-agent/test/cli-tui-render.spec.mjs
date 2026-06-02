@@ -125,6 +125,7 @@ test('WelcomePanel renders a Tip and Codex-style command list', () => {
   assert.match(frame, /\/model\s+choose what model to use/);
   assert.match(frame, /\/permissions\s+show safety/);
   assert.match(frame, /\/status\s+inspect runtime/);
+  assert.match(frame, /\/sessions\s+show current and recent saved sessions/);
   assert.match(frame, /Ctrl\+O\s+expand or collapse tool calls/);
   assert.match(frame, /profile cautious/);
   assert.match(frame, /cache stable/);
@@ -368,6 +369,7 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   assert.match(frame, /\/model\s+choose what model to use/);
   assert.match(frame, /\/permissions\s+show safety/);
   assert.match(frame, /\/tools\s+list available tools/);
+  assert.match(frame, /\/sessions\s+show current and recent saved sessions/);
   cleanup();
 });
 

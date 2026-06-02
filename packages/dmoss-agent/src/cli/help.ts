@@ -40,6 +40,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.green('config')}               show resolved config values and sources`,
     `    ${c.green('config show')}          same as config; safe for scripts`,
     `    ${c.green('config show --json')}   emit redacted resolved config JSON`,
+    `    ${c.green('config init')}          create a user or project config file`,
     `    ${c.green('config set model')} ${c.dim('<m>')}  update stored model`,
     `    ${c.green('config set baseUrl')} ${c.dim('<u>')} update stored OpenAI-compatible base URL`,
     `    ${c.green('config set profile')} ${c.dim('<p>')} cautious | balanced | autonomous`,

@@ -24,6 +24,7 @@ import {
   renderAuthStatus,
   renderConfigUsage,
   runAuthLogout,
+  runConfigInit,
   runConfigShow,
   runConfigSet,
   runConfigUnset,
@@ -195,6 +196,10 @@ async function main() {
     runConfigShow(parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd(), {
       json: usesJsonOutput(argv),
     });
+    return;
+  }
+  if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'init') {
+    runConfigInit(parsedArgs.commandArgs.slice(1), parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd());
     return;
   }
   if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'set') {

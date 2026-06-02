@@ -291,6 +291,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    never            auto-approve allowed side-effectful tools',
     '',
     '  Persist changes:',
+    '    dmoss config init --project',
     '    dmoss config set profile cautious|balanced|autonomous',
     '    dmoss config set --project safetyMode workspace-write',
     '    dmoss config set workspace /path/to/workspace',

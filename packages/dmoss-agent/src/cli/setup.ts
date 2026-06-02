@@ -226,6 +226,7 @@ export function renderConfigUsage(): string {
   return [
     'Usage:',
     '  dmoss config',
+    '  dmoss config init [--project] [--force]',
     '  dmoss config show',
     '  dmoss config show --json',
     '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
@@ -239,6 +240,7 @@ export function renderConfigUsage(): string {
     '  set DMOSS_CONFIG_FILE=/path/to/config.json to use an explicit config file',
     '',
     'Examples:',
+    '  dmoss config init --project',
     '  dmoss config set profile autonomous',
     '  dmoss config set --project safetyMode workspace-write',
     '  dmoss config set approvalPolicy prompt',
@@ -344,6 +346,74 @@ function resolveConfigEditTarget(args: string[], startDir: string): { args: stri
   };
 }
 
+function resolveConfigInitTarget(args: string[], startDir: string): { configPath: string; scope: 'user' | 'project'; force: boolean } | null {
+  let scope: 'user' | 'project' = 'user';
+  let force = false;
+  for (const arg of args) {
+    if (arg === '--project') {
+      scope = 'project';
+    } else if (arg === '--force') {
+      force = true;
+    } else {
+      print(renderConfigUsage());
+      process.exitCode = 1;
+      return null;
+    }
+  }
+  const root = path.resolve(startDir);
+  return {
+    scope,
+    force,
+    configPath: scope === 'project'
+      ? (resolveProjectConfigPath(root) ?? path.join(root, '.dmoss', 'config.json'))
+      : resolveConfigPath(),
+  };
+}
+
+function buildUserConfigTemplate(): ConfigFile {
+  const resolved = resolveCliConfig(process.env, {});
+  return removeEmptyNestedConfig({
+    profile: resolved.profile,
+    provider: resolved.provider,
+    model: resolved.model,
+    baseUrl: resolved.baseUrl,
+    workspace: resolved.workspaceSource === 'cwd' ? undefined : resolved.workspace,
+    safetyMode: resolved.safetyMode,
+    approvalPolicy: resolved.approvalPolicy,
+    trustedTools: [...resolved.trustedTools],
+    deniedTools: [...resolved.deniedTools],
+    promptCache: {
+      enabled: resolved.promptCacheEnabled,
+      debug: resolved.promptCacheDebug,
+    },
+    agent: {
+      maxTurns: resolved.maxAgentTurns,
+      contextTokens: resolved.contextTokens,
+      compaction: { ...resolved.compactionSettings },
+    },
+  });
+}
+
+function buildProjectConfigTemplate(): ConfigFile {
+  const resolved = resolveCliConfig(process.env, {});
+  return removeEmptyNestedConfig({
+    profile: resolved.profile,
+    safetyMode: resolved.safetyMode,
+    approvalPolicy: resolved.approvalPolicy,
+    trustedTools: [...resolved.trustedTools],
+    deniedTools: [...resolved.deniedTools],
+    promptCache: {
+      enabled: resolved.promptCacheEnabled,
+      debug: resolved.promptCacheDebug,
+    },
+    agent: {
+      maxTurns: resolved.maxAgentTurns,
+      contextTokens: resolved.contextTokens,
+      compaction: { ...resolved.compactionSettings },
+    },
+  });
+}
+
 function supportedConfigKeys(): string {
   return 'Supported keys: profile, provider, model, baseUrl, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
 }
@@ -365,6 +435,20 @@ function removeEmptyNestedConfig(config: ConfigFile): ConfigFile {
     delete next.agent;
   }
   return next;
+}
+
+export function runConfigInit(args: string[], startDir = process.cwd()): void {
+  const target = resolveConfigInitTarget(args, startDir);
+  if (!target) return;
+  if (fs.existsSync(target.configPath) && !target.force) {
+    print(`[config] ${target.configPath} already exists. Use --force to overwrite.`);
+    process.exitCode = 1;
+    return;
+  }
+  const template = target.scope === 'project' ? buildProjectConfigTemplate() : buildUserConfigTemplate();
+  saveConfigFileAtPath(template, target.configPath);
+  const scope = target.scope === 'project' ? 'project ' : '';
+  print(`[config] ${scope}config initialized in ${target.configPath}`);
 }
 
 export function runConfigSet(args: string[], startDir = process.cwd()): void {

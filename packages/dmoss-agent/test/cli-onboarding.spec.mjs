@@ -174,6 +174,7 @@ const agent = createAgent([
   assert.match(permissions, /context tokens: 96000 \(config\)/);
   assert.match(permissions, /compaction: reserve 8000, keepRecent 9000 \(config\)/);
   assert.match(permissions, /edit guardrails\.input\/output/);
+  assert.match(permissions, /dmoss config init --project/);
   assert.match(permissions, /dmoss config set agent\.maxTurns/);
   assert.match(permissions, /dmoss config set agent\.contextTokens/);
   assert.match(permissions, /dmoss config set agent\.compaction\.reserveTokens/);

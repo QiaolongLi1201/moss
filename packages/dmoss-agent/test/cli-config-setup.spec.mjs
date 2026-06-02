@@ -23,6 +23,7 @@ import {
   renderAuthStatus,
   renderConfigJson,
   renderConfigUsage,
+  runConfigInit,
   runConfigSet,
   runConfigUnset,
 } from '../dist/cli/setup.js';
@@ -208,8 +209,10 @@ try {
   assert.doesNotMatch(JSON.stringify(redactedJson), /stored-secret|user|pass|api_key|secret/);
 
   const usage = renderConfigUsage();
+  assert.match(usage, /dmoss config init \[--project\] \[--force\]/);
   assert.match(usage, /dmoss config show/);
   assert.match(usage, /dmoss config show --json/);
+  assert.match(usage, /dmoss config init --project/);
   assert.match(usage, /dmoss config set profile autonomous/);
   assert.match(usage, /dmoss config set --project safetyMode workspace-write/);
   assert.match(usage, /dmoss config set deniedTools device_exec,write_file/);
@@ -274,6 +277,105 @@ try {
     assert.match(parsed.configPath, /config\.json$/);
     assert.equal(parsed.projectConfigPath, null);
     assert.doesNotMatch(result.stdout, /stored-secret/);
+  }
+
+  const initConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-init-config-'));
+  const oldInitConfigDir = process.env.DMOSS_CONFIG_DIR;
+  const oldInitConfigFile = process.env.DMOSS_CONFIG_FILE;
+  const initEnvNames = [
+    'DMOSS_PROFILE',
+    'DMOSS_PROVIDER',
+    'DMOSS_MODEL',
+    'DMOSS_BASE_URL',
+    'OPENAI_BASE_URL',
+    'ANTHROPIC_BASE_URL',
+    'DASHSCOPE_BASE_URL',
+    'DMOSS_SAFETY_MODE',
+    'DMOSS_APPROVAL_POLICY',
+    'DMOSS_TRUSTED_TOOLS',
+    'DMOSS_DENIED_TOOLS',
+    'DMOSS_PROMPT_CACHE',
+    'DMOSS_PROMPT_CACHE_DEBUG',
+    'DMOSS_MAX_AGENT_TURNS',
+    'DMOSS_CONTEXT_TOKENS',
+  ];
+  const oldInitEnv = new Map(initEnvNames.map((name) => [name, process.env[name]]));
+  try {
+    process.env.DMOSS_CONFIG_DIR = initConfigDir;
+    delete process.env.DMOSS_CONFIG_FILE;
+    for (const name of initEnvNames) delete process.env[name];
+    runConfigInit([]);
+    const initPath = path.join(initConfigDir, 'config.json');
+    const initialized = JSON.parse(fs.readFileSync(initPath, 'utf8'));
+    assert.equal(initialized.profile, 'balanced');
+    assert.equal(initialized.provider, 'anthropic');
+    assert.equal(initialized.safetyMode, 'workspace-write');
+    assert.equal(initialized.approvalPolicy, 'prompt');
+    assert.deepEqual(initialized.trustedTools, []);
+    assert.deepEqual(initialized.deniedTools, []);
+    assert.deepEqual(initialized.promptCache, { enabled: true, debug: false });
+    assert.equal(initialized.agent.maxTurns, 64);
+    assert.equal(initialized.agent.contextTokens, 200000);
+    assert.deepEqual(initialized.agent.compaction, { reserveTokens: 20000, keepRecentTokens: 20000 });
+    assert.equal(Object.hasOwn(initialized, 'apiKey'), false, 'config init must not persist env or placeholder API keys');
+    runConfigInit([]);
+    assert.equal(process.exitCode, 1, 'config init should not overwrite by default');
+    process.exitCode = 0;
+    runConfigInit(['--force']);
+    assert.equal(JSON.parse(fs.readFileSync(initPath, 'utf8')).profile, 'balanced');
+    const initCliPath = path.join(initConfigDir, 'cli-init.json');
+    const initCliResult = spawnSync(process.execPath, [
+      cliPath,
+      '--config-file',
+      initCliPath,
+      'config',
+      'init',
+      '--force',
+    ], {
+      env: cleanCliEnv,
+      encoding: 'utf8',
+    });
+    assert.equal(initCliResult.status, 0, `config init should exit cleanly: ${initCliResult.stderr || initCliResult.stdout}`);
+    assert.equal(JSON.parse(fs.readFileSync(initCliPath, 'utf8')).profile, 'balanced');
+  } finally {
+    if (oldInitConfigDir === undefined) delete process.env.DMOSS_CONFIG_DIR;
+    else process.env.DMOSS_CONFIG_DIR = oldInitConfigDir;
+    if (oldInitConfigFile === undefined) delete process.env.DMOSS_CONFIG_FILE;
+    else process.env.DMOSS_CONFIG_FILE = oldInitConfigFile;
+    for (const [name, value] of oldInitEnv) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    fs.rmSync(initConfigDir, { recursive: true, force: true });
+  }
+
+  const initProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-init-project-'));
+  const initProjectConfigPath = path.join(initProjectRoot, '.dmoss', 'config.json');
+  const oldProjectInitEnv = new Map(initEnvNames.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of initEnvNames) delete process.env[name];
+    runConfigInit(['--project'], initProjectRoot);
+    const initializedProject = JSON.parse(fs.readFileSync(initProjectConfigPath, 'utf8'));
+    assert.equal(initializedProject.profile, 'balanced');
+    assert.equal(initializedProject.safetyMode, 'workspace-write');
+    assert.equal(initializedProject.approvalPolicy, 'prompt');
+    assert.deepEqual(initializedProject.promptCache, { enabled: true, debug: false });
+    assert.equal(Object.hasOwn(initializedProject, 'provider'), false, 'project init should not persist user provider');
+    assert.equal(Object.hasOwn(initializedProject, 'model'), false, 'project init should not persist user model');
+    assert.equal(Object.hasOwn(initializedProject, 'baseUrl'), false, 'project init should not persist user baseUrl');
+    assert.equal(Object.hasOwn(initializedProject, 'apiKey'), false, 'project init must not persist credentials');
+    runConfigInit(['--project'], initProjectRoot);
+    assert.equal(process.exitCode, 1, 'project config init should not overwrite by default');
+    process.exitCode = 0;
+    fs.writeFileSync(initProjectConfigPath, `${JSON.stringify({ profile: 'cautious' }, null, 2)}\n`);
+    runConfigInit(['--project', '--force'], initProjectRoot);
+    assert.equal(JSON.parse(fs.readFileSync(initProjectConfigPath, 'utf8')).profile, 'balanced');
+  } finally {
+    for (const [name, value] of oldProjectInitEnv) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    fs.rmSync(initProjectRoot, { recursive: true, force: true });
   }
 
   const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-project-config-'));

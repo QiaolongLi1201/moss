@@ -50,6 +50,8 @@ export function displayHelp(c: Colors): void {
     `    ${c.green('config set trustedTools')} ${c.dim('<csv>')} auto-approve tool names/globs after safety checks`,
     `    ${c.green('config set deniedTools')} ${c.dim('<csv>')} always block tool names/globs`,
     `    ${c.green('config set promptCacheDebug')} ${c.dim('<bool>')} enable prompt-prefix cache diagnostics`,
+    `    ${c.green('config set guardrails.input.redactPatterns')} ${c.dim('<csv>')} redact matching user text`,
+    `    ${c.green('config set guardrails.output.blockPatterns')} ${c.dim('<csv>')} block matching responses`,
     `    ${c.green('config set mcp.enabled')} ${c.dim('<bool>')} enable MCP servers from config`,
     `    ${c.green('config set mcp.configPath')} ${c.dim('<path>')} set MCP server config path`,
     `    ${c.green('config set agent.maxTurns')} ${c.dim('<n>')} set per-request agent turn budget`,

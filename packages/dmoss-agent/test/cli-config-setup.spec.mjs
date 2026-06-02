@@ -246,6 +246,7 @@ try {
   assert.match(usage, /dmoss config set profile autonomous/);
   assert.match(usage, /dmoss config set --project safetyMode workspace-write/);
   assert.match(usage, /dmoss config set deniedTools device_\*,write_file/);
+  assert.match(usage, /dmoss config set guardrails\.input\.redactPatterns/);
   assert.match(usage, /dmoss config unset <key>/);
   assert.match(usage, /dmoss config unset --project <key>/);
   assert.match(usage, /\.dmoss\/config\.json/);
@@ -903,6 +904,26 @@ try {
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
   runConfigSet(['promptCacheDebug', 'true']);
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
+  runConfigSet(['guardrails.input.blockPatterns', 'delete\\s+repo,rm\\s+-rf']);
+  assert.deepEqual(loadConfigFile().guardrails.input.blockPatterns, ['delete\\s+repo', 'rm\\s+-rf']);
+  runConfigSet(['guardrails.input.redactPatterns', 'TOKEN=[^\\s]+,TOKEN=[^\\s]+']);
+  assert.deepEqual(loadConfigFile().guardrails.input.redactPatterns, ['TOKEN=[^\\s]+']);
+  runConfigSet(['guardrails.output.blockPatterns', 'private token']);
+  assert.deepEqual(loadConfigFile().guardrails.output.blockPatterns, ['private token']);
+  runConfigSet(['guardrails.output.redactPatterns', 'SECRET=[^\\s]+']);
+  assert.deepEqual(loadConfigFile().guardrails.output.redactPatterns, ['SECRET=[^\\s]+']);
+  {
+    const beforeInvalidGuardrailSet = JSON.stringify(loadConfigFile().guardrails);
+    const oldExitCodeForGuardrails = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      runConfigSet(['guardrails.input.blockPatterns', '[']);
+      assert.equal(process.exitCode, 1, 'invalid guardrail regex should be rejected');
+      assert.equal(JSON.stringify(loadConfigFile().guardrails), beforeInvalidGuardrailSet);
+    } finally {
+      process.exitCode = oldExitCodeForGuardrails;
+    }
+  }
   runConfigSet(['mcp.enabled', 'true']);
   assert.deepEqual(loadConfigFile().mcp, { enabled: true, configPath: '/tmp/dmoss-mcp.json' });
   runConfigSet(['mcp.configPath', '.dmoss/mcp.json']);
@@ -932,6 +953,11 @@ try {
   assert.equal(configSetResolved.compactionSettingsSource, 'config');
   assert.equal(configSetResolved.mcpEnabled, true);
   assert.equal(configSetResolved.mcpConfigPath, path.join(tmp, '.dmoss', 'mcp.json'));
+  assert.deepEqual(configSetResolved.guardrails.input.blockPatterns, ['delete\\s+repo', 'rm\\s+-rf']);
+  assert.deepEqual(configSetResolved.guardrails.input.redactPatterns, ['TOKEN=[^\\s]+']);
+  assert.deepEqual(configSetResolved.guardrails.output.blockPatterns, ['private token']);
+  assert.deepEqual(configSetResolved.guardrails.output.redactPatterns, ['SECRET=[^\\s]+']);
+  assert.equal(configSetResolved.guardrailsSource, 'config');
 
   runConfigUnset(['approvalPolicy']);
   assert.equal(Object.hasOwn(loadConfigFile(), 'approvalPolicy'), false);
@@ -947,6 +973,14 @@ try {
   assert.equal(resolveCliConfig({}, loadConfigFile()).promptCacheSource, 'profile:autonomous');
   runConfigUnset(['promptCacheDebug']);
   assert.equal(Object.hasOwn(loadConfigFile(), 'promptCache'), false);
+  runConfigUnset(['guardrails.input.blockPatterns']);
+  assert.equal(Object.hasOwn(loadConfigFile().guardrails.input, 'blockPatterns'), false);
+  runConfigUnset(['guardrails.input.redactPatterns']);
+  assert.equal(Object.hasOwn(loadConfigFile().guardrails, 'input'), false);
+  runConfigUnset(['guardrails.output.blockPatterns']);
+  assert.equal(Object.hasOwn(loadConfigFile().guardrails.output, 'blockPatterns'), false);
+  runConfigUnset(['guardrails.output.redactPatterns']);
+  assert.equal(Object.hasOwn(loadConfigFile(), 'guardrails'), false);
   runConfigUnset(['mcp.enabled']);
   assert.deepEqual(loadConfigFile().mcp, { configPath: '.dmoss/mcp.json' });
   runConfigUnset(['mcp.configPath']);

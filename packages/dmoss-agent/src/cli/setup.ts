@@ -211,6 +211,50 @@ function parseConfigPositiveInteger(value: string, key: string): number | null {
   return parsed;
 }
 
+function parseConfigPatternList(value: string, key: string): string[] {
+  const patterns = value
+    .split(',')
+    .map((pattern) => pattern.trim())
+    .filter(Boolean);
+  const unique = [...new Set(patterns)];
+  for (const pattern of unique) {
+    if (pattern.length > 500) {
+      throw new Error(`Unsupported ${key} pattern: values must be 500 characters or less`);
+    }
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, 'g');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Invalid ${key} pattern "${pattern}": ${message}`);
+    }
+    if (regex.test('')) {
+      throw new Error(`Invalid ${key} pattern "${pattern}": pattern must not match empty text`);
+    }
+  }
+  return unique;
+}
+
+function setGuardrailPatternList(config: ConfigFile, key: string, value: string): boolean {
+  if (
+    key !== 'guardrails.input.blockPatterns' &&
+    key !== 'guardrails.input.redactPatterns' &&
+    key !== 'guardrails.output.blockPatterns' &&
+    key !== 'guardrails.output.redactPatterns'
+  ) {
+    return false;
+  }
+  const [, direction, listKey] = key.split('.') as ['guardrails', 'input' | 'output', 'blockPatterns' | 'redactPatterns'];
+  config.guardrails = {
+    ...config.guardrails,
+    [direction]: {
+      ...config.guardrails?.[direction],
+      [listKey]: parseConfigPatternList(value, key),
+    },
+  };
+  return true;
+}
+
 export function renderAuthStatus(
   config?: ConfigFile,
   env: NodeJS.ProcessEnv = process.env,
@@ -261,7 +305,7 @@ export function renderConfigUsage(): string {
     '  dmoss config show',
     '  dmoss config show --json',
     '  dmoss config validate [--strict] [--json]',
-    '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|mcp.enabled|mcp.configPath|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
+    '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|guardrails.*|mcp.enabled|mcp.configPath|agent.*> <value>',
     '  dmoss config set --project <key> <value>',
     '  dmoss config unset <key>',
     '  dmoss config unset --project <key>',
@@ -281,6 +325,7 @@ export function renderConfigUsage(): string {
     '  dmoss config set deniedTools device_*,write_file',
     '  dmoss config set mcp.enabled true',
     '  dmoss config set mcp.configPath .dmoss/mcp.json',
+    '  dmoss config set guardrails.input.redactPatterns SECRET=[^\\\\s]+',
     '  dmoss config set agent.maxTurns 96',
     '  dmoss config set agent.contextTokens 200000',
     '  dmoss config set agent.compaction.reserveTokens 20000',
@@ -496,7 +541,7 @@ function buildProjectConfigTemplate(): ConfigFile {
 }
 
 function supportedConfigKeys(): string {
-  return 'Supported keys: profile, provider, model, baseUrl, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, mcp.enabled, mcp.configPath, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
+  return 'Supported keys: profile, provider, model, baseUrl, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, guardrails.input.blockPatterns, guardrails.input.redactPatterns, guardrails.output.blockPatterns, guardrails.output.redactPatterns, mcp.enabled, mcp.configPath, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
 }
 
 function removeEmptyNestedConfig(config: ConfigFile): ConfigFile {
@@ -517,6 +562,13 @@ function removeEmptyNestedConfig(config: ConfigFile): ConfigFile {
   }
   if (next.mcp && Object.keys(next.mcp).length === 0) {
     delete next.mcp;
+  }
+  if (next.guardrails) {
+    const guardrails = { ...next.guardrails };
+    if (guardrails.input && Object.keys(guardrails.input).length === 0) delete guardrails.input;
+    if (guardrails.output && Object.keys(guardrails.output).length === 0) delete guardrails.output;
+    if (Object.keys(guardrails).length === 0) delete next.guardrails;
+    else next.guardrails = guardrails;
   }
   return next;
 }
@@ -614,6 +666,18 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
       ? current.promptCache
       : { enabled: typeof current.promptCache === 'boolean' ? current.promptCache : true };
     next.promptCache = { ...previous, debug };
+  } else if (key.startsWith('guardrails.')) {
+    try {
+      if (!setGuardrailPatternList(next, key, value)) {
+        print(supportedConfigKeys());
+        process.exitCode = 1;
+        return;
+      }
+    } catch (err) {
+      print(err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+      return;
+    }
   } else if (key === 'mcp.enabled') {
     const enabled = parseConfigBoolean(value);
     if (enabled === null) {
@@ -687,6 +751,18 @@ export function runConfigUnset(args: string[], startDir = process.cwd()): void {
       next.promptCache = { ...current.promptCache };
       delete next.promptCache.debug;
     }
+  } else if (key === 'guardrails.input.blockPatterns') {
+    next.guardrails = { ...current.guardrails, input: { ...current.guardrails?.input } };
+    delete next.guardrails.input?.blockPatterns;
+  } else if (key === 'guardrails.input.redactPatterns') {
+    next.guardrails = { ...current.guardrails, input: { ...current.guardrails?.input } };
+    delete next.guardrails.input?.redactPatterns;
+  } else if (key === 'guardrails.output.blockPatterns') {
+    next.guardrails = { ...current.guardrails, output: { ...current.guardrails?.output } };
+    delete next.guardrails.output?.blockPatterns;
+  } else if (key === 'guardrails.output.redactPatterns') {
+    next.guardrails = { ...current.guardrails, output: { ...current.guardrails?.output } };
+    delete next.guardrails.output?.redactPatterns;
   } else if (key === 'mcp.enabled') {
     next.mcp = { ...current.mcp };
     delete next.mcp.enabled;

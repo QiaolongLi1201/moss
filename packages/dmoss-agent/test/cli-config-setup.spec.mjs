@@ -181,6 +181,7 @@ try {
   const usage = renderConfigUsage();
   assert.match(usage, /dmoss config show/);
   assert.match(usage, /dmoss config set profile autonomous/);
+  assert.match(usage, /dmoss config set --project safetyMode workspace-write/);
   assert.match(usage, /\.dmoss\/config\.json/);
   assert.match(usage, /DMOSS_CONFIG_FILE/);
   assert.match(usage, /promptCacheDebug/);
@@ -286,6 +287,18 @@ try {
     assert.match(projectShow.stderr, new RegExp(`projectConfig: ${projectConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.doesNotMatch(projectShow.stderr, /stored-secret/);
 
+    runConfigSet(['--project', 'safetyMode', 'read-only'], projectChild);
+    assert.equal(JSON.parse(fs.readFileSync(projectConfigPath, 'utf8')).safetyMode, 'read-only');
+    const projectOnlyConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-project-only-config-'));
+    try {
+      const projectOnlyLoaded = loadCliConfigFile({ DMOSS_CONFIG_DIR: projectOnlyConfigDir }, [], projectChild);
+      const projectOnlyResolved = resolveCliConfig({ DMOSS_CONFIG_DIR: projectOnlyConfigDir }, projectOnlyLoaded.config, {}, projectOnlyLoaded);
+      assert.equal(projectOnlyResolved.safetyMode, 'read-only');
+      assert.equal(projectOnlyResolved.safetyModeSource, 'config');
+    } finally {
+      fs.rmSync(projectOnlyConfigDir, { recursive: true, force: true });
+    }
+
     const explicitConfigPath = path.join(projectRoot, 'explicit.json');
     fs.writeFileSync(explicitConfigPath, `${JSON.stringify({ profile: 'cautious' }, null, 2)}\n`);
     const explicitLoaded = loadCliConfigFile({ DMOSS_CONFIG_DIR: tmp, DMOSS_CONFIG_FILE: explicitConfigPath }, [], projectChild);
@@ -295,6 +308,15 @@ try {
     assert.equal(explicitLoaded.config.provider, undefined);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
+  }
+
+  const newProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-new-project-config-'));
+  try {
+    const newProjectConfigPath = path.join(newProjectRoot, '.dmoss', 'config.json');
+    runConfigSet(['--project', 'profile', 'cautious'], newProjectRoot);
+    assert.deepEqual(JSON.parse(fs.readFileSync(newProjectConfigPath, 'utf8')), { profile: 'cautious' });
+  } finally {
+    fs.rmSync(newProjectRoot, { recursive: true, force: true });
   }
 
   const explicitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-explicit-config-'));

@@ -288,6 +288,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '',
     '  Persist changes:',
     '    dmoss config set profile cautious|balanced|autonomous',
+    '    dmoss config set --project safetyMode workspace-write',
     '    dmoss config set safetyMode read-only|workspace-write|full-access',
     '    dmoss config set approvalPolicy prompt|never',
     '    dmoss config set trustedTools exec,write_file',

@@ -310,8 +310,7 @@ export function loadCliConfigFile(
   };
 }
 
-export function saveConfigFile(config: ConfigFile, configDir?: string): void {
-  const configPath = resolveConfigPath(configDir);
+export function saveConfigFileAtPath(config: ConfigFile, configPath: string): void {
   fs.mkdirSync(path.dirname(configPath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, {
     encoding: 'utf-8',
@@ -322,6 +321,10 @@ export function saveConfigFile(config: ConfigFile, configDir?: string): void {
   } catch {
     // Windows and some filesystems may not support chmod; best effort.
   }
+}
+
+export function saveConfigFile(config: ConfigFile, configDir?: string): void {
+  saveConfigFileAtPath(config, resolveConfigPath(configDir));
 }
 
 export function normalizeProvider(value: string | undefined): CliProviderPreset {

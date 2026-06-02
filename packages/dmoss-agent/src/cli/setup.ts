@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import * as readline from 'node:readline';
 import { stdin as input, stderr as output } from 'node:process';
 import {
@@ -13,7 +14,9 @@ import {
   PROVIDER_PRESETS,
   resolveCliConfig,
   resolveConfigPath,
+  resolveProjectConfigPath,
   saveConfigFile,
+  saveConfigFileAtPath,
   type CliProviderPreset,
   type ConfigFile,
 } from './config.js';
@@ -165,6 +168,7 @@ export function renderConfigUsage(): string {
     '  dmoss config',
     '  dmoss config show',
     '  dmoss config set <profile|provider|model|baseUrl|safetyMode|approvalPolicy|trustedTools|promptCache|promptCacheDebug|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
+    '  dmoss config set --project <key> <value>',
     '',
     'Config file:',
     '  dmoss reads .dmoss/config.json from the current workspace as project defaults',
@@ -173,6 +177,7 @@ export function renderConfigUsage(): string {
     '',
     'Examples:',
     '  dmoss config set profile autonomous',
+    '  dmoss config set --project safetyMode workspace-write',
     '  dmoss config set approvalPolicy prompt',
     '  dmoss config set trustedTools exec,write_file',
     '  dmoss config set agent.maxTurns 96',
@@ -259,7 +264,21 @@ export async function runAuthLogout(): Promise<void> {
   print('[auth] Stored API key removed. Model and baseUrl were preserved.');
 }
 
-export function runConfigSet(args: string[]): void {
+function resolveConfigSetTarget(args: string[], startDir: string): { args: string[]; configPath: string; scope: 'user' | 'project' } {
+  if (args[0] !== '--project') {
+    return { args, configPath: resolveConfigPath(), scope: 'user' };
+  }
+  const root = path.resolve(startDir);
+  return {
+    args: args.slice(1),
+    configPath: resolveProjectConfigPath(root) ?? path.join(root, '.dmoss', 'config.json'),
+    scope: 'project',
+  };
+}
+
+export function runConfigSet(args: string[], startDir = process.cwd()): void {
+  const target = resolveConfigSetTarget(args, startDir);
+  args = target.args;
   const [key, ...rest] = args;
   const value = rest.join(' ').trim();
   if (!key || !value) {
@@ -267,7 +286,7 @@ export function runConfigSet(args: string[]): void {
     process.exitCode = 1;
     return;
   }
-  const current = loadConfigFile();
+  const current = loadConfigFile(target.configPath);
   const next = { ...current };
   if (key === 'profile') {
     const profile = normalizeConfigProfile(value);
@@ -353,8 +372,9 @@ export function runConfigSet(args: string[]): void {
     process.exitCode = 1;
     return;
   }
-  saveConfigFile(next);
-  print(`[config] ${key} updated in ${resolveConfigPath()}`);
+  saveConfigFileAtPath(next, target.configPath);
+  const scope = target.scope === 'project' ? 'project ' : '';
+  print(`[config] ${scope}${key} updated in ${target.configPath}`);
 }
 
 export function printMissingConfigGuidance(interactive: boolean): void {

@@ -179,6 +179,8 @@ const agent = createAgent([
   assert.match(permissions, /max turns: 18 \(config\)/);
   assert.match(permissions, /context tokens: 96000 \(config\)/);
   assert.match(permissions, /compaction: reserve 8000, keepRecent 9000 \(config\)/);
+  assert.match(permissions, /config warnings: 1/);
+  assert.match(permissions, /approval\.auto_approval: auto-approval is enabled via config/);
   assert.match(permissions, /edit guardrails\.input\/output/);
   assert.match(permissions, /dmoss config init --project/);
   assert.match(permissions, /dmoss config set agent\.maxTurns/);
@@ -205,6 +207,24 @@ const agent = createAgent([
   assert.match(permissions, /DMOSS_MAX_AGENT_TURNS/);
   assert.match(permissions, /DMOSS_CONTEXT_TOKENS/);
   assert.doesNotMatch(permissions, /test-key/);
+}
+
+{
+  const safeRuntime = {
+    ...runtime,
+    config: {
+      ...runtime.config,
+      profile: 'balanced',
+      approvalPolicy: 'prompt',
+      approvalPolicySource: 'profile:balanced',
+      trustedTools: [],
+      trustedToolsSource: 'profile:balanced',
+      deniedTools: [],
+      deniedToolsSource: 'default',
+    },
+  };
+  const permissions = renderCliPermissions(safeRuntime);
+  assert.match(permissions, /config warnings: none/);
 }
 
 {

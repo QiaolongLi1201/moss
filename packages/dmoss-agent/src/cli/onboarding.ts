@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DmossAgent } from '../core/index.js';
 import type { Tool } from '../core/tools/tool-types.js';
-import { BASE_URL, resolveCliConfig, resolveConfigDir, WORKSPACE, type ResolvedCliConfig } from './config.js';
+import { auditResolvedCliConfig, BASE_URL, resolveCliConfig, resolveConfigDir, WORKSPACE, type ResolvedCliConfig } from './config.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
 import { getPackageVersion } from './package-info.js';
 import { compactPath, label, statusDot, ui } from './ui.js';
@@ -73,6 +73,15 @@ function guardrailLine(config: ResolvedCliConfig): string {
   const outputCount = config.guardrails.output.blockPatterns.length + config.guardrails.output.redactPatterns.length;
   if (inputCount === 0 && outputCount === 0) return 'guardrails off';
   return `guardrails in ${inputCount} out ${outputCount}`;
+}
+
+function configWarningLines(config: ResolvedCliConfig): string[] {
+  const warnings = auditResolvedCliConfig(config);
+  if (warnings.length === 0) return [`  ${label('config warnings')} none`];
+  return [
+    `  ${label('config warnings')} ${warnings.length}`,
+    ...warnings.map((warning) => `    ${warning.code}: ${warning.message}`),
+  ];
 }
 
 function countJsonIndex(filePath: string): number {
@@ -277,6 +286,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     `  ${label('max turns')} ${auth.maxAgentTurns} (${auth.maxAgentTurnsSource ?? 'default'})`,
     `  ${label('context tokens')} ${auth.contextTokens} (${auth.contextTokensSource ?? 'default'})`,
     `  ${label('compaction')} reserve ${auth.compactionSettings.reserveTokens}, keepRecent ${auth.compactionSettings.keepRecentTokens} (${auth.compactionSettingsSource ?? 'default'})`,
+    ...configWarningLines(auth),
     '',
     '  Profiles:',
     '    cautious        read-only, prompt approvals, stable prompt cache',

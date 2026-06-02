@@ -17,10 +17,12 @@ import {
   formatQueueWait,
   formatAttachmentChip,
   formatTuiSessions,
+  isQueueControlCommand,
   isLocalShellLine,
   promptCacheModeLabel,
   promptPlaceholder,
   queueItemMeta,
+  queueResumedMessage,
   runLocalShellCommand,
   sanitizeRenderableText,
   shouldDrainQueue,
@@ -79,6 +81,7 @@ assert.equal(commandSuggestion('/staus'), '/status');
 assert.equal(commandSuggestion('/tool'), '/tools');
 assert.equal(commandSuggestion('/queu'), '/queue');
 assert.equal(commandSuggestion('/queue dr'), '/queue drop');
+assert.equal(commandSuggestion('/queue res'), '/queue resume');
 assert.equal(commandSuggestion('/sess'), '/sessions');
 assert.equal(commandSuggestion('status'), null);
 
@@ -136,9 +139,18 @@ assert.equal(shouldDrainQueue({ busy: false, approvalActive: false, pausedAfterC
 assert.equal(shouldDrainQueue({ busy: false, approvalActive: false, pausedAfterCancel: true, queueLength: 0 }), false);
 assert.equal(shouldDrainQueue({ busy: false, approvalActive: false, pausedAfterCancel: false, queueLength: 0 }), false);
 assert.equal(stopRequestedMessage(0), 'Stop requested for the current run.');
-assert.equal(stopRequestedMessage(1), 'Stop requested. Queue paused (1 item); send any message to resume.');
-assert.equal(stopRequestedMessage(2), 'Stop requested. Queue paused (2 items); send any message to resume.');
-assert.equal(stopRequestedMessage(10), 'Stop requested. Queue paused (10 items); send any message to resume.');
+assert.equal(stopRequestedMessage(1), 'Stop requested. Queue paused (1 item); use /queue resume or send a new prompt to continue.');
+assert.equal(stopRequestedMessage(2), 'Stop requested. Queue paused (2 items); use /queue resume or send a new prompt to continue.');
+assert.equal(stopRequestedMessage(10), 'Stop requested. Queue paused (10 items); use /queue resume or send a new prompt to continue.');
+assert.equal(queueResumedMessage(0), 'Queue resumed.');
+assert.equal(queueResumedMessage(1), 'Queue resumed (1 item waiting).');
+assert.equal(queueResumedMessage(3), 'Queue resumed (3 items waiting).');
+assert.equal(isQueueControlCommand('/queue'), true);
+assert.equal(isQueueControlCommand('/queue resume'), true);
+assert.equal(isQueueControlCommand('/queue continue'), true);
+assert.equal(isQueueControlCommand('/queue clear'), true);
+assert.equal(isQueueControlCommand('/status'), false);
+assert.equal(isQueueControlCommand('plain prompt'), false);
 assert.equal(transcriptViewportRows({
   transcriptLength: 0,
   terminalRows: 57,

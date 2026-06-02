@@ -178,6 +178,8 @@ const KNOWN_COMMANDS = [
   '/queue',
   '/queue drop',
   '/queue pop',
+  '/queue resume',
+  '/queue continue',
   '/clearqueue',
   '/memory',
   '/skills',
@@ -328,9 +330,27 @@ export function shouldDrainQueue(state: QueueDrainState): boolean {
 
 export function stopRequestedMessage(queueLength: number): string {
   if (queueLength > 0) {
-    return `Stop requested. Queue paused (${queueLength} item${queueLength === 1 ? '' : 's'}); send any message to resume.`;
+    return `Stop requested. Queue paused (${queueLength} item${queueLength === 1 ? '' : 's'}); use /queue resume or send a new prompt to continue.`;
   }
   return 'Stop requested for the current run.';
+}
+
+export function queueResumedMessage(queueLength: number): string {
+  if (queueLength > 0) {
+    return `Queue resumed (${queueLength} item${queueLength === 1 ? '' : 's'} waiting).`;
+  }
+  return 'Queue resumed.';
+}
+
+export function isQueueControlCommand(message: string): boolean {
+  return message === '/queue'
+    || message === '/queued'
+    || message === '/queue drop'
+    || message === '/queue pop'
+    || message === '/queue clear'
+    || message === '/clearqueue'
+    || message === '/queue resume'
+    || message === '/queue continue';
 }
 
 export function transcriptViewportRows(options: TranscriptViewportRowsOptions): number | undefined {
@@ -1302,10 +1322,11 @@ export function PromptEditor({
 
 export interface QueuePreviewProps {
   items: QueuedInput[];
+  paused?: boolean;
   now?: number;
 }
 
-export function QueuePreview({ items, now = Date.now() }: QueuePreviewProps): React.ReactElement | null {
+export function QueuePreview({ items, paused = false, now = Date.now() }: QueuePreviewProps): React.ReactElement | null {
   if (items.length === 0) return null;
   const visible = items.slice(0, 3);
   const hiddenCount = items.length - visible.length;
@@ -1313,7 +1334,9 @@ export function QueuePreview({ items, now = Date.now() }: QueuePreviewProps): Re
     Box,
     { flexDirection: 'column', marginTop: 1 },
     React.createElement(Text, { color: theme.textMuted },
-      `  queued ${items.length} · next runs when current task finishes · /queue drop last · /queue clear all`),
+      paused
+        ? `  queued ${items.length} · paused after stop · /queue resume · /queue drop last · /queue clear all`
+        : `  queued ${items.length} · next runs when current task finishes · /queue drop last · /queue clear all`),
     ...visible.map((item, index) => React.createElement(Text, {
       key: `${index}-${item.message}`,
       color: theme.textMuted,
@@ -1531,8 +1554,19 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
             `Queued prompts (${queue.length})`,
             ...queue.map((item, index) => `  ${index === 0 ? 'next' : `#${index + 1}`} · ${queueItemMeta(item, now)} · ${item.message}`),
             '',
-            'Use /queue drop to discard the last queued prompt, or /queue clear to discard all.',
+            queuePausedAfterCancelRef.current
+              ? 'Queue is paused after stop. Use /queue resume to continue, /queue drop to discard the last prompt, or /queue clear to discard all.'
+              : 'Use /queue drop to discard the last queued prompt, or /queue clear to discard all.',
           ].join('\n'));
+      return true;
+    }
+    if (message === '/queue resume' || message === '/queue continue') {
+      if (!queuePausedAfterCancelRef.current) {
+        addTranscript('system', 'Queue is not paused.');
+        return true;
+      }
+      setQueuePausedAfterCancel(false);
+      addTranscript('system', queueResumedMessage(queuedInputsRef.current.length));
       return true;
     }
     if (message === '/queue drop' || message === '/queue pop') {
@@ -1809,23 +1843,26 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const submit = useCallback((value: string): void => {
     const raw = value;
     const message = raw.trim();
-    if (queuePausedAfterCancelRef.current) setQueuePausedAfterCancel(false);
     setInput('');
     setInputCursor(0);
     if (!message || approval) return;
     rememberInput(message);
     historyIndexRef.current = null;
     historyDraftRef.current = '';
+    const queuePaused = queuePausedAfterCancelRef.current;
+    const queueControlCommand = isQueueControlCommand(message);
     const isImmediateBusyCommand = message === '/stop'
       || message === '/abort'
-      || message === '/queue'
-      || message === '/queued'
       || message === '/sessions'
       || message === '/session'
-      || message === '/queue drop'
-      || message === '/queue pop'
-      || message === '/queue clear'
-      || message === '/clearqueue';
+      || queueControlCommand;
+    if (queuePaused && !queueControlCommand && !message.startsWith('/')) {
+      const nextQueue = [...queuedInputsRef.current, { raw, message, enqueuedAt: Date.now() }];
+      setQueuedInputs(nextQueue);
+      setQueuePausedAfterCancel(false);
+      addTranscript('system', `Queued #${nextQueue.length}; queue resumed: ${message}`);
+      return;
+    }
     if (busyRef.current && isImmediateBusyCommand) {
       runInput(raw);
       return;
@@ -1897,7 +1934,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
           toolsExpanded: toolsExpanded || detailMode === 'verbose',
         })),
     ),
-    React.createElement(QueuePreview, { items: queuedInputs }),
+    React.createElement(QueuePreview, { items: queuedInputs, paused: queuePausedAfterCancel }),
     notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
     flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
     ctxUsage ? React.createElement(Text, { color: theme.textMuted },

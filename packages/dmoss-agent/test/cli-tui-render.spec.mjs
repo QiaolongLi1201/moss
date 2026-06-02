@@ -488,6 +488,24 @@ test('QueuePreview renders queued prompts and overflow count', () => {
   cleanup();
 });
 
+test('QueuePreview renders paused queue resume controls', () => {
+  const { lastFrame } = render(
+    React.createElement(QueuePreview, {
+      paused: true,
+      items: [
+        { raw: 'first queued prompt', message: 'first queued prompt', enqueuedAt: 1_000 },
+      ],
+      now: 10_000,
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /queued 1/);
+  assert.match(frame, /paused after stop/);
+  assert.match(frame, /\/queue resume/);
+  assert.match(frame, /\/queue drop last/);
+  cleanup();
+});
+
 // ───── renderMarkdown ─────
 
 test('renderMarkdown produces a string with ANSI codes for code blocks', () => {

@@ -185,6 +185,22 @@ function serializeResolvedConfig(resolved: ReturnType<typeof resolveCliConfig>):
   };
 }
 
+function serializeConfigValidation(
+  resolved: ReturnType<typeof resolveCliConfig>,
+  options: { strict: boolean },
+): Record<string, unknown> {
+  const warnings = auditResolvedCliConfig(resolved);
+  return {
+    schema: 'dmoss_cli_config_validation.v1',
+    ok: !options.strict || warnings.length === 0,
+    strict: options.strict,
+    warningCount: warnings.length,
+    configWarnings: warnings,
+    configPath: resolved.configPath,
+    projectConfigPath: resolved.projectConfigPath ?? null,
+  };
+}
+
 function parseConfigPositiveInteger(value: string, key: string): number | null {
   const parsed = Number(value.trim());
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -244,6 +260,7 @@ export function renderConfigUsage(): string {
     '  dmoss config init [--project] [--force]',
     '  dmoss config show',
     '  dmoss config show --json',
+    '  dmoss config validate [--strict] [--json]',
     '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|mcp.enabled|mcp.configPath|agent.maxTurns|agent.contextTokens|agent.compaction.reserveTokens|agent.compaction.keepRecentTokens> <value>',
     '  dmoss config set --project <key> <value>',
     '  dmoss config unset <key>',
@@ -256,6 +273,7 @@ export function renderConfigUsage(): string {
     '',
     'Examples:',
     '  dmoss config init --project',
+    '  dmoss config validate --strict',
     '  dmoss config set profile autonomous',
     '  dmoss config set --project safetyMode workspace-write',
     '  dmoss config set approvalPolicy prompt',
@@ -275,6 +293,44 @@ export function runConfigShow(startDir = process.cwd(), options: { json?: boolea
     return;
   }
   print(renderAuthStatus(undefined, process.env, startDir));
+}
+
+export function runConfigValidate(
+  args: string[] = [],
+  startDir = process.cwd(),
+): void {
+  let json = false;
+  let strict = false;
+  for (const arg of args) {
+    if (arg === '--json') json = true;
+    else if (arg === '--strict') strict = true;
+    else {
+      print(renderConfigUsage());
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  const loaded = loadCliConfigFile(process.env, process.argv.slice(2), startDir);
+  const resolved = resolveCliConfig(process.env, loaded.config, {}, loaded);
+  const warnings = auditResolvedCliConfig(resolved);
+  if (strict && warnings.length > 0) process.exitCode = 1;
+
+  if (json) {
+    standardOutput.write(`${JSON.stringify(serializeConfigValidation(resolved, { strict }), null, 2)}\n`);
+    return;
+  }
+
+  print(`[config] valid: ${resolved.configPath}`);
+  if (resolved.projectConfigPath) print(`[config] project config: ${resolved.projectConfigPath}`);
+  if (warnings.length === 0) {
+    print('[config] warnings: none');
+    return;
+  }
+  for (const warning of warnings) {
+    print(`[config] warning ${warning.code}: ${warning.message}`);
+  }
+  if (strict) print('[config] strict validation failed because warnings are present.');
 }
 
 export async function runSetupWizard(): Promise<void> {

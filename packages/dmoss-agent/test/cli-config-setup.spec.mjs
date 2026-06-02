@@ -29,6 +29,7 @@ import {
   runConfigInit,
   runConfigSet,
   runConfigUnset,
+  runConfigValidate,
 } from '../dist/cli/setup.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-config-'));
@@ -239,6 +240,8 @@ try {
   assert.match(usage, /dmoss config init \[--project\] \[--force\]/);
   assert.match(usage, /dmoss config show/);
   assert.match(usage, /dmoss config show --json/);
+  assert.match(usage, /dmoss config validate \[--strict\] \[--json\]/);
+  assert.match(usage, /dmoss config validate --strict/);
   assert.match(usage, /dmoss config init --project/);
   assert.match(usage, /dmoss config set profile autonomous/);
   assert.match(usage, /dmoss config set --project safetyMode workspace-write/);
@@ -308,6 +311,38 @@ try {
     assert.match(parsed.configPath, /config\.json$/);
     assert.equal(parsed.projectConfigPath, null);
     assert.doesNotMatch(result.stdout, /stored-secret/);
+  }
+
+  const validateResult = spawnSync(process.execPath, [cliPath, 'config', 'validate'], {
+    env: cleanCliEnv,
+    encoding: 'utf8',
+  });
+  assert.equal(validateResult.status, 0, `config validate should exit cleanly: ${validateResult.stderr || validateResult.stdout}`);
+  assert.match(validateResult.stderr, /\[config\] valid: /);
+  assert.match(validateResult.stderr, /\[config\] warnings: none/);
+
+  const validateJsonResult = spawnSync(process.execPath, [cliPath, 'config', 'validate', '--json'], {
+    env: cleanCliEnv,
+    encoding: 'utf8',
+  });
+  assert.equal(validateJsonResult.status, 0, `config validate --json should exit cleanly: ${validateJsonResult.stderr || validateJsonResult.stdout}`);
+  assert.equal(validateJsonResult.stderr, '');
+  const validateJson = JSON.parse(validateJsonResult.stdout);
+  assert.equal(validateJson.schema, 'dmoss_cli_config_validation.v1');
+  assert.equal(validateJson.ok, true);
+  assert.equal(validateJson.strict, false);
+  assert.equal(validateJson.warningCount, 0);
+  assert.deepEqual(validateJson.configWarnings, []);
+  assert.match(validateJson.configPath, /config\.json$/);
+  assert.equal(validateJson.projectConfigPath, null);
+
+  const oldExitCodeForValidate = process.exitCode;
+  try {
+    process.exitCode = undefined;
+    runConfigValidate(['--unknown']);
+    assert.equal(process.exitCode, 1, 'config validate should reject unknown args');
+  } finally {
+    process.exitCode = oldExitCodeForValidate;
   }
 
   const initConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-init-config-'));
@@ -660,6 +695,53 @@ try {
     assert.notEqual(invalidShowResult.status, 0, 'config show should fail when an explicit config file is invalid');
     assert.match(invalidShowResult.stderr, /Invalid dmoss config/);
     assert.match(invalidShowResult.stderr, new RegExp(invalidConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+    const invalidValidateResult = spawnSync(process.execPath, [cliPath, '--config-file', invalidConfigPath, 'config', 'validate'], {
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.notEqual(invalidValidateResult.status, 0, 'config validate should fail when an explicit config file is invalid');
+    assert.match(invalidValidateResult.stderr, /Invalid dmoss config/);
+    assert.match(invalidValidateResult.stderr, new RegExp(invalidConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+    const riskyValidatePath = path.join(explicitDir, 'risky-validate.json');
+    fs.writeFileSync(riskyValidatePath, `${JSON.stringify({
+      provider: 'qwen',
+      apiKey: 'file-secret',
+      approvalPolicy: 'never',
+      trustedTools: ['device_*'],
+    }, null, 2)}\n`);
+    const riskyValidateResult = spawnSync(process.execPath, [cliPath, '--config-file', riskyValidatePath, 'config', 'validate'], {
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(riskyValidateResult.status, 0, `config validate should allow warnings by default: ${riskyValidateResult.stderr || riskyValidateResult.stdout}`);
+    assert.match(riskyValidateResult.stderr, /warning approval\.auto_approval/);
+    assert.match(riskyValidateResult.stderr, /warning approval\.no_denied_tools/);
+    assert.match(riskyValidateResult.stderr, /warning trustedTools\.broad_patterns/);
+
+    const strictRiskyValidateResult = spawnSync(process.execPath, [cliPath, '--config-file', riskyValidatePath, 'config', 'validate', '--strict', '--json'], {
+      env: {
+        ...process.env,
+        NO_COLOR: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(strictRiskyValidateResult.status, 1, 'config validate --strict should fail when audit warnings are present');
+    assert.equal(strictRiskyValidateResult.stderr, '');
+    const strictRiskyJson = JSON.parse(strictRiskyValidateResult.stdout);
+    assert.equal(strictRiskyJson.ok, false);
+    assert.equal(strictRiskyJson.strict, true);
+    assert.deepEqual(
+      strictRiskyJson.configWarnings.map((warning) => warning.code),
+      ['approval.auto_approval', 'approval.no_denied_tools', 'trustedTools.broad_patterns'],
+    );
 
     const repairPath = path.join(explicitDir, 'repair-invalid.json');
     fs.writeFileSync(repairPath, '{bad json\n');

@@ -29,6 +29,7 @@ import {
   runConfigShow,
   runConfigSet,
   runConfigUnset,
+  runConfigValidate,
   runSetupWizard,
 } from './cli/setup.js';
 import { DmossAgent, JsonlSessionStore, MemoryManager } from './core/index.js';
@@ -216,6 +217,12 @@ async function main() {
   }
   if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'unset') {
     runConfigUnset(parsedArgs.commandArgs.slice(1), parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd());
+    return;
+  }
+  if (parsedArgs.command === 'config' && parsedArgs.commandArgs[0] === 'validate') {
+    const validateArgs = parsedArgs.commandArgs.slice(1);
+    if (usesJsonOutput(argv) && !validateArgs.includes('--json')) validateArgs.push('--json');
+    runConfigValidate(validateArgs, parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd());
     return;
   }
   if (parsedArgs.command === 'config') {

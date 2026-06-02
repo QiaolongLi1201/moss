@@ -1191,6 +1191,30 @@ function commandRowsForInput(value: string): Array<[string, string]> {
   return rows.filter(([command]) => command.startsWith(normalized));
 }
 
+export function promptEditorRowBudget(
+  value: string,
+  options: { hint?: string; model?: string; placeholder?: string; maxPreviewLines?: number } = {},
+): number {
+  const maxPreviewLines = options.maxPreviewLines ?? 6;
+  let rows = 1; // PromptEditor marginTop.
+  if (!value && (options.hint || options.model)) rows += 1;
+  const commandRows = commandRowsForInput(value);
+  if (commandRows.length > 0) {
+    rows += commandRows.length + 1; // command rows plus marginBottom.
+  } else if (value.startsWith('/') && commandSuggestion(value)) {
+    rows += 1;
+  }
+  const lineCount = value.length > 0 ? value.split('\n').length : 0;
+  if (lineCount > 1) rows += 1;
+  rows += editorPreviewLinesWithCursor(
+    value,
+    options.placeholder ?? '',
+    clampPromptCursor(value, value.length),
+    maxPreviewLines,
+  ).length;
+  return rows;
+}
+
 export function PromptEditor({
   value,
   cursor,
@@ -1881,7 +1905,17 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const profile = runtime?.config?.profile || 'balanced';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
   const terminalRows = Math.max(12, stdout?.rows ?? 30);
-  const promptRows = Math.min(6, Math.max(1, input ? input.split('\n').length : 1)) + 2 + (input.startsWith('/') ? 8 : 0);
+  // Compose footer hint based on state (drives footerHint text used in tests).
+  const footerHintText = footerHint(runState)
+    + (queuedInputs.length > 0 ? `  ·  queued ${queuedInputs.length}` : '')
+    + (detailMode !== 'progress' ? `  ·  detail ${detailMode}` : '')
+    + (showThinking ? '  ·  thinking on' : '')
+    + (localShellApproved ? '  ·  local shell' : '');
+  const promptRows = promptEditorRowBudget(input, {
+    hint: footerHintText,
+    model: currentModel,
+    placeholder: promptPlaceholder(runState),
+  });
   const queueRows = queuedInputs.length > 0 ? Math.min(5, queuedInputs.length + 2) : 0;
   const footerRows = 0;
   const headerRows = 6;
@@ -1897,13 +1931,6 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     approvalRows,
     noticeRows,
   });
-
-  // Compose footer hint based on state (drives footerHint text used in tests).
-  const footerHintText = footerHint(runState)
-    + (queuedInputs.length > 0 ? `  ·  queued ${queuedInputs.length}` : '')
-    + (detailMode !== 'progress' ? `  ·  detail ${detailMode}` : '')
-    + (showThinking ? '  ·  thinking on' : '')
-    + (localShellApproved ? '  ·  local shell' : '');
 
   return React.createElement(
     Box,

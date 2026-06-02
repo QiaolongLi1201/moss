@@ -20,6 +20,7 @@ import {
   isQueueControlCommand,
   isLocalShellLine,
   promptCacheModeLabel,
+  promptEditorRowBudget,
   promptPlaceholder,
   queueItemMeta,
   queueResumedMessage,
@@ -118,6 +119,11 @@ assert.match(footerHint('ready'), /Ctrl\+O tools/);
 assert.match(footerHint('approval'), /a always this session/);
 assert.match(footerHint('running'), /Esc cancel/);
 assert.match(footerHint('running'), /Enter queue/);
+assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-v4-pro' }), 3);
+assert.equal(promptEditorRowBudget('/'), 15);
+assert.equal(promptEditorRowBudget('/que'), 4);
+assert.equal(promptEditorRowBudget('/staus'), 3);
+assert.equal(promptEditorRowBudget(Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join('\n')), 9);
 
 assert.equal(formatQueueWait(undefined, 10_000), null);
 assert.equal(formatQueueWait(9_750, 10_000), '<1s');

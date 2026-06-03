@@ -26,7 +26,7 @@ function test(name, fn) {
 
 // ───── StatusBar ─────
 
-test('SessionHeader renders a compact Codex-style launch panel', () => {
+test('SessionHeader renders a compact Claude Code-style launch panel', () => {
   const { lastFrame } = render(
     React.createElement(SessionHeader, {
       state: 'ready',
@@ -39,17 +39,17 @@ test('SessionHeader renders a compact Codex-style launch panel', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, />_ D-Moss/);
-  assert.match(frame, /model:/);
+  assert.match(frame, /✻ D-Moss Code/);
+  assert.match(frame, /model\s+deepseek-v4-pro/);
   assert.match(frame, /deepseek-v4-pro/);
-  assert.match(frame, /directory:/);
+  assert.match(frame, /directory\s+\/Users\/me\/project/);
   assert.match(frame, /\/model to change/);
-  assert.match(frame, /profile autonomous/);
-  assert.match(frame, /cache stable/);
+  assert.doesNotMatch(frame, /profile autonomous/);
+  assert.doesNotMatch(frame, /cache stable/);
   cleanup();
 });
 
-test('SessionHeader surfaces disabled prompt cache mode', () => {
+test('SessionHeader keeps cache policy out of the launch panel', () => {
   const { lastFrame } = render(
     React.createElement(SessionHeader, {
       state: 'ready',
@@ -62,7 +62,8 @@ test('SessionHeader surfaces disabled prompt cache mode', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /cache off/);
+  assert.match(frame, /D-Moss Code/);
+  assert.doesNotMatch(frame, /cache off/);
   cleanup();
 });
 
@@ -111,7 +112,7 @@ test('StatusBar renders a disconnected device gracefully', () => {
   cleanup();
 });
 
-test('WelcomePanel renders a Tip and Codex-style command list', () => {
+test('WelcomePanel renders a compact Claude Code-style tip', () => {
   const { lastFrame } = render(
     React.createElement(WelcomePanel, {
       workspace: '/Users/me/project',
@@ -122,13 +123,10 @@ test('WelcomePanel renders a Tip and Codex-style command list', () => {
   );
   const frame = lastFrame();
   assert.match(frame, /Tip:/);
-  assert.match(frame, /\/model\s+choose what model to use/);
-  assert.match(frame, /\/permissions\s+show safety/);
-  assert.match(frame, /\/status\s+inspect runtime/);
-  assert.match(frame, /\/sessions\s+show current and recent saved sessions/);
-  assert.match(frame, /Ctrl\+O\s+expand or collapse tool calls/);
-  assert.match(frame, /profile cautious/);
-  assert.match(frame, /cache stable/);
+  assert.match(frame, /Use ! for shell commands/);
+  assert.match(frame, /\/ for commands/);
+  assert.doesNotMatch(frame, /\/model\s+switch the model/);
+  assert.doesNotMatch(frame, /profile cautious/);
   cleanup();
 });
 
@@ -339,6 +337,21 @@ test('PromptEditor renders a disabled state with a dim placeholder', () => {
   cleanup();
 });
 
+test('PromptEditor renders a Codex-style placeholder at the prompt', () => {
+  const { lastFrame } = render(
+    React.createElement(PromptEditor, {
+      value: '',
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: 'Implement {feature}',
+      disabled: false,
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /› ▌Implement \{feature\}/);
+  cleanup();
+});
+
 test('PromptEditor renders a multi-line indicator when value has newlines', () => {
   const { lastFrame } = render(
     React.createElement(PromptEditor, {
@@ -365,10 +378,10 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /> \//);
+  assert.match(frame, /› \//);
   assert.match(frame, /\/model\s+choose what model to use/);
-  assert.match(frame, /\/permissions\s+show safety/);
-  assert.match(frame, /\/tools\s+list available tools/);
+  assert.match(frame, /\/permissions\s+review safety/);
+  assert.match(frame, /\/tools\s+show available tools/);
   assert.match(frame, /\/sessions\s+show current and recent saved sessions/);
   cleanup();
 });
@@ -461,7 +474,7 @@ test('PromptEditor renders the cursor at the requested column', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /> ab▌cd/);
+  assert.match(frame, /› ab▌cd/);
   cleanup();
 });
 

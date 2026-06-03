@@ -89,23 +89,10 @@ export interface DmossTuiProps {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Theme & icons (claude-tui inspired warm-orange dark palette)
+// Theme & icons (Claude Code-inspired warm, low-noise terminal palette)
 // ────────────────────────────────────────────────────────────────────────────
 
-const theme = {
-  // semantic roles
-  primary: '#c65f2a',      // warm orange — prompt/active accents
-  primarySoft: '#f59e0b',
-  user: '#16833a',         // green — user voice
-  tool: '#0369a1',         // blue — tool calls
-  warn: '#b45309',         // amber — approval/warning
-  error: '#b91c1c',        // red
-  success: '#16833a',
-  text: undefined,
-  textMuted: '#4b5563',
-  textDim: '#6b7280',
-  border: '#9ca3af',
-} as const;
+import { legacyTheme as theme } from './theme/theme.js';
 
 // Glyphs — emoji at line-start only (never in alignment columns).
 // Falls back to bracket tags when DMOSS_TUI_NO_EMOJI=1 or terminal lacks UTF-8.
@@ -117,21 +104,21 @@ function emojiEnabled(): boolean {
 }
 
 const TOOL_ICONS_EMOJI: Record<string, string> = {
-  read: '📖', read_file: '📖', readfile: '📖',
-  write: '✏️ ', write_file: '✏️ ', writefile: '✏️ ',
-  edit: '✏️ ', edit_file: '✏️ ',
-  bash: '⚡', shell: '⚡', exec: '⚡', run_shell: '⚡',
-  grep: '🔍', search: '🔍', glob: '🔍', find: '🔍', list_directory: '📂',
-  webfetch: '🌐', web_fetch: '🌐', fetch: '🌐', http_get: '🌐',
-  task: '🤖', agent: '🤖',
-  todo: '📝', todowrite: '📝', task_create: '📝',
-  notebook: '📓', notebookedit: '📓',
+  read: '⎿', read_file: '⎿', readfile: '⎿',
+  write: '✎', write_file: '✎', writefile: '✎',
+  edit: '✎', edit_file: '✎',
+  bash: '$', shell: '$', exec: '$', run_shell: '$',
+  grep: '⌕', search: '⌕', glob: '⌕', find: '⌕', list_directory: '▣',
+  webfetch: '↗', web_fetch: '↗', fetch: '↗', http_get: '↗',
+  task: '◌', agent: '◌',
+  todo: '☐', todowrite: '☐', task_create: '☐',
+  notebook: '◇', notebookedit: '◇',
 };
 
 function toolIcon(toolName: string): string {
   const useEmoji = emojiEnabled();
   const key = toolName.toLowerCase().replace(/[^a-z_]/g, '');
-  if (useEmoji) return TOOL_ICONS_EMOJI[key] || '🔧';
+  if (useEmoji) return TOOL_ICONS_EMOJI[key] || '·';
   return `[${toolName.slice(0, 6)}]`;
 }
 
@@ -543,7 +530,7 @@ function editorPreviewLinesWithCursor(
   cursor: number,
   maxLines = 8,
 ): EditorPreviewLine[] {
-  if (!value) return [{ text: placeholder, cursorColumn: placeholder.length }];
+  if (!value) return [{ text: placeholder, cursorColumn: 0 }];
   const normalized = sanitizeRenderableText(value).replace(/\r\n?/g, '\n');
   const lines = normalized.split('\n');
   const normalizedCursor = clampPromptCursor(normalized, cursor);
@@ -628,7 +615,7 @@ export function completeSlashCommandInput(value: string, cursor: number): Prompt
 export function promptPlaceholder(state: TuiRunState): string {
   if (state === 'approval') return 'answer approval with y, a, n, or Esc';
   if (state === 'running') return 'running... /stop to cancel';
-  return '';
+  return 'Implement {feature}';
 }
 
 export function statusBadge(state: TuiRunState): string {
@@ -764,6 +751,22 @@ function humanTokens(n: number): string {
   return String(Math.round(n));
 }
 
+/** Build a 10-segment Unicode block gauge for context usage visualization. */
+function ctxUsageBar(usage: { used: number; total: number }): string {
+  const pct = usage.total > 0 ? Math.min(usage.used / usage.total, 1) : 0;
+  const filled = Math.round(pct * 10);
+  return '█'.repeat(filled) + '░'.repeat(10 - filled);
+}
+
+/** Progressive color for the usage bar: green → amber → orange → red. */
+function ctxUsageBarColor(usage: { used: number; total: number }): string {
+  const pct = usage.total > 0 ? (usage.used / usage.total) * 100 : 0;
+  if (pct >= 90) return theme.error;
+  if (pct >= 70) return theme.warn;
+  if (pct >= 50) return theme.primarySoft;
+  return theme.success;
+}
+
 function activityLabel(event: DmossAgentEvent): string | null {
   if (event.type === 'compaction') return `compacted ${event.droppedMessages} messages`;
   if (event.type === 'microcompact') return `compressed ${event.compressedCount} items`;
@@ -842,34 +845,26 @@ export interface SessionHeaderProps {
   profile?: string;
 }
 
-export function SessionHeader({ device, workspace, model, state, toolsExpanded, version, cacheMode, profile }: SessionHeaderProps): React.ReactElement {
-  const stateLabel = statusBadge(state);
-  const cacheLabel = cacheMode || 'cache stable';
-  const profileLabel = profile ? `profile ${profile}  ·  ` : '';
+export function SessionHeader({ device: _device, workspace, model, state: _state, toolsExpanded: _toolsExpanded, version, cacheMode: _cacheMode, profile: _profile }: SessionHeaderProps): React.ReactElement {
   return React.createElement(
     Box,
     { flexDirection: 'column', marginBottom: 1 },
     React.createElement(
       Box,
-      { flexDirection: 'column', borderStyle: 'single', borderColor: theme.border, paddingX: 1, width: 64 },
+      { flexDirection: 'column', borderStyle: 'round', borderColor: theme.border, paddingX: 1, width: 54 },
       React.createElement(Text, null,
-        React.createElement(Text, { color: theme.textMuted }, '>_ '),
-        React.createElement(Text, { bold: true }, 'D-Moss'),
+        React.createElement(Text, { color: theme.primary }, '✻ '),
+        React.createElement(Text, { bold: true }, 'D-Moss Code'),
         React.createElement(Text, { color: theme.textMuted }, version ? ` (${version})` : ''),
       ),
       React.createElement(Text, null,
-        React.createElement(Text, { color: theme.textMuted }, 'model:     '),
+        React.createElement(Text, { color: theme.textMuted }, 'model      '),
         React.createElement(Text, { bold: true }, model || 'connecting...'),
-        React.createElement(Text, { color: theme.textMuted }, '    /model to change'),
+        React.createElement(Text, { color: theme.textMuted }, '   /model to change'),
       ),
       React.createElement(Text, null,
-        React.createElement(Text, { color: theme.textMuted }, 'directory: '),
+        React.createElement(Text, { color: theme.textMuted }, 'directory  '),
         compactPath(workspace),
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { color: theme.textMuted }, 'status:    '),
-        React.createElement(Text, { color: statusBarColor(state), bold: true }, stateLabel),
-        React.createElement(Text, { color: theme.textMuted }, `    ${profileLabel}${device}  ·  ${cacheLabel}  ·  tools ${toolsExpanded ? 'expanded' : 'collapsed'}`),
       ),
     ),
   );
@@ -932,36 +927,14 @@ export interface WelcomePanelProps {
   profile?: string;
 }
 
-export function WelcomePanel({ workspace, device, model, cacheMode, profile }: WelcomePanelProps): React.ReactElement {
-  const commandRows: Array<[string, string]> = [
-    ['/model', 'choose what model to use'],
-    ['/status', 'inspect runtime, device, and workspace context'],
-    ['/permissions', 'show safety, approval, cache, and config file policy'],
-    ['/tools', 'list available tools and permission surface'],
-    ['/examples', 'starter tasks'],
-    ['/detail', 'toggle quiet, progress, or verbose detail'],
-    ['/sessions', 'show current and recent saved sessions'],
-    ['/thinking', 'toggle thinking deltas'],
-    ['/clear', 'clear visible transcript'],
-  ];
+export function WelcomePanel({ workspace: _workspace, device: _device, model: _model, cacheMode: _cacheMode, profile: _profile }: WelcomePanelProps): React.ReactElement {
   return React.createElement(
     Box,
-    { flexDirection: 'column', marginTop: 1, paddingLeft: 2 },
+    { flexDirection: 'column', marginTop: 1, marginBottom: 1 },
     React.createElement(Text, null,
       React.createElement(Text, { bold: true }, 'Tip: '),
-      'Ask for code, board diagnostics, shell help, or RDK workflow guidance.',
+      'Use ! for shell commands, / for commands, or ask for code/RDK help.',
     ),
-    React.createElement(Box, { marginTop: 2, flexDirection: 'column' },
-      ...commandRows.map(([command, description]) => React.createElement(Text, { key: command },
-        React.createElement(Text, { bold: true }, command.padEnd(14)),
-        React.createElement(Text, { color: theme.textMuted }, description),
-      )),
-      React.createElement(Text, null,
-        React.createElement(Text, { bold: true }, 'Ctrl+O'.padEnd(14)),
-        React.createElement(Text, { color: theme.textMuted }, 'expand or collapse tool calls'),
-      ),
-    ),
-    React.createElement(Text, { color: theme.textDim }, `profile ${profile || 'balanced'} · ${cacheMode || 'cache stable'} · workspace ${compactPath(workspace)} · device ${device} · model ${model || 'connecting...'}`),
   );
 }
 
@@ -1018,7 +991,7 @@ export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): Rea
       {
         marginTop: 1,
         paddingX: 1,
-        borderStyle: 'round',
+        borderStyle: 'single',
         borderColor: ruleColor,
         flexDirection: 'column',
       },
@@ -1057,11 +1030,11 @@ export function ApprovalPromptLine({ question }: ApprovalPromptLineProps): React
     Box,
     {
       flexDirection: 'column',
-      borderStyle: 'round',
+      borderStyle: 'single',
       borderColor: theme.warn,
       paddingX: 1,
     },
-    React.createElement(Text, { color: theme.warn, bold: true }, '⚠ approval needed'),
+    React.createElement(Text, { color: theme.warn, bold: true }, '? permission requested'),
     ...visibleText(question, 8).split('\n').map((line, idx) => (
       React.createElement(Text, { key: idx, color: theme.text }, line)
     )),
@@ -1124,6 +1097,19 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
   if (item.kind === 'shell') {
     return sideRule({ id: item.id, text: item.text, ruleColor: theme.tool, textColor: theme.textMuted });
   }
+  if (item.kind === 'assistant' && !item.finalized) {
+    const refs = extractAttachmentRefs(item.text);
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 1 },
+      React.createElement(Text, { color: theme.text }, visibleText(item.text)),
+      React.createElement(Text, { color: theme.primarySoft }, '●'),
+      ...refs.map((ref) => React.createElement(Text, {
+        key: `${item.id}-${ref.label}`,
+        color: ref.kind === 'image' ? theme.primary : theme.warn,
+      }, formatAttachmentChip(ref))),
+    );
+  }
   if (item.kind === 'assistant' && item.finalized) {
     const rendered = renderMarkdown(item.text);
     return React.createElement(
@@ -1131,18 +1117,6 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
       { flexDirection: 'column', marginTop: 1, marginBottom: 1 },
       React.createElement(Text, { color: theme.text }, rendered || visibleText(item.text)),
       model ? React.createElement(Text, { color: theme.textDim }, model) : null,
-    );
-  }
-  if (item.kind === 'assistant') {
-    const refs = extractAttachmentRefs(item.text);
-    return React.createElement(
-      Box,
-      { flexDirection: 'column', marginTop: 1 },
-      React.createElement(Text, { color: theme.text }, visibleText(item.text)),
-      ...refs.map((ref) => React.createElement(Text, {
-        key: `${item.id}-${ref.label}`,
-        color: ref.kind === 'image' ? theme.primary : theme.warn,
-      }, formatAttachmentChip(ref))),
     );
   }
   if (item.kind === 'user') {
@@ -1213,11 +1187,11 @@ function commandRowsForInput(value: string): Array<[string, string]> {
   const rows: Array<[string, string]> = [
     ['/model', 'choose what model to use'],
     ['/status', 'inspect runtime, device, and workspace context'],
-    ['/permissions', 'show safety, approval, cache, and config file policy'],
+    ['/permissions', 'review safety, approval, cache, and config file policy'],
     ['/config', 'show config file path and policy commands'],
-    ['/tools', 'list available tools and permission surface'],
+    ['/tools', 'show available tools and permission surface'],
     ['/examples', 'starter tasks'],
-    ['/detail', 'toggle quiet, progress, or verbose detail'],
+    ['/detail', 'choose quiet, progress, or verbose detail'],
     ['/queue', 'show, drop, or clear queued prompts'],
     ['/sessions', 'show current and recent saved sessions'],
     ['/thinking', 'toggle thinking deltas'],
@@ -1234,7 +1208,6 @@ export function promptEditorRowBudget(
 ): number {
   const maxPreviewLines = options.maxPreviewLines ?? 6;
   let rows = 1; // PromptEditor marginTop.
-  if (!value && (options.hint || options.model)) rows += 1;
   const commandRows = commandRowsForInput(value);
   if (commandRows.length > 0) {
     rows += commandRows.length + 1; // command rows plus marginBottom.
@@ -1263,8 +1236,8 @@ export function PromptEditor({
   onHistoryPrevious,
   onHistoryNext,
   onShiftEnter,
-  hint,
-  model,
+  hint: _hint,
+  model: _model,
 }: PromptEditorProps): React.ReactElement {
   const lineCount = value.length > 0 ? value.split('\n').length : 0;
   const isMulti = lineCount > 1;
@@ -1344,6 +1317,12 @@ export function PromptEditor({
     }
   }, { isActive: !disabled });
 
+  useEffect(() => {
+    if (!disabled && process.stdout.isTTY) {
+      process.stdout.write('\x1b[?25h');
+    }
+  });
+
   const lines = editorPreviewLinesWithCursor(value, placeholder, currentCursor, 6);
   const suggestion = value.startsWith('/') ? commandSuggestion(value) : null;
   const commandRows = commandRowsForInput(value);
@@ -1351,9 +1330,6 @@ export function PromptEditor({
   return React.createElement(
     Box,
     { flexDirection: 'column', marginTop: 1 },
-    !value && (hint || model) ? React.createElement(Text, { color: theme.textMuted },
-      `  ${[model || '', hint || ''].filter(Boolean).join('  ·  ')}`,
-    ) : null,
     commandRows.length > 0 ? React.createElement(Box, { flexDirection: 'column', marginBottom: 1, paddingLeft: 2 },
       ...commandRows.map(([command, description]) => React.createElement(Text, { key: command },
         React.createElement(Text, { bold: true }, command.padEnd(14)),
@@ -1366,7 +1342,7 @@ export function PromptEditor({
       Text,
       { key: `${index}-${line.text}`, color: value ? theme.text : theme.textMuted },
       index === 0
-        ? React.createElement(Text, { bold: true }, '> ')
+        ? React.createElement(Text, { bold: true }, '› ')
         : '  ',
       line.cursorColumn !== null
         ? line.text.slice(0, line.cursorColumn)
@@ -1942,20 +1918,21 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const profile = runtime?.config?.profile || 'balanced';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
   const terminalRows = Math.max(12, stdout?.rows ?? 30);
-  // Compose footer hint based on state (drives footerHint text used in tests).
-  const footerHintText = footerHint(runState)
-    + (queuedInputs.length > 0 ? `  ·  queued ${queuedInputs.length}` : '')
-    + (detailMode !== 'progress' ? `  ·  detail ${detailMode}` : '')
-    + (showThinking ? '  ·  thinking on' : '')
-    + (localShellApproved ? '  ·  local shell' : '');
+  const inputFooterText = [
+    currentModel || 'no model',
+    compactPath(workspace),
+    runState === 'running' ? 'Esc cancel' : '/help',
+    queuedInputs.length > 0 ? `queued ${queuedInputs.length}` : '',
+    detailMode !== 'quiet' ? `detail ${detailMode}` : '',
+    showThinking ? 'thinking on' : '',
+    localShellApproved ? 'local shell' : '',
+  ].filter(Boolean).join('  ·  ');
   const promptRows = promptEditorRowBudget(input, {
-    hint: footerHintText,
-    model: currentModel,
     placeholder: promptPlaceholder(runState),
   });
   const queueRows = queuedInputs.length > 0 ? Math.min(5, queuedInputs.length + 2) : 0;
-  const footerRows = 0;
-  const headerRows = 6;
+  const footerRows = approval ? 0 : 1;
+  const headerRows = 5;
   const approvalRows = approval ? Math.min(10, approval.question.split('\n').length + 4) : 0;
   const noticeRows = notice ? 1 : 0;
   const transcriptRows = transcriptViewportRows({
@@ -1971,7 +1948,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
 
   return React.createElement(
     Box,
-    { flexDirection: 'column', paddingX: 1, paddingTop: 1, height: terminalRows },
+    { flexDirection: 'column', paddingX: 1, paddingTop: 1 },
     React.createElement(SessionHeader, {
       device,
       workspace,
@@ -2001,9 +1978,21 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     React.createElement(QueuePreview, { items: queuedInputs, paused: queuePausedAfterCancel }),
     notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
     flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
-    ctxUsage ? React.createElement(Text, { color: theme.textMuted },
-      `ctx ${humanTokens(ctxUsage.used)}/${humanTokens(ctxUsage.total)}`,
-    ) : null,
+    // ── Usage gauge bar + mode badge ──
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      detailMode !== 'quiet' ? React.createElement(Text, { color: theme.primary, bold: true }, `[${detailMode}] `) : null,
+      ctxUsage ? React.createElement(
+        Box,
+        { flexDirection: 'row' },
+        React.createElement(Text, { color: ctxUsageBarColor(ctxUsage) }, ctxUsageBar(ctxUsage)),
+        React.createElement(Text, { color: theme.textMuted },
+          ` ${humanTokens(ctxUsage.used)}/${humanTokens(ctxUsage.total)} (${Math.round((ctxUsage.used / ctxUsage.total) * 100)}%)`,
+        ),
+      ) : null,
+    ),
+    !approval ? React.createElement(Text, { color: theme.textDim }, `  ${inputFooterText}`) : null,
     approval
       ? React.createElement(ApprovalPromptLine, { question: approval.question })
       : React.createElement(PromptEditor, {
@@ -2017,8 +2006,6 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
           onHistoryPrevious: recallHistoryPrevious,
           onHistoryNext: recallHistoryNext,
           onShiftEnter: () => undefined,
-          model: currentModel,
-          hint: footerHintText,
         }),
   );
 }

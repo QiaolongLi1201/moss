@@ -18,7 +18,6 @@ import {
   injectToolCallFromPlanText,
   normalizeAssistantToolCalls,
   isThinkingOnlyAssistantTurn,
-  buildThinkingOnlyUserHint,
   buildVisibleAssistantText,
   extractThinkingTextFromMessage,
   shouldNudgeMissingToolInvocation,
@@ -202,9 +201,6 @@ export async function processLlmResponse(
   // ===== Build visible text and thinking fallback =====
   const turnText = turnTextParts.join('');
   const turnTrim = turnText.trim();
-  const thinkingFallback = turnTrim
-    ? ''
-    : extractThinkingTextFromMessage(messageThinkingChunks, assistantContent);
 
   const hasThinkingOnly = isThinkingOnlyAssistantTurn({
     visibleText: turnText,
@@ -212,6 +208,10 @@ export async function processLlmResponse(
     thinkingChunks: messageThinkingChunks,
     assistantContent,
   });
+
+  const thinkingFallback = turnTrim || hasThinkingOnly
+    ? ''
+    : extractThinkingTextFromMessage(messageThinkingChunks, assistantContent);
 
   // ===== Pre-persistence: thinking-only retry =====
   if (
@@ -232,11 +232,11 @@ export async function processLlmResponse(
     return { control: 'continue' };
   }
 
-  // ===== Thinking-only hint =====
+  // ===== Thinking-only detection (internal diagnostic; do not show to users) =====
+  // Tool execution details are already visible above, so an extra reasoning-only
+  // note would add noise without giving the user a better next step.
   if (hasThinkingOnly) {
-    const hint = buildThinkingOnlyUserHint(state.toolExecutionMetrics.totalToolCalls);
-    push({ type: 'message_delta', delta: hint });
-    turnTextParts.push(hint);
+    // Developers can inspect logs when reasoning-only turns need diagnosis.
   }
 
   // ===== Build assistant message =====
@@ -335,7 +335,7 @@ export async function processLlmResponse(
       // Already handled above (pre-persistence); unreachable here.
       break;
 
-    case 'thinking_only_hint':
+    case 'thinking_only_complete':
       pushTurnEnd();
       state.lastTurnEndMs = Date.now();
       state.pendingMessages = cachedSteering;

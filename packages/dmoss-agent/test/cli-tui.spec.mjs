@@ -107,7 +107,7 @@ assert.deepEqual(
   null,
 );
 
-assert.equal(promptPlaceholder('ready'), '');
+assert.equal(promptPlaceholder('ready'), 'Implement {feature}');
 assert.match(promptPlaceholder('running'), /running/);
 assert.match(promptPlaceholder('approval'), /approval/);
 assert.match(promptPlaceholder('approval'), /y, a, n/);
@@ -123,7 +123,7 @@ assert.match(footerHint('ready'), /Ctrl\+O tools/);
 assert.match(footerHint('approval'), /a always this session/);
 assert.match(footerHint('running'), /Esc cancel/);
 assert.match(footerHint('running'), /Enter queue/);
-assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-v4-pro' }), 3);
+assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-v4-pro' }), 2);
 assert.equal(promptEditorRowBudget('/'), 15);
 assert.equal(promptEditorRowBudget('/que'), 4);
 assert.equal(promptEditorRowBudget('/staus'), 3);

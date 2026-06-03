@@ -9,7 +9,7 @@
 
 export type PostLlmAction =
   | { kind: 'thinking_retry'; systemText: string }
-  | { kind: 'thinking_only_hint'; hintText: string }
+  | { kind: 'thinking_only_complete' }
   | { kind: 'continuation'; systemText: string }
   | { kind: 'nudge'; systemText: string; deltaText: string }
   | { kind: 'empty_retry' }
@@ -51,10 +51,9 @@ export function decidePostLlmAction(ctx: PostLlmContext): PostLlmAction {
     };
   }
 
-  // --- Thinking-only without prior tools: show user hint ---
+  // --- Thinking-only without prior tools: finish without leaking hidden reasoning ---
   if (ctx.hasThinkingOnly) {
-    // Caller builds the hint text via buildThinkingOnlyUserHint(totalToolCalls).
-    return { kind: 'thinking_only_hint', hintText: '' };
+    return { kind: 'thinking_only_complete' };
   }
 
   // --- Output truncated by max_tokens: continue up to N times ---

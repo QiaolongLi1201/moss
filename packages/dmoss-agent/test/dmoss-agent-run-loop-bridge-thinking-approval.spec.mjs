@@ -164,7 +164,9 @@ function getDone(events) {
   const stored = await store.loadMessages('bridge-thinking-only');
 
   assert.deepEqual(done.result.thinking, ['only hidden plan']);
-  assert.match(done.result.response, /模型产出了推理过程/);
+  assert.equal(done.result.response, '');
+  assert(!done.result.response.includes('only hidden plan'));
+  assert(!done.result.response.includes('模型产出了推理过程'));
   assert(
     stored.every((message) => message.role !== 'assistant'),
     'thinking-only turns must not persist an empty assistant message',

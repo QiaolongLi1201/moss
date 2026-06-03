@@ -64,27 +64,6 @@ export function isThinkingOnlyAssistantTurn(params: {
   });
 }
 
-export function buildThinkingOnlyUserHint(totalToolCalls: number): string {
-  if (totalToolCalls > 0) {
-    return [
-      '> Tool calls were executed but the model only produced reasoning without a visible summary.',
-      '> This typically occurs when reasoning mode exhausts output tokens on tool-result follow-up turns.',
-      '> Suggestion: retry or switch to "quick answer" mode; tool execution details are still available above.',
-      '> 工具调用已经执行，但模型最后只产出了推理过程，没有生成可见总结。',
-      '> 这通常是 reasoning 模式在工具结果跟进轮耗尽了输出 token。',
-      '> 建议：重试一次或切换到「快捷回答」模式；工具执行详情仍可在上方工具记录里查看。',
-    ].join('\n');
-  }
-  return [
-    '> The model produced reasoning but no visible reply or tool call.',
-    '> This typically occurs when reasoning mode consumes all available output tokens.',
-    '> Suggestion: switch to "quick answer" mode, or contact your administrator to check the model API reasoning config.',
-    '> 模型产出了推理过程但未生成可见回复或工具调用。',
-    '> 这通常是因为 reasoning 模式消耗了所有输出 token。',
-    '> 建议：切换到「快捷回答」模式，或联系管理员检查模型 API 的 reasoning 配置。',
-  ].join('\n');
-}
-
 export function buildVisibleAssistantText(params: {
   textParts: ReadonlyArray<string>;
   thinkingFallback: string;

@@ -11,8 +11,9 @@ export interface MouseEvent {
   ctrl: boolean;
 }
 
-// Standard SGR mouse protocol: \x1b[<Btn;X;Y[Mm]
-const SGR_MOUSE_RE = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/;
+// Standard SGR mouse protocol: ESC [ < Btn ; X ; Y [Mm]
+const ESC = String.fromCharCode(27);
+const SGR_MOUSE_RE = new RegExp(`${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])`);
 
 export function enableMouse(): void {
   // Enable SGR extended mouse mode

@@ -39,7 +39,7 @@ const DEFAULT_STATE: VimState = {
 };
 
 /** Single-instance Vim state for the prompt editor */
-let vimState: VimState = { ...DEFAULT_STATE };
+const vimState: VimState = { ...DEFAULT_STATE };
 
 export function getVimState(): Readonly<VimState> {
   return vimState;

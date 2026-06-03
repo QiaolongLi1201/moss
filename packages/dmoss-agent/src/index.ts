@@ -259,16 +259,38 @@ export {
   registerBuiltinTools,
   readFileTool,
   writeFileTool,
+  moveFileTool,
   listDirectoryTool,
   execTool,
   searchFilesTool,
   searchCodeTool,
   webFetchTool,
+  webSearchTool,
   applyPatchTool,
 } from './tools/builtin.js';
 
+// --- Code intelligence (type/lint diagnostics; go-to-def/refs via MCP-LSP) ---
+export { codeDiagnosticsTool } from './tools/code-diagnostics.js';
+
+// --- Background command tools (start/inspect/stop long-running processes) ---
+export {
+  backgroundExecTools,
+  execBackgroundTool,
+  execLogsTool,
+  execStopTool,
+} from './tools/background-exec.js';
+
 // --- Web Tools (generic http fetch, SSRF-safe, no external deps) ---
 export { createWebFetchTool, type WebFetchOptions } from './tools/web-fetch.js';
+export {
+  createWebSearchTool,
+  duckDuckGoSearch,
+  createBraveSearch,
+  type WebSearchOptions,
+  type WebSearchBackend,
+  type WebSearchBackendOptions,
+  type WebSearchResult,
+} from './tools/web-search.js';
 
 // --- Logger (unified logging, aligned with docs/logging.md) ---
 export {

@@ -127,7 +127,7 @@ export const SPAWN_TOOL_SCOPE_SETS: Record<
     ...ATTACHMENT_TOOLS,
     ...WEB_TOOLS,
     ...SKILL_TOOLS,
-    "exec", "device_exec",
+    "exec", "device_exec", "code_diagnostics",
     ...DEVICE_READ_TOOLS,
   ]),
 };

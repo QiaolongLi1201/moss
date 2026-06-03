@@ -19,6 +19,9 @@ import { assertSandboxPath } from '../safety/sandbox-paths.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
 import { createSubagentTool, subagentStatusTool, subagentStopTool } from './create-subagent.js';
 import { createWebFetchTool } from './web-fetch.js';
+import { createWebSearchTool } from './web-search.js';
+import { backgroundExecTools } from './background-exec.js';
+import { codeDiagnosticsTool } from './code-diagnostics.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
 import { applyUpdateHunk, extractAddContent, parsePatch } from '../utils/apply-patch-core.js';
 import { atomicWriteFile } from '../utils/atomic-write.js';
@@ -41,7 +44,9 @@ async function safePath(inputPath: string, workspaceDir: string): Promise<string
 
 export const readFileTool: Tool = {
   name: 'read_file',
-  description: 'Read the contents of a file within the workspace.',
+  description:
+    'Read the contents of a file within the workspace. ' +
+    'For large files, pass `offset` (1-based start line) and/or `limit` (line count) to page through it.',
   metadata: {
     sideEffectClass: 'readonly',
     planMode: 'allow',
@@ -50,6 +55,8 @@ export const readFileTool: Tool = {
     type: 'object',
     properties: {
       path: { type: 'string', description: 'File path relative to workspace root' },
+      offset: { type: 'number', description: '1-based line number to start reading from (default: start of file)' },
+      limit: { type: 'number', description: 'Maximum number of lines to read from `offset` (default: to end of file)' },
     },
     required: ['path'],
   },
@@ -57,8 +64,25 @@ export const readFileTool: Tool = {
     try {
       const filePath = await safePath(input.path, ctx.workspaceDir);
       const content = await fs.readFile(filePath, 'utf-8');
+      const hasRange = input.offset !== undefined || input.limit !== undefined;
+      if (hasRange) {
+        const lines = content.split('\n');
+        const start = Math.max(1, Math.floor(Number(input.offset) || 1));
+        const count =
+          input.limit !== undefined ? Math.max(0, Math.floor(Number(input.limit))) : lines.length;
+        const slice = lines.slice(start - 1, start - 1 + count);
+        const end = Math.min(lines.length, start - 1 + count);
+        let body = slice.join('\n');
+        if (body.length > 100_000) {
+          body = body.slice(0, 100_000) + `\n\n[... truncated range, total ${body.length} chars]`;
+        }
+        return `[lines ${start}-${end} of ${lines.length}]\n${body}`;
+      }
       if (content.length > 100_000) {
-        return content.slice(0, 100_000) + `\n\n[... truncated, total ${content.length} chars]`;
+        return (
+          content.slice(0, 100_000) +
+          `\n\n[... truncated, total ${content.length} chars — pass offset/limit to page through the rest]`
+        );
       }
       return content;
     } catch (err) {
@@ -90,6 +114,50 @@ export const writeFileTool: Tool = {
       return `Successfully wrote ${input.content.length} chars to ${input.path}`;
     } catch (err) {
       return `Error writing file: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  },
+};
+
+export const moveFileTool: Tool = {
+  name: 'move_file',
+  description:
+    'Move or rename a file or directory within the workspace. ' +
+    'Both paths are sandbox-checked; destination parent directories are created as needed.',
+  metadata: {
+    sideEffectClass: 'local_write',
+    planMode: 'requires_user_confirmation',
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      source: { type: 'string', description: 'Existing path relative to workspace root' },
+      destination: { type: 'string', description: 'New path relative to workspace root' },
+      overwrite: { type: 'boolean', description: 'Overwrite destination if it already exists (default false)' },
+    },
+    required: ['source', 'destination'],
+  },
+  async execute(input, ctx) {
+    try {
+      const src = await safePath(input.source, ctx.workspaceDir);
+      const dest = await safePath(input.destination, ctx.workspaceDir);
+      try {
+        await fs.access(src);
+      } catch {
+        return `Error: source does not exist: ${input.source}`;
+      }
+      if (!input.overwrite) {
+        try {
+          await fs.access(dest);
+          return `Error: destination already exists: ${input.destination} (pass overwrite=true to replace)`;
+        } catch {
+          // destination is free — proceed
+        }
+      }
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.rename(src, dest);
+      return `Moved ${input.source} -> ${input.destination}`;
+    } catch (err) {
+      return `Error moving file: ${err instanceof Error ? err.message : String(err)}`;
     }
   },
 };
@@ -478,6 +546,8 @@ export const applyPatchTool: Tool = {
 
 export const webFetchTool: Tool = createWebFetchTool();
 
+export const webSearchTool: Tool = createWebSearchTool();
+
 /**
  * Recursively walk directories and grep file contents for a regex pattern.
  * Respects extension filter, file size limit, result limit, and timeout.
@@ -544,15 +614,19 @@ async function grepWalk(
 export const builtinTools: Tool[] = [
   readFileTool,
   writeFileTool,
+  moveFileTool,
   listDirectoryTool,
   execTool,
   searchFilesTool,
   searchCodeTool,
   webFetchTool,
+  webSearchTool,
   applyPatchTool,
+  codeDiagnosticsTool,
   createSubagentTool,
   subagentStatusTool,
   subagentStopTool,
+  ...backgroundExecTools,
 ];
 
 /**

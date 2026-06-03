@@ -11,6 +11,8 @@ import { parseCliArgs } from './cli/args.js';
 import { renderCliDoctor } from './cli/doctor.js';
 import { displayHelp, displayVersion } from './cli/help.js';
 import { createConfiguredGuardrailHooks } from './cli/guardrails.js';
+import { createConfiguredHookCallbacks } from './cli/hooks.js';
+import type { AgentHooks } from './core/agent/agent-hooks.js';
 import { createCliProvider } from './cli/providers.js';
 import { createMemoryTools } from './cli/tools.js';
 import { runOneShot } from './cli/oneshot.js';
@@ -39,6 +41,7 @@ import { registerBuiltinTools } from './tools/builtin.js';
 import { SkillLearner } from './core/memory/skill-learner.js';
 import { SkillPipeline } from '@rdk-moss/skills';
 import { WorkspaceMemory } from './core/memory/workspace-memory.js';
+import { buildEnvironmentContextLayer } from './context/environment.js';
 import { createDockerExecTool } from './tools/docker-exec.js';
 import { createDeviceSshTools, getDeviceConfigFromEnv } from './tools/device-ssh.js';
 import { createDeviceDiagnosticsTools } from './tools/device-diagnostics.js';
@@ -288,15 +291,27 @@ async function main() {
   const wsContext = await workspaceMemory.loadContext();
   const wsPromptLayer = workspaceMemory.buildPromptLayer(wsContext);
   const extraPromptLayers: string[] = [];
+  const envLayer = await buildEnvironmentContextLayer(workspace);
+  if (envLayer) extraPromptLayers.push(envLayer);
   if (wsPromptLayer) extraPromptLayers.push(wsPromptLayer);
 
+  const configuredHooks = createConfiguredHookCallbacks(loadedConfig.config.hooks, { workspaceDir: workspace });
+  const approvalHook = createCliToolApprovalHook(safetyMode, process.env, {
+    approvalPolicy: resolvedConfig.approvalPolicy,
+    trustedTools: resolvedConfig.trustedTools,
+    deniedTools: resolvedConfig.deniedTools,
+  });
+  const configPreHook = configuredHooks.onBeforeToolExec;
+  const onBeforeToolExec: AgentHooks['onBeforeToolExec'] = configPreHook
+    ? async (req) => {
+        const pre = await configPreHook(req);
+        return pre.approved ? approvalHook(req) : pre;
+      }
+    : approvalHook;
   const hooks = createConfiguredGuardrailHooks(resolvedConfig, {
     enrichToolContext: (ctx) => ({ ...ctx, workspaceDir: workspace }),
-    onBeforeToolExec: createCliToolApprovalHook(safetyMode, process.env, {
-      approvalPolicy: resolvedConfig.approvalPolicy,
-      trustedTools: resolvedConfig.trustedTools,
-      deniedTools: resolvedConfig.deniedTools,
-    }),
+    onBeforeToolExec,
+    onToolResult: configuredHooks.onToolResult,
   });
 
   const agent = new DmossAgent({
@@ -309,6 +324,7 @@ async function main() {
   const mcpConnections = await registerConfiguredMcpTools(agent, resolvedConfig);
 
   try {
+    await configuredHooks.runSessionStart();
     if ((process.env.DMOSS_EXEC_BACKEND || 'local') === 'docker') {
       agent.tools.register(createDockerExecTool({ workspaceDir: workspace, image: process.env.DMOSS_DOCKER_IMAGE }));
     }

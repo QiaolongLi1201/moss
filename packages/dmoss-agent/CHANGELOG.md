@@ -5,6 +5,63 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7] - 2026-06-04
+
+### Added
+
+- Added a built-in `web_search` tool that completes the web tool pair with
+  `web_fetch` (search → fetch). It is keyless by default (DuckDuckGo HTML
+  endpoint), supports a Brave provider via `apiKey`/`BRAVE_API_KEY`, and accepts
+  a host-injectable custom backend (`search`) for proprietary or multi-engine
+  routing. Registered in `builtinTools` and exported as `createWebSearchTool`,
+  `duckDuckGoSearch`, and `createBraveSearch`. Existing scaffolding
+  (`NETWORK_TOOLS` guard, subagent scope set, output-truncation limit, and the
+  "use `web_search` only when registered" prompt guidance) now activates
+  natively without an external backplane.
+- Added a `move_file` built-in tool for renaming/reorganizing files and
+  directories inside the workspace sandbox (both source and destination are
+  sandbox-checked; refuses to clobber without `overwrite`).
+- Added `offset`/`limit` line-range paging to `read_file` so large files can be
+  read in pages instead of stopping at the 100 KB truncation.
+- Added background command tools — `exec_background`, `exec_logs`, `exec_stop` —
+  backed by an in-process registry so the agent can start and supervise
+  long-running processes (dev servers, watchers, `ros2 launch`) that the
+  synchronous `exec` cannot. Group-kill on POSIX; an immediate crash during the
+  start window is reported inline.
+- Added a `code_diagnostics` tool that runs the project's type/lint checks
+  (auto-detected for JS/TS via package.json scripts, local tsc, or local eslint;
+  or an explicit `command` for ruff/mypy/cargo/go) and reports pass/fail with
+  errors and warnings — the "see type errors and warnings after editing" pillar
+  of code intelligence. Go-to-definition / find-references stay a language-server
+  concern, intended to be wired through the MCP client (an LSP-MCP server).
+
+#### Standalone session richness (parity with host-embedded runs)
+
+- Added an `# Environment` context layer injected at session start by the
+  standalone CLI (`context/environment.ts`): working directory, platform, date,
+  a shallow top-level file listing, and git state (branch, uncommitted changes,
+  recent commits). Snapshotted once per session, so it is prompt-cache friendly.
+  This gives standalone `moss` the git/project awareness the RDK Studio host
+  previously provided on its own.
+- `WorkspaceMemory` now recognizes a project-level `MOSS.md` (and `Moss.md` /
+  `moss.md`) as the standalone analog of `CLAUDE.md` / `AGENTS.md`, loaded into
+  the workspace-context prompt layer (leading the section) alongside the existing
+  `AGENTS.md` / `USER.md` / `MEMORY.md`.
+- Added config-driven hooks (`cli/hooks.ts`, `hooks` in the dmoss config) to
+  automate workflows: `PreToolUse` (a blocking shell command can veto a tool),
+  `PostToolUse` (side-effect automation — format/notify/log), and `SessionStart`.
+  Hooks compose with — and run before — the existing tool-approval flow. Each
+  command receives a JSON payload on stdin plus `MOSS_HOOK_EVENT` /
+  `MOSS_TOOL_NAME` / `MOSS_WORKSPACE` env vars, and is matched to tools by an
+  optional `matcher` regex.
+
+### Compatibility
+
+- Backward compatible and additive. New tools are registered in `builtinTools`;
+  `read_file` behaves exactly as before when `offset`/`limit` are omitted. The
+  `web_search` default backend needs no API key, and its tool name + `query`
+  input match the contract host UIs already expect.
+
 ## [0.3.6] - 2026-06-01
 
 ### Added

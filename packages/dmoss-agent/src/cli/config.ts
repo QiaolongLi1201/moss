@@ -91,6 +91,7 @@ export interface ConfigFile {
   guardrails?: GuardrailsConfig;
   agent?: AgentRuntimeConfig;
   mcp?: McpCliConfig;
+  hooks?: HooksConfig;
 }
 
 export interface LoadedCliConfigFile {
@@ -137,6 +138,32 @@ export interface AgentRuntimeConfig {
 export interface McpCliConfig {
   enabled?: boolean;
   configPath?: string;
+}
+
+/**
+ * A single user-configured hook: a shell command run on an agent event.
+ * The command receives a JSON payload on stdin plus `MOSS_HOOK_EVENT` /
+ * `MOSS_TOOL_NAME` / `MOSS_WORKSPACE` env vars.
+ */
+export interface HookCommandConfig {
+  /** Regex (as a string) matched against the tool name. Omit to match every tool. */
+  matcher?: string;
+  /** Shell command to execute. */
+  command: string;
+  /** Per-run timeout in milliseconds (default 30000). */
+  timeoutMs?: number;
+  /** PreToolUse only: when true (default), a non-zero exit blocks the tool. */
+  blocking?: boolean;
+}
+
+/** Config-driven hooks that automate workflows around the agent loop. */
+export interface HooksConfig {
+  /** Run before a matching tool executes; a blocking hook can veto the call. */
+  PreToolUse?: HookCommandConfig[];
+  /** Run after a matching tool returns (side-effect automation: format, notify, log). */
+  PostToolUse?: HookCommandConfig[];
+  /** Run once at session start. */
+  SessionStart?: HookCommandConfig[];
 }
 
 export interface ResolvedTextGuardrailConfig {
@@ -320,6 +347,16 @@ function mergeMcpConfig(
   };
 }
 
+function mergeHooksConfig(project?: HooksConfig, user?: HooksConfig): HooksConfig | undefined {
+  if (!project && !user) return undefined;
+  // Project and user hooks both run; project hooks are evaluated first.
+  return {
+    PreToolUse: [...(project?.PreToolUse ?? []), ...(user?.PreToolUse ?? [])],
+    PostToolUse: [...(project?.PostToolUse ?? []), ...(user?.PostToolUse ?? [])],
+    SessionStart: [...(project?.SessionStart ?? []), ...(user?.SessionStart ?? [])],
+  };
+}
+
 export function mergeConfigFiles(projectConfig: ConfigFile, userConfig: ConfigFile): ConfigFile {
   return {
     ...projectConfig,
@@ -328,6 +365,7 @@ export function mergeConfigFiles(projectConfig: ConfigFile, userConfig: ConfigFi
     guardrails: mergeGuardrailsConfig(projectConfig.guardrails, userConfig.guardrails),
     agent: mergeAgentRuntimeConfig(projectConfig.agent, userConfig.agent),
     mcp: mergeMcpConfig(projectConfig.mcp, userConfig.mcp),
+    hooks: mergeHooksConfig(projectConfig.hooks, userConfig.hooks),
   };
 }
 

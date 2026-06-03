@@ -18,15 +18,27 @@ export interface WorkspaceMemoryConfig {
 }
 
 export interface WorkspaceMemoryContext {
+  projectInstructions: string | null;
   userProfile: string | null;
   longTermMemory: string | null;
   agentRules: string | null;
 }
 
-const MEMORY_FILES: Array<{ key: keyof WorkspaceMemoryContext; filename: string; label: string }> = [
-  { key: 'userProfile', filename: 'USER.md', label: 'User Profile' },
-  { key: 'longTermMemory', filename: 'MEMORY.md', label: 'Long-term Memory' },
-  { key: 'agentRules', filename: 'AGENTS.md', label: 'Agent Rules' },
+interface MemoryFileSpec {
+  key: keyof WorkspaceMemoryContext;
+  /** Candidate filenames, tried in order (covers case variants on case-sensitive FS). */
+  filenames: string[];
+  label: string;
+  /** Whether `ensureDefaultFiles` scaffolds an empty version when absent. */
+  scaffold: boolean;
+}
+
+const MEMORY_FILES: MemoryFileSpec[] = [
+  // Project-level instructions, the standalone analog of CLAUDE.md / AGENTS.md.
+  { key: 'projectInstructions', filenames: ['MOSS.md', 'Moss.md', 'moss.md'], label: 'Project Instructions', scaffold: false },
+  { key: 'agentRules', filenames: ['AGENTS.md'], label: 'Agent Rules', scaffold: true },
+  { key: 'userProfile', filenames: ['USER.md'], label: 'User Profile', scaffold: true },
+  { key: 'longTermMemory', filenames: ['MEMORY.md'], label: 'Long-term Memory', scaffold: true },
 ];
 
 const MAX_FILE_SIZE = 10_000;
@@ -40,21 +52,25 @@ export class WorkspaceMemory {
 
   async loadContext(): Promise<WorkspaceMemoryContext> {
     const ctx: WorkspaceMemoryContext = {
+      projectInstructions: null,
       userProfile: null,
       longTermMemory: null,
       agentRules: null,
     };
 
-    for (const { key, filename } of MEMORY_FILES) {
-      try {
-        const filePath = path.join(this.dir, filename);
-        const content = await fs.readFile(filePath, 'utf-8');
-        if (content.trim()) {
-          ctx[key] = content.length > MAX_FILE_SIZE
-            ? content.slice(0, MAX_FILE_SIZE) + '\n\n[... truncated]'
-            : content;
-        }
-      } catch { /* file doesn't exist, skip */ }
+    for (const { key, filenames } of MEMORY_FILES) {
+      for (const filename of filenames) {
+        try {
+          const filePath = path.join(this.dir, filename);
+          const content = await fs.readFile(filePath, 'utf-8');
+          if (content.trim()) {
+            ctx[key] = content.length > MAX_FILE_SIZE
+              ? content.slice(0, MAX_FILE_SIZE) + '\n\n[... truncated]'
+              : content;
+            break; // first matching candidate wins
+          }
+        } catch { /* file doesn't exist, try next candidate */ }
+      }
     }
 
     return ctx;
@@ -63,6 +79,9 @@ export class WorkspaceMemory {
   buildPromptLayer(ctx: WorkspaceMemoryContext): string {
     const sections: string[] = [];
 
+    if (ctx.projectInstructions) {
+      sections.push(`## Project Instructions (MOSS.md)\n${ctx.projectInstructions}`);
+    }
     if (ctx.agentRules) {
       sections.push(`## Agent Rules\n${ctx.agentRules}`);
     }
@@ -78,8 +97,9 @@ export class WorkspaceMemory {
   }
 
   async ensureDefaultFiles(): Promise<void> {
-    for (const { filename, label } of MEMORY_FILES) {
-      const filePath = path.join(this.dir, filename);
+    for (const { filenames, label, scaffold } of MEMORY_FILES) {
+      if (!scaffold) continue;
+      const filePath = path.join(this.dir, filenames[0]);
       try {
         await fs.access(filePath);
       } catch {

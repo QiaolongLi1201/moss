@@ -925,7 +925,7 @@ try {
   runConfigSet(['baseUrl', 'https://user:pass@example.com/compatible-mode/v1?api_key=secret#frag']);
   assert.equal(loadConfigFile().baseUrl, 'https://example.com/compatible-mode');
   runConfigSet(['workspace', '/tmp/dmoss-config-workspace']);
-  assert.equal(loadConfigFile().workspace, '/tmp/dmoss-config-workspace');
+  assert.equal(loadConfigFile().workspace, path.resolve('/tmp/dmoss-config-workspace'));
   runConfigSet(['safetyMode', 'read-only']);
   assert.equal(loadConfigFile().safetyMode, 'read-only');
   runConfigSet(['approvalPolicy', 'never']);

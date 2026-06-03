@@ -306,3 +306,7 @@ export {
   extractToolInvocationFromPlanText,
 } from './tools/index.js';
 export type { ExtractedToolInvocation } from './tools/index.js';
+
+// --- Capability Packs ---
+export { collectCapabilityPacks } from './packs/capability-pack.js';
+export type { CapabilityPack, CapabilityPackContributions } from './packs/capability-pack.js';

@@ -71,6 +71,7 @@ import {
   SpawnProfileRegistry,
 } from '../subagent/spawn-profile.js';
 import { createSubAgentRunner } from '../subagent/subagent-runner.js';
+import { collectCapabilityPacks } from '../packs/capability-pack.js';
 import {
   createDmossAgentLoopEventAdapter,
   createModelDefFromDmossConfig,
@@ -189,6 +190,12 @@ export class DmossAgent {
   /** Default tool hook pipeline — secret sanitizer always installed. */
   private readonly toolHooks: ToolHookRegistry;
 
+  /** Prompt layers contributed by mounted capability packs (read in buildSystemPrompt). */
+  private readonly packPromptLayers: readonly string[];
+
+  /** Host-adapter capability kinds declared as required by mounted capability packs. */
+  private readonly packHostRequirements: readonly string[];
+
   constructor(config: DmossAgentConfig) {
     this.config = config;
     this.tools = new ToolRegistry();
@@ -199,6 +206,23 @@ export class DmossAgent {
     this.toolHooks = new ToolHookRegistry();
     this.toolHooks.registerPost(createSecretSanitizerHook(sanitizeSecrets));
     setTraceRedactor(sanitizeSecrets);
+
+    // ── Capability packs ──
+    // A pack contributes a tool group + prompt layers + declared host
+    // requirements. Mounting at construction keeps all three observable:
+    // tools land in `this.tools`, prompt layers feed `buildSystemPrompt`, and
+    // requirements surface via `getCapabilityPackRequirements()`.
+    if (config.capabilityPacks && config.capabilityPacks.length > 0) {
+      const contributions = collectCapabilityPacks(config.capabilityPacks);
+      for (const group of contributions.toolGroups) {
+        this.tools.registerGroup(group);
+      }
+      this.packPromptLayers = contributions.promptLayers;
+      this.packHostRequirements = contributions.requiredHostCapabilities;
+    } else {
+      this.packPromptLayers = [];
+      this.packHostRequirements = [];
+    }
 
     if (config.enableSteering !== false) {
       const rules = config.replaceDefaultSteeringRules
@@ -275,6 +299,13 @@ export class DmossAgent {
       }
     }
 
+    // Capability pack prompt layers: domain/tool guidance for mounted packs.
+    // Placed after knowledge so packs can build on ecosystem facts, but before
+    // host extraPromptLayers so fresh per-turn context can still narrow them.
+    if (this.packPromptLayers.length > 0) {
+      parts.push(...this.packPromptLayers);
+    }
+
     if (options?.platform) {
       const mod = this.knowledge.findForPlatform(options.platform);
       if (mod) {
@@ -297,6 +328,16 @@ export class DmossAgent {
     }
 
     return parts.filter(Boolean).join('\n\n');
+  }
+
+  /**
+   * Host-adapter capability kinds declared as required by the mounted
+   * capability packs (deduped, order-preserving). Hosts can cross-check these
+   * against their `MossHostRuntimeManifest` before trusting a pack to run.
+   * Empty when no packs were mounted.
+   */
+  getCapabilityPackRequirements(): string[] {
+    return [...this.packHostRequirements];
   }
 
   // ─── Tool execution ───────────────────────────────────────────

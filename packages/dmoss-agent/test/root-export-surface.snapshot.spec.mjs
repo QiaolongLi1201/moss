@@ -41,6 +41,7 @@ const expectedExports = [
   'canHostInjectToolWithEmptyInput',
   'classifyFailoverReason',
   'classifyFileKind',
+  'collectCapabilityPacks',
   'compactSubagentSummaryForParent',
   'configureRootLogger',
   'connectMcpServers',

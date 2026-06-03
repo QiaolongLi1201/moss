@@ -20,6 +20,7 @@ import type { SkillPipeline } from '@rdk-moss/skills';
 import type { AgentHooks } from './agent-hooks.js';
 import type { ThinkingLevel } from '../../provider/pi-ai-types.js';
 import type { SteeringRule } from '../loop/steering.js';
+import type { CapabilityPack } from '../packs/capability-pack.js';
 
 export interface ProviderConfig {
   llmProvider: LLMProvider;
@@ -115,6 +116,14 @@ export interface DmossAgentConfig
   maxAgentTurns?: number;
   /** Lifecycle hooks for host customization */
   hooks?: AgentHooks;
+  /**
+   * Optional capability packs mounted at construction. Each pack contributes a
+   * tool group, system-prompt layers, and declared host requirements, so the
+   * same capability surface (e.g. computer/software-dev, board/robotics) can be
+   * carried across hosts and deployments instead of re-glued per host.
+   * See `core/packs/capability-pack.ts`.
+   */
+  capabilityPacks?: CapabilityPack[];
   /** Prompt-cache policy for stable system prompt prefixes. */
   promptCache?: PromptCacheConfig;
 

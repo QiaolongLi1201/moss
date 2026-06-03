@@ -116,6 +116,8 @@ export type { InlineThinkingRouter } from './core/index.js';
 export { ToolRegistry } from './core/index.js';
 export type { ToolGroup, ToolRegistryOptions } from './core/index.js';
 export type { ToolContext, Tool, ToolCall, ToolResult, ToolResultOutcome, ToolContentBlock, StructuredToolResult } from './core/index.js';
+export { collectCapabilityPacks } from './core/index.js';
+export type { CapabilityPack, CapabilityPackContributions } from './core/index.js';
 /** @internal Tool pipeline implementation detail. */
 export { canHostInjectToolWithEmptyInput } from './core/index.js';
 export type {

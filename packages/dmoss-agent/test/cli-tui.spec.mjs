@@ -107,7 +107,7 @@ assert.deepEqual(
   null,
 );
 
-assert.equal(promptPlaceholder('ready'), 'Implement {feature}');
+assert.equal(promptPlaceholder('ready'), 'Ask Moss for code, board, or ROS help');
 assert.match(promptPlaceholder('running'), /running/);
 assert.match(promptPlaceholder('approval'), /approval/);
 assert.match(promptPlaceholder('approval'), /y, a, n/);

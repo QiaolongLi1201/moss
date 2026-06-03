@@ -437,6 +437,242 @@ export function promptCacheModeLabel(runtime?: CliRuntimeStatus): string {
   return runtime?.config?.promptCacheDebug === true ? 'cache debug' : 'cache stable';
 }
 
+export type ExecutionMode = 'pc-host' | 'on-board' | 'hybrid';
+
+export interface DeviceContextSummary {
+  mode: ExecutionMode;
+  runningOn: string;
+  targetDevice: string;
+  inference: string;
+  permissions: string;
+  policy: string;
+  deviceContext: string;
+  lockedCapabilities: string;
+}
+
+// Device-side Moss follows NemoClaw-like runtime principles without copying its
+// UI: explicit execution plane, filesystem/process/network policy, inference
+// routing, operator approval, lifecycle evidence, and recoverable board runtime.
+const DEVICE_WORKFLOWS = [
+  { title: 'Diagnose Board', description: 'OS, NPU, memory, temperature, services, network, logs' },
+  { title: 'Deploy Model', description: 'dependencies, inference run, benchmark, output evidence' },
+  { title: 'Bring up Sensor', description: 'camera, audio, IMU, serial, driver config, data flow' },
+  { title: 'Debug ROS/tros', description: 'topics, nodes, services, logs, graph health' },
+] as const;
+
+function isLikelyBoardRuntime(): boolean {
+  if (process.env.DMOSS_BOARD_RUNTIME === '1') return true;
+  if (process.env.RDK_BOARD || process.env.RDK_MODEL || process.env.TROS_DISTRO) return true;
+  if (process.platform !== 'linux') return false;
+  if (process.arch === 'arm64' || process.arch === 'arm') return true;
+  try {
+    const model = fs.readFileSync('/proc/device-tree/model', 'utf8').toLowerCase();
+    return /rdk|d-robotics|horizon|raspberry|rockchip|jetson/.test(model);
+  } catch {
+    return false;
+  }
+}
+
+function readFirstExisting(paths: readonly string[]): string | null {
+  for (const candidate of paths) {
+    try {
+      const value = fs.readFileSync(candidate, 'utf8').trim();
+      if (value) return sanitizeRenderableText(value);
+    } catch {
+      // Best-effort local fact collection; missing board files are expected on PCs.
+    }
+  }
+  return null;
+}
+
+function localBoardModel(): string | null {
+  return process.env.RDK_MODEL
+    || readFirstExisting(['/proc/device-tree/model', '/sys/firmware/devicetree/base/model']);
+}
+
+function localOsName(): string {
+  try {
+    const raw = fs.readFileSync('/etc/os-release', 'utf8');
+    const pretty = raw.match(/^PRETTY_NAME=(.*)$/m)?.[1] || raw.match(/^NAME=(.*)$/m)?.[1];
+    return pretty ? pretty.replace(/^"|"$/g, '') : `${process.platform} ${process.arch}`;
+  } catch {
+    return `${process.platform} ${process.arch}`;
+  }
+}
+
+function localMemoryLabel(): string {
+  try {
+    const raw = fs.readFileSync('/proc/meminfo', 'utf8');
+    const kb = Number(raw.match(/^MemTotal:\s+(\d+)/m)?.[1]);
+    if (Number.isFinite(kb) && kb > 0) return `${Math.round(kb / 1024 / 1024)}GB RAM`;
+  } catch {
+    // Not Linux or procfs unavailable.
+  }
+  return 'memory unknown';
+}
+
+function localTemperatureLabel(): string {
+  try {
+    const thermalRoot = '/sys/class/thermal';
+    const zones = fs.readdirSync(thermalRoot).filter((name) => name.startsWith('thermal_zone'));
+    for (const zone of zones) {
+      const raw = fs.readFileSync(path.join(thermalRoot, zone, 'temp'), 'utf8').trim();
+      const milli = Number(raw);
+      if (Number.isFinite(milli) && milli > 0) return `${Math.round(milli / 1000)}C`;
+    }
+  } catch {
+    // Thermal zones are board/OS specific.
+  }
+  return 'temperature unknown';
+}
+
+function localNpuLabel(): string {
+  const candidates = ['/dev/bpu0', '/dev/hobot_bpu', '/dev/jpu', '/sys/class/bpu'];
+  return candidates.some((candidate) => fs.existsSync(candidate)) ? 'NPU present' : 'NPU unknown';
+}
+
+function localCameraLabel(): string {
+  try {
+    const count = fs.readdirSync('/dev').filter((name) => /^video\d+$/.test(name)).length;
+    if (count > 0) return `${count} camera node${count === 1 ? '' : 's'}`;
+  } catch {
+    // /dev may be unavailable in tests or restricted containers.
+  }
+  return 'camera unknown';
+}
+
+function localRosLabel(): string {
+  if (process.env.TROS_DISTRO) return `TROS ${process.env.TROS_DISTRO}`;
+  if (process.env.ROS_DISTRO) return `ROS ${process.env.ROS_DISTRO}`;
+  return 'ROS graph unknown';
+}
+
+function localServiceLabel(): string {
+  try {
+    const procEntries = fs.readdirSync('/proc').filter((name) => /^\d+$/.test(name));
+    let count = 0;
+    for (const pid of procEntries.slice(0, 1024)) {
+      try {
+        const comm = fs.readFileSync(path.join('/proc', pid, 'comm'), 'utf8').toLowerCase();
+        if (/moss|ros|tros|hobot|bpu|camera/.test(comm)) count += 1;
+      } catch {
+        // Process may have exited between readdir and read.
+      }
+    }
+    return `${count} related service${count === 1 ? '' : 's'} seen`;
+  } catch {
+    return 'services unknown';
+  }
+}
+
+export function inferExecutionMode(runtime?: CliRuntimeStatus): ExecutionMode {
+  if (process.env.DMOSS_HYBRID_MODE === '1') return 'hybrid';
+  if (runtime?.meshEnabled && runtime?.device) return 'hybrid';
+  if (isLikelyBoardRuntime()) return 'on-board';
+  return 'pc-host';
+}
+
+function modeLabel(mode: ExecutionMode): string {
+  if (mode === 'on-board') return 'On-board Agent';
+  if (mode === 'hybrid') return 'Hybrid Agent';
+  return 'PC Host Agent';
+}
+
+function runningOnLabel(mode: ExecutionMode): string {
+  if (mode === 'on-board') return localBoardModel() || 'local RDK board';
+  if (mode === 'hybrid') return `${process.platform}/${process.arch} host + board runtime`;
+  return `${process.platform}/${process.arch} host`;
+}
+
+export function boardSurfaceLabel(runtime?: CliRuntimeStatus): string {
+  const mode = inferExecutionMode(runtime);
+  if (mode === 'on-board') return 'current machine is the board';
+  if (mode === 'hybrid' && runtime?.device) return `host -> board Moss ${runtime.device.user || 'root'}@${runtime.device.host}`;
+  if (runtime?.device) return `remote board ${runtime.device.user || 'root'}@${runtime.device.host}`;
+  return 'no board target';
+}
+
+function inferenceRouteLabel(runtime?: CliRuntimeStatus): string {
+  if (process.env.DMOSS_INFERENCE_ROUTE) return process.env.DMOSS_INFERENCE_ROUTE;
+  const baseUrl = runtime?.baseUrl || runtime?.config?.baseUrl || '';
+  const provider = runtime?.config?.provider || 'unknown';
+  if (/localhost|127\.0\.0\.1|::1/.test(baseUrl)) {
+    return inferExecutionMode(runtime) === 'on-board' ? 'local board inference' : 'local host inference';
+  }
+  if (provider === 'qwen' || provider === 'openai' || provider === 'anthropic') return `cloud routed (${provider})`;
+  return provider === 'unknown' ? 'inference route unknown' : `routed (${provider})`;
+}
+
+function permissionBoundaryLabel(runtime?: CliRuntimeStatus): string {
+  const safety = runtime?.config?.safetyMode || runtime?.safetyMode || 'workspace-write';
+  const approval = runtime?.config?.approvalPolicy || 'prompt';
+  if (safety === 'read-only') return 'diagnose allowed, repair blocked';
+  if (approval === 'prompt') return 'diagnose allowed, repair requires approval';
+  return 'diagnose and repair allowed by policy';
+}
+
+function runtimePolicyLabel(runtime?: CliRuntimeStatus): string {
+  const safety = runtime?.config?.safetyMode || runtime?.safetyMode || 'workspace-write';
+  const approval = runtime?.config?.approvalPolicy || 'prompt';
+  const fsPolicy = safety === 'read-only'
+    ? 'read-only fs'
+    : safety === 'full-access'
+      ? 'full fs with policy gates'
+      : 'workspace/runtime fs';
+  const processPolicy = approval === 'prompt'
+    ? 'process/service changes require approval'
+    : 'process/service changes auto-approved';
+  const networkPolicy = runtime?.meshEnabled ? 'mesh/network enabled' : 'network via approved tools';
+  return `${fsPolicy}  ·  ${processPolicy}  ·  ${networkPolicy}  ·  lifecycle install/upgrade/recover/uninstall requires evidence`;
+}
+
+function connectUnlockLine(runtime?: CliRuntimeStatus): string {
+  if (inferExecutionMode(runtime) === 'on-board' || runtime?.device) return 'device workflows unlocked';
+  return 'Connect a board to unlock: device diagnosis, model deployment, sensor bring-up, ROS/tros debugging, log collection';
+}
+
+function deviceContextLine(runtime?: CliRuntimeStatus): string {
+  const mode = inferExecutionMode(runtime);
+  if (mode === 'on-board') {
+    return [
+      localBoardModel() || 'RDK board',
+      localOsName(),
+      localNpuLabel(),
+      localCameraLabel(),
+      localRosLabel(),
+      localServiceLabel(),
+      localMemoryLabel(),
+      localTemperatureLabel(),
+    ].join('  ·  ');
+  }
+  if (runtime?.device) {
+    return `remote board ${runtime.device.host}:${runtime.device.port || 22}  ·  device facts available after diagnose`;
+  }
+  return 'no live board context  ·  local workspace only';
+}
+
+export function executionPlaneSummary(runtime?: CliRuntimeStatus): DeviceContextSummary {
+  const mode = inferExecutionMode(runtime);
+  return {
+    mode,
+    runningOn: runningOnLabel(mode),
+    targetDevice: boardSurfaceLabel(runtime),
+    inference: inferenceRouteLabel(runtime),
+    permissions: permissionBoundaryLabel(runtime),
+    policy: runtimePolicyLabel(runtime),
+    deviceContext: deviceContextLine(runtime),
+    lockedCapabilities: connectUnlockLine(runtime),
+  };
+}
+
+export function boardTip(runtime?: CliRuntimeStatus): string {
+  const mode = inferExecutionMode(runtime);
+  if (mode === 'on-board') return 'On-board Moss verifies by changing device state and returning logs, metrics, and service evidence.';
+  if (mode === 'hybrid') return 'Hybrid Moss routes development from host to board runtime with operator approval.';
+  if (runtime?.device) return 'PC Host Moss uses SSH/bridge tools for board diagnostics; ! stays on the host.';
+  return 'Connect an RDK board to move from repo-only help to hardware verification.';
+}
+
 export function footerHint(state: TuiRunState): string {
   if (state === 'approval') return 'y approve · a always this session · n/Esc deny';
   if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
@@ -615,7 +851,7 @@ export function completeSlashCommandInput(value: string, cursor: number): Prompt
 export function promptPlaceholder(state: TuiRunState): string {
   if (state === 'approval') return 'answer approval with y, a, n, or Esc';
   if (state === 'running') return 'running... /stop to cancel';
-  return 'Implement {feature}';
+  return 'Ask Moss for code, board, or ROS help';
 }
 
 export function statusBadge(state: TuiRunState): string {
@@ -925,15 +1161,67 @@ export interface WelcomePanelProps {
   model?: string;
   cacheMode?: string;
   profile?: string;
+  executionPlane?: DeviceContextSummary;
+  tip?: string;
 }
 
-export function WelcomePanel({ workspace: _workspace, device: _device, model: _model, cacheMode: _cacheMode, profile: _profile }: WelcomePanelProps): React.ReactElement {
+export function WelcomePanel({
+  workspace,
+  device: _device,
+  model: _model,
+  cacheMode: _cacheMode,
+  profile: _profile,
+  executionPlane,
+  tip,
+}: WelcomePanelProps): React.ReactElement {
+  const plane = executionPlane ?? executionPlaneSummary();
+  const resolvedTip = tip ?? boardTip();
   return React.createElement(
     Box,
     { flexDirection: 'column', marginTop: 1, marginBottom: 1 },
     React.createElement(Text, null,
-      React.createElement(Text, { bold: true }, 'Tip: '),
-      'Use ! for shell commands, / for commands, or ask for code/RDK help.',
+      React.createElement(Text, { color: theme.primary, bold: true }, 'Moss Runtime'),
+    ),
+    React.createElement(Text, null,
+      React.createElement(Text, { color: theme.textMuted }, '  Running on  '),
+      plane.runningOn,
+      React.createElement(Text, { color: theme.textMuted }, `  ·  Mode  ${modeLabel(plane.mode)}`),
+    ),
+    React.createElement(Text, null,
+      React.createElement(Text, { color: theme.textMuted }, '  Target      '),
+      React.createElement(Text, { color: plane.targetDevice.includes('no board') ? theme.textMuted : theme.success }, plane.targetDevice),
+    ),
+    React.createElement(Text, null,
+      React.createElement(Text, { color: theme.textMuted }, '  Workspace   '),
+      compactPath(workspace),
+    ),
+    React.createElement(Text, null,
+      React.createElement(Text, { color: theme.textMuted }, '  Inference   '),
+      plane.inference,
+    ),
+    React.createElement(Text, null,
+      React.createElement(Text, { color: theme.textMuted }, '  Permissions '),
+      plane.permissions,
+    ),
+    React.createElement(Text, { color: theme.textMuted }, `  Policy      ${plane.policy}`),
+    React.createElement(Text, { color: theme.textMuted }, `  Device      ${plane.deviceContext}`),
+    React.createElement(Text, { color: plane.lockedCapabilities.startsWith('Connect') ? theme.warn : theme.success },
+      `  ${plane.lockedCapabilities}`,
+    ),
+    React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
+      ...DEVICE_WORKFLOWS.map((workflow, index) => React.createElement(Text, { key: workflow.title },
+        React.createElement(Text, { color: theme.primary, bold: true }, `${index + 1}. ${workflow.title}`.padEnd(20)),
+        React.createElement(Text, { color: theme.textMuted }, workflow.description),
+      )),
+    ),
+    React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
+      React.createElement(Text, { color: theme.textMuted },
+        'Moss is device-centric: proof is device state, service recovery, sensor data, benchmark output, and logs.',
+      ),
+      React.createElement(Text, null,
+        React.createElement(Text, { bold: true }, 'Tip: '),
+        resolvedTip,
+      ),
     ),
   );
 }
@@ -1917,9 +2205,13 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const cacheMode = promptCacheModeLabel(runtime);
   const profile = runtime?.config?.profile || 'balanced';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
+  const executionPlane = executionPlaneSummary(runtime);
   const terminalRows = Math.max(12, stdout?.rows ?? 30);
   const inputFooterText = [
     currentModel || 'no model',
+    modeLabel(executionPlane.mode),
+    executionPlane.targetDevice,
+    executionPlane.inference,
     compactPath(workspace),
     runState === 'running' ? 'Esc cancel' : '/help',
     queuedInputs.length > 0 ? `queued ${queuedInputs.length}` : '',
@@ -1966,7 +2258,15 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
         ...(transcriptRows === undefined ? {} : { height: transcriptRows, overflow: 'hidden' }),
       },
       transcript.length === 0
-        ? React.createElement(WelcomePanel, { workspace, device, model: currentModel, cacheMode, profile })
+        ? React.createElement(WelcomePanel, {
+            workspace,
+            device,
+            model: currentModel,
+            cacheMode,
+            profile,
+            executionPlane,
+            tip: boardTip(runtime),
+          })
         : null,
       ...transcript.map((item) => React.createElement(TranscriptMessage, {
           key: item.id,

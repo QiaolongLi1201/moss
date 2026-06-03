@@ -17,6 +17,10 @@ import {
   PromptEditor,
   QueuePreview,
   renderMarkdown,
+  boardSurfaceLabel,
+  boardTip,
+  executionPlaneSummary,
+  inferExecutionMode,
 } from '../dist/cli/tui.js';
 
 const tests = [];
@@ -119,15 +123,112 @@ test('WelcomePanel renders a compact Claude Code-style tip', () => {
       device: 'no device',
       model: 'deepseek-v4-pro',
       profile: 'cautious',
+      executionPlane: {
+        mode: 'pc-host',
+        runningOn: 'darwin/arm64 host',
+        targetDevice: 'no board target',
+        inference: 'cloud routed (qwen)',
+        permissions: 'diagnose allowed, repair requires approval',
+        policy: 'workspace/runtime fs  ·  process/service changes require approval  ·  network via approved tools  ·  lifecycle install/upgrade/recover/uninstall requires evidence',
+        deviceContext: 'no live board context  ·  local workspace only',
+        lockedCapabilities: 'Connect a board to unlock: device diagnosis, model deployment, sensor bring-up, ROS/tros debugging, log collection',
+      },
+      tip: 'Connect an RDK board to move from repo-only help to hardware verification.',
     }),
   );
   const frame = lastFrame();
+  assert.match(frame, /Moss Runtime/);
+  assert.match(frame, /Running on\s+darwin\/arm64 host/);
+  assert.match(frame, /Mode\s+PC Host Agent/);
+  assert.match(frame, /Target\s+no board target/);
+  assert.match(frame, /Inference\s+cloud routed \(qwen\)/);
+  assert.match(frame, /Permissions\s+diagnose allowed, repair requires approval/);
+  assert.match(frame, /Policy\s+workspace\/runtime fs/);
+  assert.match(frame, /process\/service changes require approval/);
+  assert.match(frame, /lifecycle install\/upgrade\/recover\/uninstall requires evidence/);
+  assert.match(frame, /Device\s+no live board context/);
+  assert.match(frame, /Connect a board to unlock/);
+  assert.match(frame, /Diagnose Board/);
+  assert.match(frame, /Deploy Model/);
+  assert.match(frame, /Bring up Sensor/);
+  assert.match(frame, /Debug ROS\/tros/);
+  assert.match(frame, /Moss is device-centric/);
+  assert.match(frame, /device state/);
+  assert.match(frame, /benchmark output/);
   assert.match(frame, /Tip:/);
-  assert.match(frame, /Use ! for shell commands/);
-  assert.match(frame, /\/ for commands/);
+  assert.match(frame, /hardware verification/);
   assert.doesNotMatch(frame, /\/model\s+switch the model/);
   assert.doesNotMatch(frame, /profile cautious/);
   cleanup();
+});
+
+test('WelcomePanel highlights a connected board surface without command clutter', () => {
+  const { lastFrame } = render(
+    React.createElement(WelcomePanel, {
+      workspace: '/Users/me/project',
+      device: 'root@192.168.1.10',
+      executionPlane: {
+        mode: 'pc-host',
+        runningOn: 'darwin/arm64 host',
+        targetDevice: 'remote board root@192.168.1.10',
+        inference: 'cloud routed (qwen)',
+        permissions: 'diagnose allowed, repair requires approval',
+        policy: 'workspace/runtime fs  ·  process/service changes require approval  ·  network via approved tools  ·  lifecycle install/upgrade/recover/uninstall requires evidence',
+        deviceContext: 'remote board 192.168.1.10:22  ·  device facts available after diagnose',
+        lockedCapabilities: 'device workflows unlocked',
+      },
+      tip: 'PC Host Moss uses SSH/bridge tools for board diagnostics; ! stays on the host.',
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /remote board root@192\.168\.1\.10/);
+  assert.match(frame, /device workflows unlocked/);
+  assert.match(frame, /SSH\/bridge tools/);
+  assert.doesNotMatch(frame, /\/tools\s+show available tools/);
+  cleanup();
+});
+
+test('board surface helpers distinguish SSH and local-board modes', () => {
+  const previous = process.env.DMOSS_BOARD_RUNTIME;
+  delete process.env.DMOSS_BOARD_RUNTIME;
+  assert.equal(
+    boardSurfaceLabel({ device: { host: '192.168.1.10', user: 'root', port: 22 } }),
+    'remote board root@192.168.1.10',
+  );
+  assert.match(
+    boardTip({ device: { host: '192.168.1.10', user: 'root', port: 22 } }),
+    /SSH\/bridge tools/,
+  );
+  process.env.DMOSS_BOARD_RUNTIME = '1';
+  assert.equal(inferExecutionMode(), 'on-board');
+  assert.equal(boardSurfaceLabel(), 'current machine is the board');
+  if (previous === undefined) delete process.env.DMOSS_BOARD_RUNTIME;
+  else process.env.DMOSS_BOARD_RUNTIME = previous;
+});
+
+test('executionPlaneSummary models PC Host, On-board, and Hybrid modes', () => {
+  const previousBoard = process.env.DMOSS_BOARD_RUNTIME;
+  const previousHybrid = process.env.DMOSS_HYBRID_MODE;
+  delete process.env.DMOSS_BOARD_RUNTIME;
+  delete process.env.DMOSS_HYBRID_MODE;
+  assert.equal(executionPlaneSummary({ config: { provider: 'qwen', safetyMode: 'workspace-write', approvalPolicy: 'prompt' } }).mode, 'pc-host');
+  process.env.DMOSS_BOARD_RUNTIME = '1';
+  const onboard = executionPlaneSummary({ config: { provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:8000', safetyMode: 'workspace-write', approvalPolicy: 'prompt' } });
+  assert.equal(onboard.mode, 'on-board');
+  assert.match(onboard.targetDevice, /current machine is the board/);
+  assert.match(onboard.inference, /local board inference/);
+  process.env.DMOSS_HYBRID_MODE = '1';
+  const hybrid = executionPlaneSummary({
+    meshEnabled: true,
+    device: { host: '192.168.1.10', user: 'root' },
+    config: { provider: 'qwen', safetyMode: 'workspace-write', approvalPolicy: 'prompt' },
+  });
+  assert.equal(hybrid.mode, 'hybrid');
+  assert.match(hybrid.targetDevice, /host -> board Moss root@192\.168\.1\.10/);
+  if (previousBoard === undefined) delete process.env.DMOSS_BOARD_RUNTIME;
+  else process.env.DMOSS_BOARD_RUNTIME = previousBoard;
+  if (previousHybrid === undefined) delete process.env.DMOSS_HYBRID_MODE;
+  else process.env.DMOSS_HYBRID_MODE = previousHybrid;
 });
 
 // ───── ActivityItemLine ─────
@@ -343,12 +444,12 @@ test('PromptEditor renders a Codex-style placeholder at the prompt', () => {
       value: '',
       onChange: () => undefined,
       onSubmit: () => undefined,
-      placeholder: 'Implement {feature}',
+      placeholder: 'Ask Moss for code, board, or ROS help',
       disabled: false,
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /› ▌Implement \{feature\}/);
+  assert.match(frame, /› ▌Ask Moss for code, board, or ROS help/);
   cleanup();
 });
 

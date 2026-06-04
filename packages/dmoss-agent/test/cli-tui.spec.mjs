@@ -124,7 +124,8 @@ assert.match(footerHint('approval'), /a always this session/);
 assert.match(footerHint('running'), /Esc cancel/);
 assert.match(footerHint('running'), /Enter queue/);
 assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-v4-pro' }), 2);
-assert.equal(promptEditorRowBudget('/'), 15);
+// '/' previews the full command dropdown; this budget tracks its row count — update when commands are added/removed.
+assert.equal(promptEditorRowBudget('/'), 20);
 assert.equal(promptEditorRowBudget('/que'), 4);
 assert.equal(promptEditorRowBudget('/staus'), 3);
 assert.equal(promptEditorRowBudget(Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join('\n')), 9);

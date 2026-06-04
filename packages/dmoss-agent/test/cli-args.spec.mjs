@@ -115,10 +115,20 @@ import { parseCliArgs } from '../dist/cli/args.js';
   assert.equal(parsed.prompt, '');
 }
 
+{
+  const parsed = parseCliArgs(['-p', '--output-format', 'stream-json', '--max-turns', '3', 'hello']);
+  assert.equal(parsed.print, true);
+  assert.equal(parsed.outputFormat, 'stream-json');
+  assert.equal(parsed.maxTurns, 3);
+  assert.equal(parsed.configOverrides.maxAgentTurns, 3);
+  assert.equal(parsed.prompt, 'hello');
+}
+
 assert.throws(() => parseCliArgs(['-c', 'temperature=0.7']), /Unsupported --config key/);
 assert.throws(() => parseCliArgs(['-c', 'profile=reckless']), /Unsupported profile/);
 assert.throws(() => parseCliArgs(['-c', 'trustedTools=!write_*']), /Unsupported trusted tool name/);
 assert.throws(() => parseCliArgs(['-c', 'maxTurns=0']), /Unsupported maxAgentTurns/);
 assert.throws(() => parseCliArgs(['-c', 'contextTokens=1.5']), /Unsupported contextTokens/);
+assert.throws(() => parseCliArgs(['--max-turns', '0', 'hello']), /--max-turns/);
 
 console.log('[PASS] CLI argument parser preserves prompts and override flags');

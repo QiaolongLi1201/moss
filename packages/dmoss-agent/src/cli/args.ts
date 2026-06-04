@@ -21,6 +21,7 @@ export interface ParsedCliArgs {
   version: boolean;
   print: boolean;
   outputFormat: 'text' | 'json' | 'stream-json';
+  maxTurns?: number;
   rawArgv: string[];
 }
 
@@ -152,6 +153,7 @@ function flagConsumesNext(arg: string): boolean {
     arg === '--fork-from' ||
     arg === '--detail' ||
     arg === '--output-format' ||
+    arg === '--max-turns' ||
     arg === '--log-level';
 }
 
@@ -183,6 +185,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
   let version = false;
   let print = false;
   let outputFormat: ParsedCliArgs['outputFormat'] = 'text';
+  let maxTurns: number | undefined;
   let promptOnly = false;
 
   for (let i = 0; i < argv.length; i++) {
@@ -224,6 +227,17 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
       }
       outputFormat = fmt;
       print = true;
+      i = parsed.nextIndex;
+      continue;
+    }
+    if (arg === '--max-turns' || arg.startsWith('--max-turns=')) {
+      const parsed = readValue(argv, i, arg);
+      const n = Number(parsed.value.trim());
+      if (!Number.isInteger(n) || n <= 0) {
+        throw new Error(`--max-turns must be a positive integer, got "${parsed.value}"`);
+      }
+      maxTurns = n;
+      configOverrides.maxAgentTurns = n;
       i = parsed.nextIndex;
       continue;
     }
@@ -346,6 +360,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     version,
     print,
     outputFormat,
+    maxTurns,
     rawArgv: argv,
   };
 }

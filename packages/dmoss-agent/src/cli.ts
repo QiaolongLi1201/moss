@@ -343,14 +343,31 @@ async function main() {
     }
 
     if (oneShotMessage) {
-      await runOneShot(agent, oneShotMessage, skillLearner, { sessionKey: session.sessionKey, outputFormat: parsedArgs.outputFormat });
+      await runOneShot(agent, oneShotMessage, skillLearner, {
+        sessionKey: session.sessionKey,
+        outputFormat: parsedArgs.print ? parsedArgs.outputFormat : 'text',
+        headless: parsedArgs.print || parsedArgs.maxTurns !== undefined,
+        cwd: workspace,
+      });
       return;
     }
 
     if (!process.stdin.isTTY) {
       let piped = '';
       for await (const chunk of process.stdin) piped += chunk;
-      if (piped.trim()) await runOneShot(agent, piped.trim(), skillLearner, { sessionKey: session.sessionKey, outputFormat: parsedArgs.outputFormat });
+      if (piped.trim()) {
+        await runOneShot(agent, piped.trim(), skillLearner, {
+          sessionKey: session.sessionKey,
+          outputFormat: parsedArgs.print ? parsedArgs.outputFormat : 'text',
+          headless: parsedArgs.print || parsedArgs.maxTurns !== undefined,
+          cwd: workspace,
+        });
+      }
+      return;
+    }
+    if (parsedArgs.print) {
+      console.error('Error: --print requires a prompt argument or piped stdin');
+      process.exitCode = 1;
       return;
     }
     await runInteractive(agent, skillLearner, {

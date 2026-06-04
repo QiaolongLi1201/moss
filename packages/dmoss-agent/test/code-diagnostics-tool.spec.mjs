@@ -28,7 +28,7 @@ console.log('[TEST] an explicit failing command is framed as diagnostics found')
   const failingChecker = path.join(dir, 'fail-check.mjs');
   await fs.writeFile(failingChecker, "console.error('type error on line 4'); process.exit(2);\n");
   const out = await codeDiagnosticsTool.execute(
-    { command: `node ${JSON.stringify(failingChecker)}` },
+    { command: 'node fail-check.mjs' },
     CTX,
   );
   assert.match(out, /Diagnostics reported \(exit 2\)/, 'non-zero exit should be framed as diagnostics');

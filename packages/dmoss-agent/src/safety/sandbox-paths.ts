@@ -53,7 +53,10 @@ async function assertNoSymlink(relative: string, root: string): Promise<void> {
     try {
       const stat = await fs.lstat(current);
       if (stat.isSymbolicLink()) {
-        throw new DmossError({ code: ErrorCode.TOOL_NOT_ALLOWED, message: `Path contains symlink: ${current}` });
+        throw new DmossError({
+          code: ErrorCode.TOOL_NOT_ALLOWED,
+          message: `Path contains symlink: ${current}`,
+        });
       }
     } catch (err) {
       const anyErr = err as { code?: string };
@@ -62,6 +65,24 @@ async function assertNoSymlink(relative: string, root: string): Promise<void> {
       }
       throw err;
     }
+  }
+}
+
+async function assertRootIsNotSymlink(root: string): Promise<void> {
+  try {
+    const stat = await fs.lstat(root);
+    if (stat.isSymbolicLink()) {
+      throw new DmossError({
+        code: ErrorCode.TOOL_NOT_ALLOWED,
+        message: `Sandbox root is a symlink: ${root}`,
+      });
+    }
+  } catch (err) {
+    const anyErr = err as { code?: string };
+    if (anyErr.code === 'ENOENT') {
+      return;
+    }
+    throw err;
   }
 }
 
@@ -96,7 +117,10 @@ export function resolveSandboxPath(params: {
       }
     }
   }
-  throw new DmossError({ code: ErrorCode.TOOL_NOT_ALLOWED, message: `Path escapes workspace (${shortPath(path.resolve(params.root))}): ${params.filePath}` });
+  throw new DmossError({
+    code: ErrorCode.TOOL_NOT_ALLOWED,
+    message: `Path escapes workspace (${shortPath(path.resolve(params.root))}): ${params.filePath}`,
+  });
 }
 
 export async function assertSandboxPath(params: {
@@ -106,6 +130,7 @@ export async function assertSandboxPath(params: {
   extraRoots?: string[];
 }): Promise<{ resolved: string; relative: string }> {
   const resolved = resolveSandboxPath(params);
+  await assertRootIsNotSymlink(resolved.matchedRoot);
   await assertNoSymlink(resolved.relative, resolved.matchedRoot);
 
   // TOCTOU mitigation: re-verify via realpath that no symlink was inserted
@@ -114,11 +139,11 @@ export async function assertSandboxPath(params: {
   try {
     const realResolved = await fs.realpath(resolved.resolved);
     const realRoot = await fs.realpath(resolved.matchedRoot);
-    if (
-      !realResolved.startsWith(realRoot + path.sep) &&
-      realResolved !== realRoot
-    ) {
-      throw new DmossError({ code: ErrorCode.TOOL_NOT_ALLOWED, message: `path escapes sandbox after realpath resolution: ${params.filePath}` });
+    if (!realResolved.startsWith(realRoot + path.sep) && realResolved !== realRoot) {
+      throw new DmossError({
+        code: ErrorCode.TOOL_NOT_ALLOWED,
+        message: `path escapes sandbox after realpath resolution: ${params.filePath}`,
+      });
     }
   } catch (err) {
     const anyErr = err as { code?: string };

@@ -54,6 +54,11 @@
       "types": "./dist/prompts/robotics-engineering-prompt.d.ts",
       "import": "./dist/prompts/robotics-engineering-prompt.js",
       "default": "./dist/prompts/robotics-engineering-prompt.js"
+    },
+    "./prompts/software-engineering": {
+      "types": "./dist/prompts/software-engineering-prompt.d.ts",
+      "import": "./dist/prompts/software-engineering-prompt.js",
+      "default": "./dist/prompts/software-engineering-prompt.js"
     }
   },
   "publishConfig": {

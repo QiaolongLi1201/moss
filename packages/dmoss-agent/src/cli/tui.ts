@@ -10,6 +10,7 @@ import type { SkillLearner } from '../core/memory/skill-learner.js';
 import type { SessionMeta } from '../core/session/session.js';
 import { SkillRegistry, type SkillMeta } from '../skills/index.js';
 import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type CliInteractionMode } from './approval.js';
+import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
 import { startCliUpdateCheck } from './update-check.js';
@@ -1506,6 +1507,7 @@ function commandRowsForInput(value: string): Array<[string, string]> {
     ['/sessions', 'show current and recent saved sessions'],
     ['/context', 'context window token usage'],
     ['/cost', 'session token usage estimate'],
+    ['/rewind', 'list / undo file changes to a checkpoint'],
     ['/thinking', 'toggle thinking deltas'],
     ['/clear', 'clear visible transcript'],
     ['/quit', 'exit D-Moss'],
@@ -1703,6 +1705,13 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const app = useApp();
   const { stdout } = useStdout();
   const workspace = runtime?.workspace || process.cwd();
+  const checkpointRef = useRef<FileCheckpointStore | null>(null);
+  if (!checkpointRef.current) {
+    checkpointRef.current = new FileCheckpointStore({
+      runtimeDir: runtime?.runtimeDir || `${workspace}/.dmoss-runtime`,
+      sessionKey,
+    });
+  }
   const [input, setInput] = useState('');
   const [inputCursor, setInputCursor] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -1841,6 +1850,25 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   useEffect(() => {
     setCliInteractionMode(interactionMode);
   }, [interactionMode]);
+
+  useEffect(() => {
+    const parsePatchPaths = (patch: string): string[] => {
+      const out: string[] = [];
+      for (const m of patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)) out.push(m[1].trim());
+      return out;
+    };
+    agent.registerPreToolHook({
+      name: 'file-checkpoint',
+      priority: 5,
+      async check({ tool, input }) {
+        for (const p of checkpointTargetPaths(tool.name, input, workspace, parsePatchPaths)) {
+          checkpointRef.current?.trackBeforeWrite(p);
+        }
+        return null;
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!runtime?.configDir) return;
@@ -2032,6 +2060,31 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       }
       return true;
     }
+    if (message === '/rewind' || message.startsWith('/rewind ')) {
+      const store = checkpointRef.current;
+      if (!store || !store.hasCheckpoints()) {
+        addTranscript('system', 'No checkpoints yet — file edits this session can be rewound here.');
+        return true;
+      }
+      const arg = message.slice('/rewind'.length).trim();
+      if (!arg) {
+        addTranscript('system', [
+          'Checkpoints (newest last) — /rewind <seq> to restore files:',
+          ...store.list().map((c) => `  #${c.seq}  ${c.label}  (${c.fileCount} file${c.fileCount === 1 ? '' : 's'})`),
+        ].join('\n'));
+        return true;
+      }
+      const seq = Number.parseInt(arg, 10);
+      if (Number.isNaN(seq)) {
+        addTranscript('system', 'Usage: /rewind [seq]');
+        return true;
+      }
+      const restored = store.rewindTo(seq);
+      addTranscript('system', restored.length
+        ? `Rewound ${restored.length} file(s) to checkpoint #${seq}.`
+        : `Checkpoint #${seq} not found.`);
+      return true;
+    }
     if (message === '/models') {
       addTranscript('system', modelExamples(currentModel));
       return true;
@@ -2109,6 +2162,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
 
   const runPrompt = useCallback(async (message: string): Promise<void> => {
     addTranscript('user', message);
+    checkpointRef.current?.open(message);
     setBusyState(true);
     answerIdRef.current = null;
     const controller = new AbortController();
@@ -2399,6 +2453,7 @@ function commandList(): string {
     '  /sessions          show current and recent saved sessions',
     '  /context           context window token usage',
     '  /cost              session token usage estimate',
+    '  /rewind [seq]      list or undo file changes to a checkpoint',
     '',
     'Conversation',
     '  /clear             clear visible transcript',

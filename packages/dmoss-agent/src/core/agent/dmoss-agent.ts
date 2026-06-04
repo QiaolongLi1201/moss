@@ -77,7 +77,7 @@ import {
   createModelDefFromDmossConfig,
 } from './dmoss-agent-loop-adapter.js';
 import { createStreamFunctionFromLlmProvider } from '../llm/llm-provider-stream-adapter.js';
-import { ToolHookRegistry, createSecretSanitizerHook } from '../tools/tool-hooks.js';
+import { ToolHookRegistry, createSecretSanitizerHook, type PreToolUseHook } from '../tools/tool-hooks.js';
 import { CommandQueueRegistry } from './command-queue.js';
 import { sanitizeSecrets } from '../../safety/secret-sanitizer.js';
 import { DmossError, ErrorCode } from '../../errors.js';
@@ -343,6 +343,11 @@ export class DmossAgent {
   // ─── Tool execution ───────────────────────────────────────────
 
   // ─── Single-turn chat ─────────────────────────────────────────
+
+  /** 注册写前 pre-hook（文件检查点备份等）；交互式宿主 mount 时调用，运行时生效。 */
+  registerPreToolHook(hook: PreToolUseHook): void {
+    this.toolHooks.registerPre(hook);
+  }
 
   /**
    * Single-turn convenience wrapper around `streamChat`.

@@ -25,7 +25,12 @@ console.log('[TEST] auto-detects a package.json check script and reports pass');
 
 console.log('[TEST] an explicit failing command is framed as diagnostics found');
 {
-  const out = await codeDiagnosticsTool.execute({ command: 'echo "type error on line 4"; exit 2' }, CTX);
+  const failingChecker = path.join(dir, 'fail-check.mjs');
+  await fs.writeFile(failingChecker, "console.error('type error on line 4'); process.exit(2);\n");
+  const out = await codeDiagnosticsTool.execute(
+    { command: `node ${JSON.stringify(failingChecker)}` },
+    CTX,
+  );
   assert.match(out, /Diagnostics reported \(exit 2\)/, 'non-zero exit should be framed as diagnostics');
   assert.match(out, /type error on line 4/, 'checker output should be included');
 }

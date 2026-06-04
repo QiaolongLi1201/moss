@@ -1,7 +1,7 @@
 /**
  * Environment context layer — a session-start snapshot of the working
  * environment, injected into the system prompt so a standalone `moss` run is
- * oriented in the project the way a host app (RDK Studio) orients it.
+ * oriented in the project the way a host application orients it.
  *
  * Captures: working directory, platform, date, a shallow top-level file listing,
  * and git state (branch, uncommitted changes, recent commits). The snapshot is

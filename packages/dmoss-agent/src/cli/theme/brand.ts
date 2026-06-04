@@ -1,5 +1,5 @@
 // ────────────────────────────────────────────────────────────────────────────
-// CLI brand mark — the RDK Studio / D-Moss logo, rendered for a terminal.
+// CLI brand mark — the D-Moss logo, rendered for a terminal.
 //
 // The product app icon is an orange "cloud" carrying a white `>_` terminal
 // prompt with a teal cursor square. In a TUI we distill that to a tiny two-part
@@ -22,7 +22,7 @@ export interface BrandMark {
 
 /**
  * The inline brand mark shown before the product name: an orange prompt chevron
- * followed by a cyan cursor square (`❯▪`), echoing the RDK Studio app icon's
+ * followed by a cyan cursor square (`❯▪`), echoing the app icon's
  * `>_` prompt and teal cursor. Sits next to "D-Moss Code" the way Claude Code's
  * `✻` sits next to its name. Pass `{ ascii: true }` for terminals without these
  * glyphs (e.g. `DMOSS_TUI_NO_EMOJI`).

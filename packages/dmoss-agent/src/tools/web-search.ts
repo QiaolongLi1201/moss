@@ -8,9 +8,9 @@
  * Design (mirrors web-fetch.ts):
  *   - Zero hard dependency beyond global `fetch` (Node 18+).
  *   - Pluggable backend: keyless **DuckDuckGo** by default; **Brave** when an
- *     API key is supplied; or a host-injected `search` function (e.g. an
- *     OpenClaw multi-engine backplane). Tool name + `query` input stay stable
- *     so consumers (RDK Studio UI) work regardless of backend.
+ *     API key is supplied; or a host-injected `search` function (e.g. a
+ *     multi-engine backplane). Tool name + `query` input stay stable
+ *     so consumers work regardless of backend.
  *   - Safe-by-default: per-call timeout, result cap, fixed provider host
  *     (the model's query is URL-encoded into a constant host — no SSRF surface).
  *   - Returns a compact, source-linked result list for the LLM to act on
@@ -57,7 +57,7 @@ export type WebSearchBackend = (
 export interface WebSearchOptions {
   /**
    * Custom backend. Takes precedence over `provider`. Use this to route to a
-   * proprietary search API or an OpenClaw multi-engine backplane.
+   * proprietary search API or a multi-engine backplane.
    */
   search?: WebSearchBackend;
   /** Built-in provider when `search` is not supplied. Default: `duckduckgo`. */

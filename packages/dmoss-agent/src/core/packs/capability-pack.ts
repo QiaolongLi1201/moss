@@ -11,7 +11,7 @@
  *  - the host-adapter capability kinds it expects the host to provide
  *    (`requiredHostCapabilities`).
  *
- * The same pack can be mounted by any host — RDK Studio, a CLI/TUI on a PC or a
+ * The same pack can be mounted by any host — a desktop IDE, a CLI/TUI on a PC or a
  * board, or another embedding product — so a Moss agent carries the same
  * capability surface across deployments instead of each host re-gluing its own
  * tools and prompts. This file is the *contract* plus a *pure collector*. The

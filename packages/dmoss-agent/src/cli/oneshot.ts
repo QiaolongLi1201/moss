@@ -37,7 +37,11 @@ export async function runOneShot(
   const outputFormat = options.outputFormat || 'text';
   const stdout = options.stdout ?? process.stdout;
   const renderer = outputFormat === 'text' ? createCliRunRenderer() : null;
-  const state = createHeadlessPrintState({ sessionId: sessionKey });
+  const state = createHeadlessPrintState({
+    sessionId: sessionKey,
+    model: agent.config.model,
+    startTime: Date.now(),
+  });
   let finalResult: HeadlessResultEvent | undefined;
 
   function rememberStructuredResult(events: HeadlessStreamEvent[]): void {

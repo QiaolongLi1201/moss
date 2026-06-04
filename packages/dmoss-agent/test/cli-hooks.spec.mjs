@@ -57,6 +57,13 @@ console.log('[TEST] a PreToolUse hook that exits 0 approves');
   assert.equal(d.approved, true);
 }
 
+console.log('[TEST] a short-lived hook that closes stdin does not crash on EPIPE');
+{
+  const h = createConfiguredHookCallbacks({ PreToolUse: [{ command: 'exec 0<&-; exit 0' }] }, { workspaceDir: dir });
+  const d = await h.onBeforeToolExec(req('exec'));
+  assert.equal(d.approved, true);
+}
+
 console.log('[TEST] matcher scopes the hook to specific tools');
 {
   const h = createConfiguredHookCallbacks(

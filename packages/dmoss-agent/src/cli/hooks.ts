@@ -89,6 +89,11 @@ function runHookCommand(
     child.stderr?.on('data', (c: Buffer) => {
       stderr += c.toString();
     });
+    child.stdin?.on('error', (err: Error & { code?: string }) => {
+      if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') return;
+      clearTimeout(timer);
+      finish({ exitCode: 1, stdout, stderr: err.message });
+    });
     child.on('error', (err) => {
       clearTimeout(timer);
       finish({ exitCode: 1, stdout, stderr: err.message });

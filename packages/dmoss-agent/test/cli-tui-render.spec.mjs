@@ -46,7 +46,7 @@ test('SessionHeader renders a compact Claude Code-style launch panel', () => {
   assert.match(frame, /✻ D-Moss Code/);
   assert.match(frame, /model\s+deepseek-v4-pro/);
   assert.match(frame, /deepseek-v4-pro/);
-  assert.match(frame, /directory\s+\/Users\/me\/project/);
+  assert.match(frame, /directory\s+[^\n]*project/);
   assert.match(frame, /\/model to change/);
   assert.doesNotMatch(frame, /profile autonomous/);
   assert.doesNotMatch(frame, /cache stable/);

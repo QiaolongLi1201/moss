@@ -343,14 +343,14 @@ async function main() {
     }
 
     if (oneShotMessage) {
-      await runOneShot(agent, oneShotMessage, skillLearner, { sessionKey: session.sessionKey });
+      await runOneShot(agent, oneShotMessage, skillLearner, { sessionKey: session.sessionKey, outputFormat: parsedArgs.outputFormat });
       return;
     }
 
     if (!process.stdin.isTTY) {
       let piped = '';
       for await (const chunk of process.stdin) piped += chunk;
-      if (piped.trim()) await runOneShot(agent, piped.trim(), skillLearner, { sessionKey: session.sessionKey });
+      if (piped.trim()) await runOneShot(agent, piped.trim(), skillLearner, { sessionKey: session.sessionKey, outputFormat: parsedArgs.outputFormat });
       return;
     }
     await runInteractive(agent, skillLearner, {

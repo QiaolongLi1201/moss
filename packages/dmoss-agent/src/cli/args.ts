@@ -19,6 +19,8 @@ export interface ParsedCliArgs {
   mesh: boolean;
   help: boolean;
   version: boolean;
+  print: boolean;
+  outputFormat: 'text' | 'json' | 'stream-json';
   rawArgv: string[];
 }
 
@@ -149,6 +151,7 @@ function flagConsumesNext(arg: string): boolean {
     arg === '--session' ||
     arg === '--fork-from' ||
     arg === '--detail' ||
+    arg === '--output-format' ||
     arg === '--log-level';
 }
 
@@ -178,6 +181,8 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
   let mesh = false;
   let help = false;
   let version = false;
+  let print = false;
+  let outputFormat: ParsedCliArgs['outputFormat'] = 'text';
   let promptOnly = false;
 
   for (let i = 0; i < argv.length; i++) {
@@ -205,6 +210,21 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
       continue;
     }
     if (arg === '--debug' || arg === '--json' || arg === '--no-color' || arg === '--setup') {
+      continue;
+    }
+    if (arg === '-p' || arg === '--print') {
+      print = true;
+      continue;
+    }
+    if (arg === '--output-format' || arg.startsWith('--output-format=')) {
+      const parsed = readValue(argv, i, arg);
+      const fmt = parsed.value.trim();
+      if (fmt !== 'text' && fmt !== 'json' && fmt !== 'stream-json') {
+        throw new Error(`--output-format must be text|json|stream-json, got "${fmt}"`);
+      }
+      outputFormat = fmt;
+      print = true;
+      i = parsed.nextIndex;
       continue;
     }
     if (arg === '--log-level' || arg.startsWith('--log-level=')) {
@@ -324,6 +344,8 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     mesh,
     help,
     version,
+    print,
+    outputFormat,
     rawArgv: argv,
   };
 }

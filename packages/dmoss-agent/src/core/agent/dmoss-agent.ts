@@ -21,7 +21,7 @@ const log = getRootLogger().child('agent');
 import { ToolRegistry } from '../tools/tool-registry.js';
 import type { AgentHooks } from './agent-hooks.js';
 import { KnowledgeRegistry, drainPendingGlobalModules } from '../../knowledge/registry.js';
-import { buildRoboticsEngineeringPrompt, DEFAULT_MODEL } from '@rdk-moss/core';
+import { buildAgentBehaviorPrompt, buildRoboticsEngineeringPrompt, DEFAULT_MODEL } from '@rdk-moss/core';
 import type { KnowledgeModule } from '@rdk-moss/core';
 import {
   createInMemoryMossAsyncTaskRegistry,
@@ -277,6 +277,15 @@ export class DmossAgent {
       parts.push(this.config.domainPrompt());
     } else {
       parts.push(buildRoboticsEngineeringPrompt());
+    }
+
+    // ── Domain-independent behavior contract ──
+    // Communication style / code-change discipline / faithful reporting /
+    // careful execution. Sits alongside (not inside) the domain persona so it
+    // is always present regardless of which persona the host selected, and is
+    // part of the cached stable layer.
+    if (this.config.includeAgentBehaviorPrompt !== false) {
+      parts.push(buildAgentBehaviorPrompt());
     }
 
     // ── Prompt injection defense ──

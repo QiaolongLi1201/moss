@@ -58,6 +58,32 @@ function buildAnthropicSystemPrompt(
   return blocks;
 }
 
+type AnthropicToolBlock = {
+  name: string;
+  description: string;
+  input_schema: unknown;
+  cache_control?: { type: 'ephemeral' };
+};
+
+/**
+ * Map tools to Anthropic shape and mark the prefix as cacheable. A single
+ * `cache_control` on the LAST tool tells Anthropic to cache everything up to
+ * and including the tools block, so the (stable) system + tools prefix is
+ * re-used across turns instead of being re-billed and re-processed every turn.
+ */
+function buildAnthropicTools(
+  tools: ReadonlyArray<{ name: string; description: string; input_schema: unknown }> | undefined,
+): AnthropicToolBlock[] | undefined {
+  if (!tools || tools.length === 0) return undefined;
+  const mapped: AnthropicToolBlock[] = tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.input_schema,
+  }));
+  mapped[mapped.length - 1].cache_control = { type: 'ephemeral' };
+  return mapped;
+}
+
 export class AnthropicLLMProvider implements LLMProvider {
   readonly id = 'anthropic';
   readonly displayName = 'Anthropic Claude';
@@ -89,11 +115,7 @@ export class AnthropicLLMProvider implements LLMProvider {
         role: m.role,
         content: m.content,
       })),
-      tools: opts.tools?.map((t) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.input_schema,
-      })),
+      tools: buildAnthropicTools(opts.tools),
       stream: true,
       ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
     };
@@ -125,6 +147,8 @@ export class AnthropicLLMProvider implements LLMProvider {
     let stopReason: LLMResponse['stopReason'] = 'end_turn';
     let inputTokens = 0;
     let outputTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheCreationTokens = 0;
     let currentTextBlock = -1;
     let currentToolBlock = -1;
     let toolInputJson = '';
@@ -160,6 +184,8 @@ export class AnthropicLLMProvider implements LLMProvider {
           const usage = event.message?.usage as Record<string, number> | undefined;
           if (usage) {
             inputTokens = usage.input_tokens ?? 0;
+            cacheReadTokens = usage.cache_read_input_tokens ?? 0;
+            cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
           }
           break;
         }
@@ -305,7 +331,7 @@ export class AnthropicLLMProvider implements LLMProvider {
     return {
       content,
       stopReason,
-      usage: { inputTokens, outputTokens },
+      usage: { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens },
       ...(thinking.length > 0 ? { thinking } : {}),
     };
   }

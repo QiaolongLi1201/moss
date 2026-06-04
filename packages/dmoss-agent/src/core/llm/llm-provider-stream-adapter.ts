@@ -125,11 +125,13 @@ function mapDoneReason(
 
 function mapUsage(usage: LLMResponse['usage'] | undefined): Usage {
   if (!usage) return EMPTY_USAGE;
+  const cacheRead = usage.cacheReadTokens ?? 0;
+  const cacheWrite = usage.cacheCreationTokens ?? 0;
   return {
     input: usage.inputTokens,
     output: usage.outputTokens,
-    cacheRead: 0,
-    cacheWrite: 0,
+    cacheRead,
+    cacheWrite,
     totalTokens: usage.inputTokens + usage.outputTokens,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };

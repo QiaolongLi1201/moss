@@ -301,12 +301,12 @@ async function testSafeOperations() {
   const { readFileTool, writeFileTool, listDirectoryTool } =
     await import('../dist/tools/builtin.js');
 
-  // read_file within workspace should work
+  // read_file within workspace should work (output is cat -n line-numbered)
   const readResult = await readFileTool.execute(
     { path: 'hello.txt' },
     { workspaceDir, sessionKey: 'security-test' },
   );
-  assert.equal(readResult, 'hello world');
+  assert.match(readResult, /hello world/);
 
   // write_file within workspace should work
   const writeResult = await writeFileTool.execute(

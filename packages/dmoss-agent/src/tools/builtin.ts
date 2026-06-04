@@ -42,11 +42,64 @@ async function safePath(inputPath: string, workspaceDir: string): Promise<string
   return resolved;
 }
 
+// ── Read-before-edit / stale-write guard ──────────────────────────────────
+// Maps a resolved absolute path to the on-disk mtimeMs observed the last time
+// the agent read or wrote it, so write_file/edit_file can refuse to silently
+// clobber a file that changed on disk since the agent last saw it (external
+// editor, linter, concurrent session). Module-scoped because file identity is
+// global, not session-scoped — a single map is correct and cheap.
+const fileReadState = new Map<string, number>();
+
+async function recordFileState(resolvedPath: string): Promise<void> {
+  try {
+    const st = await fs.stat(resolvedPath);
+    fileReadState.set(resolvedPath, st.mtimeMs);
+  } catch {
+    /* file may not exist yet — nothing to record */
+  }
+}
+
+/**
+ * Returns an error string when `resolvedPath` was read earlier but has since
+ * been modified on disk; otherwise null. Only trips when we have a prior read
+ * AND the file shows a strictly newer mtime — never blocks first-touch writes
+ * or brand-new files, keeping false positives near zero.
+ */
+async function staleWriteError(resolvedPath: string, displayPath: string): Promise<string | null> {
+  const seen = fileReadState.get(resolvedPath);
+  if (seen === undefined) return null;
+  let current: number;
+  try {
+    current = (await fs.stat(resolvedPath)).mtimeMs;
+  } catch {
+    return null; // gone on disk — let the write/create proceed
+  }
+  if (current > seen + 1) {
+    return (
+      `File has been modified since you last read it: ${displayPath}. ` +
+      `Another process (editor, linter, or a concurrent task) changed it on disk. ` +
+      `Read it again to get the current contents before writing, so you do not overwrite those changes.`
+    );
+  }
+  return null;
+}
+
+const LINE_NUMBER_WIDTH = 6;
+
+/** Prefix each line with a right-aligned line number + tab, like `cat -n`. */
+function withLineNumbers(text: string, startLine = 1): string {
+  return text
+    .split('\n')
+    .map((line, i) => `${String(startLine + i).padStart(LINE_NUMBER_WIDTH)}\t${line}`)
+    .join('\n');
+}
+
 export const readFileTool: Tool = {
   name: 'read_file',
   description:
     'Read the contents of a file within the workspace. ' +
-    'For large files, pass `offset` (1-based start line) and/or `limit` (line count) to page through it.',
+    'For large files, pass `offset` (1-based start line) and/or `limit` (line count) to page through it. ' +
+    'Each line is prefixed with a right-aligned line number and a tab for reference — these prefixes are NOT part of the file; never copy them into edit_file / write_file / apply_patch content.',
   metadata: {
     sideEffectClass: 'readonly',
     planMode: 'allow',
@@ -64,6 +117,7 @@ export const readFileTool: Tool = {
     try {
       const filePath = await safePath(input.path, ctx.workspaceDir);
       const content = await fs.readFile(filePath, 'utf-8');
+      await recordFileState(filePath);
       const hasRange = input.offset !== undefined || input.limit !== undefined;
       if (hasRange) {
         const lines = content.split('\n');
@@ -73,18 +127,20 @@ export const readFileTool: Tool = {
         const slice = lines.slice(start - 1, start - 1 + count);
         const end = Math.min(lines.length, start - 1 + count);
         let body = slice.join('\n');
+        let note = '';
         if (body.length > 100_000) {
-          body = body.slice(0, 100_000) + `\n\n[... truncated range, total ${body.length} chars]`;
+          note = `\n\n[... truncated range, total ${body.length} chars]`;
+          body = body.slice(0, 100_000);
         }
-        return `[lines ${start}-${end} of ${lines.length}]\n${body}`;
+        return `[lines ${start}-${end} of ${lines.length}]\n${withLineNumbers(body, start)}${note}`;
       }
       if (content.length > 100_000) {
         return (
-          content.slice(0, 100_000) +
+          withLineNumbers(content.slice(0, 100_000)) +
           `\n\n[... truncated, total ${content.length} chars — pass offset/limit to page through the rest]`
         );
       }
-      return content;
+      return withLineNumbers(content);
     } catch (err) {
       return `Error reading file: ${err instanceof Error ? err.message : String(err)}`;
     }
@@ -109,11 +165,99 @@ export const writeFileTool: Tool = {
   async execute(input, ctx) {
     try {
       const filePath = await safePath(input.path, ctx.workspaceDir);
+      const stale = await staleWriteError(filePath, String(input.path ?? ''));
+      if (stale) return `Error: ${stale}`;
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, input.content, 'utf-8');
+      await recordFileState(filePath);
       return `Successfully wrote ${input.content.length} chars to ${input.path}`;
     } catch (err) {
       return `Error writing file: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  },
+};
+
+export const editFileTool: Tool = {
+  name: 'edit_file',
+  description:
+    'Make a precise in-place edit by replacing an exact string in an existing file. ' +
+    'Prefer this over write_file for modifying files — it changes only the matched text and leaves everything else untouched, which is safer and cheaper than rewriting the whole file.\n' +
+    '- `old_string` must match the file EXACTLY, including whitespace and indentation, and must be UNIQUE. Include enough surrounding context to target a single location; if it matches more than once the edit is rejected unless `replace_all` is true.\n' +
+    "- Never include read_file's line-number prefixes in `old_string` or `new_string`.\n" +
+    '- Set `new_string` to "" to delete the matched text. To create a new file or replace an entire file, use write_file instead.',
+  metadata: {
+    sideEffectClass: 'local_write',
+    planMode: 'requires_user_confirmation',
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: 'File path relative to workspace root' },
+      old_string: {
+        type: 'string',
+        description: 'Exact text to replace — must be unique in the file unless replace_all is set',
+      },
+      new_string: {
+        type: 'string',
+        description: 'Replacement text (use "" to delete the matched text)',
+      },
+      replace_all: {
+        type: 'boolean',
+        description: 'Replace every occurrence instead of requiring a unique match (default false)',
+      },
+    },
+    required: ['path', 'old_string', 'new_string'],
+  },
+  async execute(input, ctx) {
+    try {
+      const displayPath = String(input.path ?? '');
+      const oldStr = String(input.old_string ?? '');
+      const newStr = String(input.new_string ?? '');
+      if (oldStr === '') {
+        return 'Error: old_string is empty. Use write_file to create a new file or replace an entire file.';
+      }
+      if (oldStr === newStr) {
+        return 'Error: old_string and new_string are identical — nothing to change.';
+      }
+      const filePath = await safePath(displayPath, ctx.workspaceDir);
+      let content: string;
+      try {
+        content = await fs.readFile(filePath, 'utf-8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          return `Error: file does not exist: ${displayPath}. Use write_file to create it.`;
+        }
+        throw err;
+      }
+      const stale = await staleWriteError(filePath, displayPath);
+      if (stale) return `Error: ${stale}`;
+      const occurrences = content.split(oldStr).length - 1;
+      if (occurrences === 0) {
+        return (
+          `Error: old_string not found in ${displayPath}. ` +
+          'The text must match the file exactly — including whitespace and indentation — and must not include ' +
+          "read_file's line-number prefixes. Read the file and copy the target text verbatim."
+        );
+      }
+      if (occurrences > 1 && !input.replace_all) {
+        return (
+          `Error: old_string is not unique in ${displayPath} (${occurrences} matches). ` +
+          'Add more surrounding context to target a single location, or pass replace_all: true to replace every occurrence.'
+        );
+      }
+      let updated: string;
+      if (input.replace_all) {
+        updated = content.split(oldStr).join(newStr);
+      } else {
+        const idx = content.indexOf(oldStr);
+        updated = content.slice(0, idx) + newStr + content.slice(idx + oldStr.length);
+      }
+      await atomicWriteFile(filePath, updated);
+      await recordFileState(filePath);
+      const label = input.replace_all && occurrences > 1 ? `${occurrences} occurrences` : '1 occurrence';
+      return `Edited ${displayPath} (replaced ${label}).`;
+    } catch (err) {
+      return `Error editing file: ${err instanceof Error ? err.message : String(err)}`;
     }
   },
 };
@@ -198,7 +342,10 @@ export const execTool: Tool = {
   name: 'exec',
   description:
     'Execute a shell command in the workspace directory. Returns stdout + stderr. Commands run with cwd set to the workspace. ' +
-    'On Windows, this is the host PC shell (not a remote device); prefer device_exec when SSH is configured.',
+    'On Windows, this is the host PC shell (not a remote device); prefer device_exec when SSH is configured.\n' +
+    '- Prefer the dedicated tools over shell equivalents: read_file over `cat`, edit_file over `sed`, search_files over `find`, search_code over `grep`/`rg`. Reserve exec for real shell work: installing deps, running tests/builds, git operations.\n' +
+    '- Use absolute paths and avoid `cd`; the working directory is already the workspace and does not persist between calls.\n' +
+    '- For long-running or blocking processes (dev servers, watchers, log tails) use exec_background instead of exec — a foreground exec that never returns will time out.',
   metadata: {
     sideEffectClass: 'local_write',
     planMode: 'requires_user_confirmation',
@@ -254,7 +401,9 @@ export const execTool: Tool = {
 
 export const searchFilesTool: Tool = {
   name: 'search_files',
-  description: 'Search for files matching a glob pattern within the workspace.',
+  description:
+    'Find files by glob pattern within the workspace. Prefer this over running `find`/`ls` through exec — ' +
+    'it is sandbox-checked and returns clean paths.',
   metadata: {
     sideEffectClass: 'readonly',
     planMode: 'allow',
@@ -331,7 +480,9 @@ function isSafeRegex(pattern: string): boolean {
 
 export const searchCodeTool: Tool = {
   name: 'search_code',
-  description: 'Search for a regex or text pattern within files in the workspace. Returns matching file paths and line excerpts.',
+  description:
+    'Search for a regex or text pattern within files in the workspace. Returns matching file paths and line excerpts. ' +
+    'Prefer this over running `grep`/`rg` through exec when you need to locate code by content.',
   metadata: {
     sideEffectClass: 'readonly',
     planMode: 'allow',
@@ -614,6 +765,7 @@ async function grepWalk(
 export const builtinTools: Tool[] = [
   readFileTool,
   writeFileTool,
+  editFileTool,
   moveFileTool,
   listDirectoryTool,
   execTool,

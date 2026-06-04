@@ -101,6 +101,10 @@ export interface LLMResponse {
   usage?: {
     inputTokens: number;
     outputTokens: number;
+    /** Prompt-cache hit tokens (read from cache) when the provider reports them. */
+    cacheReadTokens?: number;
+    /** Prompt-cache write tokens (cache creation) when the provider reports them. */
+    cacheCreationTokens?: number;
   };
   /**
    * The provider produced usable partial content, but the upstream stream ended

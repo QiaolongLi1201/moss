@@ -123,3 +123,9 @@ export {
   buildSoftwareEngineeringPrompt,
   buildSoftwareEngineeringPromptQuick,
 } from './prompts/software-engineering-prompt.js';
+
+// --- Agent behavior (沟通风格/代码纪律/忠实报告/谨慎执行，与领域无关) ---
+export {
+  buildAgentBehaviorPrompt,
+  buildAgentBehaviorPromptQuick,
+} from './prompts/agent-behavior-prompt.js';

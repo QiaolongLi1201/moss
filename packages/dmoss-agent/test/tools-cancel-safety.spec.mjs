@@ -34,6 +34,8 @@ function processIsAlive(pid) {
   }
 }
 
+const PROCESS_TREE_TIMEOUT_MS = 1500;
+
 async function waitForProcessExit(pid, timeoutMs = 1000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -216,7 +218,7 @@ async function assertNodeLaunchedChildIsKilled(runLauncherCommand) {
 // ── Test 8: Timeout kills child process trees on every supported host OS ──
 {
   await assertNodeLaunchedChildIsKilled((script) =>
-    runProcess(process.execPath, { args: nodeArgs(script), timeout: 300 }),
+    runProcess(process.execPath, { args: nodeArgs(script), timeout: PROCESS_TREE_TIMEOUT_MS }),
   );
 
   console.log('[PASS] Timeout kills node-launched child process trees');
@@ -225,7 +227,7 @@ async function assertNodeLaunchedChildIsKilled(runLauncherCommand) {
 // ── Test 9: Timeout kills shell-launched child processes ──
 if (process.platform !== 'win32') {
   await assertShellLaunchedChildIsKilled((command) =>
-    runProcess('sh', { args: ['-c', command], timeout: 300 }),
+    runProcess('sh', { args: ['-c', command], timeout: PROCESS_TREE_TIMEOUT_MS }),
   );
 
   console.log('[PASS] Timeout kills shell-launched child processes');

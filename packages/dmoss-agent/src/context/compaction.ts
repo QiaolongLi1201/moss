@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import {
   createCompactionSummaryMessage,
@@ -8,8 +9,11 @@ import {
   estimateMessagesTokens,
   estimateMessagesChars,
   estimatePromptUnitsForContextWindow,
+  estimateTokensForText,
   CHARS_PER_TOKEN_ESTIMATE,
 } from "./tokens.js";
+import { assertSandboxPath } from "../safety/sandbox-paths.js";
+import { sanitizeSecrets } from "../safety/secret-sanitizer.js";
 import {
   pruneContextMessages,
   type ContextPruningSettings,
@@ -40,13 +44,34 @@ export interface CompactionSettings {
   enabled: boolean;
   reserveTokens: number;
   keepRecentTokens: number;
+  /**
+   * After compaction, re-read the current on-disk contents of the most recently
+   * read/modified files and append them to the summary, so the model keeps its
+   * working set instead of having to re-read every file ("amnesia re-read").
+   * Default on. See POST_COMPACT_* budget constants below.
+   */
+  restoreFileContents: boolean;
 }
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
   enabled: true,
   reserveTokens: 20_000,
   keepRecentTokens: 20_000,
+  restoreFileContents: true,
 };
+
+// Post-compaction file readback budget. Mirrors the reference implementation
+// (claude-code services/compact/compact.ts): restore at most a handful of the
+// most recent working-set files, cap each file, and cap the total so readback
+// can never dominate the freed context window. 50K total ≈ 5K reserveTokens
+// headroom is intentionally comfortable: readback runs once per compaction and
+// is appended to the single summary message, so it is self-limiting.
+/** Max number of recent files to restore after compaction. */
+export const POST_COMPACT_MAX_FILES_TO_RESTORE = 5;
+/** Total token budget across all restored files. */
+export const POST_COMPACT_TOKEN_BUDGET = 50_000;
+/** Per-file token cap; larger files are head-truncated with a marker. */
+export const POST_COMPACT_MAX_TOKENS_PER_FILE = 5_000;
 
 export const DEFAULT_SUMMARY_MAX_TOKENS = 900;
 const DEFAULT_SUMMARY_FALLBACK = "No prior history.";
@@ -60,6 +85,14 @@ type FileOps = {
   read: Set<string>;
   written: Set<string>;
   edited: Set<string>;
+  /**
+   * Last-touch recency in chronological order: each path appears once, at the
+   * position of its MOST recent operation. droppedMessages are walked oldest →
+   * newest, so the tail of this list holds the most recently touched files —
+   * the working set worth restoring. `modified` marks write/edit (preferred
+   * over plain reads when selecting files to restore).
+   */
+  recency: Array<{ path: string; modified: boolean }>;
 };
 
 function createFileOps(): FileOps {
@@ -67,7 +100,19 @@ function createFileOps(): FileOps {
     read: new Set<string>(),
     written: new Set<string>(),
     edited: new Set<string>(),
+    recency: [],
   };
+}
+
+function touchRecency(fileOps: FileOps, filePath: string, modified: boolean): void {
+  const existingIdx = fileOps.recency.findIndex((e) => e.path === filePath);
+  if (existingIdx !== -1) {
+    const existing = fileOps.recency[existingIdx];
+    fileOps.recency.splice(existingIdx, 1);
+    fileOps.recency.push({ path: filePath, modified: existing.modified || modified });
+    return;
+  }
+  fileOps.recency.push({ path: filePath, modified });
 }
 
 function extractFileOpsFromMessage(message: Message, fileOps: FileOps): void {
@@ -96,15 +141,18 @@ function extractFileOpsFromMessage(message: Message, fileOps: FileOps): void {
       case "read":
       case "read_file":
         fileOps.read.add(path);
+        touchRecency(fileOps, path, false);
         break;
       case "write":
       case "write_file":
         fileOps.written.add(path);
+        touchRecency(fileOps, path, true);
         break;
       case "edit":
       case "multi_edit":
       case "notebook_edit":
         fileOps.edited.add(path);
+        touchRecency(fileOps, path, true);
         break;
     }
   }
@@ -129,6 +177,108 @@ function formatFileOperations(readFiles: string[], modifiedFiles: string[]): str
     return "";
   }
   return `\n\n${sections.join("\n\n")}`;
+}
+
+/**
+ * Select the most-recent working-set files to restore: walk recency newest →
+ * oldest, prefer modified over read-only, dedup, cap at `maxFiles`. Only paths
+ * still present in fileOps Sets are eligible, so M3 scope isolation (which
+ * prunes those Sets) is honored without re-implementing the scope check here.
+ */
+function selectFilesToRestore(fileOps: FileOps, maxFiles: number): string[] {
+  const inScope = (p: string): boolean =>
+    fileOps.read.has(p) || fileOps.written.has(p) || fileOps.edited.has(p);
+  const newestFirst = [...fileOps.recency].reverse().filter((e) => inScope(e.path));
+  const modified = newestFirst.filter((e) => e.modified).map((e) => e.path);
+  const readOnly = newestFirst.filter((e) => !e.modified).map((e) => e.path);
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const p of [...modified, ...readOnly]) {
+    if (seen.has(p)) continue;
+    seen.add(p);
+    ordered.push(p);
+    if (ordered.length >= maxFiles) break;
+  }
+  return ordered;
+}
+
+/** Head-truncate file content to ~maxTokens, appending a truncation marker. */
+function truncateToTokenBudget(content: string, maxTokens: number): string {
+  if (estimateTokensForText(content) <= maxTokens) {
+    return content;
+  }
+  // Char-budget approximation (chars ≈ tokens * 4); good enough since the
+  // estimate below is the authoritative gate for the total budget.
+  const charBudget = Math.max(0, maxTokens * CHARS_PER_TOKEN_ESTIMATE);
+  const head = content.slice(0, charBudget);
+  return `${head}\n\n[... truncated: file exceeds ${maxTokens} token restore cap; read it again for the rest]`;
+}
+
+/**
+ * Re-read the current on-disk contents of the most recently read/modified files
+ * and format them as `<restored-file>` blocks to append after the summary.
+ *
+ * Budget-safe: at most POST_COMPACT_MAX_FILES_TO_RESTORE files, each capped at
+ * POST_COMPACT_MAX_TOKENS_PER_FILE, total capped at POST_COMPACT_TOKEN_BUDGET.
+ * Sandbox-safe: every path is resolved through assertSandboxPath against the
+ * workspace root before reading. Missing/deleted/out-of-sandbox/unreadable
+ * files are skipped silently — readback is best-effort and never throws.
+ */
+async function restoreRecentFileContents(params: {
+  fileOps: FileOps;
+  workspaceDir: string;
+  maxFiles: number;
+  perFileTokenBudget: number;
+  totalTokenBudget: number;
+}): Promise<string> {
+  const candidates = selectFilesToRestore(params.fileOps, params.maxFiles);
+  if (candidates.length === 0) {
+    return "";
+  }
+
+  const blocks: string[] = [];
+  let usedTokens = 0;
+  for (const filePath of candidates) {
+    let resolved: string;
+    try {
+      ({ resolved } = await assertSandboxPath({
+        filePath,
+        cwd: params.workspaceDir,
+        root: params.workspaceDir,
+      }));
+    } catch {
+      continue; // escapes sandbox / symlink — skip gracefully
+    }
+
+    let raw: string;
+    try {
+      raw = await fs.readFile(resolved, "utf-8");
+    } catch {
+      continue; // deleted / unreadable / binary — skip gracefully
+    }
+
+    const safe = sanitizeSecrets(raw);
+    const body = truncateToTokenBudget(safe, params.perFileTokenBudget);
+    const block = `<restored-file path="${filePath}">\n${body}\n</restored-file>`;
+    const blockTokens = estimateTokensForText(block);
+    if (usedTokens + blockTokens > params.totalTokenBudget) {
+      continue; // would blow the total budget — skip this file, try the rest
+    }
+    usedTokens += blockTokens;
+    blocks.push(block);
+  }
+
+  if (blocks.length === 0) {
+    return "";
+  }
+  return (
+    `\n\n<restored-files>\n` +
+    `Current on-disk contents of the most recently used files, restored after ` +
+    `compaction so you keep your working set. Do not re-read these unless you ` +
+    `suspect they changed.\n\n` +
+    `${blocks.join("\n\n")}\n` +
+    `</restored-files>`
+  );
 }
 
 export type SummarizeFn = (params: {
@@ -761,6 +911,27 @@ export async function compactHistoryIfNeeded(params: {
   }
   const { readFiles, modifiedFiles } = computeFileLists(fileOps);
   summary += formatFileOperations(readFiles, modifiedFiles);
+
+  // Post-compaction file readback: re-inject current contents of the recent
+  // working set so the model does not have to re-read every file after a
+  // compaction. Appended after the summary + file lists; bounded by the
+  // POST_COMPACT_* budgets and the sandbox. Best-effort: never blocks compaction.
+  if (resolvedSettings.restoreFileContents) {
+    const restoreRoot = params.workspaceDir ?? process.cwd();
+    try {
+      summary += await restoreRecentFileContents({
+        fileOps,
+        workspaceDir: restoreRoot,
+        maxFiles: POST_COMPACT_MAX_FILES_TO_RESTORE,
+        perFileTokenBudget: POST_COMPACT_MAX_TOKENS_PER_FILE,
+        totalTokenBudget: POST_COMPACT_TOKEN_BUDGET,
+      });
+    } catch (err) {
+      log.warn("post-compaction file readback failed; skipping", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   const summaryMessage: Message = createCompactionSummaryMessage(summary, Date.now());
 

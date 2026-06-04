@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
+import { StreamingSpinner } from './components/StreamingSpinner.js';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
 import type { DmossAgent, DmossAgentEvent, ToolResultOutcome } from '../core/index.js';
@@ -1208,8 +1209,12 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
       // Mode
       React.createElement(Text, { color: theme.primary, bold: true }, 'Default'),
       React.createElement(Text, { color: theme.textMuted }, '  '),
-      // Status badge
+      // Status badge + live spinner while the agent is working (self-animating;
+      // re-renders on its own interval so the run never looks frozen)
       React.createElement(Text, { color: statusBarColor(state), bold: true }, statusBadge(state)),
+      state === 'running'
+        ? React.createElement(StreamingSpinner, { active: true })
+        : null,
       React.createElement(Text, { color: theme.textMuted }, '  '),
       // Context window usage
       ctxLabel ? React.createElement(Text, { color: ctxColor }, ctxLabel) : null,
@@ -1971,7 +1976,6 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
         return null;
       },
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

@@ -92,6 +92,12 @@ export interface PromptConfig {
    * Default: true (merge `getAllPromptFragments`).
    */
   includeRegisteredKnowledgePrompts?: boolean;
+  /**
+   * When false, omit the domain-independent agent behavior contract
+   * (communication style / code-change discipline / faithful reporting /
+   * careful execution) from `buildSystemPrompt`. Default: true.
+   */
+  includeAgentBehaviorPrompt?: boolean;
 }
 
 export interface PromptCacheConfig {

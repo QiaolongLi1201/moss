@@ -244,9 +244,27 @@ export async function executeAgentLoopToolCalls(
     }
   };
 
-  const effectiveParallelSafeTools = checkToolApproval
-    ? new Set<string>()
-    : parallelSafeTools;
+  // Parallel execution intentionally skips the per-call approval prompt (the
+  // parallel branch below passes `checkToolApproval: undefined`). To keep that
+  // safe even in interactive/approval sessions, the parallel-safe set is
+  // restricted to READ-ONLY tools, which never require approval. Read-only
+  // tools (file reads, code/file search, diagnostics) can therefore fan out
+  // concurrently regardless of approval mode, while every state-mutating tool
+  // still goes through the serial, approval-gated path below. We also default
+  // to the built-in read-only tools when the host injected no explicit
+  // allowlist, so parallelism is enabled out of the box instead of sitting as
+  // dead config that an interactive host (which always sets checkToolApproval)
+  // could never reach.
+  const readonlyToolNames = new Set(
+    resolveToolsForRun()
+      .filter((t) => t.metadata?.sideEffectClass === 'readonly')
+      .map((t) => t.name),
+  );
+  const requestedParallelSafe =
+    parallelSafeTools.size > 0 ? parallelSafeTools : readonlyToolNames;
+  const effectiveParallelSafeTools = new Set(
+    [...requestedParallelSafe].filter((name) => readonlyToolNames.has(name)),
+  );
   const toolGroups = groupToolCallsForExecution(
     toolCalls,
     effectiveParallelSafeTools,
@@ -260,9 +278,11 @@ export async function executeAgentLoopToolCalls(
       continue;
     }
 
-    // Defense: when checkToolApproval is set (approval required), effectiveParallelSafeTools
-    // is forced to an empty Set, so the parallel branch is never taken — every tool call
-    // goes through the serial path where checkToolApproval is invoked per-call.
+    // Invariant: a parallel group only ever contains read-only tools (see
+    // effectiveParallelSafeTools above), which never require approval — so the
+    // parallel branch can safely run without an approval gate. Every
+    // state-mutating tool lands in its own serial group below, where
+    // checkToolApproval is invoked per-call.
     if (group.parallel && group.calls.length > 1) {
       const settled = await Promise.allSettled(
         group.calls.map((call) => {

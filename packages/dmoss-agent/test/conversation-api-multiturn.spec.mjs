@@ -53,6 +53,7 @@ function createPiAgent({
     reasoning: reasoning || null,
     domainPrompt: false,
     includeRegisteredKnowledgePrompts: false,
+    includeAgentBehaviorPrompt: false,
     baseSystemPrompt: 'base',
     maxAgentTurns,
     ...(promptCache ? { promptCache } : {}),

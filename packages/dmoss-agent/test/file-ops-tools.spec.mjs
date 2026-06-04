@@ -26,15 +26,19 @@ console.log('[TEST] read_file offset/limit returns a line range');
 {
   const out = await readFileTool.execute({ path: 'a.txt', offset: 2, limit: 2 }, CTX);
   assert.match(out, /\[lines 2-3 of 6\]/, 'should report the line range');
-  assert.match(out, /l2\nl3/, 'should return the requested lines');
+  assert.match(out, /2\tl2\n\s+3\tl3/, 'should return the requested lines with cat -n line numbers');
   assert.doesNotMatch(out, /l1/, 'lines before the offset should be excluded');
   assert.doesNotMatch(out, /l4/, 'lines past the limit should be excluded');
 }
 
-console.log('[TEST] read_file without range is unchanged (full content)');
+console.log('[TEST] read_file prefixes lines with cat -n style line numbers');
 {
   const out = await readFileTool.execute({ path: 'a.txt' }, CTX);
-  assert.equal(out, 'l1\nl2\nl3\nl4\nl5\n', 'full read should return raw content');
+  assert.match(
+    out,
+    /^\s+1\tl1\n\s+2\tl2\n\s+3\tl3\n\s+4\tl4\n\s+5\tl5/,
+    'full read should be line-numbered for precise editing',
+  );
 }
 
 console.log('[TEST] move_file renames and creates parent dirs');

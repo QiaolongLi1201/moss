@@ -11,6 +11,16 @@ type AskUser = (question: string) => Promise<string>;
 
 let interactiveAsker: AskUser | null = null;
 
+/** 交互模式（对齐 Claude Code）：plan=只读规划 / default=正常审批 / acceptEdits=自动批准写入。TUI 经 Shift+Tab 切换。 */
+export type CliInteractionMode = 'plan' | 'default' | 'acceptEdits';
+let currentInteractionMode: CliInteractionMode = 'default';
+export function setCliInteractionMode(mode: CliInteractionMode): void {
+  currentInteractionMode = mode;
+}
+export function getCliInteractionMode(): CliInteractionMode {
+  return currentInteractionMode;
+}
+
 export interface CliToolApprovalOptions {
   approvalPolicy?: ConfigApprovalPolicy;
   trustedTools?: readonly string[];
@@ -176,6 +186,13 @@ export function createCliToolApprovalHook(
         reason: `Tool "${tool.name}" is blocked by configured deniedTools.`,
       };
     }
+    const interaction = getCliInteractionMode();
+    if (interaction === 'plan' && preview.sideEffect !== 'readonly') {
+      return {
+        approved: false,
+        reason: `计划模式(plan)：先产出实施计划，暂不执行变更。按 Shift+Tab 切到 default / accept-edits 后再运行 "${tool.name}"。`,
+      };
+    }
     if (!isAllowedInMode(mode, preview.sideEffect)) {
       return {
         approved: false,
@@ -189,6 +206,10 @@ export function createCliToolApprovalHook(
     }
 
     if (preview.autoApproved) {
+      return { approved: true };
+    }
+
+    if (interaction === 'acceptEdits') {
       return { approved: true };
     }
 

@@ -9,7 +9,7 @@ import type { DmossAgent, DmossAgentEvent, ToolResultOutcome } from '../core/ind
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import type { SessionMeta } from '../core/session/session.js';
 import { SkillRegistry, type SkillMeta } from '../skills/index.js';
-import { setCliApprovalAsker } from './approval.js';
+import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type CliInteractionMode } from './approval.js';
 import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
 import { startCliUpdateCheck } from './update-check.js';
@@ -1545,7 +1545,7 @@ export function PromptEditor({
       onHistoryNext?.();
       return;
     }
-    if (key.tab || inputChar === '\t') {
+    if ((key.tab && !key.shift) || inputChar === '\t') {
       const completion = completeSlashCommandInput(value, currentCursor);
       if (completion) {
         onChange(completion.value);
@@ -1687,6 +1687,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const [showThinking, setShowThinking] = useState(process.env.DMOSS_SHOW_THINKING === 'true');
   const [notice, setNotice] = useState('');
   const [approval, setApproval] = useState<ApprovalState | null>(null);
+  const [interactionMode, setInteractionMode] = useState<CliInteractionMode>('default');
   const [localShellApproved, setLocalShellApproved] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
   const [toolsExpanded, setToolsExpanded] = useState(false);
@@ -1814,6 +1815,10 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   }, []);
 
   useEffect(() => {
+    setCliInteractionMode(interactionMode);
+  }, [interactionMode]);
+
+  useEffect(() => {
     if (!runtime?.configDir) return;
     startCliUpdateCheck({
       configDir: runtime.configDir,
@@ -1848,6 +1853,14 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       setToolsExpanded((prev) => {
         const next = !prev;
         showFlash(next ? 'tools expanded' : 'tools collapsed');
+        return next;
+      });
+      return;
+    }
+    if (key.tab && key.shift) {
+      setInteractionMode((m) => {
+        const next: CliInteractionMode = m === 'plan' ? 'default' : m === 'default' ? 'acceptEdits' : 'plan';
+        showFlash(`mode: ${next === 'acceptEdits' ? 'accept-edits' : next}`);
         return next;
       });
       return;
@@ -2045,8 +2058,11 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     answerIdRef.current = null;
     const controller = new AbortController();
     activeRunControllerRef.current = controller;
+    const effectiveMessage = getCliInteractionMode() === 'plan'
+      ? `[计划模式] 你现在处于 plan 模式：只读探索代码库，产出清晰的实施计划（步骤 / 涉及文件 / 验证方式）。在用户批准（按 Shift+Tab 切到 default 或 accept-edits）前，不要修改文件或执行有副作用的命令。\n\n${message}`
+      : message;
     try {
-      for await (const event of agent.streamChat(sessionKey, message, { abortSignal: controller.signal })) {
+      for await (const event of agent.streamChat(sessionKey, effectiveMessage, { abortSignal: controller.signal })) {
         if (event.type === 'turn_start') {
           currentTurnIdRef.current = event.turn;
         }
@@ -2282,6 +2298,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     React.createElement(
       Box,
       { flexDirection: 'row' },
+      interactionMode !== 'default' ? React.createElement(Text, { color: interactionMode === 'plan' ? theme.warn : theme.primary, bold: true }, `${interactionMode === 'plan' ? '⏸ PLAN' : '✓ ACCEPT-EDITS'}  `) : null,
       detailMode !== 'quiet' ? React.createElement(Text, { color: theme.primary, bold: true }, `[${detailMode}] `) : null,
       ctxUsage ? React.createElement(
         Box,

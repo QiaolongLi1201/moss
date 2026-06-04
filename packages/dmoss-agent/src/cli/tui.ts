@@ -31,6 +31,7 @@ interface TranscriptItem {
   startedAt?: number;
   elapsedMs?: number;
   outcome?: ToolResultOutcome;
+  result?: string;
   finalized?: boolean;
 }
 
@@ -44,6 +45,7 @@ interface ActivityItem {
   elapsedMs?: number;
   outcome?: ToolResultOutcome;
   inputRaw?: unknown;
+  result?: string;
 }
 
 interface ApprovalState {
@@ -1222,6 +1224,9 @@ export function WelcomePanel({
         React.createElement(Text, { bold: true }, 'Tip: '),
         resolvedTip,
       ),
+      React.createElement(Text, { color: theme.textMuted },
+        'Shift+Tab 切换模式(plan/accept-edits) · Ctrl+O 看工具详情与 diff · / 命令 · ? 快捷键',
+      ),
     ),
   );
 }
@@ -1262,18 +1267,36 @@ export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): Rea
     failedMark,
   ].join('');
 
-  let expandedJson: string | null = null;
-  if (expanded && item.inputRaw !== undefined) {
-    try {
-      expandedJson = typeof item.inputRaw === 'string'
-        ? item.inputRaw
-        : JSON.stringify(item.inputRaw, null, 2);
-    } catch {
-      expandedJson = String(item.inputRaw);
+  // 展开详情：代码改动工具渲染彩色 diff，其余工具显示真实输出(result)，最后回退 input JSON。
+  let detailLines: React.ReactElement[] = [];
+  if (expanded) {
+    const raw = item.inputRaw as Record<string, unknown> | undefined;
+    const patch = raw?.patch;
+    const content = raw?.content;
+    if (item.toolName === 'apply_patch' && typeof patch === 'string') {
+      detailLines = patch.split('\n').slice(0, 80).map((line, idx) => React.createElement(Text, {
+        key: idx,
+        color: (line.startsWith('+') && !line.startsWith('+++')) ? theme.success
+          : (line.startsWith('-') && !line.startsWith('---')) ? theme.warn
+          : (line.startsWith('@@') || line.startsWith('***')) ? theme.primary
+          : theme.textMuted,
+      }, line));
+    } else if (item.toolName === 'write_file' && typeof content === 'string') {
+      detailLines = content.split('\n').slice(0, 80).map((line, idx) =>
+        React.createElement(Text, { key: idx, color: theme.success }, `+ ${line}`));
+    } else if (typeof item.result === 'string' && item.result.trim()) {
+      detailLines = item.result.split('\n').slice(0, 40).map((line, idx) =>
+        React.createElement(Text, { key: idx, color: theme.textMuted }, line));
+    } else if (item.inputRaw !== undefined) {
+      let json = '';
+      try { json = typeof item.inputRaw === 'string' ? item.inputRaw : JSON.stringify(item.inputRaw, null, 2); }
+      catch { json = String(item.inputRaw); }
+      detailLines = json.split('\n').slice(0, 24).map((line, idx) =>
+        React.createElement(Text, { key: idx, color: theme.textMuted }, line));
     }
   }
 
-  if (expandedJson) {
+  if (detailLines.length > 0) {
     return React.createElement(
       Box,
       {
@@ -1284,11 +1307,7 @@ export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): Rea
         flexDirection: 'column',
       },
       React.createElement(Text, { color: fgColor }, `${sigil} ${head}`),
-      React.createElement(Box, { paddingLeft: 2, flexDirection: 'column' },
-        ...expandedJson.split('\n').slice(0, 24).map((line, idx) => (
-          React.createElement(Text, { key: idx, color: theme.textMuted }, line)
-        )),
-      ),
+      React.createElement(Box, { paddingLeft: 2, flexDirection: 'column' }, ...detailLines),
     );
   }
 
@@ -1378,6 +1397,7 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
         elapsedMs: item.elapsedMs,
         outcome: item.outcome,
         inputRaw: item.toolInputRaw,
+        result: item.result,
       },
       expanded: toolsExpanded,
     });
@@ -2094,11 +2114,13 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
         if (event.type === 'tool_end') {
           setTranscript((items) => items.flatMap((item) => {
             if (item.kind !== 'tool' || item.toolCallId !== event.toolCallId) return [item];
+            const endResult = (event as { result?: unknown }).result;
             const next: TranscriptItem = {
               ...item,
               status: event.isError || event.aborted ? 'failed' : 'ok',
               elapsedMs: event.durationMs ?? (item.startedAt ? Date.now() - item.startedAt : undefined),
               outcome: event.outcome,
+              result: typeof endResult === 'string' ? endResult : item.result,
             };
             // quiet mode: collapse successful tool calls to keep the transcript tidy.
             // Failures stay visible regardless.
@@ -2229,7 +2251,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     executionPlane.targetDevice,
     executionPlane.inference,
     compactPath(workspace),
-    runState === 'running' ? 'Esc cancel' : '/help',
+    runState === 'running' ? 'Esc cancel' : 'Shift+Tab mode · Ctrl+O tools · /help',
     queuedInputs.length > 0 ? `queued ${queuedInputs.length}` : '',
     detailMode !== 'quiet' ? `detail ${detailMode}` : '',
     showThinking ? 'thinking on' : '',
@@ -2298,7 +2320,9 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     React.createElement(
       Box,
       { flexDirection: 'row' },
-      interactionMode !== 'default' ? React.createElement(Text, { color: interactionMode === 'plan' ? theme.warn : theme.primary, bold: true }, `${interactionMode === 'plan' ? '⏸ PLAN' : '✓ ACCEPT-EDITS'}  `) : null,
+      React.createElement(Text, { color: interactionMode === 'plan' ? theme.warn : interactionMode === 'acceptEdits' ? theme.success : theme.primary, bold: true },
+        interactionMode === 'plan' ? '⏸ plan' : interactionMode === 'acceptEdits' ? '✓ accept-edits' : '● default'),
+      React.createElement(Text, { color: theme.textDim }, ' (⇧⇥)  '),
       detailMode !== 'quiet' ? React.createElement(Text, { color: theme.primary, bold: true }, `[${detailMode}] `) : null,
       ctxUsage ? React.createElement(
         Box,

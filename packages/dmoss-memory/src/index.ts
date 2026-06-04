@@ -32,5 +32,15 @@ export {
   type ImplicitSignalContext,
 } from "./self-learning-memory.js";
 
+export {
+  assessKnowledgeTurn,
+  buildKnowledgeCardDraft,
+  classifyLearningTopic,
+  coerceLearningTopic,
+  type KnowledgeCardDraft,
+  type KnowledgeTurnAssessment,
+  type KnowledgeTurnInput,
+} from "./knowledge-card.js";
+
 export { cosineSimilarity, hybridScore } from './memory-embedding.js';
 export type { MemoryEmbeddingProvider, EmbeddedMemoryEntry } from './memory-embedding.js';

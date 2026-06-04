@@ -156,6 +156,24 @@ const LOCAL_SHELL_OUTPUT_LIMIT = 40_000;
 const MAX_TRANSCRIPT_ITEMS = 200;
 const MAX_INPUT_HISTORY = 100;
 const HEADLINE_MAX = 72;
+
+const AGENTS_MD_TEMPLATE = `# AGENTS.md
+
+Project memory for D-Moss and coding agents. Auto-loaded at the start of every session.
+
+## Overview
+<!-- What this project is, in one or two sentences. -->
+
+## Build / test / run
+<!-- The exact commands an agent should use, e.g. install / build / test / lint. -->
+
+## Layout
+<!-- Top-level directories and what lives in each. -->
+
+## Conventions
+<!-- Code style, naming, patterns to follow, and things NOT to touch. -->
+`;
+
 const KNOWN_COMMANDS = [
   '/help',
   '/tools',
@@ -174,9 +192,12 @@ const KNOWN_COMMANDS = [
   '/clearqueue',
   '/memory',
   '/skills',
+  '/init',
+  '/diff',
   '/sessions',
   '/context',
   '/cost',
+  '/rewind',
   '/session',
   '/upgrade',
   '/stop',
@@ -1507,6 +1528,8 @@ function commandRowsForInput(value: string): Array<[string, string]> {
     ['/sessions', 'show current and recent saved sessions'],
     ['/context', 'context window token usage'],
     ['/cost', 'session token usage estimate'],
+    ['/init', 'scaffold an AGENTS.md project memory file'],
+    ['/diff', 'show git working-tree changes'],
     ['/rewind', 'list / undo file changes to a checkpoint'],
     ['/thinking', 'toggle thinking deltas'],
     ['/clear', 'clear visible transcript'],
@@ -2111,6 +2134,32 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       }
       return true;
     }
+    if (message === '/init') {
+      const target = path.join(workspace, 'AGENTS.md');
+      if (fs.existsSync(target)) {
+        addTranscript('system', `AGENTS.md already exists at ${compactPath(target)} — leaving it untouched.`);
+        return true;
+      }
+      try {
+        fs.writeFileSync(target, AGENTS_MD_TEMPLATE, 'utf8');
+        addTranscript('system', `Created ${compactPath(target)} — D-Moss auto-loads it. Fill in build/test commands, layout, and conventions.`);
+      } catch (err) {
+        addTranscript('error', `Could not write AGENTS.md: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
+    if (message === '/diff' || message.startsWith('/diff ')) {
+      try {
+        const result = await runLocalShellCommand({
+          command: 'git --no-pager diff --stat && git --no-pager diff',
+          cwd: workspace,
+        });
+        addTranscript('system', result.output.trim() || '(no unstaged working-tree changes)');
+      } catch (err) {
+        addTranscript('error', `Could not run git diff: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
     if (message.startsWith('/')) {
       const suggestion = commandSuggestion(message);
       addTranscript('error', [
@@ -2454,6 +2503,8 @@ function commandList(): string {
     '  /context           context window token usage',
     '  /cost              session token usage estimate',
     '  /rewind [seq]      list or undo file changes to a checkpoint',
+    '  /diff              show git working-tree changes',
+    '  /init              scaffold an AGENTS.md project memory file',
     '',
     'Conversation',
     '  /clear             clear visible transcript',

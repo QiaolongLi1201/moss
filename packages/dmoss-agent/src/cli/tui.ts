@@ -174,6 +174,8 @@ const KNOWN_COMMANDS = [
   '/memory',
   '/skills',
   '/sessions',
+  '/context',
+  '/cost',
   '/session',
   '/upgrade',
   '/stop',
@@ -1502,6 +1504,8 @@ function commandRowsForInput(value: string): Array<[string, string]> {
     ['/detail', 'choose quiet, progress, or verbose detail'],
     ['/queue', 'show, drop, or clear queued prompts'],
     ['/sessions', 'show current and recent saved sessions'],
+    ['/context', 'context window token usage'],
+    ['/cost', 'session token usage estimate'],
     ['/thinking', 'toggle thinking deltas'],
     ['/clear', 'clear visible transcript'],
     ['/quit', 'exit D-Moss'],
@@ -1997,6 +2001,37 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       }
       return true;
     }
+    if (message === '/context' || message === '/cost') {
+      try {
+        const msgs = await agent.config.sessionStore.loadMessages(sessionKey);
+        const chars = msgs.reduce((n, m) => {
+          const c = (m as { content?: unknown }).content;
+          return n + (typeof c === 'string' ? c.length : c ? JSON.stringify(c).length : 0);
+        }, 0);
+        const approx = Math.round(chars / 4);
+        if (message === '/context') {
+          const total = 1_000_000;
+          const pct = Math.min(100, Math.round((approx / total) * 100));
+          addTranscript('system', [
+            'Context window',
+            `  messages    ${msgs.length}`,
+            `  est. usage  ~${approx.toLocaleString()} / ${total.toLocaleString()} tokens (${pct}%)`,
+            '  (estimate ~4 chars/token; live ctx in status bar)',
+          ].join('\n'));
+        } else {
+          addTranscript('system', [
+            'Session usage (estimate)',
+            `  messages    ${msgs.length}`,
+            `  est. tokens ~${approx.toLocaleString()}`,
+            `  model       ${currentModel}`,
+            '  (provider billing varies; this is a local estimate)',
+          ].join('\n'));
+        }
+      } catch (err) {
+        addTranscript('error', `Could not read usage: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
     if (message === '/models') {
       addTranscript('system', modelExamples(currentModel));
       return true;
@@ -2362,6 +2397,8 @@ function commandList(): string {
     '  /stop              stop the active run',
     '  /queue [drop|clear] show, drop last, or discard queued prompts',
     '  /sessions          show current and recent saved sessions',
+    '  /context           context window token usage',
+    '  /cost              session token usage estimate',
     '',
     'Conversation',
     '  /clear             clear visible transcript',

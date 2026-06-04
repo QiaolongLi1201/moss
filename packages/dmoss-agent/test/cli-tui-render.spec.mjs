@@ -188,6 +188,37 @@ test('WelcomePanel highlights a connected board surface without command clutter'
   cleanup();
 });
 
+test('WelcomePanel renders a compact short-terminal variant', () => {
+  const { lastFrame } = render(
+    React.createElement(WelcomePanel, {
+      compact: true,
+      workspace: '/Users/me/project',
+      device: 'no device',
+      executionPlane: {
+        mode: 'pc-host',
+        runningOn: 'darwin/arm64 host',
+        targetDevice: 'no board target',
+        inference: 'cloud routed (openai)',
+        permissions: 'diagnose allowed, repair requires approval',
+        policy: 'workspace/runtime fs',
+        deviceContext: 'no live board context',
+        lockedCapabilities: 'Connect a board to unlock: device diagnosis',
+      },
+      tip: 'Connect an RDK board for hardware verification.',
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Moss Runtime/);
+  assert.match(frame, /PC Host Agent/);
+  assert.match(frame, /no board target/);
+  assert.match(frame, /cloud routed \(openai\)/);
+  assert.match(frame, /Tip:/);
+  assert.match(frame, /hardware verification/);
+  assert.doesNotMatch(frame, /Diagnose Board/);
+  assert(frame.split('\n').length <= 4);
+  cleanup();
+});
+
 test('board surface helpers distinguish SSH and local-board modes', () => {
   const previous = process.env.DMOSS_BOARD_RUNTIME;
   delete process.env.DMOSS_BOARD_RUNTIME;
@@ -449,7 +480,34 @@ test('PromptEditor renders a Codex-style placeholder at the prompt', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /› ▌Ask Moss for code, board, or ROS help/);
+  assert.match(frame, /Ask Moss for code, board, or ROS help/);
+  assert.match(frame, /›\s*$/);
+  assert.doesNotMatch(frame, /› ▌/);
+  cleanup();
+});
+
+test('PromptEditor renders the active key hint above the prompt', () => {
+  const { lastFrame } = render(
+    React.createElement(PromptEditor, {
+      value: '',
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: 'Ask Moss for code, board, or ROS help',
+      disabled: false,
+      hint: 'Ctrl+O tools · Tab complete · Up/Down history',
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Ctrl\+O tools/);
+  assert.match(frame, /Tab complete/);
+  assert.match(frame, /Up\/Down history/);
+  const lines = frame.split('\n');
+  const placeholderLine = lines.find((line) => line.includes('Ask Moss for code'));
+  const hintLine = lines.find((line) => line.includes('Ctrl+O tools'));
+  assert.ok(placeholderLine);
+  assert.ok(hintLine);
+  assert.notEqual(placeholderLine, hintLine);
+  assert(frame.indexOf('Tab complete') < frame.lastIndexOf('›'));
   cleanup();
 });
 
@@ -480,10 +538,14 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   );
   const frame = lastFrame();
   assert.match(frame, /› \//);
-  assert.match(frame, /\/model\s+choose what model to use/);
-  assert.match(frame, /\/permissions\s+review safety/);
-  assert.match(frame, /\/tools\s+show available tools/);
-  assert.match(frame, /\/sessions\s+show current and recent saved sessions/);
+  assert.match(frame, /type to filter/);
+  assert.match(frame, /Tab complete/);
+  assert.match(frame, /\/model\s+switch model/);
+  assert.match(frame, /\/permissions\s+safety and approvals/);
+  assert.match(frame, /\/tools\s+tool surface/);
+  assert.match(frame, /\/sessions\s+recent sessions/);
+  assert.match(frame, /\.\.\.\s+\d+ more commands/);
+  assert(frame.split('\n').length <= 10);
   cleanup();
 });
 
@@ -563,6 +625,27 @@ test('PromptEditor accepts slash command completion with Tab', async () => {
   cleanup();
 });
 
+test('PromptEditor submits on a plain CR enter sequence', async () => {
+  const submitted = [];
+  const { stdin } = render(
+    React.createElement(PromptEditor, {
+      value: 'hello',
+      onChange: (value) => {
+        throw new Error(`plain enter should submit, not edit to ${JSON.stringify(value)}`);
+      },
+      onSubmit: (value) => {
+        submitted.push(value);
+      },
+      placeholder: '',
+      disabled: false,
+    }),
+  );
+  stdin.write('\r');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(submitted, ['hello']);
+  cleanup();
+});
+
 test('PromptEditor renders the cursor at the requested column', () => {
   const { lastFrame } = render(
     React.createElement(PromptEditor, {
@@ -576,6 +659,23 @@ test('PromptEditor renders the cursor at the requested column', () => {
   );
   const frame = lastFrame();
   assert.match(frame, /› ab▌cd/);
+  cleanup();
+});
+
+test('PromptEditor lets the terminal cursor anchor IME at the end of input', () => {
+  const { lastFrame } = render(
+    React.createElement(PromptEditor, {
+      value: 'abcd',
+      cursor: 4,
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: '',
+      disabled: false,
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /› abcd\s*$/);
+  assert.doesNotMatch(frame, /abcd▌/);
   cleanup();
 });
 
@@ -616,6 +716,7 @@ test('QueuePreview renders paused queue resume controls', () => {
   assert.match(frame, /queued 1/);
   assert.match(frame, /paused after stop/);
   assert.match(frame, /\/queue resume/);
+  assert.match(frame, /send a prompt to resume/);
   assert.match(frame, /\/queue drop last/);
   cleanup();
 });

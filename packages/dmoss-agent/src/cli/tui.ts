@@ -155,6 +155,7 @@ const RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 const LOCAL_SHELL_OUTPUT_LIMIT = 40_000;
 const MAX_TRANSCRIPT_ITEMS = 200;
 const MAX_INPUT_HISTORY = 100;
+const WELCOME_PANEL_ROWS_ESTIMATE = 18;
 const HEADLINE_MAX = 72;
 
 const AGENTS_MD_TEMPLATE = `# AGENTS.md
@@ -367,8 +368,7 @@ export function isQueueControlCommand(message: string): boolean {
     || message === '/queue continue';
 }
 
-export function transcriptViewportRows(options: TranscriptViewportRowsOptions): number | undefined {
-  if (options.transcriptLength === 0) return undefined;
+function availableTranscriptRows(options: TranscriptViewportRowsOptions): number {
   // Reserve a little vertical slack for Box margins/borders that Ink does not
   // expose as rows in the surrounding chrome estimates.
   return Math.max(
@@ -382,6 +382,15 @@ export function transcriptViewportRows(options: TranscriptViewportRowsOptions): 
       - options.noticeRows
       - 2,
   );
+}
+
+export function shouldRenderCompactWelcome(options: TranscriptViewportRowsOptions): boolean {
+  return options.transcriptLength === 0 && availableTranscriptRows(options) < WELCOME_PANEL_ROWS_ESTIMATE;
+}
+
+export function transcriptViewportRows(options: TranscriptViewportRowsOptions): number | undefined {
+  if (options.transcriptLength === 0) return undefined;
+  return availableTranscriptRows(options);
 }
 
 function formatSessionTimestamp(updatedAt: number): string {
@@ -699,10 +708,18 @@ export function boardTip(runtime?: CliRuntimeStatus): string {
   return 'Connect an RDK board to move from repo-only help to hardware verification.';
 }
 
+function compactWelcomeTip(tip: string): string {
+  if (tip.startsWith('Connect an RDK board')) return 'Connect a board for hardware verification.';
+  if (tip.startsWith('PC Host Moss uses SSH')) return 'SSH tools target the board; ! stays on this host.';
+  if (tip.startsWith('Hybrid Moss')) return 'Hybrid routes host work to board runtime with approval.';
+  if (tip.startsWith('On-board Moss')) return 'On-board Moss proves changes with device evidence.';
+  return tip;
+}
+
 export function footerHint(state: TuiRunState): string {
   if (state === 'approval') return 'y approve · a always this session · n/Esc deny';
   if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
-  return 'Ctrl+O tools · /help · Ctrl+C exit';
+  return 'Ctrl+O tools · Tab complete · Up/Down history · /help · Ctrl+C exit';
 }
 
 export function editorPreviewLines(value: string, placeholder: string, maxLines = 8): string[] {
@@ -738,6 +755,28 @@ function clampPromptCursor(value: string, cursor: number): number {
   return Math.max(0, Math.min(value.length, Math.trunc(cursor)));
 }
 
+function previousCodePointStart(value: string, cursor: number): number {
+  const index = clampPromptCursor(value, cursor);
+  if (index <= 0) return 0;
+  const previous = value.charCodeAt(index - 1);
+  const beforePrevious = index > 1 ? value.charCodeAt(index - 2) : 0;
+  if (previous >= 0xdc00 && previous <= 0xdfff && beforePrevious >= 0xd800 && beforePrevious <= 0xdbff) {
+    return index - 2;
+  }
+  return index - 1;
+}
+
+function nextCodePointEnd(value: string, cursor: number): number {
+  const index = clampPromptCursor(value, cursor);
+  if (index >= value.length) return value.length;
+  const current = value.charCodeAt(index);
+  const next = index + 1 < value.length ? value.charCodeAt(index + 1) : 0;
+  if (current >= 0xd800 && current <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+    return index + 2;
+  }
+  return index + 1;
+}
+
 function previousWordStart(value: string, cursor: number): number {
   let index = clampPromptCursor(value, cursor);
   while (index > 0 && /\s/.test(value[index - 1] || '')) index -= 1;
@@ -757,19 +796,22 @@ export function applyPromptEdit(state: PromptEditState, intent: PromptEditIntent
       };
     }
     case 'left':
-      return { value, cursor: Math.max(0, cursor - 1) };
+      return { value, cursor: previousCodePointStart(value, cursor) };
     case 'right':
-      return { value, cursor: Math.min(value.length, cursor + 1) };
+      return { value, cursor: nextCodePointEnd(value, cursor) };
     case 'home':
       return { value, cursor: 0 };
     case 'end':
       return { value, cursor: value.length };
     case 'backspace':
       if (cursor === 0) return { value, cursor };
-      return { value: `${value.slice(0, cursor - 1)}${value.slice(cursor)}`, cursor: cursor - 1 };
+      {
+        const start = previousCodePointStart(value, cursor);
+        return { value: `${value.slice(0, start)}${value.slice(cursor)}`, cursor: start };
+      }
     case 'delete':
       if (cursor >= value.length) return { value, cursor };
-      return { value: `${value.slice(0, cursor)}${value.slice(cursor + 1)}`, cursor };
+      return { value: `${value.slice(0, cursor)}${value.slice(nextCodePointEnd(value, cursor))}`, cursor };
     case 'killBefore':
       return { value: value.slice(cursor), cursor: 0 };
     case 'killAfter':
@@ -781,6 +823,10 @@ export function applyPromptEdit(state: PromptEditState, intent: PromptEditIntent
   }
 }
 
+export function shouldPromptReturnInsertNewline(key: { shift?: boolean; ctrl?: boolean }): boolean {
+  return Boolean(key.shift);
+}
+
 interface EditorPreviewLine {
   text: string;
   cursorColumn: number | null;
@@ -788,11 +834,11 @@ interface EditorPreviewLine {
 
 function editorPreviewLinesWithCursor(
   value: string,
-  placeholder: string,
+  _placeholder: string,
   cursor: number,
   maxLines = 8,
 ): EditorPreviewLine[] {
-  if (!value) return [{ text: placeholder, cursorColumn: 0 }];
+  if (!value) return [{ text: '', cursorColumn: 0 }];
   const normalized = sanitizeRenderableText(value).replace(/\r\n?/g, '\n');
   const lines = normalized.split('\n');
   const normalizedCursor = clampPromptCursor(normalized, cursor);
@@ -1189,6 +1235,7 @@ export interface WelcomePanelProps {
   profile?: string;
   executionPlane?: DeviceContextSummary;
   tip?: string;
+  compact?: boolean;
 }
 
 export function WelcomePanel({
@@ -1199,9 +1246,25 @@ export function WelcomePanel({
   profile: _profile,
   executionPlane,
   tip,
+  compact = false,
 }: WelcomePanelProps): React.ReactElement {
   const plane = executionPlane ?? executionPlaneSummary();
   const resolvedTip = tip ?? boardTip();
+  if (compact) {
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', marginBottom: 1 },
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.primary, bold: true }, 'Moss Runtime'),
+        React.createElement(Text, { color: theme.textMuted }, ` · ${modeLabel(plane.mode)} · ${plane.targetDevice}`),
+      ),
+      React.createElement(Text, { color: theme.textMuted }, `  ${compactPath(workspace)} · ${plane.inference}`),
+      React.createElement(Text, null,
+        React.createElement(Text, { bold: true }, 'Tip: '),
+        compactWelcomeTip(resolvedTip),
+      ),
+    );
+  }
   return React.createElement(
     Box,
     { flexDirection: 'column', marginTop: 1, marginBottom: 1 },
@@ -1249,7 +1312,7 @@ export function WelcomePanel({
         resolvedTip,
       ),
       React.createElement(Text, { color: theme.textMuted },
-        'Shift+Tab 切换模式(plan/accept-edits) · Ctrl+O 看工具详情与 diff · / 命令 · ? 快捷键',
+        'Shift+Tab mode · Ctrl+O tool details/diff · Type / for commands · Tab completes',
       ),
     ),
   );
@@ -1516,27 +1579,34 @@ export interface PromptEditorProps {
 function commandRowsForInput(value: string): Array<[string, string]> {
   if (!value.startsWith('/')) return [];
   const normalized = value.trim().toLowerCase();
-  const rows: Array<[string, string]> = [
-    ['/model', 'choose what model to use'],
-    ['/status', 'inspect runtime, device, and workspace context'],
-    ['/permissions', 'review safety, approval, cache, and config file policy'],
-    ['/config', 'show config file path and policy commands'],
-    ['/tools', 'show available tools and permission surface'],
+  const allRows: Array<[string, string]> = [
+    ['/model', 'switch model'],
+    ['/status', 'runtime and device'],
+    ['/permissions', 'safety and approvals'],
+    ['/tools', 'tool surface'],
+    ['/sessions', 'recent sessions'],
+    ['/queue', 'queued prompts'],
+    ['/context', 'context usage'],
+    ['/diff', 'git diff'],
+    ['/init', 'create AGENTS.md'],
+    ['/config', 'config and policy'],
     ['/examples', 'starter tasks'],
-    ['/detail', 'choose quiet, progress, or verbose detail'],
-    ['/queue', 'show, drop, or clear queued prompts'],
-    ['/sessions', 'show current and recent saved sessions'],
-    ['/context', 'context window token usage'],
-    ['/cost', 'session token usage estimate'],
-    ['/init', 'scaffold an AGENTS.md project memory file'],
-    ['/diff', 'show git working-tree changes'],
-    ['/rewind', 'list / undo file changes to a checkpoint'],
-    ['/thinking', 'toggle thinking deltas'],
+    ['/detail', 'quiet/progress/verbose'],
+    ['/cost', 'token estimate'],
+    ['/rewind', 'undo file changes'],
+    ['/thinking', 'thinking deltas'],
     ['/clear', 'clear visible transcript'],
     ['/quit', 'exit D-Moss'],
   ];
-  if (normalized === '/') return rows;
-  return rows.filter(([command]) => command.startsWith(normalized));
+  const rows = normalized === '/'
+    ? allRows
+    : allRows.filter(([command]) => command.startsWith(normalized));
+  const visibleRows = rows.slice(0, 6);
+  const hiddenCount = rows.length - visibleRows.length;
+  if (hiddenCount > 0) {
+    visibleRows.push(['...', `${hiddenCount} more commands · type to filter · Tab complete`]);
+  }
+  return visibleRows;
 }
 
 export function promptEditorRowBudget(
@@ -1559,6 +1629,8 @@ export function promptEditorRowBudget(
     clampPromptCursor(value, value.length),
     maxPreviewLines,
   ).length;
+  if (!value && options.placeholder) rows += 1;
+  if (options.hint) rows += 1;
   return rows;
 }
 
@@ -1573,7 +1645,7 @@ export function PromptEditor({
   onHistoryPrevious,
   onHistoryNext,
   onShiftEnter,
-  hint: _hint,
+  hint,
   model: _model,
 }: PromptEditorProps): React.ReactElement {
   const lineCount = value.length > 0 ? value.split('\n').length : 0;
@@ -1632,7 +1704,7 @@ export function PromptEditor({
       return;
     }
     if (key.return) {
-      if (key.shift || key.ctrl || inputChar === '\n') {
+      if (shouldPromptReturnInsertNewline(key)) {
         applyEdit({ type: 'insert', text: '\n' });
         onShiftEnter?.();
         return;
@@ -1663,6 +1735,10 @@ export function PromptEditor({
   const lines = editorPreviewLinesWithCursor(value, placeholder, currentCursor, 6);
   const suggestion = value.startsWith('/') ? commandSuggestion(value) : null;
   const commandRows = commandRowsForInput(value);
+  const guidanceLines = [
+    !value ? placeholder : '',
+    hint ?? '',
+  ].filter(Boolean);
 
   return React.createElement(
     Box,
@@ -1674,23 +1750,28 @@ export function PromptEditor({
       )),
     ) : null,
     suggestion && commandRows.length === 0 ? React.createElement(Text, { color: theme.textDim }, `  ${suggestion}`) : null,
+    ...guidanceLines.map((line, index) => React.createElement(Text, { key: `guidance-${index}`, color: theme.textDim }, `  ${line}`)),
     isMulti ? React.createElement(Text, { color: theme.textDim }, `  ${lineCount} lines`) : null,
-    ...lines.map((line, index) => React.createElement(
-      Text,
-      { key: `${index}-${line.text}`, color: value ? theme.text : theme.textMuted },
-      index === 0
-        ? React.createElement(Text, { bold: true }, '› ')
-        : '  ',
-      line.cursorColumn !== null
-        ? line.text.slice(0, line.cursorColumn)
-        : line.text,
-      !disabled && line.cursorColumn !== null
-        ? React.createElement(Text, { color: theme.textMuted }, '▌')
-        : null,
-      line.cursorColumn !== null
-        ? line.text.slice(line.cursorColumn)
-        : null,
-    )),
+    ...lines.map((line, index) => {
+      const cursorColumn = line.cursorColumn;
+      const showVirtualCursor = !disabled && cursorColumn !== null && cursorColumn < line.text.length;
+      return React.createElement(
+        Text,
+        { key: `${index}-${line.text}`, color: value ? theme.text : theme.textMuted },
+        index === 0
+          ? React.createElement(Text, { bold: true }, '› ')
+          : '  ',
+        cursorColumn !== null
+          ? line.text.slice(0, cursorColumn)
+          : line.text,
+        showVirtualCursor
+          ? React.createElement(Text, { color: theme.textMuted }, '▌')
+          : null,
+        cursorColumn !== null
+          ? line.text.slice(cursorColumn)
+          : null,
+      );
+    }),
   );
 }
 
@@ -1709,7 +1790,7 @@ export function QueuePreview({ items, paused = false, now = Date.now() }: QueueP
     { flexDirection: 'column', marginTop: 1 },
     React.createElement(Text, { color: theme.textMuted },
       paused
-        ? `  queued ${items.length} · paused after stop · /queue resume · /queue drop last · /queue clear all`
+        ? `  queued ${items.length} · paused after stop · /queue resume · send a prompt to resume · /queue drop last · /queue clear all`
         : `  queued ${items.length} · next runs when current task finishes · /queue drop last · /queue clear all`),
     ...visible.map((item, index) => React.createElement(Text, {
       key: `${index}-${item.message}`,
@@ -2384,12 +2465,8 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const executionPlane = executionPlaneSummary(runtime);
   const terminalRows = Math.max(12, stdout?.rows ?? 30);
   const inputFooterText = [
-    currentModel || 'no model',
     modeLabel(executionPlane.mode),
-    executionPlane.targetDevice,
-    executionPlane.inference,
-    compactPath(workspace),
-    runState === 'running' ? 'Esc cancel' : 'Shift+Tab mode · Ctrl+O tools · /help',
+    executionPlane.targetDevice.includes('no board') ? 'no board' : executionPlane.targetDevice,
     queuedInputs.length > 0 ? `queued ${queuedInputs.length}` : '',
     detailMode !== 'quiet' ? `detail ${detailMode}` : '',
     showThinking ? 'thinking on' : '',
@@ -2397,13 +2474,14 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   ].filter(Boolean).join('  ·  ');
   const promptRows = promptEditorRowBudget(input, {
     placeholder: promptPlaceholder(runState),
+    hint: footerHint(runState),
   });
   const queueRows = queuedInputs.length > 0 ? Math.min(5, queuedInputs.length + 2) : 0;
   const footerRows = approval ? 0 : 1;
   const headerRows = 5;
   const approvalRows = approval ? Math.min(10, approval.question.split('\n').length + 4) : 0;
   const noticeRows = notice ? 1 : 0;
-  const transcriptRows = transcriptViewportRows({
+  const viewportOptions = {
     transcriptLength: transcript.length,
     terminalRows,
     headerRows,
@@ -2412,7 +2490,9 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     footerRows,
     approvalRows,
     noticeRows,
-  });
+  };
+  const compactWelcome = shouldRenderCompactWelcome(viewportOptions);
+  const transcriptRows = transcriptViewportRows(viewportOptions);
 
   return React.createElement(
     Box,
@@ -2442,6 +2522,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
             profile,
             executionPlane,
             tip: boardTip(runtime),
+            compact: compactWelcome,
           })
         : null,
       ...transcript.map((item) => React.createElement(TranscriptMessage, {
@@ -2482,6 +2563,7 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
           onSubmit: submit,
           placeholder: promptPlaceholder(runState),
           disabled: false,
+          hint: footerHint(runState),
           onHistoryPrevious: recallHistoryPrevious,
           onHistoryNext: recallHistoryNext,
           onShiftEnter: () => undefined,

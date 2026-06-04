@@ -31,6 +31,8 @@ import {
   runLocalShellCommand,
   sanitizeRenderableText,
   shouldDrainQueue,
+  shouldPromptReturnInsertNewline,
+  shouldRenderCompactWelcome,
   statusBadge,
   statusLine,
   stopRequestedMessage,
@@ -120,12 +122,15 @@ assert.equal(approvalKeyDecision('n', {}), 'deny');
 assert.equal(approvalKeyDecision('', { escape: true }), 'deny');
 assert.equal(approvalKeyDecision('x', {}), null);
 assert.match(footerHint('ready'), /Ctrl\+O tools/);
+assert.match(footerHint('ready'), /Tab complete/);
+assert.match(footerHint('ready'), /Up\/Down history/);
 assert.match(footerHint('approval'), /a always this session/);
 assert.match(footerHint('running'), /Esc cancel/);
 assert.match(footerHint('running'), /Enter queue/);
-assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-v4-pro' }), 2);
-// '/' previews the full command dropdown; this budget tracks its row count — update when commands are added/removed.
-assert.equal(promptEditorRowBudget('/'), 20);
+assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-v4-pro' }), 3);
+assert.equal(promptEditorRowBudget('', { placeholder: 'Ask Moss', hint: 'Ctrl+O tools' }), 4);
+// '/' previews a compact command palette so it does not crowd short terminals.
+assert.equal(promptEditorRowBudget('/'), 10);
 assert.equal(promptEditorRowBudget('/que'), 4);
 assert.equal(promptEditorRowBudget('/staus'), 3);
 assert.equal(promptEditorRowBudget(Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join('\n')), 9);
@@ -162,6 +167,10 @@ assert.equal(isQueueControlCommand('/queue continue'), true);
 assert.equal(isQueueControlCommand('/queue clear'), true);
 assert.equal(isQueueControlCommand('/status'), false);
 assert.equal(isQueueControlCommand('plain prompt'), false);
+assert.equal(shouldPromptReturnInsertNewline({}), false);
+assert.equal(shouldPromptReturnInsertNewline({ shift: false, ctrl: false }), false);
+assert.equal(shouldPromptReturnInsertNewline({ shift: true }), true);
+assert.equal(shouldPromptReturnInsertNewline({ ctrl: true }), false);
 assert.equal(transcriptViewportRows({
   transcriptLength: 0,
   terminalRows: 57,
@@ -206,6 +215,18 @@ assert.equal(transcriptViewportRows({
   assert.equal(emptyRows, undefined);
   assert.equal(filledRows, 29);
 }
+const shortEmptyViewport = {
+  transcriptLength: 0,
+  terminalRows: 18,
+  headerRows: 6,
+  promptRows: 3,
+  queueRows: 0,
+  footerRows: 1,
+  approvalRows: 0,
+  noticeRows: 0,
+};
+assert.equal(transcriptViewportRows(shortEmptyViewport), undefined);
+assert.equal(shouldRenderCompactWelcome(shortEmptyViewport), true);
 {
   const withoutChrome = transcriptViewportRows({
     transcriptLength: 1,
@@ -340,6 +361,22 @@ assert.equal(transcriptViewportRows({
   assert.deepEqual(
     applyPromptEdit({ value: 'abcd', cursor: 2 }, { type: 'delete' }),
     { value: 'abd', cursor: 2 },
+  );
+  assert.deepEqual(
+    applyPromptEdit({ value: 'a🙂b', cursor: 3 }, { type: 'left' }),
+    { value: 'a🙂b', cursor: 1 },
+  );
+  assert.deepEqual(
+    applyPromptEdit({ value: 'a🙂b', cursor: 1 }, { type: 'right' }),
+    { value: 'a🙂b', cursor: 3 },
+  );
+  assert.deepEqual(
+    applyPromptEdit({ value: 'a🙂b', cursor: 3 }, { type: 'backspace' }),
+    { value: 'ab', cursor: 1 },
+  );
+  assert.deepEqual(
+    applyPromptEdit({ value: 'a🙂b', cursor: 1 }, { type: 'delete' }),
+    { value: 'ab', cursor: 1 },
   );
   assert.deepEqual(
     applyPromptEdit({ value: 'alpha beta', cursor: 10 }, { type: 'deletePreviousWord' }),

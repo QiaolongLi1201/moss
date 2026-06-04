@@ -117,3 +117,9 @@ export {
   buildRoboticsEngineeringPrompt,
   buildRoboticsEngineeringPromptQuick,
 } from './prompts/robotics-engineering-prompt.js';
+
+// --- Software engineering prompts (通用编码底座，与 robotics 平行可切换) ---
+export {
+  buildSoftwareEngineeringPrompt,
+  buildSoftwareEngineeringPromptQuick,
+} from './prompts/software-engineering-prompt.js';

@@ -234,7 +234,33 @@ export async function duckDuckGoSearch(
     results.push({ title, url, snippet: snippets[i] ?? '' });
     i++;
   }
+  if (results.length === 0 && duckDuckGoResponseLooksBlocked(text)) {
+    // DuckDuckGo's keyless HTML endpoint increasingly serves an anti-bot
+    // "anomaly"/challenge page (HTTP 200, no result markup). Reporting that as
+    // "No results" misleads the model into thinking the topic has no information
+    // (a confabulation hazard) and makes it retry the same dead query. Tell the truth.
+    throw new DmossError({
+      code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+      message:
+        'web_search: DuckDuckGo blocked automated access (anti-bot/anomaly page) — no results could be retrieved. This is a backend failure, NOT an empty result set; do not infer the topic has no information.',
+      hint:
+        'Configure a Brave API key (set BRAVE_API_KEY or pass provider: "brave") for reliable search, or call web_fetch on a specific known URL instead.',
+      recoverable: true,
+    });
+  }
   return results;
+}
+
+/**
+ * Given DuckDuckGo's HTML response body that yielded zero parsed results, decide
+ * whether the backend is blocked/broken (anti-bot/anomaly page, or no result markup
+ * at all) vs a genuinely empty result set. Exported for testing.
+ */
+export function duckDuckGoResponseLooksBlocked(text: string): boolean {
+  const looksBlocked =
+    /anomaly|challenge-form|captcha|unusual traffic|detected unusual|are you a (?:human|robot)/i.test(text);
+  const hasResultMarkup = /result__a|result__snippet|no-results|results_links/i.test(text);
+  return looksBlocked || !hasResultMarkup;
 }
 
 /** Brave Search API backend (requires an API key). */

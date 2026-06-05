@@ -137,4 +137,40 @@ console.log('[TEST] tool contract: name + query input');
   assert.equal(tool.metadata?.planMode, 'allow');
 }
 
+// Test 8: DDG anti-bot/anomaly page (HTTP 200, no results parsed) must surface as a
+// backend failure — NOT a silent "No results" that would mislead the model into
+// thinking the topic has no information (the confabulation hazard from the bug hunt).
+console.log('[TEST] DDG anomaly page -> honest "blocked" error (not "No results")');
+await withMockedFetch(
+  async () => new Response(
+    '<html><body>If this error persists, please let us know. anomaly detected <form class="challenge-form">...</form></body></html>',
+    { status: 200, headers: { 'content-type': 'text/html' } },
+  ),
+  async () => {
+    const tool = createWebSearchTool();
+    await assert.rejects(
+      () => tool.execute({ query: 'rdk x5' }, CTX),
+      (err) =>
+        err?.code === 'PROVIDER_UPSTREAM_ERROR' &&
+        err?.recoverable === true &&
+        /blocked automated access|anti-bot|backend failure/i.test(err?.message || ''),
+      'an anti-bot/anomaly page must surface as a recoverable backend failure, not "No results"',
+    );
+  },
+)();
+
+// Test 9: a genuine empty result set (real DDG markup, zero hits) reports "No results".
+console.log('[TEST] genuine empty results -> "No results" (not an error)');
+await withMockedFetch(
+  async () => new Response(
+    '<html><body><div class="no-results">No results found.</div></body></html>',
+    { status: 200, headers: { 'content-type': 'text/html' } },
+  ),
+  async () => {
+    const tool = createWebSearchTool();
+    const out = await tool.execute({ query: 'zxqwv nonsense token' }, CTX);
+    assert.match(out, /No results for "zxqwv nonsense token"/, 'genuine empty must report No results, not throw');
+  },
+)();
+
 console.log('\n[PASS] web_search tool tests');

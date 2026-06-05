@@ -11,12 +11,25 @@ export interface ChannelSafetyResult {
   reason?: string;
 }
 
+// "Command position": start of the command line, or right after a shell separator
+// (; & | && || $( `), or after a benign prefix (sudo/nice/time/xargs/env/VAR=...).
+// Anchoring bare executable names here stops them from matching the SAME word when it
+// appears inside a quoted string, a flag value, or a path — e.g. `ffprobe ... format=`,
+// `echo "see more"`, `git commit -m "look at this"`, `docker run --mount ...` must NOT
+// be flagged, while a real `mount ...` / `at 9pm` / `less file` invocation still is.
+const CMD = '(?:^|[\\n;&|(]|\\|\\||&&|\\$\\(|`|\\bsudo\\s+|\\bnice\\s+(?:-n\\s+-?\\d+\\s+)?|\\btime\\s+|\\bxargs\\s+(?:-[^\\s]+\\s+)*|\\benv\\s+(?:[A-Za-z_]\\w*=\\S*\\s+)*|(?:[A-Za-z_]\\w*=\\S*\\s+)+)\\s*';
+const at = (body: string, flags = 'i'): RegExp => new RegExp(CMD + body, flags);
+
 const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\brm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?.*\/(\.ssh|\.config|\/etc)/i, reason: '禁止删除关键系统/项目目录' },
   { pattern: /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f?\s+[/~]/i, reason: '禁止递归删除根目录或用户目录' },
-  { pattern: /\bmkfs\b|\bformat\b|\bfdisk\b/i, reason: '禁止格式化磁盘操作' },
+  // Disk format: real mkfs/fdisk (any command position), or Windows `format <drive>:`.
+  // The bare word "format" is intentionally NOT matched (it false-flagged
+  // `ffprobe -show_entries format=duration`, `--output-format`, code, etc.).
+  { pattern: at('(?:mkfs(?:\\.\\w+)?|fdisk)\\b'), reason: '禁止格式化磁盘操作' },
+  { pattern: /\bformat\s+[a-zA-Z]:/i, reason: '禁止格式化磁盘操作' },
   { pattern: /\bdd\s+.*of=\/dev\//i, reason: '禁止直接写入设备' },
-  { pattern: /\b(shutdown|reboot|halt|poweroff)\b/i, reason: '禁止关机/重启本机' },
+  { pattern: at('(?:shutdown|reboot|halt|poweroff)\\b'), reason: '禁止关机/重启本机' },
   { pattern: /\bchmod\s+777\s+\//i, reason: '禁止修改根目录权限' },
   { pattern: /\b(curl|wget)\b.*\|\s*(env\s+)?(\/\w+\/)*\w*(sh|bash|zsh|dash)\b/i, reason: '禁止从网络管道执行脚本' },
   { pattern: /\$\(\s*(curl|wget)\b/i, reason: '禁止通过命令替换执行网络脚本' },
@@ -27,30 +40,29 @@ const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bgit\s+push\s+.*--force\b/i, reason: '禁止强制推送' },
   { pattern: /\b(curl|wget)\b.*\|\s*(python|python3|perl|ruby|node)\b/i, reason: '禁止从网络管道执行脚本' },
   // Privilege escalation
-  { pattern: /\b(chown|chgrp)\b/i, reason: '禁止修改文件所有者/组' },
-  { pattern: /\b(useradd|usermod|userdel|groupadd|groupmod|passwd)\b/i, reason: '禁止用户/密码管理操作' },
+  { pattern: at('(?:chown|chgrp)\\b'), reason: '禁止修改文件所有者/组' },
+  { pattern: at('(?:useradd|usermod|userdel|groupadd|groupmod|passwd)\\b'), reason: '禁止用户/密码管理操作' },
   // Reverse shells and network exfiltration
-  { pattern: /\b(nc|ncat|socat|nmap)\b/i, reason: '禁止网络工具/反弹 shell' },
+  { pattern: at('(?:nc|ncat|socat|nmap)\\b'), reason: '禁止网络工具/反弹 shell' },
   { pattern: /\/dev\/tcp\//i, reason: '禁止 bash 反向 shell' },
   // Arbitrary code execution
   { pattern: /\b(python|python3|perl|ruby|node)\s+-[a-zA-Z]*c\b/i, reason: '禁止解释器 -c 任意代码执行' },
   { pattern: /\b(node|python|python3|perl|ruby)\s+-e\b/i, reason: '禁止解释器 -e 任意代码执行' },
   // Persistent/scheduled execution
-  { pattern: /\bcrontab\b/i, reason: '禁止定时任务修改' },
-  { pattern: /\bat\s+/i, reason: '禁止延迟任务执行' },
+  { pattern: at('crontab\\b'), reason: '禁止定时任务修改' },
+  { pattern: at('at\\s+'), reason: '禁止延迟任务执行' },
   // Filesystem manipulation
-  { pattern: /\bmount\b|\bumount\b/i, reason: '禁止挂载/卸载文件系统' },
-  { pattern: /\biptables\b|\bufw\b|\bpft?ctl\b/i, reason: '禁止防火墙修改' },
+  { pattern: at('u?mount\\b'), reason: '禁止挂载/卸载文件系统' },
+  { pattern: at('(?:iptables|ufw|pft?ctl)\\b'), reason: '禁止防火墙修改' },
   // Indirect command execution
   { pattern: /\bfind\s+.*-exec(?:dir)?\b/i, reason: '禁止 find -exec/-execdir 任意命令执行' },
-  { pattern: /\bxargs\b/i, reason: '禁止 xargs 任意命令执行' },
   { pattern: /\bawk\s+.*system\b/i, reason: '禁止 awk system 调用' },
   { pattern: /\btar\b.*--checkpoint-action/i, reason: '禁止 tar 命令注入' },
   { pattern: /\bzip\b.*-T[T]/i, reason: '禁止 zip 命令注入' },
   // Encoded/binary payload
   { pattern: /\bbase64\b.*\|\s*(sh|bash|zsh|dash)/i, reason: '禁止 base64 解码执行' },
-  // Shell escape from editors/pagers
-  { pattern: /\b(vim?|nano|less|more)\b/i, reason: '禁止编辑器/分页器（支持 shell escape）' },
+  // Shell escape from editors/pagers (only when actually invoked as a command)
+  { pattern: at('(?:vim?|nano|less|more)\\b'), reason: '禁止编辑器/分页器（支持 shell escape）' },
 ];
 
 const BASE_PROTECTED_PATH_KEYWORDS = [

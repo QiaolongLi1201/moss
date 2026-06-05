@@ -1976,6 +1976,17 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
         return null;
       },
     });
+    // 写后采集指纹：/rewind 据此判断文件是否被用户在外部改过，避免静默覆盖。
+    agent.registerPostToolHook({
+      name: 'file-checkpoint-after',
+      priority: 5,
+      async process({ tool, input }) {
+        for (const p of checkpointTargetPaths(tool.name, input, workspace, parsePatchPaths)) {
+          checkpointRef.current?.noteAfterWrite(p);
+        }
+        return null;
+      },
+    });
   }, []);
 
   useEffect(() => {
@@ -2187,10 +2198,21 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
         addTranscript('system', 'Usage: /rewind [seq]');
         return true;
       }
-      const restored = store.rewindTo(seq);
-      addTranscript('system', restored.length
-        ? `Rewound ${restored.length} file(s) to checkpoint #${seq}.`
-        : `Checkpoint #${seq} not found.`);
+      const result = store.rewindTo(seq);
+      if (!result.found) {
+        addTranscript('system', `Checkpoint #${seq} not found.`);
+        return true;
+      }
+      const lines: string[] = [];
+      if (result.restored.length) lines.push(`Rewound ${result.restored.length} file(s) to checkpoint #${seq}.`);
+      if (result.skipped.length) {
+        lines.push(
+          `Kept ${result.skipped.length} file(s) changed since the agent wrote them (edited or deleted outside this session) — not overwritten:`,
+          ...result.skipped.map((p) => `  ${path.relative(workspace, p) || p}`),
+        );
+      }
+      if (!lines.length) lines.push(`Checkpoint #${seq}: nothing to restore.`);
+      addTranscript('system', lines.join('\n'));
       return true;
     }
     if (message === '/models') {

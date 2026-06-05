@@ -77,7 +77,7 @@ import {
   createModelDefFromDmossConfig,
 } from './dmoss-agent-loop-adapter.js';
 import { createStreamFunctionFromLlmProvider } from '../llm/llm-provider-stream-adapter.js';
-import { ToolHookRegistry, createSecretSanitizerHook, type PreToolUseHook } from '../tools/tool-hooks.js';
+import { ToolHookRegistry, createSecretSanitizerHook, type PreToolUseHook, type PostToolUseHook } from '../tools/tool-hooks.js';
 import { CommandQueueRegistry } from './command-queue.js';
 import { sanitizeSecrets } from '../../safety/secret-sanitizer.js';
 import { DmossError, ErrorCode } from '../../errors.js';
@@ -356,6 +356,11 @@ export class DmossAgent {
   /** 注册写前 pre-hook（文件检查点备份等）；交互式宿主 mount 时调用，运行时生效。 */
   registerPreToolHook(hook: PreToolUseHook): void {
     this.toolHooks.registerPre(hook);
+  }
+
+  /** 注册写后 post-hook（文件检查点的写后指纹采集等）；与 registerPreToolHook 对称。 */
+  registerPostToolHook(hook: PostToolUseHook): void {
+    this.toolHooks.registerPost(hook);
   }
 
   /**

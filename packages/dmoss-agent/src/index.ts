@@ -218,8 +218,8 @@ export { OpenAILLMProvider } from './provider/openai.js';
 export type { OpenAILLMProviderConfig } from './provider/openai.js';
 
 // --- MCP (Model Context Protocol client) ---
-export { loadMcpConfig, connectMcpServers } from './mcp/index.js';
-export type { McpServerConfig, McpConfig, McpTool, McpConnection } from './mcp/index.js';
+export { loadMcpConfig, connectMcpServers, connectMcpServersWithFailures } from './mcp/index.js';
+export type { McpServerConfig, McpConfig, McpTool, McpConnection, McpConnectionResult } from './mcp/index.js';
 
 // --- Provider ---
 export {

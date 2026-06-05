@@ -200,7 +200,12 @@ export interface ChatResult {
   response: string;
   toolCalls: ToolCall[];
   toolResults: ToolResult[];
-  usage?: { inputTokens: number; outputTokens: number };
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+  };
   /** Thinking content extracted from inline tags (if thinking stream enabled) */
   thinking?: string[];
   /** Number of compactions performed during this run */
@@ -255,6 +260,9 @@ export type DmossAgentEvent =
       prefixChanges: number;
       toolOrderChecks: number;
       toolOrderChanges: number;
+      /** Cumulative actual cache tokens reported by the provider (pi-ai usage). */
+      cacheReadTokens: number;
+      cacheCreationTokens: number;
     }
   | { type: 'done'; result: ChatResult };
 

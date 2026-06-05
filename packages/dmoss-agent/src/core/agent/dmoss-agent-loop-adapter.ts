@@ -62,7 +62,14 @@ export function createDmossAgentLoopEventAdapter(
   const thinking: string[] = [];
   const toolCalls: ToolCall[] = [];
   const toolResults: ToolResult[] = [];
-  let usage: { inputTokens: number; outputTokens: number } | undefined;
+  let usage:
+    | {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheCreationTokens: number;
+      }
+    | undefined;
   let compactions = 0;
   let stopReason = 'unknown';
 
@@ -152,6 +159,9 @@ export function createDmossAgentLoopEventAdapter(
           usage = {
             inputTokens: (usage?.inputTokens ?? 0) + event.inputTokens,
             outputTokens: (usage?.outputTokens ?? 0) + event.outputTokens,
+            cacheReadTokens: (usage?.cacheReadTokens ?? 0) + event.cacheReadTokens,
+            cacheCreationTokens:
+              (usage?.cacheCreationTokens ?? 0) + event.cacheCreationTokens,
           };
           return [];
         case 'compaction':
@@ -203,6 +213,8 @@ export function createDmossAgentLoopEventAdapter(
               prefixChanges: event.metrics.promptPrefixChanges ?? 0,
               toolOrderChecks: event.metrics.promptToolOrderChecks ?? 0,
               toolOrderChanges: event.metrics.promptToolOrderChanges ?? 0,
+              cacheReadTokens: usage?.cacheReadTokens ?? 0,
+              cacheCreationTokens: usage?.cacheCreationTokens ?? 0,
             },
           ];
         case 'retry':

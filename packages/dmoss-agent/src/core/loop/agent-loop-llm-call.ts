@@ -186,6 +186,8 @@ export async function executeLlmTurn(
         type: 'llm_usage',
         inputTokens: llmTurn.usage.inputTokens,
         outputTokens: llmTurn.usage.outputTokens,
+        cacheReadTokens: llmTurn.usage.cacheReadTokens,
+        cacheCreationTokens: llmTurn.usage.cacheCreationTokens,
       });
       await recordLlmUsage({
         runId,

@@ -278,6 +278,15 @@ export {
   execBackgroundTool,
   execLogsTool,
   execStopTool,
+  subscribeBackgroundOutput,
+  subscribeBackgroundLifecycle,
+  getBackgroundProcessSnapshot,
+  listBackgroundProcessSnapshots,
+  stopBackgroundProcess,
+  type BackgroundProcSnapshot,
+  type BackgroundOutputChunk,
+  type BackgroundOutputListener,
+  type BackgroundLifecycleListener,
 } from './tools/background-exec.js';
 
 // --- Web Tools (generic http fetch, SSRF-safe, no external deps) ---

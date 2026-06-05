@@ -59,7 +59,7 @@ type MiniAgentEventPayload =
   | { type: 'context_overflow_compact'; error: string; recoveryLevel?: number }
   | { type: 'retry'; attempt: number; delay: number; error: string; category?: LlmErrorCategory }
   | { type: 'turn_transition'; turn: number; reason: string }
-  | { type: 'llm_usage'; inputTokens: number; outputTokens: number }
+  | { type: 'llm_usage'; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number }
 
   | { type: 'output_continuation'; attempt: number; maxAttempts: number }
   | {

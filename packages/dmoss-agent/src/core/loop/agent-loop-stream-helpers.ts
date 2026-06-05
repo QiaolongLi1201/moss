@@ -119,7 +119,12 @@ export interface AgentLoopLlmTurnResult {
   turnTextParts: string[];
   streamStopReason: StopReason | undefined;
   firstTokenMs: number | null;
-  usage?: { inputTokens: number; outputTokens: number };
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+  };
 }
 
 export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promise<AgentLoopLlmTurnResult> {
@@ -141,7 +146,14 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
     suppressVisibleDeltas,
   } = params;
   let firstTokenMs = params.firstTokenMs;
-  let usage: { inputTokens: number; outputTokens: number } | undefined;
+  let usage:
+    | {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens: number;
+        cacheCreationTokens: number;
+      }
+    | undefined;
   const assistantContent: ContentBlock[] = [];
   /**
    * Per-turn reasoning collector (industry-standard one-shot per-turn
@@ -407,6 +419,8 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
           usage = {
             inputTokens: piAssistant.usage.input,
             outputTokens: piAssistant.usage.output,
+            cacheReadTokens: piAssistant.usage.cacheRead ?? 0,
+            cacheCreationTokens: piAssistant.usage.cacheWrite ?? 0,
           };
 
           /** 部分网关仅把完整 assistant 放在 result.content，流式事件未写入 assistantContent → message_end 空 */

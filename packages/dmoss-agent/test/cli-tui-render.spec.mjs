@@ -5,6 +5,8 @@
  *   node packages/dmoss-agent/test/cli-tui-render.spec.mjs
  */
 import assert from 'node:assert/strict';
+import path from 'node:path';
+import { createRequire } from 'node:module';
 import React from 'react';
 import { render, cleanup } from 'ink-testing-library';
 import {
@@ -23,9 +25,19 @@ import {
   inferExecutionMode,
 } from '../dist/cli/tui.js';
 
+const require = createRequire(import.meta.url);
+const inkEntry = require.resolve('ink');
+const { default: CursorContext } = await import(
+  path.join(path.dirname(inkEntry), 'components/CursorContext.js')
+);
+
 const tests = [];
 function test(name, fn) {
   tests.push({ name, fn });
+}
+
+function wait(ms = 10) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ───── StatusBar ─────
@@ -43,11 +55,10 @@ test('SessionHeader renders a compact Claude Code-style launch panel', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /✻ D-Moss Code/);
-  assert.match(frame, /model\s+deepseek-v4-pro/);
+  assert.match(frame, /RDK Studio/);
+  assert.match(frame, /model:\s+deepseek-v4-pro/);
   assert.match(frame, /deepseek-v4-pro/);
-  assert.match(frame, /directory\s+[^\n]*project/);
-  assert.match(frame, /\/model to change/);
+  assert.match(frame, /cwd:\s+[^\n]*project/);
   assert.doesNotMatch(frame, /profile autonomous/);
   assert.doesNotMatch(frame, /cache stable/);
   cleanup();
@@ -66,7 +77,7 @@ test('SessionHeader keeps cache policy out of the launch panel', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /D-Moss Code/);
+  assert.match(frame, /RDK/);
   assert.doesNotMatch(frame, /cache off/);
   cleanup();
 });
@@ -137,27 +148,17 @@ test('WelcomePanel renders a compact Claude Code-style tip', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /Moss Runtime/);
-  assert.match(frame, /Running on\s+darwin\/arm64 host/);
-  assert.match(frame, /Mode\s+PC Host Agent/);
-  assert.match(frame, /Target\s+no board target/);
-  assert.match(frame, /Inference\s+cloud routed \(qwen\)/);
-  assert.match(frame, /Permissions\s+diagnose allowed, repair requires approval/);
-  assert.match(frame, /Policy\s+workspace\/runtime fs/);
-  assert.match(frame, /process\/service changes require approval/);
-  assert.match(frame, /lifecycle install\/upgrade\/recover\/uninstall requires evidence/);
-  assert.match(frame, /Device\s+no live board context/);
-  assert.match(frame, /Connect a board to unlock/);
+  // Claude-code-style welcome: "Tips for getting started" + numbered device
+  // workflows + the board tip. No device-context block, no "Try:" line.
+  assert.match(frame, /Tips for getting started/);
   assert.match(frame, /Diagnose Board/);
   assert.match(frame, /Deploy Model/);
   assert.match(frame, /Bring up Sensor/);
   assert.match(frame, /Debug ROS\/tros/);
-  assert.match(frame, /Moss is device-centric/);
-  assert.match(frame, /device state/);
-  assert.match(frame, /benchmark output/);
-  assert.match(frame, /Tip:/);
   assert.match(frame, /hardware verification/);
-  assert.doesNotMatch(frame, /\/model\s+switch the model/);
+  assert.doesNotMatch(frame, /Moss Runtime/);
+  assert.doesNotMatch(frame, /Try:/);
+  assert.doesNotMatch(frame, /Moss is device-centric/);
   assert.doesNotMatch(frame, /profile cautious/);
   cleanup();
 });
@@ -181,8 +182,9 @@ test('WelcomePanel highlights a connected board surface without command clutter'
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /remote board root@192\.168\.1\.10/);
-  assert.match(frame, /device workflows unlocked/);
+  // Welcome is Claude-code-minimal now; the board surface surfaces via the tip,
+  // not a device line.
+  assert.match(frame, /Tips for getting started/);
   assert.match(frame, /SSH\/bridge tools/);
   assert.doesNotMatch(frame, /\/tools\s+show available tools/);
   cleanup();
@@ -208,12 +210,12 @@ test('WelcomePanel renders a compact short-terminal variant', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /Moss Runtime/);
   assert.match(frame, /PC Host Agent/);
   assert.match(frame, /no board target/);
-  assert.match(frame, /cloud routed \(openai\)/);
   assert.match(frame, /Tip:/);
   assert.match(frame, /hardware verification/);
+  assert.doesNotMatch(frame, /Moss Runtime/);
+  assert.doesNotMatch(frame, /Try:/);
   assert.doesNotMatch(frame, /Diagnose Board/);
   assert(frame.split('\n').length <= 4);
   cleanup();
@@ -481,12 +483,12 @@ test('PromptEditor renders a Codex-style placeholder at the prompt', () => {
   );
   const frame = lastFrame();
   assert.match(frame, /Ask Moss for code, board, or ROS help/);
-  assert.match(frame, /›\s*$/);
-  assert.doesNotMatch(frame, /› ▌/);
+  assert.match(frame, /> /);
+  assert.doesNotMatch(frame, /▌/);
   cleanup();
 });
 
-test('PromptEditor renders the active key hint above the prompt', () => {
+test('PromptEditor renders the active key hint below the prompt', () => {
   const { lastFrame } = render(
     React.createElement(PromptEditor, {
       value: '',
@@ -507,7 +509,8 @@ test('PromptEditor renders the active key hint above the prompt', () => {
   assert.ok(placeholderLine);
   assert.ok(hintLine);
   assert.notEqual(placeholderLine, hintLine);
-  assert(frame.indexOf('Tab complete') < frame.lastIndexOf('›'));
+  // Hint now renders below the bordered input box (Claude-code layout).
+  assert(frame.indexOf('Ask Moss') < frame.indexOf('Tab complete'));
   cleanup();
 });
 
@@ -537,15 +540,15 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /› \//);
-  assert.match(frame, /type to filter/);
-  assert.match(frame, /Tab complete/);
+  assert.match(frame, /> \//);
+  // Navigable, windowed menu (≤6 rows): the first page of commands is shown,
+  // the selected (first) row highlighted. No static "… N more / type to filter" row.
   assert.match(frame, /\/model\s+switch model/);
   assert.match(frame, /\/permissions\s+safety and approvals/);
   assert.match(frame, /\/tools\s+tool surface/);
   assert.match(frame, /\/sessions\s+recent sessions/);
-  assert.match(frame, /\.\.\.\s+\d+ more commands/);
-  assert(frame.split('\n').length <= 10);
+  assert.doesNotMatch(frame, /more commands/);
+  assert(frame.split('\n').length <= 12);
   cleanup();
 });
 
@@ -658,7 +661,9 @@ test('PromptEditor renders the cursor at the requested column', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /› ab▌cd/);
+  // Cursor is an inverse-video block (Claude-code style) — color styling is
+  // stripped in this no-TTY test env, so assert the text stays intact.
+  assert.match(frame, /> abcd/);
   cleanup();
 });
 
@@ -674,9 +679,57 @@ test('PromptEditor lets the terminal cursor anchor IME at the end of input', () 
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /› abcd\s*$/);
-  assert.doesNotMatch(frame, /abcd▌/);
+  // Cursor at end-of-input renders no block, so the terminal cursor can anchor
+  // there for IME composition (CJK input stays correct).
+  assert.match(frame, /> abcd/);
+  assert.doesNotMatch(frame, /\[7m/);
   cleanup();
+});
+
+test('PromptEditor commits the current cursor position during the same render', async () => {
+  const previousIsTty = process.stdout.isTTY;
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+  const committed = [];
+  const makeEditor = (value, cursor) => React.createElement(
+    CursorContext.Provider,
+    {
+      value: {
+        setCursorPosition(position) {
+          if (!position) {
+            committed.push(position);
+            return;
+          }
+          committed.push({ x: position.x, y: position.y });
+        },
+      },
+    },
+    React.createElement(PromptEditor, {
+      value,
+      cursor,
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: '',
+      disabled: false,
+    }),
+  );
+  const lastPosition = () => [...committed].reverse().find((position) => position && Number.isFinite(position.x));
+
+  try {
+    const { rerender } = render(makeEditor('a', 1));
+    for (let i = 0; i < 10 && !lastPosition(); i += 1) await wait(10);
+    const initial = lastPosition();
+    assert.ok(initial, 'expected PromptEditor to commit an initial hardware cursor position');
+
+    committed.length = 0;
+    rerender(makeEditor('ab', 2));
+    await wait();
+    const afterTyping = lastPosition();
+    assert.ok(afterTyping, 'expected PromptEditor to commit a cursor position after typing');
+    assert.equal(afterTyping.x, initial.x + 1);
+  } finally {
+    cleanup();
+    Object.defineProperty(process.stdout, 'isTTY', { value: previousIsTty, configurable: true });
+  }
 });
 
 test('QueuePreview renders queued prompts and overflow count', () => {

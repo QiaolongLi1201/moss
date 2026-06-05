@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Box, Text, render, useApp, useInput, useCursor, measureElement, type DOMElement } from 'ink';
+import stringWidth from 'string-width';
+import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { StreamingSpinner } from './components/StreamingSpinner.js';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
@@ -97,6 +99,7 @@ export interface DmossTuiProps {
 // ────────────────────────────────────────────────────────────────────────────
 
 import { legacyTheme as theme } from './theme/theme.js';
+import { BRAND_ORANGE, BRAND_CYAN } from './theme/brand.js';
 
 // Glyphs — emoji at line-start only (never in alignment columns).
 // Falls back to bracket tags when DMOSS_TUI_NO_EMOJI=1 or terminal lacks UTF-8.
@@ -107,35 +110,9 @@ function emojiEnabled(): boolean {
   return true;
 }
 
-const TOOL_ICONS_EMOJI: Record<string, string> = {
-  read: '⎿', read_file: '⎿', readfile: '⎿',
-  write: '✎', write_file: '✎', writefile: '✎',
-  edit: '✎', edit_file: '✎',
-  bash: '$', shell: '$', exec: '$', run_shell: '$',
-  grep: '⌕', search: '⌕', glob: '⌕', find: '⌕', list_directory: '▣',
-  webfetch: '↗', web_fetch: '↗', fetch: '↗', http_get: '↗',
-  task: '◌', agent: '◌',
-  todo: '☐', todowrite: '☐', task_create: '☐',
-  notebook: '◇', notebookedit: '◇',
-};
-
-function toolIcon(toolName: string): string {
-  const useEmoji = emojiEnabled();
-  const key = toolName.toLowerCase().replace(/[^a-z_]/g, '');
-  if (useEmoji) return TOOL_ICONS_EMOJI[key] || '·';
-  return `[${toolName.slice(0, 6)}]`;
-}
-
-function statusIcon(status: 'running' | 'ok' | 'failed' | undefined): string {
-  if (!emojiEnabled()) {
-    if (status === 'running') return '…';
-    if (status === 'failed') return '!';
-    return '·';
-  }
-  if (status === 'running') return '…';
-  if (status === 'failed') return '!';
-  return '·';
-}
+// Tool-call rows use Claude Code's `⏺` bullet and `⎿` result connector
+// (see ActivityItemLine). The old per-tool emoji map and status glyphs were
+// retired in favor of that single, consistent marker style.
 
 // ────────────────────────────────────────────────────────────────────────────
 // Sanitizers & helpers (unchanged public surface)
@@ -1060,14 +1037,7 @@ function humanTokens(n: number): string {
   return String(Math.round(n));
 }
 
-/** Build a 10-segment Unicode block gauge for context usage visualization. */
-function ctxUsageBar(usage: { used: number; total: number }): string {
-  const pct = usage.total > 0 ? Math.min(usage.used / usage.total, 1) : 0;
-  const filled = Math.round(pct * 10);
-  return '█'.repeat(filled) + '░'.repeat(10 - filled);
-}
-
-/** Progressive color for the usage bar: green → amber → orange → red. */
+/** Progressive color for context usage: green → amber → orange → red. */
 function ctxUsageBarColor(usage: { used: number; total: number }): string {
   const pct = usage.total > 0 ? (usage.used / usage.total) * 100 : 0;
   if (pct >= 90) return theme.error;
@@ -1155,27 +1125,26 @@ export interface SessionHeaderProps {
 }
 
 export function SessionHeader({ device: _device, workspace, model, state: _state, toolsExpanded: _toolsExpanded, version, cacheMode: _cacheMode, profile: _profile }: SessionHeaderProps): React.ReactElement {
+  // Claude-code-style welcome card: one rounded box holding the RDK mark, a help
+  // hint, cwd and model — the same shape as Claude Code's launch panel. The RDK
+  // orange/cyan mark is the only RDK-branded element.
+  const cursor = emojiEnabled() ? '▪' : '#';
   return React.createElement(
     Box,
-    { flexDirection: 'column', marginBottom: 1 },
-    React.createElement(
-      Box,
-      { flexDirection: 'column', borderStyle: 'round', borderColor: theme.border, paddingX: 1, width: 54 },
-      React.createElement(Text, null,
-        React.createElement(Text, { color: theme.primary }, '✻ '),
-        React.createElement(Text, { bold: true }, 'D-Moss Code'),
-        React.createElement(Text, { color: theme.textMuted }, version ? ` (${version})` : ''),
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { color: theme.textMuted }, 'model      '),
-        React.createElement(Text, { bold: true }, model || 'connecting...'),
-        React.createElement(Text, { color: theme.textMuted }, '   /model to change'),
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { color: theme.textMuted }, 'directory  '),
-        compactPath(workspace),
-      ),
+    // flexShrink:0 so the bordered card is NEVER squashed when the transcript is
+    // tall — without it Yoga shrinks this multi-line box and its lines overlap
+    // (the garbled "model: …cwd…" header in the bug report).
+    { flexDirection: 'column', flexShrink: 0, borderStyle: 'round', borderColor: theme.claude, paddingX: 1, marginBottom: 1 },
+    React.createElement(Text, null,
+      React.createElement(Text, { color: BRAND_ORANGE, bold: true }, '>_'),
+      React.createElement(Text, { color: BRAND_CYAN }, ` ${cursor}  `),
+      React.createElement(Text, { color: theme.claude, bold: true }, 'RDK Studio'),
+      React.createElement(Text, { color: theme.textDim }, version ? `  ${version}` : ''),
     ),
+    React.createElement(Text, null, ''),
+    React.createElement(Text, { color: theme.textMuted }, '  /help for help, /status for your current setup'),
+    React.createElement(Text, { color: theme.textMuted }, `  cwd: ${compactPath(workspace)}`),
+    React.createElement(Text, { color: theme.textMuted }, `  model: ${model || 'connecting…'}`),
   );
 }
 
@@ -1206,8 +1175,8 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
     React.createElement(
       Box,
       { flexDirection: 'row', borderStyle: 'single', borderTop: true, borderBottom: false, borderLeft: false, borderRight: false, borderColor: theme.border },
-      // Mode
-      React.createElement(Text, { color: theme.primary, bold: true }, 'Default'),
+      // Run mode label (kept subtle, Claude-code low-noise status line)
+      React.createElement(Text, { color: theme.textMuted, bold: true }, 'Default'),
       React.createElement(Text, { color: theme.textMuted }, '  '),
       // Status badge + live spinner while the agent is working (self-animating;
       // re-renders on its own interval so the run never looks frozen)
@@ -1255,17 +1224,17 @@ export function WelcomePanel({
 }: WelcomePanelProps): React.ReactElement {
   const plane = executionPlane ?? executionPlaneSummary();
   const resolvedTip = tip ?? boardTip();
+  // Claude-code-style minimal welcome: one slim context line, a compact "Try"
+  // hint, the board tip, and the key hints. Heavy device block intentionally
+  // de-emphasized (the RDK logo + context now live in SessionHeader).
   if (compact) {
     return React.createElement(
       Box,
       { flexDirection: 'column', marginBottom: 1 },
+      React.createElement(Text, { color: theme.textMuted },
+        `  ${modeLabel(plane.mode)} · ${plane.targetDevice} · ${compactPath(workspace)}`),
       React.createElement(Text, null,
-        React.createElement(Text, { color: theme.primary, bold: true }, 'Moss Runtime'),
-        React.createElement(Text, { color: theme.textMuted }, ` · ${modeLabel(plane.mode)} · ${plane.targetDevice}`),
-      ),
-      React.createElement(Text, { color: theme.textMuted }, `  ${compactPath(workspace)} · ${plane.inference}`),
-      React.createElement(Text, null,
-        React.createElement(Text, { bold: true }, 'Tip: '),
+        React.createElement(Text, { color: theme.textMuted }, '  Tip: '),
         compactWelcomeTip(resolvedTip),
       ),
     );
@@ -1273,53 +1242,15 @@ export function WelcomePanel({
   return React.createElement(
     Box,
     { flexDirection: 'column', marginTop: 1, marginBottom: 1 },
-    React.createElement(Text, null,
-      React.createElement(Text, { color: theme.primary, bold: true }, 'Moss Runtime'),
-    ),
-    React.createElement(Text, null,
-      React.createElement(Text, { color: theme.textMuted }, '  Running on  '),
-      plane.runningOn,
-      React.createElement(Text, { color: theme.textMuted }, `  ·  Mode  ${modeLabel(plane.mode)}`),
-    ),
-    React.createElement(Text, null,
-      React.createElement(Text, { color: theme.textMuted }, '  Target      '),
-      React.createElement(Text, { color: plane.targetDevice.includes('no board') ? theme.textMuted : theme.success }, plane.targetDevice),
-    ),
-    React.createElement(Text, null,
-      React.createElement(Text, { color: theme.textMuted }, '  Workspace   '),
-      compactPath(workspace),
-    ),
-    React.createElement(Text, null,
-      React.createElement(Text, { color: theme.textMuted }, '  Inference   '),
-      plane.inference,
-    ),
-    React.createElement(Text, null,
-      React.createElement(Text, { color: theme.textMuted }, '  Permissions '),
-      plane.permissions,
-    ),
-    React.createElement(Text, { color: theme.textMuted }, `  Policy      ${plane.policy}`),
-    React.createElement(Text, { color: theme.textMuted }, `  Device      ${plane.deviceContext}`),
-    React.createElement(Text, { color: plane.lockedCapabilities.startsWith('Connect') ? theme.warn : theme.success },
-      `  ${plane.lockedCapabilities}`,
-    ),
-    React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
-      ...DEVICE_WORKFLOWS.map((workflow, index) => React.createElement(Text, { key: workflow.title },
-        React.createElement(Text, { color: theme.primary, bold: true }, `${index + 1}. ${workflow.title}`.padEnd(20)),
-        React.createElement(Text, { color: theme.textMuted }, workflow.description),
-      )),
-    ),
-    React.createElement(Box, { flexDirection: 'column', marginTop: 1 },
-      React.createElement(Text, { color: theme.textMuted },
-        'Moss is device-centric: proof is device state, service recovery, sensor data, benchmark output, and logs.',
-      ),
-      React.createElement(Text, null,
-        React.createElement(Text, { bold: true }, 'Tip: '),
-        resolvedTip,
-      ),
-      React.createElement(Text, { color: theme.textMuted },
-        'Shift+Tab mode · Ctrl+O tool details/diff · Type / for commands · Tab completes',
-      ),
-    ),
+    React.createElement(Text, { color: theme.textMuted }, ' Tips for getting started:'),
+    React.createElement(Text, null, ' '),
+    ...DEVICE_WORKFLOWS.map((workflow, i) => React.createElement(Text, { key: workflow.title },
+      React.createElement(Text, { color: theme.textMuted }, ` ${i + 1}. `),
+      React.createElement(Text, { color: theme.text }, workflow.title),
+      React.createElement(Text, { color: theme.textMuted }, ` — ${workflow.description}`),
+    )),
+    React.createElement(Text, null, ' '),
+    React.createElement(Text, { color: theme.textDim }, ` ${resolvedTip}`),
   );
 }
 
@@ -1340,24 +1271,24 @@ export interface ActivityItemLineProps {
  *   - inputSummary content stays visible
  */
 export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): React.ReactElement {
-  const icon = toolIcon(item.toolName);
-  const sigil = statusIcon(item.status);
-  const ruleColor = item.status === 'failed' ? theme.warn : item.status === 'running' ? theme.tool : theme.textMuted;
-  const fgColor = item.status === 'failed' ? theme.warn : theme.text;
+  const bullet = emojiEnabled() ? '⏺' : '*';
+  const connector = emojiEnabled() ? '⎿' : 'L';
+  const bulletColor = item.status === 'failed' ? theme.error : theme.claude;
   const headline = item.inputSummary || '';
   const elapsedText = item.status === 'running'
     ? '…'
     : ` ${toolOutcomeLabel(item)}${item.elapsedMs ?? 0}ms`;
   const failedMark = item.status === 'failed' ? ' !' : '';
 
-  // Build the headline string. Keep the test-required tokens explicit.
-  const head = [
-    `${icon} `,
-    item.toolName,
-    headline ? `  ·  ${headline}` : '',
-    elapsedText,
-    failedMark,
-  ].join('');
+  // Claude-code headline: `⏺ Tool (summary)  <elapsed>`. Keep the test-required
+  // tokens (… / ms / !) and the input summary visible.
+  const headEl = React.createElement(Text, null,
+    React.createElement(Text, { color: bulletColor, bold: true }, `${bullet} `),
+    React.createElement(Text, { color: theme.text, bold: true }, item.toolName),
+    headline ? React.createElement(Text, { color: theme.textMuted }, ` (${headline})`) : null,
+    React.createElement(Text, { color: theme.textDim }, elapsedText),
+    failedMark ? React.createElement(Text, { color: theme.error, bold: true }, failedMark) : null,
+  );
 
   // 展开详情：代码改动工具渲染彩色 diff，其余工具显示真实输出(result)，最后回退 input JSON。
   let detailLines: React.ReactElement[] = [];
@@ -1368,55 +1299,42 @@ export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): Rea
     if (item.toolName === 'apply_patch' && typeof patch === 'string') {
       detailLines = patch.split('\n').slice(0, 80).map((line, idx) => React.createElement(Text, {
         key: idx,
-        color: (line.startsWith('+') && !line.startsWith('+++')) ? theme.success
-          : (line.startsWith('-') && !line.startsWith('---')) ? theme.warn
-          : (line.startsWith('@@') || line.startsWith('***')) ? theme.primary
-          : theme.textMuted,
+        color: (line.startsWith('+') && !line.startsWith('+++')) ? theme.diffAddedWord
+          : (line.startsWith('-') && !line.startsWith('---')) ? theme.diffRemovedWord
+          : (line.startsWith('@@') || line.startsWith('***')) ? theme.claude
+          : theme.textDim,
       }, line));
     } else if (item.toolName === 'write_file' && typeof content === 'string') {
       detailLines = content.split('\n').slice(0, 80).map((line, idx) =>
-        React.createElement(Text, { key: idx, color: theme.success }, `+ ${line}`));
+        React.createElement(Text, { key: idx, color: theme.diffAddedWord }, `+ ${line}`));
     } else if (typeof item.result === 'string' && item.result.trim()) {
       detailLines = item.result.split('\n').slice(0, 40).map((line, idx) =>
-        React.createElement(Text, { key: idx, color: theme.textMuted }, line));
+        React.createElement(Text, { key: idx, color: theme.textDim }, line));
     } else if (item.inputRaw !== undefined) {
       let json = '';
       try { json = typeof item.inputRaw === 'string' ? item.inputRaw : JSON.stringify(item.inputRaw, null, 2); }
       catch { json = String(item.inputRaw); }
       detailLines = json.split('\n').slice(0, 24).map((line, idx) =>
-        React.createElement(Text, { key: idx, color: theme.textMuted }, line));
+        React.createElement(Text, { key: idx, color: theme.textDim }, line));
     }
   }
 
   if (detailLines.length > 0) {
     return React.createElement(
       Box,
-      {
-        marginTop: 1,
-        paddingX: 1,
-        borderStyle: 'single',
-        borderColor: ruleColor,
-        flexDirection: 'column',
-      },
-      React.createElement(Text, { color: fgColor }, `${sigil} ${head}`),
-      React.createElement(Box, { paddingLeft: 2, flexDirection: 'column' }, ...detailLines),
+      { marginTop: 1, flexDirection: 'column' },
+      headEl,
+      React.createElement(Box, { flexDirection: 'row' },
+        React.createElement(Text, { color: theme.textDim }, `  ${connector}  `),
+        React.createElement(Box, { flexDirection: 'column' }, ...detailLines),
+      ),
     );
   }
 
   return React.createElement(
     Box,
-    {
-      marginTop: 1,
-      paddingLeft: 1,
-      borderStyle: 'single',
-      borderLeft: true,
-      borderTop: false,
-      borderBottom: false,
-      borderRight: false,
-      borderColor: ruleColor,
-      flexDirection: 'column',
-    },
-    React.createElement(Text, { color: fgColor }, `${sigil} ${head}`),
+    { marginTop: 1, flexDirection: 'column' },
+    headEl,
   );
 }
 
@@ -1429,11 +1347,11 @@ export function ApprovalPromptLine({ question }: ApprovalPromptLineProps): React
     Box,
     {
       flexDirection: 'column',
-      borderStyle: 'single',
-      borderColor: theme.warn,
+      borderStyle: 'round',
+      borderColor: theme.permission,
       paddingX: 1,
     },
-    React.createElement(Text, { color: theme.warn, bold: true }, '? permission requested'),
+    React.createElement(Text, { color: theme.permission, bold: true }, '? permission requested'),
     ...visibleText(question, 8).split('\n').map((line, idx) => (
       React.createElement(Text, { key: idx, color: theme.text }, line)
     )),
@@ -1503,7 +1421,7 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
       Box,
       { flexDirection: 'column', marginTop: 1 },
       React.createElement(Text, { color: theme.text }, visibleText(item.text)),
-      React.createElement(Text, { color: theme.primarySoft }, '●'),
+      React.createElement(Text, { color: theme.claude }, '●'),
       ...refs.map((ref) => React.createElement(Text, {
         key: `${item.id}-${ref.label}`,
         color: ref.kind === 'image' ? theme.primary : theme.warn,
@@ -1520,32 +1438,36 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
     );
   }
   if (item.kind === 'user') {
-    return sideRule({ id: item.id, text: item.text, ruleColor: theme.user });
+    // Claude-code-style echo: plain text on a subtle grey block, no border.
+    const lines = visibleText(item.text).split('\n');
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 1 },
+      ...lines.map((line, idx) => React.createElement(Text, {
+        key: `${item.id}-${idx}`,
+        backgroundColor: theme.userMessageBackground,
+        color: '#f5f5f5', // fixed light fg on the dark echo block (readable on any terminal bg)
+      }, ` ${line || ' '} `)),
+    );
   }
   if (item.kind === 'error') {
     const refs = extractAttachmentRefs(item.text);
     const lines = visibleText(item.text).split('\n');
+    const mark = emojiEnabled() ? '⏺' : '!';
     return React.createElement(
       Box,
-      {
-        flexDirection: 'column',
-        marginTop: 1,
-        paddingLeft: 1,
-        borderStyle: 'single',
-        borderLeft: true,
-        borderTop: false,
-        borderBottom: false,
-        borderRight: false,
-        borderColor: theme.error,
-      },
-      React.createElement(Text, { color: theme.error, bold: true }, '! error'),
-      ...lines.map((line, idx) => React.createElement(Text, {
+      { flexDirection: 'column', marginTop: 1 },
+      React.createElement(Text, null,
+        React.createElement(Text, { color: theme.error, bold: true }, `${mark} `),
+        React.createElement(Text, { color: theme.error }, lines[0] || 'error'),
+      ),
+      ...lines.slice(1).map((line, idx) => React.createElement(Text, {
         key: `${item.id}-${idx}`,
-        color: theme.text,
+        color: theme.error,
       }, `  ${line || ' '}`)),
       ...refs.map((ref) => React.createElement(Text, {
         key: `${item.id}-${ref.label}`,
-        color: ref.kind === 'image' ? theme.primary : theme.warn,
+        color: ref.kind === 'image' ? theme.claude : theme.warn,
       }, formatAttachmentChip(ref))),
     );
   }
@@ -1579,6 +1501,7 @@ export interface PromptEditorProps {
   onShiftEnter?: () => void;
   hint?: string;
   model?: string;
+  mode?: string;
 }
 
 function commandRowsForInput(value: string): Array<[string, string]> {
@@ -1603,15 +1526,11 @@ function commandRowsForInput(value: string): Array<[string, string]> {
     ['/clear', 'clear visible transcript'],
     ['/quit', 'exit D-Moss'],
   ];
-  const rows = normalized === '/'
+  // Full filtered list; the visible window (responsive count + selection
+  // centering) is computed at render time so the menu can be navigated/scrolled.
+  return normalized === '/'
     ? allRows
     : allRows.filter(([command]) => command.startsWith(normalized));
-  const visibleRows = rows.slice(0, 6);
-  const hiddenCount = rows.length - visibleRows.length;
-  if (hiddenCount > 0) {
-    visibleRows.push(['...', `${hiddenCount} more commands · type to filter · Tab complete`]);
-  }
-  return visibleRows;
 }
 
 export function promptEditorRowBudget(
@@ -1622,7 +1541,7 @@ export function promptEditorRowBudget(
   let rows = 1; // PromptEditor marginTop.
   const commandRows = commandRowsForInput(value);
   if (commandRows.length > 0) {
-    rows += commandRows.length + 1; // command rows plus marginBottom.
+    rows += Math.min(6, commandRows.length) + 1; // visible command window (cap 6) plus marginBottom.
   } else if (value.startsWith('/') && commandSuggestion(value)) {
     rows += 1;
   }
@@ -1636,6 +1555,7 @@ export function promptEditorRowBudget(
   ).length;
   if (!value && options.placeholder) rows += 1;
   if (options.hint) rows += 1;
+  rows += 2; // bordered input box adds top + bottom border rows
   return rows;
 }
 
@@ -1652,6 +1572,7 @@ export function PromptEditor({
   onShiftEnter,
   hint,
   model: _model,
+  mode,
 }: PromptEditorProps): React.ReactElement {
   const lineCount = value.length > 0 ? value.split('\n').length : 0;
   const isMulti = lineCount > 1;
@@ -1661,8 +1582,46 @@ export function PromptEditor({
     onChange(next.value);
     onCursorChange?.(next.cursor);
   };
+
+  // ── Slash-command menu: navigable + responsive window (Claude-code style) ──
+  const { rows: termRows, columns: termColumns } = useTerminalSize();
+  const commandRows = commandRowsForInput(value);
+  const [menuIndex, setMenuIndex] = useState(0);
+  const [menuDismissed, setMenuDismissed] = useState(false);
+  const menuOpen = commandRows.length > 0 && !menuDismissed;
+  const maxVisibleCommands = Math.max(1, Math.min(6, termRows - 3));
+  const clampedMenuIndex = menuOpen ? Math.max(0, Math.min(menuIndex, commandRows.length - 1)) : 0;
+  // Window follows the selection (centered, clamped so the last page stays full).
+  const menuStart = menuOpen
+    ? Math.max(0, Math.min(clampedMenuIndex - Math.floor(maxVisibleCommands / 2), commandRows.length - maxVisibleCommands))
+    : 0;
+  const menuWindow = menuOpen ? commandRows.slice(menuStart, menuStart + maxVisibleCommands) : [];
+  // Typing re-filters → reset selection to the top and re-open a dismissed menu.
+  useEffect(() => { setMenuIndex(0); setMenuDismissed(false); }, [value]);
+
   useInput((inputChar, key) => {
     if (disabled) return;
+    // While the command menu is open it owns arrows / Ctrl+n,p / Tab / Enter / Esc.
+    if (menuOpen) {
+      if (key.upArrow || (key.ctrl && inputChar.toLowerCase() === 'p')) {
+        setMenuIndex((i) => (i <= 0 ? commandRows.length - 1 : i - 1));
+        return;
+      }
+      if (key.downArrow || (key.ctrl && inputChar.toLowerCase() === 'n')) {
+        setMenuIndex((i) => (i >= commandRows.length - 1 ? 0 : i + 1));
+        return;
+      }
+      if (key.escape) { setMenuDismissed(true); return; }
+      if ((key.tab && !key.shift) || inputChar === '\t') {
+        const picked = commandRows[clampedMenuIndex]?.[0];
+        if (picked) { onChange(picked); onCursorChange?.(picked.length); }
+        return;
+      }
+      if (key.return && !shouldPromptReturnInsertNewline(key)) {
+        const picked = commandRows[clampedMenuIndex]?.[0];
+        if (picked) { onSubmit(picked); return; }
+      }
+    }
     if (key.upArrow) {
       onHistoryPrevious?.();
       return;
@@ -1731,52 +1690,107 @@ export function PromptEditor({
     }
   }, { isActive: !disabled });
 
-  useEffect(() => {
-    if (!disabled && process.stdout.isTTY) {
-      process.stdout.write('\x1b[?25h');
-    }
-  });
+  const inputBoxRef = useRef<DOMElement | null>(null);
+  const { setCursorPosition } = useCursor();
+  // Last cursor coords we pushed, to dedupe and avoid a re-render loop.
+  const lastCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const [, bumpLayout] = useState(0);
 
   const lines = editorPreviewLinesWithCursor(value, placeholder, currentCursor, 6);
   const suggestion = value.startsWith('/') ? commandSuggestion(value) : null;
-  const commandRows = commandRowsForInput(value);
-  const guidanceLines = [
-    !value ? placeholder : '',
-    hint ?? '',
-  ].filter(Boolean);
+  // Border reflects the active interaction mode (Claude-code style).
+  const borderColor = mode === 'plan' ? theme.planMode
+    : mode === 'acceptEdits' ? theme.autoAccept
+    : theme.promptBorder;
+
+  // Caret cell within the box content (CJK-aware via string-width).
+  let caretLineIndex = 0;
+  let caretCol = stringWidth('> ');
+  if (value) {
+    const idx = lines.findIndex((l) => l.cursorColumn !== null);
+    if (idx >= 0) {
+      caretLineIndex = idx;
+      const prefixWidth = idx === 0 ? stringWidth('> ') : 2;
+      caretCol = prefixWidth + stringWidth(lines[idx].text.slice(0, lines[idx].cursorColumn ?? 0));
+    }
+  }
+
+  // Park the REAL terminal cursor at the caret so the terminal's IME composes
+  // inline in the box. We MEASURE the input box's absolute content origin FRESH
+  // each frame (summing getComputedLeft/Top up the yoga tree) so it stays correct
+  // when the box moves — e.g. the command menu opens above it, the transcript
+  // grows, or the terminal resizes (the stale-coords version drifted the cursor
+  // above the box in exactly those cases). useCursor applies the position on the
+  // next commit, so when the target changes we bump a tick to force that commit;
+  // it converges within one frame, including parking in the box right after mount
+  // (before the first keystroke). A layout effect is used since coords require a
+  // post-layout measurement; the dedupe ref prevents a re-render loop.
+  useLayoutEffect(() => {
+    const node = inputBoxRef.current;
+    if (disabled || !node?.yogaNode || !process.stdout.isTTY) {
+      if (lastCursorRef.current !== null) {
+        lastCursorRef.current = null;
+        setCursorPosition(undefined);
+      }
+      return;
+    }
+    let bx = 0;
+    let by = 0;
+    for (let n: DOMElement | undefined = node; n?.yogaNode; n = n.parentNode) {
+      bx += n.yogaNode.getComputedLeft();
+      by += n.yogaNode.getComputedTop();
+    }
+    const next = { x: bx + 2 + caretCol, y: by + 1 + caretLineIndex };
+    const prev = lastCursorRef.current;
+    if (!prev || prev.x !== next.x || prev.y !== next.y) {
+      lastCursorRef.current = next;
+      setCursorPosition(next);
+      bumpLayout((t) => t + 1);
+    }
+  });
+
+  // Lines inside the bordered input box. Empty input shows a dim ghost
+  // placeholder; the visible caret is the real terminal cursor (positioned above).
+  const bodyLines: Array<React.ReactElement> = (!value && placeholder)
+    ? [React.createElement(Text, { key: 'placeholder' },
+        React.createElement(Text, { color: theme.claude, bold: true }, '> '),
+        // A leading space sits under the (block) cursor at the input start, so the
+        // placeholder text itself is never covered by the caret.
+        React.createElement(Text, { color: theme.textMuted }, ` ${placeholder}`),
+      )]
+    : lines.map((line, index) => React.createElement(
+        Text,
+        { key: `${index}-${line.text}`, color: theme.text },
+        index === 0
+          ? React.createElement(Text, { color: theme.claude, bold: true }, '> ')
+          : '  ',
+        line.text,
+      ));
 
   return React.createElement(
     Box,
     { flexDirection: 'column', marginTop: 1 },
-    commandRows.length > 0 ? React.createElement(Box, { flexDirection: 'column', marginBottom: 1, paddingLeft: 2 },
-      ...commandRows.map(([command, description]) => React.createElement(Text, { key: command },
-        React.createElement(Text, { bold: true }, command.padEnd(14)),
-        React.createElement(Text, { color: theme.textMuted }, description),
-      )),
+    menuOpen ? React.createElement(Box, { flexDirection: 'column', marginBottom: 1, paddingLeft: 1 },
+      ...menuWindow.map(([command, description], i) => {
+        const isSel = (menuStart + i) === clampedMenuIndex;
+        const descMax = Math.max(8, termColumns - 20);
+        const desc = description.length > descMax ? `${description.slice(0, descMax - 1)}…` : description;
+        const marker = emojiEnabled() ? '❯ ' : '> ';
+        return React.createElement(Text, { key: command, wrap: 'truncate' },
+          React.createElement(Text, { color: theme.claude, bold: true }, isSel ? marker : '  '),
+          React.createElement(Text, { color: theme.permission, bold: isSel, dimColor: !isSel }, command.padEnd(14)),
+          React.createElement(Text, { color: theme.textMuted, dimColor: !isSel }, desc),
+        );
+      }),
     ) : null,
     suggestion && commandRows.length === 0 ? React.createElement(Text, { color: theme.textDim }, `  ${suggestion}`) : null,
-    ...guidanceLines.map((line, index) => React.createElement(Text, { key: `guidance-${index}`, color: theme.textDim }, `  ${line}`)),
     isMulti ? React.createElement(Text, { color: theme.textDim }, `  ${lineCount} lines`) : null,
-    ...lines.map((line, index) => {
-      const cursorColumn = line.cursorColumn;
-      const showVirtualCursor = !disabled && cursorColumn !== null && cursorColumn < line.text.length;
-      return React.createElement(
-        Text,
-        { key: `${index}-${line.text}`, color: value ? theme.text : theme.textMuted },
-        index === 0
-          ? React.createElement(Text, { bold: true }, '› ')
-          : '  ',
-        cursorColumn !== null
-          ? line.text.slice(0, cursorColumn)
-          : line.text,
-        showVirtualCursor
-          ? React.createElement(Text, { color: theme.textMuted }, '▌')
-          : null,
-        cursorColumn !== null
-          ? line.text.slice(cursorColumn)
-          : null,
-      );
-    }),
+    React.createElement(
+      Box,
+      { ref: inputBoxRef, borderStyle: 'round', borderColor, paddingX: 1, flexDirection: 'column' },
+      ...bodyLines,
+    ),
+    hint ? React.createElement(Text, { color: theme.textDim }, `  ${hint}`) : null,
   );
 }
 
@@ -1810,9 +1824,9 @@ export function QueuePreview({ items, paused = false, now = Date.now() }: QueueP
 // Main TUI
 // ────────────────────────────────────────────────────────────────────────────
 
-function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): React.ReactElement {
+export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): React.ReactElement {
   const app = useApp();
-  const { stdout } = useStdout();
+  const { rows: termRows } = useTerminalSize();
   const workspace = runtime?.workspace || process.cwd();
   const checkpointRef = useRef<FileCheckpointStore | null>(null);
   if (!checkpointRef.current) {
@@ -1833,6 +1847,40 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const [localShellApproved, setLocalShellApproved] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
   const [toolsExpanded, setToolsExpanded] = useState(false);
+  // Transcript scrolling (LINE-level, Claude-Code style). The content box is a
+  // fixed-height overflow:hidden viewport; an inner box holding ALL items is shifted
+  // by `scrollMargin` (computed at render). `scrollUp` = lines scrolled up from the
+  // bottom (0 = pinned to the newest line). Heights are measured post-layout so the
+  // margin math + max-scroll clamp track the real rendered size.
+  const [scrollUp, setScrollUp] = useState(0);
+  const [scrollStick, setScrollStick] = useState(true);
+  const transcriptViewportRef = useRef<DOMElement | null>(null);
+  const transcriptInnerRef = useRef<DOMElement | null>(null);
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const prevContentHeightRef = useRef(0);
+  useLayoutEffect(() => {
+    const vp = transcriptViewportRef.current;
+    if (vp) {
+      const h = measureElement(vp).height;
+      setViewportHeight((prev) => (prev === h ? prev : h));
+    }
+    const inner = transcriptInnerRef.current;
+    const h = inner ? measureElement(inner).height : 0;
+    setContentHeight((prev) => (prev === h ? prev : h));
+  });
+  // Follow the newest line while sticking; while scrolled up, hold the user's view
+  // as content grows by shifting scrollUp by the height delta (in lines).
+  useEffect(() => {
+    const delta = contentHeight - prevContentHeightRef.current;
+    prevContentHeightRef.current = contentHeight;
+    if (scrollStick) {
+      if (scrollUp !== 0) setScrollUp(0);
+    } else if (delta > 0) {
+      const maxScroll = Math.max(0, contentHeight - viewportHeight);
+      setScrollUp((u) => Math.min(maxScroll, u + delta));
+    }
+  }, [contentHeight, viewportHeight, scrollStick, scrollUp]);
   const [flashHint, setFlashHint] = useState<string>('');
   const [ctxUsage, setCtxUsage] = useState<{ used: number; total: number } | undefined>(undefined);
   const [queuedInputs, setQueuedInputsState] = useState<QueuedInput[]>([]);
@@ -2032,6 +2080,24 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
       setInteractionMode((m) => {
         const next: CliInteractionMode = m === 'plan' ? 'default' : m === 'default' ? 'acceptEdits' : 'plan';
         showFlash(`mode: ${next === 'acceptEdits' ? 'accept-edits' : next}`);
+        return next;
+      });
+      return;
+    }
+    // Scroll the transcript history by lines (PageUp/PageDown) — keys the editor
+    // ignores, so they never clash with typing. Reaching the bottom re-engages follow.
+    if (key.pageUp) {
+      const step = Math.max(1, (viewportHeight || termRows) - 2);
+      const maxScroll = Math.max(0, contentHeight - viewportHeight);
+      setScrollStick(false);
+      setScrollUp((u) => Math.min(maxScroll, u + step));
+      return;
+    }
+    if (key.pageDown) {
+      const step = Math.max(1, (viewportHeight || termRows) - 2);
+      setScrollUp((u) => {
+        const next = Math.max(0, u - step);
+        if (next === 0) setScrollStick(true);
         return next;
       });
       return;
@@ -2489,15 +2555,14 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
   const profile = runtime?.config?.profile || 'balanced';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
   const executionPlane = executionPlaneSummary(runtime);
-  const terminalRows = Math.max(12, stdout?.rows ?? 30);
-  const inputFooterText = [
-    modeLabel(executionPlane.mode),
-    executionPlane.targetDevice.includes('no board') ? 'no board' : executionPlane.targetDevice,
-    queuedInputs.length > 0 ? `queued ${queuedInputs.length}` : '',
-    detailMode !== 'quiet' ? `detail ${detailMode}` : '',
-    showThinking ? 'thinking on' : '',
-    localShellApproved ? 'local shell' : '',
-  ].filter(Boolean).join('  ·  ');
+  const terminalRows = Math.max(12, termRows);
+  // Fill the terminal (minus one row to avoid a trailing-newline scroll) so the
+  // whole UI is a fixed-height frame: the content area flexes, the input is
+  // bottom-anchored, and the frame NEVER overflows the terminal. Overflow was the
+  // root cause of the cursor/IME drifting when the command menu opened — the frame
+  // grew past the terminal, the terminal scrolled, and Ink's relative cursor math
+  // (which assumes the frame fits) broke.
+  const frameHeight = terminalRows - 1;
   const promptRows = promptEditorRowBudget(input, {
     placeholder: promptPlaceholder(runState),
     hint: footerHint(runState),
@@ -2518,67 +2583,76 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
     noticeRows,
   };
   const compactWelcome = shouldRenderCompactWelcome(viewportOptions);
-  const transcriptRows = transcriptViewportRows(viewportOptions);
+  // Line-level scroll margin (verified in stock Ink: negative marginTop + overflow
+  // hidden = a scroll viewport; positive marginTop pushes content down):
+  //   margin = min(0, viewportH - contentH) + scrollUp
+  // Content that fits is top-aligned (header + welcome visible, Claude-Code style);
+  // tall content shows the newest lines; scrollUp reveals earlier lines. The header
+  // lives INSIDE the scroll area so it scrolls away as the conversation grows, rather
+  // than permanently eating ~8 rows — exactly like Claude Code's launch panel.
+  const maxScroll = Math.max(0, contentHeight - viewportHeight);
+  const clampedScrollUp = Math.min(scrollUp, maxScroll);
+  const scrollMargin = Math.min(0, viewportHeight - contentHeight) + clampedScrollUp;
 
   return React.createElement(
     Box,
-    { flexDirection: 'column', paddingX: 1, paddingTop: 1 },
-    React.createElement(SessionHeader, {
-      device,
-      workspace,
-      model: currentModel,
-      state: runState,
-      toolsExpanded: toolsExpanded || detailMode === 'verbose',
-      version: `v${getPackageVersion()}`,
-      cacheMode,
-      profile,
-    }),
+    // overflow:hidden is a safety net; the real anti-crush guarantee is that the
+    // bottom-chrome wrapper (input/footer) is flexShrink:0, so only the transcript
+    // viewport absorbs any height deficit and clips cleanly.
+    { flexDirection: 'column', paddingX: 1, paddingTop: 1, height: frameHeight, overflow: 'hidden' },
+    // Transcript viewport: fixed-height (flexGrow), overflow:hidden. The inner box
+    // holds the header + welcome + ALL items and is shifted by scrollMargin for
+    // line-level scrolling; the header scrolls away as the conversation grows.
     React.createElement(
       Box,
-      {
-        flexDirection: 'column',
-        ...(transcriptRows === undefined ? {} : { height: transcriptRows, overflow: 'hidden' }),
-      },
-      transcript.length === 0
-        ? React.createElement(WelcomePanel, {
-            workspace,
-            device,
-            model: currentModel,
-            cacheMode,
-            profile,
-            executionPlane,
-            tip: boardTip(runtime),
-            compact: compactWelcome,
-          })
-        : null,
-      ...transcript.map((item) => React.createElement(TranscriptMessage, {
-          key: item.id,
-          item,
+      { flexDirection: 'column', flexGrow: 1, flexShrink: 1, overflow: 'hidden', ref: transcriptViewportRef },
+      React.createElement(
+        Box,
+        { flexDirection: 'column', flexShrink: 0, marginTop: scrollMargin, ref: transcriptInnerRef },
+        React.createElement(SessionHeader, {
+          device,
+          workspace,
           model: currentModel,
+          state: runState,
           toolsExpanded: toolsExpanded || detailMode === 'verbose',
-        })),
+          version: `v${getPackageVersion()}`,
+          cacheMode,
+          profile,
+        }),
+        transcript.length === 0
+          ? React.createElement(WelcomePanel, {
+              workspace,
+              device,
+              model: currentModel,
+              cacheMode,
+              profile,
+              executionPlane,
+              tip: boardTip(runtime),
+              compact: compactWelcome,
+            })
+          : null,
+        // Each item is flexShrink:0 so Ink never squashes the list when it is tall.
+        ...transcript.map((item) => React.createElement(Box, { key: item.id, flexShrink: 0 },
+          React.createElement(TranscriptMessage, {
+            item,
+            model: currentModel,
+            toolsExpanded: toolsExpanded || detailMode === 'verbose',
+          }),
+        )),
+      ),
     ),
+    // Bottom chrome wrapper: flexShrink:0 so the jump hint / queue / notices /
+    // input box / footer are never squashed (overlapping lines) when the
+    // transcript is tall — only the content box above shrinks.
+    React.createElement(
+      Box,
+      { flexDirection: 'column', flexShrink: 0 },
+    // The scroll indicator lives in the footer line below (not its own row) so the
+    // transcript viewport height stays constant — otherwise it would jump by a row
+    // and make PageUp/PageDown steps asymmetric.
     React.createElement(QueuePreview, { items: queuedInputs, paused: queuePausedAfterCancel }),
     notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
     flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
-    // ── Usage gauge bar + mode badge ──
-    React.createElement(
-      Box,
-      { flexDirection: 'row' },
-      React.createElement(Text, { color: interactionMode === 'plan' ? theme.warn : interactionMode === 'acceptEdits' ? theme.success : theme.primary, bold: true },
-        interactionMode === 'plan' ? '⏸ plan' : interactionMode === 'acceptEdits' ? '✓ accept-edits' : '● default'),
-      React.createElement(Text, { color: theme.textDim }, ' (⇧⇥)  '),
-      detailMode !== 'quiet' ? React.createElement(Text, { color: theme.primary, bold: true }, `[${detailMode}] `) : null,
-      ctxUsage ? React.createElement(
-        Box,
-        { flexDirection: 'row' },
-        React.createElement(Text, { color: ctxUsageBarColor(ctxUsage) }, ctxUsageBar(ctxUsage)),
-        React.createElement(Text, { color: theme.textMuted },
-          ` ${humanTokens(ctxUsage.used)}/${humanTokens(ctxUsage.total)} (${Math.round((ctxUsage.used / ctxUsage.total) * 100)}%)`,
-        ),
-      ) : null,
-    ),
-    !approval ? React.createElement(Text, { color: theme.textDim }, `  ${inputFooterText}`) : null,
     approval
       ? React.createElement(ApprovalPromptLine, { question: approval.question })
       : React.createElement(PromptEditor, {
@@ -2589,11 +2663,29 @@ function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): 
           onSubmit: submit,
           placeholder: promptPlaceholder(runState),
           disabled: false,
-          hint: footerHint(runState),
+          mode: interactionMode,
           onHistoryPrevious: recallHistoryPrevious,
           onHistoryNext: recallHistoryNext,
           onShiftEnter: () => undefined,
         }),
+    // Single Claude-code-style line under the input: the active mode when it is
+    // not default, otherwise the key hints — plus a subtle context-used %.
+    !approval ? React.createElement(
+      Box,
+      { flexDirection: 'row', paddingX: 1 },
+      (!scrollStick && clampedScrollUp > 0)
+        ? React.createElement(Text, { color: theme.claude },
+            `${emojiEnabled() ? '↓' : 'v'} ${clampedScrollUp} line${clampedScrollUp === 1 ? '' : 's'} newer · PageDown for latest`)
+        : interactionMode !== 'default'
+          ? React.createElement(Text, { color: interactionMode === 'plan' ? theme.planMode : theme.autoAccept, bold: true },
+              interactionMode === 'plan'
+                ? `${emojiEnabled() ? '⏸' : '||'} plan mode on ${emojiEnabled() ? '(⇧⇥ to cycle)' : '(shift+tab to cycle)'}`
+                : `${emojiEnabled() ? '⏵⏵' : '>>'} accept edits on ${emojiEnabled() ? '(⇧⇥ to cycle)' : '(shift+tab to cycle)'}`)
+          : React.createElement(Text, { color: theme.textDim }, footerHint(runState)),
+      ctxUsage ? React.createElement(Text, { color: ctxUsageBarColor(ctxUsage) },
+        `   ${Math.round((ctxUsage.used / ctxUsage.total) * 100)}% context used`) : null,
+    ) : null,
+    ),
   );
 }
 

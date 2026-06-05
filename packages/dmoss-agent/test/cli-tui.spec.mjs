@@ -127,13 +127,13 @@ assert.match(footerHint('ready'), /Up\/Down history/);
 assert.match(footerHint('approval'), /a always this session/);
 assert.match(footerHint('running'), /Esc cancel/);
 assert.match(footerHint('running'), /Enter queue/);
-assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-v4-pro' }), 3);
-assert.equal(promptEditorRowBudget('', { placeholder: 'Ask Moss', hint: 'Ctrl+O tools' }), 4);
-// '/' previews a compact command palette so it does not crowd short terminals.
-assert.equal(promptEditorRowBudget('/'), 10);
-assert.equal(promptEditorRowBudget('/que'), 4);
-assert.equal(promptEditorRowBudget('/staus'), 3);
-assert.equal(promptEditorRowBudget(Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join('\n')), 9);
+assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-v4-pro' }), 5);
+assert.equal(promptEditorRowBudget('', { placeholder: 'Ask Moss', hint: 'Ctrl+O tools' }), 6);
+// '/' previews a windowed command palette (≤6 rows) so it does not crowd short terminals.
+assert.equal(promptEditorRowBudget('/'), 11);
+assert.equal(promptEditorRowBudget('/que'), 6);
+assert.equal(promptEditorRowBudget('/staus'), 5);
+assert.equal(promptEditorRowBudget(Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join('\n')), 11);
 
 assert.equal(formatQueueWait(undefined, 10_000), null);
 assert.equal(formatQueueWait(9_750, 10_000), '<1s');

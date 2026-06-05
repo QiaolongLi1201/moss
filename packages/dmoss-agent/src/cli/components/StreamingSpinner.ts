@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { Text } from 'ink';
 import { legacyTheme as theme } from '../theme/theme.js';
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const SPINNER_FRAMES = ['✶', '✻', '✽', '✻'];
 const DOT_FRAMES = ['', '.', '..', '...'];
 const PULSE_FRAMES = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█', '▇', '▆', '▅', '▄', '▃', '▂', '▁'];
 
@@ -23,7 +23,7 @@ export function StreamingSpinner({ active = true, showDots = true }: { active?: 
   const spinner = SPINNER_FRAMES[tick % SPINNER_FRAMES.length];
   const dots = showDots ? DOT_FRAMES[tick % DOT_FRAMES.length] : '';
 
-  return React.createElement(Text, null, ` ${spinner}${dots} `);
+  return React.createElement(Text, { color: theme.claude }, ` ${spinner}${dots} `);
 }
 
 /** Pulsing bar indicator for active tool calls */

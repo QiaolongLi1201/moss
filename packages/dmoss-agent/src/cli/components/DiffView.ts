@@ -19,15 +19,22 @@ export interface DiffViewProps {
   maxLines?: number;
 }
 
+function fgEscape(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `\u001B[38;2;${r};${g};${b}m`;
+}
+
 function linePrefix(line: DiffLine): string {
   const oldNum = line.oldLine !== undefined ? String(line.oldLine).padStart(4) : '    ';
   const newNum = line.newLine !== undefined ? String(line.newLine).padStart(4) : '    ';
   const numStr = `${oldNum} ${newNum}`;
   switch (line.type) {
-    case 'added': return `\u001B[38;2;74;222;128m${numStr} +\u001B[39m `;
-    case 'removed': return `\u001B[38;2;248;113;113m${numStr} -\u001B[39m `;
+    case 'added': return `${fgEscape(theme.diffAddedWord)}${numStr} +\u001B[39m `;
+    case 'removed': return `${fgEscape(theme.diffRemovedWord)}${numStr} -\u001B[39m `;
     case 'header': return `\u001B[1m${numStr}  \u001B[22m `;
-    default: return `\u001B[38;2;156;163;175m${numStr}  \u001B[39m `;
+    default: return `${fgEscape(theme.textDim)}${numStr}  \u001B[39m `;
   }
 }
 
@@ -36,10 +43,10 @@ function renderLine(line: DiffLine, index: number): React.ReactElement {
   let color: string | undefined;
   let bg: string | undefined;
   switch (line.type) {
-    case 'added': color = theme.text; bg = theme.diffAddedDimmed; break;
-    case 'removed': color = theme.text; bg = theme.diffRemovedDimmed; break;
+    case 'added': color = theme.diffAddedWord; bg = theme.diffAdded; break;
+    case 'removed': color = theme.diffRemovedWord; bg = theme.diffRemoved; break;
     case 'header': color = undefined; break;
-    default: color = theme.textMuted; break;
+    default: color = theme.textDim; break;
   }
 
   return React.createElement(Text, { key: index, color, backgroundColor: bg },

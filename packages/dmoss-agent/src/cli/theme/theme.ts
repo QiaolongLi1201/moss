@@ -29,27 +29,31 @@ export interface CliTheme {
   tokens: CliThemeTokens;
 }
 
+// Aligned to Claude Code's dark theme (claude-code/src/utils/theme.ts `darkTheme`),
+// rgb→hex. NOTE: the RDK Studio orange/cyan live only in brand.ts/logo.ts (the
+// startup logo); the general accent here is Claude orange #d77757 to match the
+// "pure claude-code" look the product TUI now adopts.
 export const AURORA_DARK_TOKENS: CliThemeTokens = {
-  claude: '#f05a1a', text: '#e5e7eb', textSecondary: '#d1d5db',
-  textMuted: '#6b7280', textDim: '#4b5563', inverseText: '#0b1220',
-  inactive: '#374151', subtle: '#1f2937', suggestion: '#9ca3af',
-  user: '#22c55e', tool: '#38bdf8', permission: '#f59e0b',
-  success: '#22c55e', error: '#ef4444', warning: '#f59e0b', merged: '#a78bfa',
-  promptBorder: '#6b7280', planMode: '#a78bfa', autoAccept: '#22c55e',
-  bashBorder: '#38bdf8', ide: '#f59e0b', fastMode: '#22c55e',
-  diffAdded: '#166534', diffRemoved: '#991b1b', diffAddedDimmed: '#14532d',
-  diffRemovedDimmed: '#7f1d1d', diffAddedWord: '#4ade80', diffRemovedWord: '#f87171',
-  userMessageBackground: '#065f46', bashMessageBackgroundColor: '#1e3a5f',
-  memoryBackgroundColor: '#1e293b', selectionBg: '#334155',
-  rateLimitFill: '#f05a1a', rateLimitEmpty: '#374151',
-  briefLabelYou: '#22c55e', briefLabelClaude: '#f05a1a',
-  claudeShimmer: '#f05a1a', warningShimmer: '#f59e0b',
-  permissionShimmer: '#f59e0b', toolShimmer: '#38bdf8',
-  subagent1: '#ef4444', subagent2: '#3b82f6', subagent3: '#22c55e', subagent4: '#eab308',
-  subagent5: '#a855f7', subagent6: '#f97316', subagent7: '#ec4899', subagent8: '#06b6d4',
-  rainbowRed: '#ef4444', rainbowOrange: '#f97316', rainbowYellow: '#eab308',
-  rainbowGreen: '#22c55e', rainbowCyan: '#06b6d4', rainbowBlue: '#3b82f6', rainbowViolet: '#8b5cf6',
-  primary: '#c65f2a', primarySoft: '#f59e0b', border: '#9ca3af',
+  claude: '#d77757', text: '#ffffff', textSecondary: '#c4c4c4',
+  textMuted: '#6a6a6a', textDim: '#505050', inverseText: '#000000',
+  inactive: '#999999', subtle: '#505050', suggestion: '#b1b9f9',
+  user: '#7ab4e8', tool: '#d77757', permission: '#b1b9f9',
+  success: '#4eba65', error: '#ff6b80', warning: '#ffc107', merged: '#af87ff',
+  promptBorder: '#888888', planMode: '#48968c', autoAccept: '#af87ff',
+  bashBorder: '#fd5db1', ide: '#4782c8', fastMode: '#ff7814',
+  diffAdded: '#225c2b', diffRemoved: '#7a2936', diffAddedDimmed: '#475a4a',
+  diffRemovedDimmed: '#69484d', diffAddedWord: '#38a660', diffRemovedWord: '#b3596b',
+  userMessageBackground: '#373737', bashMessageBackgroundColor: '#413c41',
+  memoryBackgroundColor: '#374146', selectionBg: '#264f78',
+  rateLimitFill: '#b1b9f9', rateLimitEmpty: '#505370',
+  briefLabelYou: '#7ab4e8', briefLabelClaude: '#d77757',
+  claudeShimmer: '#eb9f7f', warningShimmer: '#ffdf39',
+  permissionShimmer: '#cfd7ff', toolShimmer: '#eb9f7f',
+  subagent1: '#dc2626', subagent2: '#2563eb', subagent3: '#16a34a', subagent4: '#ca8a04',
+  subagent5: '#9333ea', subagent6: '#ea580c', subagent7: '#db2777', subagent8: '#0891b2',
+  rainbowRed: '#eb5f57', rainbowOrange: '#f58b57', rainbowYellow: '#fac35f',
+  rainbowGreen: '#91c882', rainbowCyan: '#82aadc', rainbowBlue: '#9b82c8', rainbowViolet: '#c882b4',
+  primary: '#d77757', primarySoft: '#eb9f7f', border: '#888888',
 };
 
 export const AURORA_DARK_THEME: CliTheme = {
@@ -58,22 +62,21 @@ export const AURORA_DARK_THEME: CliTheme = {
   tokens: AURORA_DARK_TOKENS,
 };
 
-// Legacy shape used by tui.ts while the JSON theme engine is being wired in.
+// Active theme bag imported by tui.ts and the cli/components as `theme`.
+// It is the full Claude-code-aligned token set (AURORA_DARK_TOKENS) plus the
+// `warn` alias that the legacy call sites use, so existing `theme.x` references
+// keep working while gaining the new tokens (permission, planMode, autoAccept,
+// subtle, diffAdded/diffRemoved/word, userMessageBackground, …).
 export const legacyTheme = {
-  primary: '#d97742',
-  primarySoft: '#e5a36a',
-  user: '#7aa874',
-  tool: '#75a7d8',
-  warn: '#d59f4a',
-  error: '#b91c1c',
-  success: '#7aa874',
+  ...AURORA_DARK_TOKENS,
+  warn: AURORA_DARK_TOKENS.warning,
+  // Primary text uses the TERMINAL DEFAULT foreground (undefined) so it stays
+  // readable on BOTH light and dark terminals. moss ships only a dark palette,
+  // and hardcoding white made typed text invisible on light backgrounds.
+  // Elements with a fixed dark background set an explicit light fg instead
+  // (see the user-message echo in tui.ts). Full $COLORFGBG light/dark detection
+  // (like Claude Code) is a deliberate follow-up.
   text: undefined as string | undefined,
-  textMuted: '#8a837a',
-  textDim: '#6f6a63',
-  border: '#4a4038',
-  // extended tokens for new components
-  diffAddedDimmed: '#14532d' as string,
-  diffRemovedDimmed: '#7f1d1d' as string,
 };
 
 const BUILTIN_THEMES: CliTheme[] = [AURORA_DARK_THEME];

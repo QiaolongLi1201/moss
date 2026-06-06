@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createCliToolApprovalHook,
   describeCliToolApproval,
+  renderCliApprovalPrompt,
   resolveCliSafetyMode,
   setCliApprovalAsker,
 } from '../dist/cli/approval.js';
@@ -27,6 +28,21 @@ assert.equal(resolveCliSafetyMode(['--workspace-write'], {}), 'workspace-write')
 assert.equal(resolveCliSafetyMode(['--full-access'], {}), 'full-access');
 assert.equal(resolveCliSafetyMode([], { DMOSS_SAFETY_MODE: 'full' }), 'full-access');
 assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
+
+{
+  const preview = describeCliToolApproval(
+    {
+      tool: tool('create_subagent', 'subagent', 'requires_user_confirmation'),
+      input: { task: 'check the failing test' },
+      sessionKey: 's',
+    },
+    'workspace-write',
+  );
+  const prompt = renderCliApprovalPrompt(preview, { task: 'check the failing test' });
+  assert.match(prompt, /Moss wants to start a sub-agent task/);
+  assert.match(prompt, /check the failing test/);
+  assert.doesNotMatch(prompt, /write a file/);
+}
 
 {
   const preview = describeCliToolApproval(
@@ -304,10 +320,13 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
       sessionKey: 's',
     });
     assert.equal(denied.approved, false, 'blank approval response should default to deny');
-    assert.match(prompt, /\[approval\]/);
-    assert.match(prompt, /side effect: local_write/);
-    assert.match(prompt, /policy: workspace-write safety mode allows local_write, but approval is required/);
-    assert.match(prompt, /input:/);
+    assert.match(prompt, /Moss wants to run a local command/);
+    assert.match(prompt, /echo sk-t\*\*\*00/);
+    assert.match(prompt, /Scope: workspace command/);
+    assert.match(prompt, /Allow once, allow this tool for the session, or deny/);
+    assert.doesNotMatch(prompt, /side effect:/);
+    assert.doesNotMatch(prompt, /policy:/);
+    assert.doesNotMatch(prompt, /input:/);
     assert.doesNotMatch(prompt, /sk-test-00000000000000000000/);
   } finally {
     setCliApprovalAsker(null);

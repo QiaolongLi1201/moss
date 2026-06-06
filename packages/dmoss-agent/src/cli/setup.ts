@@ -84,11 +84,12 @@ function hiddenQuestion(prompt: string): Promise<string> {
 
 function providerFromChoice(choice: string): CliProviderPreset {
   const normalized = choice.trim().toLowerCase();
-  if (normalized === '1' || normalized === 'qwen' || normalized === 'aliyun') return 'qwen';
-  if (normalized === '2' || normalized === 'openai') return 'openai';
-  if (normalized === '3' || normalized === 'anthropic' || normalized === 'claude') return 'anthropic';
-  if (normalized === '4' || normalized === 'compatible' || normalized === 'openai-compatible') return 'openai-compatible';
-  return 'qwen';
+  if (normalized === '1' || normalized === 'deepseek' || normalized === 'ds') return 'deepseek';
+  if (normalized === '2' || normalized === 'qwen' || normalized === 'aliyun') return 'qwen';
+  if (normalized === '3' || normalized === 'openai') return 'openai';
+  if (normalized === '4' || normalized === 'anthropic' || normalized === 'claude') return 'anthropic';
+  if (normalized === '5' || normalized === 'compatible' || normalized === 'openai-compatible') return 'openai-compatible';
+  return 'deepseek';
 }
 
 function sanitizeBaseUrl(value: string): string {
@@ -383,10 +384,11 @@ export async function runSetupWizard(): Promise<void> {
   print('D-Moss model setup');
   print('');
   print('Choose provider:');
-  print('  1. Aliyun / Qwen (recommended for RDK users)');
-  print('  2. OpenAI');
-  print('  3. Anthropic');
-  print('  4. OpenAI-compatible');
+  print('  1. DeepSeek (recommended)');
+  print('  2. Aliyun / Qwen');
+  print('  3. OpenAI');
+  print('  4. Anthropic');
+  print('  5. OpenAI-compatible');
 
   const pipedAnswers = input.isTTY ? null : fs.readFileSync(0, 'utf-8').split(/\r?\n/);
   let answerIndex = 0;
@@ -799,9 +801,9 @@ export function printMissingConfigGuidance(interactive: boolean): void {
   print('  dmoss setup');
   print('');
   print('Script/env path:');
-  print('  export DMOSS_API_KEY=your-key');
-  print('  export DMOSS_MODEL=qwen3.7-max');
-  print('  export DMOSS_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode');
+  print('  export DEEPSEEK_API_KEY=your-key');
+  print('  export DMOSS_MODEL=deepseek-v4-pro');
+  print('  export DMOSS_BASE_URL=https://api.deepseek.com');
   print('');
   if (interactive) {
     print('You can run setup now, then start `dmoss` again.');

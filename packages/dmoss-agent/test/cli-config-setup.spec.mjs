@@ -123,6 +123,16 @@ try {
   assert.equal(envResolved.contextTokens, 64000);
   assert.equal(envResolved.contextTokensSource, 'DMOSS_CONTEXT_TOKENS');
 
+  const deepseekEnvResolved = resolveCliConfig({
+    DEEPSEEK_API_KEY: 'deepseek-env-secret',
+  }, {});
+  assert.equal(deepseekEnvResolved.provider, 'deepseek');
+  assert.equal(deepseekEnvResolved.providerSource, 'DEEPSEEK_API_KEY');
+  assert.equal(deepseekEnvResolved.apiKey, 'deepseek-env-secret');
+  assert.equal(deepseekEnvResolved.apiKeySource, 'DEEPSEEK_API_KEY');
+  assert.equal(deepseekEnvResolved.model, 'deepseek-v4-pro');
+  assert.equal(deepseekEnvResolved.baseUrl, 'https://api.deepseek.com');
+
   const invalidEnvResolved = resolveCliConfig({
     DMOSS_MAX_AGENT_TURNS: '1.5',
     DMOSS_CONTEXT_TOKENS: '64000x',
@@ -273,6 +283,7 @@ try {
     DMOSS_CONFIG_PROFILE: '',
     DMOSS_PROVIDER: '',
     DMOSS_API_KEY: '',
+    DEEPSEEK_API_KEY: '',
     DASHSCOPE_API_KEY: '',
     ALIYUN_API_KEY: '',
     OPENAI_API_KEY: '',
@@ -364,6 +375,8 @@ try {
   const initEnvNames = [
     'DMOSS_PROFILE',
     'DMOSS_PROVIDER',
+    'DMOSS_API_KEY',
+    'DEEPSEEK_API_KEY',
     'DMOSS_MODEL',
     'DMOSS_BASE_URL',
     'OPENAI_BASE_URL',
@@ -390,7 +403,7 @@ try {
     const initPath = path.join(initConfigDir, 'config.json');
     const initialized = JSON.parse(fs.readFileSync(initPath, 'utf8'));
     assert.equal(initialized.profile, 'balanced');
-    assert.equal(initialized.provider, 'anthropic');
+    assert.equal(initialized.provider, 'deepseek');
     assert.equal(initialized.safetyMode, 'workspace-write');
     assert.equal(initialized.approvalPolicy, 'prompt');
     assert.deepEqual(initialized.trustedTools, []);

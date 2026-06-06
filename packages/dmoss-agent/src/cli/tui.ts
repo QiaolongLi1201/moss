@@ -18,6 +18,8 @@ import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCli
 import { getPackageVersion } from './package-info.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, ui } from './ui.js';
+import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
+import { estimateTokensForText } from '../context/tokens.js';
 
 type TranscriptKind = 'user' | 'assistant' | 'system' | 'error' | 'shell' | 'tool';
 type TuiRunState = 'ready' | 'running' | 'approval';
@@ -471,11 +473,11 @@ export interface DeviceContextSummary {
 // Device-side Moss follows NemoClaw-like runtime principles without copying its
 // UI: explicit execution plane, filesystem/process/network policy, inference
 // routing, operator approval, lifecycle evidence, and recoverable board runtime.
-const DEVICE_WORKFLOWS = [
-  { title: 'Diagnose Board', description: 'OS, NPU, memory, temperature, services, network, logs' },
-  { title: 'Deploy Model', description: 'dependencies, inference run, benchmark, output evidence' },
-  { title: 'Bring up Sensor', description: 'camera, audio, IMU, serial, driver config, data flow' },
-  { title: 'Debug ROS/tros', description: 'topics, nodes, services, logs, graph health' },
+const GETTING_STARTED_WORKFLOWS = [
+  { title: 'Host Code', description: 'inspect files, explain architecture, edit safely, review changes' },
+  { title: 'Host Commands', description: 'build, typecheck, lint, test, reproduce failures, collect logs' },
+  { title: 'Board Diagnostics', description: 'connect over SSH, check OS, NPU, memory, services, network' },
+  { title: 'Board Workflows', description: 'deploy model, bring up sensors, debug ROS/tros, gather evidence' },
 ] as const;
 
 function isLikelyBoardRuntime(): boolean {
@@ -617,7 +619,7 @@ function inferenceRouteLabel(runtime?: CliRuntimeStatus): string {
   if (/localhost|127\.0\.0\.1|::1/.test(baseUrl)) {
     return inferExecutionMode(runtime) === 'on-board' ? 'local board inference' : 'local host inference';
   }
-  if (provider === 'qwen' || provider === 'openai' || provider === 'anthropic') return `cloud routed (${provider})`;
+  if (provider === 'deepseek' || provider === 'qwen' || provider === 'openai' || provider === 'anthropic') return `cloud routed (${provider})`;
   return provider === 'unknown' ? 'inference route unknown' : `routed (${provider})`;
 }
 
@@ -688,11 +690,11 @@ export function boardTip(runtime?: CliRuntimeStatus): string {
   if (mode === 'on-board') return 'On-board Moss verifies by changing device state and returning logs, metrics, and service evidence.';
   if (mode === 'hybrid') return 'Hybrid Moss routes development from host to board runtime with operator approval.';
   if (runtime?.device) return 'PC Host Moss uses SSH/bridge tools for board diagnostics; ! stays on the host.';
-  return 'Connect an RDK board to move from repo-only help to hardware verification.';
+  return 'Develop on this host now; connect an RDK board when you need hardware verification.';
 }
 
 function compactWelcomeTip(tip: string): string {
-  if (tip.startsWith('Connect an RDK board')) return 'Connect a board for hardware verification.';
+  if (tip.startsWith('Develop on this host')) return 'Develop on this host; connect a board for hardware verification.';
   if (tip.startsWith('PC Host Moss uses SSH')) return 'SSH tools target the board; ! stays on this host.';
   if (tip.startsWith('Hybrid Moss')) return 'Hybrid routes host work to board runtime with approval.';
   if (tip.startsWith('On-board Moss')) return 'On-board Moss proves changes with device evidence.';
@@ -1295,9 +1297,8 @@ export interface SessionHeaderProps {
 }
 
 export function SessionHeader({ device: _device, workspace, model, state: _state, toolsExpanded: _toolsExpanded, version, cacheMode: _cacheMode, profile: _profile }: SessionHeaderProps): React.ReactElement {
-  // Claude-code-style welcome card: one rounded box holding the RDK mark, a help
-  // hint, cwd and model — the same shape as Claude Code's launch panel. The RDK
-  // orange/cyan mark is the only RDK-branded element.
+  // Claude-code-style welcome card: one rounded box holding the Moss mark, a help
+  // hint, cwd and model — the same shape as Claude Code's launch panel.
   const cursor = emojiEnabled() ? '▪' : '#';
   return React.createElement(
     Box,
@@ -1308,7 +1309,7 @@ export function SessionHeader({ device: _device, workspace, model, state: _state
     React.createElement(Text, null,
       React.createElement(Text, { color: BRAND_ORANGE, bold: true }, '>_'),
       React.createElement(Text, { color: BRAND_CYAN }, ` ${cursor}  `),
-      React.createElement(Text, { color: theme.claude, bold: true }, 'RDK Studio'),
+      React.createElement(Text, { color: theme.claude, bold: true }, 'Moss'),
       React.createElement(Text, { color: theme.textDim }, version ? `  ${version}` : ''),
     ),
     React.createElement(Text, null, ''),
@@ -1414,7 +1415,7 @@ export function WelcomePanel({
     { flexDirection: 'column', marginTop: 1, marginBottom: 1 },
     React.createElement(Text, { color: theme.textMuted }, ' Tips for getting started:'),
     React.createElement(Text, null, ' '),
-    ...DEVICE_WORKFLOWS.map((workflow, i) => React.createElement(Text, { key: workflow.title },
+    ...GETTING_STARTED_WORKFLOWS.map((workflow, i) => React.createElement(Text, { key: workflow.title },
       React.createElement(Text, { color: theme.textMuted }, ` ${i + 1}. `),
       React.createElement(Text, { color: theme.text }, workflow.title),
       React.createElement(Text, { color: theme.textMuted }, ` — ${workflow.description}`),
@@ -1512,6 +1513,13 @@ export interface ApprovalPromptLineProps {
   question: string;
 }
 
+function approvalPromptBodyLines(question: string): string[] {
+  return visibleText(question, 8)
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() && !/^\s*Allow once, allow this tool for the session, or deny\./.test(line));
+}
+
 export function ApprovalPromptLine({ question }: ApprovalPromptLineProps): React.ReactElement {
   return React.createElement(
     Box,
@@ -1519,10 +1527,14 @@ export function ApprovalPromptLine({ question }: ApprovalPromptLineProps): React
       flexDirection: 'column',
       borderStyle: 'round',
       borderColor: theme.permission,
+      borderLeft: false,
+      borderRight: false,
+      borderBottom: false,
+      marginTop: 1,
       paddingX: 1,
     },
-    React.createElement(Text, { color: theme.permission, bold: true }, '? permission requested'),
-    ...visibleText(question, 8).split('\n').map((line, idx) => (
+    React.createElement(Text, { color: theme.permission, bold: true }, 'Permission required'),
+    ...approvalPromptBodyLines(question).map((line, idx) => (
       React.createElement(Text, { key: idx, color: theme.text }, line)
     )),
     React.createElement(Text, { color: theme.textMuted }, 'y approve · a always this session · n/Esc deny'),
@@ -1692,7 +1704,7 @@ function commandRowsForInput(value: string): Array<[string, string]> {
     ['/tools', 'how tools work'],
     ['/context', 'context usage'],
     ['/detail', 'quiet/progress/verbose'],
-    ['/cost', 'token estimate'],
+    ['/cost', 'token usage & cost'],
     ['/rewind', 'undo file changes'],
     ['/thinking', 'thinking deltas'],
     ['/clear', 'clear visible transcript'],
@@ -2407,34 +2419,47 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       }
       return true;
     }
-    if (message === '/context' || message === '/cost') {
+    if (message === '/context') {
       try {
         const msgs = await agent.config.sessionStore.loadMessages(sessionKey);
-        const chars = msgs.reduce((n, m) => {
+        // CJK-aware estimate via the same estimator compaction uses, against
+        // the real effective context window (config.contextTokens), not a
+        // hard-coded 1M denominator.
+        const tokens = msgs.reduce((n, m) => {
           const c = (m as { content?: unknown }).content;
-          return n + (typeof c === 'string' ? c.length : c ? JSON.stringify(c).length : 0);
+          const text = typeof c === 'string' ? c : c ? JSON.stringify(c) : '';
+          return n + estimateTokensForText(text);
         }, 0);
-        const approx = Math.round(chars / 4);
-        if (message === '/context') {
-          const total = 1_000_000;
-          const pct = Math.min(100, Math.round((approx / total) * 100));
+        const windowTokens = agent.config.contextTokens ?? 200_000;
+        const pct = Math.min(100, Math.round((tokens / windowTokens) * 100));
+        addTranscript('system', [
+          'Context window',
+          `  messages   ${msgs.length}`,
+          `  usage      ~${tokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens (${pct}%)`,
+          `  model      ${currentModel}`,
+          '  (CJK-aware estimate; live usage tracked in the status bar)',
+        ].join('\n'));
+      } catch (err) {
+        addTranscript('error', `Could not read context: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
+    if (message === '/cost') {
+      try {
+        // Real recorded spend from .dmoss/llm-usage.jsonl (logged per LLM
+        // request in the agent loop), not a chars/4 guess.
+        const records = await readUsageLog();
+        if (records.length === 0) {
           addTranscript('system', [
-            'Context window',
-            `  messages    ${msgs.length}`,
-            `  est. usage  ~${approx.toLocaleString()} / ${total.toLocaleString()} tokens (${pct}%)`,
-            '  (estimate ~4 chars/token; live ctx in status bar)',
+            'Session usage',
+            '  No LLM usage recorded yet in this workspace (.dmoss/llm-usage.jsonl).',
+            '  Token counts and cost are logged once the agent makes an LLM call.',
           ].join('\n'));
         } else {
-          addTranscript('system', [
-            'Session usage (estimate)',
-            `  messages    ${msgs.length}`,
-            `  est. tokens ~${approx.toLocaleString()}`,
-            `  model       ${currentModel}`,
-            '  (provider billing varies; this is a local estimate)',
-          ].join('\n'));
+          addTranscript('system', formatUsageSummary(summarizeUsage(records)));
         }
       } catch (err) {
-        addTranscript('error', `Could not read usage: ${err instanceof Error ? err.message : String(err)}`);
+        addTranscript('error', `Could not read usage log: ${err instanceof Error ? err.message : String(err)}`);
       }
       return true;
     }
@@ -2937,7 +2962,7 @@ function commandList(): string {
     '  /queue [drop|clear] show, drop last, or discard queued prompts',
     '  /sessions          show current and recent saved sessions',
     '  /context           context window token usage',
-    '  /cost              session token usage estimate',
+    '  /cost              recorded token usage & estimated cost',
     '  /rewind [seq]      list or undo file changes to a checkpoint',
     '  /diff              show git working-tree changes',
     '  /init              scaffold an AGENTS.md project memory file',

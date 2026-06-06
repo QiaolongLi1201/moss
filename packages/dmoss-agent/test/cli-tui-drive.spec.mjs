@@ -66,7 +66,7 @@ function assertNoCrush(frame, ctx) {
   assert.doesNotMatch(s, /dmoss-agent\s*│?\s*(model:|>_)/, `${ctx}: cwd line merged into another (squash)`);
 }
 const inputLine = (frame) =>
-  strip(frame).split('\n').filter((l) => /│\s+>/.test(l) && !/RDK Studio/.test(l)).pop() || '';
+  strip(frame).split('\n').filter((l) => /│\s+>/.test(l) && !/\bMoss\b/.test(l)).pop() || '';
 const selectedCmd = (frame) => {
   const row = strip(frame).split('\n').find((l) => /^\s*[❯>]\s+\/[a-z]/.test(l));
   const m = row && row.match(/(\/[a-z]+)/);

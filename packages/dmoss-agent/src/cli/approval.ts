@@ -91,6 +91,126 @@ function previewInput(input: Record<string, unknown>): string {
   return raw.length > 1200 ? `${raw.slice(0, 1200)}\n... [truncated ${raw.length} chars]` : raw;
 }
 
+function stripPromptControlChars(value: string): string {
+  return Array.from(value).filter((char) => {
+    const code = char.codePointAt(0) ?? 0;
+    return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+  }).join('');
+}
+
+function cleanPromptText(value: string): string {
+  return stripPromptControlChars(sanitizeSecrets(value))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function compactPromptValue(value: unknown, limit = 220): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const cleaned = cleanPromptText(value);
+  if (!cleaned) return undefined;
+  return cleaned.length > limit ? `${cleaned.slice(0, limit - 1)}…` : cleaned;
+}
+
+function compactInputValue(input: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = compactPromptValue(input[key]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function patchPathSummary(input: Record<string, unknown>): string | undefined {
+  const patch = typeof input.patch === 'string' ? input.patch : undefined;
+  if (!patch) return undefined;
+  const paths = Array.from(patch.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm))
+    .map((match) => cleanPromptText(match[1] ?? ''))
+    .filter(Boolean);
+  if (paths.length === 0) return undefined;
+  if (paths.length === 1) return paths[0];
+  return `${paths.slice(0, 3).join(', ')}${paths.length > 3 ? `, +${paths.length - 3} more` : ''}`;
+}
+
+function approvalTargetSummary(toolName: string, input: Record<string, unknown>): string | undefined {
+  const command = compactInputValue(input, ['command', 'cmd', 'shell_command']);
+  if (command) return command;
+  const source = compactInputValue(input, ['source', 'src']);
+  const destination = compactInputValue(input, ['destination', 'dest', 'target']);
+  if (source && destination) return `${source} -> ${destination}`;
+  const patch = patchPathSummary(input);
+  if (patch) return patch;
+  const directTarget = compactInputValue(input, [
+    'path',
+    'file_path',
+    'filepath',
+    'file',
+    'url',
+    'uri',
+    'href',
+    'task',
+    'description',
+    'query',
+    'id',
+  ]);
+  if (directTarget) return directTarget;
+  return cleanPromptText(toolName);
+}
+
+function approvalActionSummary(preview: CliToolApprovalPreview, input: Record<string, unknown>): string {
+  const toolName = preview.toolName;
+  const hasCommand = compactInputValue(input, ['command', 'cmd', 'shell_command']) !== undefined;
+  if (hasCommand && preview.sideEffect === 'device_mutation') return 'run a command on the device';
+  if (hasCommand && /background/i.test(toolName)) return 'start a background command';
+  if (hasCommand) return 'run a local command';
+  if (preview.sideEffect === 'memory_write') return 'update memory';
+  if (preview.sideEffect === 'runtime_state') return 'change session state';
+  if (preview.sideEffect === 'subagent') return 'start a sub-agent task';
+  if (preview.sideEffect === 'credential') return 'use credentials';
+  if (preview.sideEffect === 'external_message') return 'send an external message';
+  if (preview.sideEffect === 'device_mutation') return 'change the connected device';
+  if (/apply_patch|patch/i.test(toolName)) return 'apply a patch';
+  if (/write|create/i.test(toolName)) return 'write a file';
+  if (/edit|replace|update/i.test(toolName)) return 'edit a file';
+  if (/delete|remove/i.test(toolName)) return 'delete something';
+  return `use ${cleanPromptText(toolName)}`;
+}
+
+function approvalScopeSummary(preview: CliToolApprovalPreview, input: Record<string, unknown>): string {
+  const hasCommand = compactInputValue(input, ['command', 'cmd', 'shell_command']) !== undefined;
+  switch (preview.sideEffect) {
+    case 'local_write':
+      return hasCommand ? 'workspace command' : 'workspace file change';
+    case 'device_mutation':
+      return 'connected device';
+    case 'memory_write':
+      return 'Moss memory';
+    case 'runtime_state':
+      return 'current session';
+    case 'subagent':
+      return 'sub-agent';
+    case 'credential':
+      return 'credentials';
+    case 'external_message':
+      return 'external message';
+    case 'readonly':
+      return 'read-only';
+  }
+}
+
+export function renderCliApprovalPrompt(
+  preview: CliToolApprovalPreview,
+  input: Record<string, unknown>,
+): string {
+  const target = approvalTargetSummary(preview.toolName, input);
+  const lines = [
+    '',
+    `Moss wants to ${approvalActionSummary(preview, input)}`,
+    target ? `  ${target}` : '',
+    `Scope: ${approvalScopeSummary(preview, input)}`,
+    'Allow once, allow this tool for the session, or deny. [y/a/N] ',
+  ].filter((line) => line !== '');
+  return lines.join('\n');
+}
+
 function hasAutoApproval(env: NodeJS.ProcessEnv, options: CliToolApprovalOptions): boolean {
   return options.approvalPolicy === 'never' ||
     env.DMOSS_CLI_AUTO_APPROVE === '1' ||
@@ -223,15 +343,7 @@ export function createCliToolApprovalHook(
       };
     }
 
-    const prompt = [
-      '',
-      `[approval] ${preview.toolName}`,
-      `side effect: ${preview.sideEffect}`,
-      `policy: ${preview.decisionContext}`,
-      'input:',
-      preview.inputPreview,
-      `Allow once, or always for this session? [y/a/N] `,
-    ].join('\n');
+    const prompt = renderCliApprovalPrompt(preview, request.input);
     const answer = (await (interactiveAsker ?? defaultAskUser)(prompt)).trim().toLowerCase();
     if (answer === 'a' || answer === 'always') {
       sessionTrustedTools.add(tool.name);

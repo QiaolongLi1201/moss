@@ -78,7 +78,8 @@ test('SessionHeader renders a compact Claude Code-style launch panel', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /RDK Studio/);
+  assert.match(frame, /Moss/);
+  assert.doesNotMatch(frame, /RDK Studio/);
   assert.match(frame, /model:\s+deepseek-v4-pro/);
   assert.match(frame, /deepseek-v4-pro/);
   assert.match(frame, /cwd:\s+[^\n]*project/);
@@ -100,7 +101,7 @@ test('SessionHeader keeps cache policy out of the launch panel', () => {
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /RDK/);
+  assert.match(frame, /Moss/);
   assert.doesNotMatch(frame, /cache off/);
   cleanup();
 });
@@ -167,17 +168,18 @@ test('WelcomePanel renders a compact Claude Code-style tip', () => {
         deviceContext: 'no live board context  ·  local workspace only',
         lockedCapabilities: 'Connect a board to unlock: device diagnosis, model deployment, sensor bring-up, ROS/tros debugging, log collection',
       },
-      tip: 'Connect an RDK board to move from repo-only help to hardware verification.',
+      tip: 'Develop on this host now; connect an RDK board when you need hardware verification.',
     }),
   );
   const frame = lastFrame();
-  // Claude-code-style welcome: "Tips for getting started" + numbered device
-  // workflows + the board tip. No device-context block, no "Try:" line.
+  // Claude-code-style welcome: host development + optional board path. No
+  // device-context block, no "Try:" line.
   assert.match(frame, /Tips for getting started/);
-  assert.match(frame, /Diagnose Board/);
-  assert.match(frame, /Deploy Model/);
-  assert.match(frame, /Bring up Sensor/);
-  assert.match(frame, /Debug ROS\/tros/);
+  assert.match(frame, /Host Code/);
+  assert.match(frame, /Host Commands/);
+  assert.match(frame, /Board Diagnostics/);
+  assert.match(frame, /Board Workflows/);
+  assert.match(frame, /Develop on this host now/);
   assert.match(frame, /hardware verification/);
   assert.doesNotMatch(frame, /Moss Runtime/);
   assert.doesNotMatch(frame, /Try:/);
@@ -208,6 +210,8 @@ test('WelcomePanel highlights a connected board surface without command clutter'
   // Welcome is Claude-code-minimal now; the board surface surfaces via the tip,
   // not a device line.
   assert.match(frame, /Tips for getting started/);
+  assert.match(frame, /Host Code/);
+  assert.match(frame, /Board Diagnostics/);
   assert.match(frame, /SSH\/bridge tools/);
   assert.doesNotMatch(frame, /\/tools\s+show available tools/);
   cleanup();
@@ -229,17 +233,18 @@ test('WelcomePanel renders a compact short-terminal variant', () => {
         deviceContext: 'no live board context',
         lockedCapabilities: 'Connect a board to unlock: device diagnosis',
       },
-      tip: 'Connect an RDK board for hardware verification.',
+      tip: 'Develop on this host now; connect an RDK board when you need hardware verification.',
     }),
   );
   const frame = lastFrame();
   assert.match(frame, /PC Host Agent/);
   assert.match(frame, /no board target/);
   assert.match(frame, /Tip:/);
+  assert.match(frame, /Develop on this host/);
   assert.match(frame, /hardware verification/);
   assert.doesNotMatch(frame, /Moss Runtime/);
   assert.doesNotMatch(frame, /Try:/);
-  assert.doesNotMatch(frame, /Diagnose Board/);
+  assert.doesNotMatch(frame, /Host Code/);
   assert(frame.split('\n').length <= 4);
   cleanup();
 });
@@ -397,11 +402,19 @@ test('ActivityItemLine renders expanded tool results under the response connecto
 test('ApprovalPromptLine renders the question and y/n hint', () => {
   const { lastFrame } = render(
     React.createElement(ApprovalPromptLine, {
-      question: 'Allow running this tool?\nIt will read 3 files.',
+      question: [
+        'Moss wants to run a local command',
+        '  npm test',
+        'Scope: workspace command',
+      ].join('\n'),
     }),
   );
   const frame = lastFrame();
-  assert.match(frame, /Allow running this tool/);
+  assert.match(frame, /Moss wants to run a local command/);
+  assert.match(frame, /npm test/);
+  assert.match(frame, /Scope: workspace command/);
+  assert.doesNotMatch(frame, /side effect/);
+  assert.doesNotMatch(frame, /policy:/);
   assert.match(frame, /y approve/);
   assert.match(frame, /a always this session/);
   assert.match(frame, /n.*Esc deny/);

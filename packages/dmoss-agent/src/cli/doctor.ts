@@ -105,7 +105,7 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
   lines.push(ok('version', options.currentVersion));
   lines.push(options.config.apiKey
     ? ok('auth', `configured via ${options.config.apiKeySource}`)
-    : fail('auth', 'missing API key; run dmoss setup or set DMOSS_API_KEY'));
+    : fail('auth', 'missing API key; run dmoss setup or set DEEPSEEK_API_KEY'));
   lines.push(ok('provider', `${options.config.provider} (${options.config.providerSource})`));
   lines.push(ok('model', `${options.config.model} (${options.config.modelSource})`));
   lines.push(ok('baseUrl', `${options.config.baseUrl} (${options.config.baseUrlSource})`));

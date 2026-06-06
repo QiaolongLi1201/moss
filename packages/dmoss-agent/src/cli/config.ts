@@ -6,7 +6,7 @@ import { DEFAULT_MODEL } from '@rdk-moss/core';
 import { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from '../context/compaction.js';
 import { resolveDmossMaxAgentTurns } from '../utils/max-agent-turns.js';
 
-export type CliProviderPreset = 'qwen' | 'openai' | 'anthropic' | 'openai-compatible';
+export type CliProviderPreset = 'deepseek' | 'qwen' | 'openai' | 'anthropic' | 'openai-compatible';
 
 export interface ProviderPreset {
   id: CliProviderPreset;
@@ -17,6 +17,13 @@ export interface ProviderPreset {
 }
 
 export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
+  deepseek: {
+    id: 'deepseek',
+    displayName: 'DeepSeek',
+    defaultModel: 'deepseek-v4-pro',
+    defaultBaseUrl: 'https://api.deepseek.com',
+    keyEnvVars: ['DEEPSEEK_API_KEY'],
+  },
   qwen: {
     id: 'qwen',
     displayName: 'Aliyun / Qwen',
@@ -410,6 +417,7 @@ export function saveConfigFile(config: ConfigFile, configDir?: string): void {
 
 export function normalizeProvider(value: string | undefined): CliProviderPreset {
   const raw = (value || '').toLowerCase().trim();
+  if (raw === 'deepseek' || raw === 'ds') return 'deepseek';
   if (raw === 'qwen' || raw === 'aliyun' || raw === 'dashscope') return 'qwen';
   if (raw === 'openai') return 'openai';
   if (raw === 'anthropic' || raw === 'claude') return 'anthropic';
@@ -531,6 +539,7 @@ function parsePositiveIntegerEnv(value: string | undefined): number | undefined 
 function inferProviderFromBaseUrl(baseUrl: string | undefined): CliProviderPreset | null {
   const raw = (baseUrl || '').toLowerCase();
   if (!raw) return null;
+  if (raw.includes('deepseek.com')) return 'deepseek';
   if (raw.includes('aliyuncs.com') || raw.includes('dashscope') || raw.includes('token-plan')) {
     return 'qwen';
   }
@@ -733,9 +742,10 @@ export function resolveCliConfig(
       env.DASHSCOPE_BASE_URL ||
       activeConfig.baseUrl,
   );
+  const envInferredProvider = env.DEEPSEEK_API_KEY ? 'deepseek' : null;
   const provider = overrides.provider || providerEnv || activeConfig.provider
     ? normalizeProvider(overrides.provider || providerEnv || activeConfig.provider)
-    : inferredProvider || 'anthropic';
+    : inferredProvider || envInferredProvider || 'deepseek';
   const preset = PROVIDER_PRESETS[provider];
   const providerSource = overrides.provider
     ? 'cli'
@@ -745,11 +755,14 @@ export function resolveCliConfig(
         ? 'config'
         : inferredProvider
           ? 'baseUrl'
-          : 'default';
+          : envInferredProvider
+            ? 'DEEPSEEK_API_KEY'
+            : 'default';
 
   const apiKeyEnv = firstEnv(env, [
     'DMOSS_API_KEY',
     ...preset.keyEnvVars,
+    'DEEPSEEK_API_KEY',
     'OPENAI_API_KEY',
     'ANTHROPIC_API_KEY',
     'DASHSCOPE_API_KEY',

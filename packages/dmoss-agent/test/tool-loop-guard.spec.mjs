@@ -53,6 +53,24 @@ function makeFailingTool(name, calls) {
   };
 }
 
+function makeSoftFailingTool(name, calls) {
+  return {
+    name,
+    description: `${name} soft-failing test tool`,
+    inputSchema: {
+      type: 'object',
+      properties: { value: { type: 'string' } },
+    },
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
+    async execute(input) {
+      calls.push({ name, input });
+      // Soft failure: returns an error-marker string WITHOUT throwing (is_error stays
+      // false) — exactly how web_fetch reports a 404. The guard must still count it.
+      return `web_fetch_error: HTTP 404 Not Found — ${JSON.stringify(input)}`;
+    },
+  };
+}
+
 function lastToolResultText(messages) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
@@ -320,8 +338,48 @@ async function runFailureLoopScenario() {
   }
 }
 
+async function runSoftFailureLoopScenario() {
+  const env = {
+    DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: '99',
+    DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT: '99',
+    DMOSS_TOOL_LOOP_TOTAL_LIMIT: '99',
+    DMOSS_TOOL_LOOP_FAILURE_LIMIT: '3',
+  };
+  const prev = {};
+  for (const [k, v] of Object.entries(env)) { prev[k] = process.env[k]; process.env[k] = v; }
+  try {
+    const provider = new ScriptedProvider([
+      { name: 'web_fetch', input: { value: 'u0' } },
+      { name: 'web_fetch', input: { value: 'u1' } },
+      { name: 'web_fetch', input: { value: 'u2' } },
+      { name: 'web_fetch', input: { value: 'u3' } },
+    ]);
+    const store = new InMemorySessionStore();
+    const calls = [];
+    const agent = new DmossAgent({
+      llmProvider: provider,
+      sessionStore: store,
+      domainPrompt: false,
+      enableContextPruning: false,
+      enableCompaction: false,
+      maxAgentTurns: 16,
+    });
+    agent.tools.register(makeSoftFailingTool('web_fetch', calls));
+
+    await agent.chat('test-softfailloop', 'start');
+    const messages = await store.loadMessages('test-softfailloop');
+    assert.equal(calls.length, 3, 'soft failures (web_fetch_error 404, is_error=false) must still count toward the failure limit');
+    const last = lastToolResultText(messages);
+    assert.ok(last.includes('web_fetch has failed 3 time(s)'), 'soft 404 failures should trip the failure guard');
+    console.log('  [PASS] soft failures (error text in a non-error result) trip the failure guard');
+  } finally {
+    for (const [k, v] of Object.entries(prev)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
 await runStreamScenario();
 await runFailureLoopScenario();
+await runSoftFailureLoopScenario();
 runSteeringTests();
 
-console.log('\n[pass] tool-loop-guard self-test: 7/7');
+console.log('\n[pass] tool-loop-guard self-test: 8/8');

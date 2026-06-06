@@ -197,7 +197,8 @@ export async function executeAgentLoopToolCalls(
     }
     // Feed the loop guard so a tool that keeps erroring this turn trips early and
     // the agent stops the retry-different-variation loop (see tool-loop-guard).
-    recordToolLoopOutcome(toolLoopGuard, call.name, isError);
+    // Pass the result text so soft failures (e.g. web_fetch_error 404) count too.
+    recordToolLoopOutcome(toolLoopGuard, call.name, isError, result);
 
     const truncatedResult = truncateToolOutput(call.name, result);
     const preview =

@@ -31,16 +31,31 @@ export function createToolLoopGuardState(): ToolLoopGuardState {
 }
 
 /**
- * Record whether a tool call errored, so the guard can short-circuit a tool that
+ * Some tools report failure "softly" — they return a normal (is_error=false)
+ * result whose TEXT is an error marker rather than throwing (e.g. web_fetch on a
+ * 404 returns `web_fetch_error: HTTP 404 ...`). Detect those by result prefix so
+ * the failure guard still counts them. Prefix-anchored to avoid matching error
+ * strings that merely appear inside a successfully fetched page body.
+ */
+export function isSoftToolFailureResult(resultText: string | undefined): boolean {
+  if (!resultText) return false;
+  return /^\s*(web_fetch_error|web_search_error)\b/i.test(resultText)
+    || /^\s*\S+\s+blocked automated access/i.test(resultText);
+}
+
+/**
+ * Record whether a tool call failed, so the guard can short-circuit a tool that
  * keeps failing in a turn before it grinds to the timeout. Call this after each
  * tool execution. Only failures accumulate (a working tool is never penalised).
+ * `resultText` lets soft failures (error text in a non-error result) count too.
  */
 export function recordToolLoopOutcome(
   state: ToolLoopGuardState,
   toolName: string,
   isError: boolean,
+  resultText?: string,
 ): void {
-  if (!isError) return;
+  if (!isError && !isSoftToolFailureResult(resultText)) return;
   state.byToolFailure.set(toolName, (state.byToolFailure.get(toolName) ?? 0) + 1);
 }
 

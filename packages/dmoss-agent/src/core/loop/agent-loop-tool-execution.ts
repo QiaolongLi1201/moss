@@ -21,6 +21,7 @@ import {
 } from './agent-loop-tool-helpers.js';
 import {
   formatToolLoopGuardMessage,
+  recordToolLoopOutcome,
   shouldShortCircuitToolCall,
   type ToolLoopGuardState,
 } from '../tools/tool-loop-guard.js';
@@ -194,6 +195,9 @@ export async function executeAgentLoopToolCalls(
     } else {
       metrics.consecutiveToolErrors = 0;
     }
+    // Feed the loop guard so a tool that keeps erroring this turn trips early and
+    // the agent stops the retry-different-variation loop (see tool-loop-guard).
+    recordToolLoopOutcome(toolLoopGuard, call.name, isError);
 
     const truncatedResult = truncateToolOutput(call.name, result);
     const preview =

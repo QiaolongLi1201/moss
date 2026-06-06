@@ -4,10 +4,16 @@ import { parseEnvPositiveInt } from '../../utils/env-compat.js';
 const DEFAULT_TOOL_LOOP_IDENTICAL_LIMIT = 2;
 const DEFAULT_TOOL_LOOP_SINGLE_TOOL_LIMIT = 24;
 const DEFAULT_TOOL_LOOP_TOTAL_LIMIT = 64;
+// A tool that keeps ERRORING in one turn (e.g. web_fetch on a dead/SPA URL tried
+// with many different URLs) trips far sooner than the by-name limit, so the agent
+// stops the wasteful retry-different-variation loop and answers honestly with what
+// it has instead of grinding to the timeout.
+const DEFAULT_TOOL_LOOP_FAILURE_LIMIT = 6;
 
 export type ToolLoopGuardState = {
   bySignature: Map<string, number>;
   byTool: Map<string, number>;
+  byToolFailure: Map<string, number>;
   total: number;
 };
 
@@ -19,11 +25,37 @@ export function createToolLoopGuardState(): ToolLoopGuardState {
   return {
     bySignature: new Map(),
     byTool: new Map(),
+    byToolFailure: new Map(),
     total: 0,
   };
 }
 
+/**
+ * Record whether a tool call errored, so the guard can short-circuit a tool that
+ * keeps failing in a turn before it grinds to the timeout. Call this after each
+ * tool execution. Only failures accumulate (a working tool is never penalised).
+ */
+export function recordToolLoopOutcome(
+  state: ToolLoopGuardState,
+  toolName: string,
+  isError: boolean,
+): void {
+  if (!isError) return;
+  state.byToolFailure.set(toolName, (state.byToolFailure.get(toolName) ?? 0) + 1);
+}
+
 export function formatToolLoopGuardMessage(reason: string, toolName: string): string {
+  if (/has failed \d+ time/.test(reason)) {
+    // Repeated FAILURE of the same tool: the problem is the tool can't deliver, so
+    // tell the model to STOP (not "pivot and retry", which causes the try-another-
+    // URL/query loop) and answer honestly with what it already has.
+    return [
+      `[dmoss-agent] Tool loop guard stopped another ${toolName} call: ${reason}.`,
+      `${toolName} is not returning usable results right now — STOP calling it.`,
+      'Do NOT keep trying variations (different URLs, queries, or paths); that only wastes the turn.',
+      'Answer the user with what you already have and state plainly that you could not retrieve the rest via this tool (and why). Never invent, assume, or describe the content you could not actually fetch.',
+    ].join(' ');
+  }
   return [
     `[dmoss-agent] Tool loop guard stopped another ${toolName} call: ${reason}.`,
     'Do not retry the same preset tool path immediately.',
@@ -49,10 +81,18 @@ export function shouldShortCircuitToolCall(
     'DMOSS_TOOL_LOOP_TOTAL_LIMIT',
     DEFAULT_TOOL_LOOP_TOTAL_LIMIT,
   );
+  const failureLimit = resolvePositiveIntEnv(
+    'DMOSS_TOOL_LOOP_FAILURE_LIMIT',
+    DEFAULT_TOOL_LOOP_FAILURE_LIMIT,
+  );
   const signature = `${toolName}:${stableSerializeToolInput(input)}`;
   const sameSignatureCount = state.bySignature.get(signature) ?? 0;
   const sameToolCount = state.byTool.get(toolName) ?? 0;
+  const failureCount = state.byToolFailure.get(toolName) ?? 0;
 
+  if (failureCount >= failureLimit) {
+    return `${toolName} has failed ${failureCount} time(s) in this user turn`;
+  }
   if (sameSignatureCount >= identicalLimit) {
     return `identical input was already requested ${sameSignatureCount} time(s) in this user turn`;
   }

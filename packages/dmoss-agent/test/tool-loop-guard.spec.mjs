@@ -37,6 +37,22 @@ function makeTool(name, calls) {
   };
 }
 
+function makeFailingTool(name, calls) {
+  return {
+    name,
+    description: `${name} failing test tool`,
+    inputSchema: {
+      type: 'object',
+      properties: { value: { type: 'string' } },
+    },
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
+    async execute(input) {
+      calls.push({ name, input });
+      throw new Error(`${name} simulated failure`);
+    },
+  };
+}
+
 function lastToolResultText(messages) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
@@ -262,7 +278,50 @@ await runChatScenario(
   },
 );
 
+async function runFailureLoopScenario() {
+  const env = {
+    DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: '99',
+    DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT: '99',
+    DMOSS_TOOL_LOOP_TOTAL_LIMIT: '99',
+    DMOSS_TOOL_LOOP_FAILURE_LIMIT: '3',
+  };
+  const prev = {};
+  for (const [k, v] of Object.entries(env)) { prev[k] = process.env[k]; process.env[k] = v; }
+  try {
+    // Same tool, DISTINCT inputs (so only the failure counter can trip), all erroring.
+    const provider = new ScriptedProvider([
+      { name: 'web_fetch', input: { value: 'u0' } },
+      { name: 'web_fetch', input: { value: 'u1' } },
+      { name: 'web_fetch', input: { value: 'u2' } },
+      { name: 'web_fetch', input: { value: 'u3' } },
+    ]);
+    const store = new InMemorySessionStore();
+    const calls = [];
+    const agent = new DmossAgent({
+      llmProvider: provider,
+      sessionStore: store,
+      domainPrompt: false,
+      enableContextPruning: false,
+      enableCompaction: false,
+      maxAgentTurns: 16,
+    });
+    agent.tools.register(makeFailingTool('web_fetch', calls));
+
+    await agent.chat('test-failloop', 'start');
+    const messages = await store.loadMessages('test-failloop');
+    assert.equal(calls.length, 3, 'a tool that keeps failing should execute up to the failure limit (3), then short-circuit');
+    const last = lastToolResultText(messages);
+    assert.ok(last.includes('web_fetch has failed 3 time(s)'), 'guard should cite repeated failures, not the by-name budget');
+    assert.ok(/STOP calling it/.test(last), 'failure guard must tell the model to stop calling the broken tool');
+    assert.ok(/Never invent|could not retrieve/i.test(last), 'failure guard must forbid inventing the content it could not fetch');
+    console.log('  [PASS] repeated tool failures trip the failure guard with a stop-and-be-honest message');
+  } finally {
+    for (const [k, v] of Object.entries(prev)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
 await runStreamScenario();
+await runFailureLoopScenario();
 runSteeringTests();
 
-console.log('\n[pass] tool-loop-guard self-test: 6/6');
+console.log('\n[pass] tool-loop-guard self-test: 7/7');

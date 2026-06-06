@@ -2,15 +2,17 @@
  * 失效旧读取结果 — 针对可变文件的 micro-compaction：文件被再次读或写时，较早的
  * 读取结果不再可信，应从上下文中清除以防模型依赖过时数据。
  *
- * 当同一文件在本机或设备上被 write/edit/device_file_write 之后，历史中更早的
- * read / device_file_read 的 tool_result 内容已不可靠，替换为短占位以回收 token。
+ * 当同一文件被后续写操作（本机 write/write_file/edit/edit_file 或设备 device_file_write）
+ * 覆盖后，历史中更早的读取（read/read_file/device_file_read）的 tool_result 内容已不可靠，
+ * 替换为短占位以回收 token。本机文件工具有两套命名 —— 宿主 read/write/edit 与 moss-CLI
+ * builtin read_file/write_file/edit_file —— 两者都需识别，否则纯 builtin 运行时永不触发。
  */
 
 import type { Message } from '../core/session/session-jsonl.js';
 import { estimateTokensForText } from './tokens.js';
 
-const READ_RESULT_TOOLS = new Set(['read', 'device_file_read']);
-const MUTATE_RESULT_TOOLS = new Set(['write', 'edit', 'device_file_write']);
+const READ_RESULT_TOOLS = new Set(['read', 'read_file', 'device_file_read']);
+const MUTATE_RESULT_TOOLS = new Set(['write', 'write_file', 'edit', 'edit_file', 'device_file_write']);
 
 export const STALE_READ_PLACEHOLDER =
   '[已省略：该路径在后续已被写入或编辑，旧读取结果不再可靠。必要时请重新 read / device_file_read。]';
@@ -19,9 +21,20 @@ function normalizePathKey(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/').trim();
 }
 
-/** 本机 read/write/edit 用 file_path；设备读写用 path */
+/**
+ * 提取同一文件的路径键，兼容两套运行时命名 —— 宿主 (read/write/edit，参数 file_path)
+ * 与 moss-CLI builtin (read_file/write_file/edit_file，参数 path) —— 归一到同一 ws: 键；
+ * 设备 (device_file_read/device_file_write，参数 path) 归一到 dev: 键。
+ */
 export function toolPathKey(toolName: string, input: Record<string, unknown>): string | null {
-  if (toolName === 'read' || toolName === 'write' || toolName === 'edit') {
+  if (
+    toolName === 'read' ||
+    toolName === 'read_file' ||
+    toolName === 'write' ||
+    toolName === 'write_file' ||
+    toolName === 'edit' ||
+    toolName === 'edit_file'
+  ) {
     const raw =
       typeof input.file_path === 'string'
         ? input.file_path

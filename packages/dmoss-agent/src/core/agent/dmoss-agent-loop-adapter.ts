@@ -66,8 +66,8 @@ export function createDmossAgentLoopEventAdapter(
     | {
         inputTokens: number;
         outputTokens: number;
-        cacheReadTokens: number;
-        cacheCreationTokens: number;
+        cacheReadTokens?: number;
+        cacheCreationTokens?: number;
       }
     | undefined;
   let compactions = 0;
@@ -155,15 +155,23 @@ export function createDmossAgentLoopEventAdapter(
         case 'turn_transition':
           stopReason = normalizePublicStopReason(event.reason);
           return [];
-        case 'llm_usage':
+        case 'llm_usage': {
+          // Cache tokens are optional in provider usage. Guard each addend with
+          // `?? 0` (adding `undefined` yields NaN, which would pollute usage/cost
+          // stats) and omit the field entirely when the running total is zero so
+          // callers see { inputTokens, outputTokens } rather than zero-filled keys.
+          const cacheReadTokens =
+            (usage?.cacheReadTokens ?? 0) + (event.cacheReadTokens ?? 0);
+          const cacheCreationTokens =
+            (usage?.cacheCreationTokens ?? 0) + (event.cacheCreationTokens ?? 0);
           usage = {
             inputTokens: (usage?.inputTokens ?? 0) + event.inputTokens,
             outputTokens: (usage?.outputTokens ?? 0) + event.outputTokens,
-            cacheReadTokens: (usage?.cacheReadTokens ?? 0) + event.cacheReadTokens,
-            cacheCreationTokens:
-              (usage?.cacheCreationTokens ?? 0) + event.cacheCreationTokens,
+            ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
+            ...(cacheCreationTokens > 0 ? { cacheCreationTokens } : {}),
           };
           return [];
+        }
         case 'compaction':
           compactions += 1;
           return [

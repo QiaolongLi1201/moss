@@ -203,8 +203,8 @@ export interface ChatResult {
   usage?: {
     inputTokens: number;
     outputTokens: number;
-    cacheReadTokens: number;
-    cacheCreationTokens: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
   };
   /** Thinking content extracted from inline tags (if thinking stream enabled) */
   thinking?: string[];

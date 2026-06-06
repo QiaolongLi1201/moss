@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import React from 'react';
 import { render, cleanup } from 'ink-testing-library';
 import stringWidth from 'string-width';
@@ -33,7 +34,7 @@ import {
 const require = createRequire(import.meta.url);
 const inkEntry = require.resolve('ink');
 const { default: CursorContext } = await import(
-  path.join(path.dirname(inkEntry), 'components/CursorContext.js')
+  pathToFileURL(path.join(path.dirname(inkEntry), 'components/CursorContext.js')).href,
 );
 
 const tests = [];

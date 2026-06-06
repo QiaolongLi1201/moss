@@ -115,6 +115,7 @@
   },
   "homepage": "https://github.com/QiaolongLi1201/moss/tree/main/packages/dmoss-agent#readme",
   "scripts": {
+    "prebuild": "npm run build --workspace @rdk-moss/core && npm run build --workspace @rdk-moss/memory && npm run build --workspace @rdk-moss/skills",
     "build": "npm run clean && tsc -p tsconfig.build.json && node -e \"const fs=require('fs');fs.chmodSync('dist/cli.js',0o755)\"",
     "typecheck": "tsc --noEmit",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",

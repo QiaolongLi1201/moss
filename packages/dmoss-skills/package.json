@@ -30,6 +30,7 @@
   },
   "homepage": "https://github.com/QiaolongLi1201/moss/tree/main/packages/dmoss-skills#readme",
   "scripts": {
+    "prebuild": "npm run build --workspace @rdk-moss/core",
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\"",

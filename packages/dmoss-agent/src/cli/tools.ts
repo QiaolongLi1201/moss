@@ -6,7 +6,7 @@ export function createMemoryTools(memoryManager: MemoryManager): Tool[] {
   const memoryRead: Tool = {
     name: 'memory_read',
     description:
-      'Search long-term memory for relevant entries. Use to recall user preferences, past decisions, or stored facts.',
+      'Search long-term memory (persists across sessions) for relevant entries — user preferences, past decisions, project/device facts, prior solutions. The <dmoss_memory> session digest is only an overview; use this to retrieve specifics. Returns each match with its id.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -19,7 +19,7 @@ export function createMemoryTools(memoryManager: MemoryManager): Tool[] {
       const results = await memoryManager.search(input.query, input.limit || 5);
       if (results.length === 0) return 'No matching memories found.';
       return results
-        .map((r, i) => `[${i + 1}] (score: ${r.score.toFixed(2)}) ${r.snippet}`)
+        .map((r, i) => `[${i + 1}] (score: ${r.score.toFixed(2)}, id: ${r.entry.id}) ${r.snippet}`)
         .join('\n\n');
     },
   };
@@ -27,7 +27,7 @@ export function createMemoryTools(memoryManager: MemoryManager): Tool[] {
   const memoryWrite: Tool = {
     name: 'memory_write',
     description:
-      'Store an important fact, user preference, or decision in long-term memory for future recall.',
+      'Save a durable fact for future sessions — a user preference, key decision, project/device constraint, or hard-won solution. One fact per call; check the <dmoss_memory> digest first to avoid duplicates. Not for transient details or secrets.',
     inputSchema: {
       type: 'object',
       properties: {

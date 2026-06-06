@@ -317,6 +317,7 @@ async function main() {
   const agent = new DmossAgent({
     llmProvider: createCliProvider(resolvedConfig), sessionStore, model,
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
+    memoryContextProvider: () => memoryManager.buildDigest(),
     ...resolveCliAgentRuntimeOptions(resolvedConfig),
     hooks,
   });

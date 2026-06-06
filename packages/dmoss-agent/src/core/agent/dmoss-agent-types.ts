@@ -98,6 +98,15 @@ export interface PromptConfig {
    * careful execution) from `buildSystemPrompt`. Default: true.
    */
   includeAgentBehaviorPrompt?: boolean;
+  /**
+   * Optional per-turn long-term-memory context provider. Called at the start of
+   * each agent run; the returned text (e.g. a `MemoryManager.buildDigest()`
+   * digest) is injected into the dynamic system-prompt layer so persistent
+   * cross-session facts surface every session without the model having to search
+   * first. Return ''/undefined to inject nothing (e.g. empty memory). Thrown
+   * errors are caught and logged (non-fatal).
+   */
+  memoryContextProvider?: () => string | undefined | Promise<string | undefined>;
 }
 
 export interface PromptCacheConfig {

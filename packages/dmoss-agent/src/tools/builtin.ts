@@ -94,6 +94,22 @@ function withLineNumbers(text: string, startLine = 1): string {
     .join('\n');
 }
 
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle === '') return 0;
+  return haystack.split(needle).length - 1;
+}
+
+/**
+ * Length-preserving normalization of smart/curly quotes to straight quotes.
+ * Each replaced character is a single BMP code unit mapped to a single ASCII
+ * quote, so offsets in the normalized string align 1:1 with the original —
+ * letting edit_file tolerate a quote-style mismatch in `old_string` without
+ * disturbing any other bytes when it splices the original content.
+ */
+function normalizeEditQuotes(s: string): string {
+  return s.replace(/[‘’‚‛]/g, "'").replace(/[“”„‟]/g, '"');
+}
+
 export const readFileTool: Tool = {
   name: 'read_file',
   description:
@@ -231,7 +247,25 @@ export const editFileTool: Tool = {
       }
       const stale = await staleWriteError(filePath, displayPath);
       if (stale) return `Error: ${stale}`;
-      const occurrences = content.split(oldStr).length - 1;
+      // Locate the target. Exact match first; if that yields nothing, retry on
+      // a length-preserving quote-normalized view (smart/curly ↔ straight) so a
+      // pure quote-style mismatch in old_string doesn't force a re-read + retry.
+      // The replacement always splices the ORIGINAL bytes at the matched offsets
+      // (offsets align 1:1 because normalization preserves length).
+      let needle = oldStr;
+      let haystack = content;
+      let fuzzy = false;
+      let occurrences = countOccurrences(haystack, needle);
+      if (occurrences === 0) {
+        const normContent = normalizeEditQuotes(content);
+        const normOld = normalizeEditQuotes(oldStr);
+        if ((normContent !== content || normOld !== oldStr) && countOccurrences(normContent, normOld) > 0) {
+          haystack = normContent;
+          needle = normOld;
+          occurrences = countOccurrences(haystack, needle);
+          fuzzy = true;
+        }
+      }
       if (occurrences === 0) {
         return (
           `Error: old_string not found in ${displayPath}. ` +
@@ -245,17 +279,26 @@ export const editFileTool: Tool = {
           'Add more surrounding context to target a single location, or pass replace_all: true to replace every occurrence.'
         );
       }
-      let updated: string;
-      if (input.replace_all) {
-        updated = content.split(oldStr).join(newStr);
-      } else {
-        const idx = content.indexOf(oldStr);
-        updated = content.slice(0, idx) + newStr + content.slice(idx + oldStr.length);
+      let updated = '';
+      let pos = 0;
+      for (;;) {
+        const idx = haystack.indexOf(needle, pos);
+        if (idx === -1) {
+          updated += content.slice(pos);
+          break;
+        }
+        updated += content.slice(pos, idx) + newStr;
+        pos = idx + needle.length;
+        if (!input.replace_all) {
+          updated += content.slice(pos);
+          break;
+        }
       }
       await atomicWriteFile(filePath, updated);
       await recordFileState(filePath);
       const label = input.replace_all && occurrences > 1 ? `${occurrences} occurrences` : '1 occurrence';
-      return `Edited ${displayPath} (replaced ${label}).`;
+      const fuzzyNote = fuzzy ? '; matched after normalizing quote characters' : '';
+      return `Edited ${displayPath} (replaced ${label}${fuzzyNote}).`;
     } catch (err) {
       return `Error editing file: ${err instanceof Error ? err.message : String(err)}`;
     }

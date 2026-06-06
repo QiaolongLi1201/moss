@@ -20,7 +20,10 @@ import {
   buildCompactionCheckpointOutline,
   type CompactHookRegistry,
 } from './compact-hooks.js';
-import { invalidateStaleReadToolResults } from '../../context/stale-read-invalidate.js';
+import {
+  invalidateStaleReadToolResults,
+  dedupeUnchangedReadToolResults,
+} from '../../context/stale-read-invalidate.js';
 import { microcompact } from '../../context/microcompact.js';
 import { estimateMessagesChars, estimateMessagesTokens } from '../../context/tokens.js';
 import { describeError } from '../../provider/errors.js';
@@ -391,6 +394,23 @@ export async function runOverflowRecovery(
         count: staleOv.invalidatedCount,
         savedChars: staleOv.savedChars,
         savedTokens: staleOv.savedTokens,
+      });
+      recovered = true;
+    }
+
+    const dedupOv = dedupeUnchangedReadToolResults(currentMessages);
+    if (dedupOv.savedChars > 0) {
+      await persistMessages(dedupOv.messages);
+      currentMessages.splice(0, currentMessages.length, ...dedupOv.messages);
+      state.microcompactTotalSavedChars += dedupOv.savedChars;
+      savedChars += dedupOv.savedChars;
+      savedTokens += dedupOv.savedTokens;
+      actions.push({
+        kind: 'invalidate_stale_reads',
+        reason: 'overflow_recovery',
+        count: dedupOv.invalidatedCount,
+        savedChars: dedupOv.savedChars,
+        savedTokens: dedupOv.savedTokens,
       });
       recovered = true;
     }

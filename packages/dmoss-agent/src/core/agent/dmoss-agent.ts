@@ -526,7 +526,17 @@ export class DmossAgent {
     // ── System prompt & tools ──
     const workingContext = buildTaskFrameContext(taskFrame, continuationIntent);
     const goalContext = goalLoad.goal ? buildGoalModeContext(goalLoad.goal) : '';
-    const extraContext = [options?.extraContext, goalContext, workingContext]
+    let memoryContext = '';
+    if (this.config.memoryContextProvider) {
+      try {
+        memoryContext = (await this.config.memoryContextProvider()) ?? '';
+      } catch (err) {
+        log.warn('memory context provider failed (non-critical)', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    const extraContext = [options?.extraContext, memoryContext, goalContext, workingContext]
       .filter(Boolean)
       .join('\n\n');
     const stableSystemPrompt = this.buildSystemPrompt({

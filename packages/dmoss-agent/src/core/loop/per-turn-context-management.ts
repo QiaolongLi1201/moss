@@ -4,7 +4,9 @@
  * the model's compaction.
  *
  * Order of operations is planned by ContextBudgetPlanner:
- *   1. invalidateStaleReadToolResults — drop superseded read-file/list outputs
+ *   1. invalidateStaleReadToolResults (+ dedupeUnchangedReadToolResults) —
+ *      drop read outputs superseded by a later write, and collapse repeated
+ *      reads whose content is byte-identical to a later read
  *   2. snipTailOversizedToolResults   — only when promptTokens >= warnLine
  *   3. microcompact                   — adaptive based on promptTokens vs lines
  *
@@ -15,7 +17,10 @@
  * follows.
  */
 
-import { invalidateStaleReadToolResults } from '../../context/stale-read-invalidate.js';
+import {
+  invalidateStaleReadToolResults,
+  dedupeUnchangedReadToolResults,
+} from '../../context/stale-read-invalidate.js';
 import { snipTailOversizedToolResults } from '../../context/tail-tool-snip.js';
 import { microcompact } from '../../context/microcompact.js';
 import type { Message } from '../session/session-jsonl.js';
@@ -84,17 +89,35 @@ export function runPerTurnContextManagement(
 
   for (const action of plan.actions) {
     if (action.kind === 'invalidate_stale_reads') {
+      // Two complementary read-result reclamations, reported as one action:
+      //   · invalidateStaleReadToolResults — read superseded by a later write
+      //   · dedupeUnchangedReadToolResults  — read byte-identical to a later read
+      let branchSavedChars = 0;
+      let branchSavedTokens = 0;
+      let branchCount = 0;
       const staleInv = invalidateStaleReadToolResults(currentMessages);
       if (staleInv.savedChars > 0) {
         currentMessages.splice(0, currentMessages.length, ...staleInv.messages);
-        savedChars += staleInv.savedChars;
-        savedTokens += staleInv.savedTokens;
+        branchSavedChars += staleInv.savedChars;
+        branchSavedTokens += staleInv.savedTokens;
+        branchCount += staleInv.invalidatedCount;
+      }
+      const dedup = dedupeUnchangedReadToolResults(currentMessages);
+      if (dedup.savedChars > 0) {
+        currentMessages.splice(0, currentMessages.length, ...dedup.messages);
+        branchSavedChars += dedup.savedChars;
+        branchSavedTokens += dedup.savedTokens;
+        branchCount += dedup.invalidatedCount;
+      }
+      if (branchSavedChars > 0) {
+        savedChars += branchSavedChars;
+        savedTokens += branchSavedTokens;
         contextActions.push({
           kind: action.kind,
           reason: action.reason,
-          count: staleInv.invalidatedCount,
-          savedChars: staleInv.savedChars,
-          savedTokens: staleInv.savedTokens,
+          count: branchCount,
+          savedChars: branchSavedChars,
+          savedTokens: branchSavedTokens,
         });
       }
       continue;

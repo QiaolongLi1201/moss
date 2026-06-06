@@ -183,6 +183,30 @@ function hostMatches(host: string, pattern: string): boolean {
 }
 
 /** Very small HTML → text cleanup (no jsdom dependency). */
+/**
+ * Detect a JavaScript single-page-app shell: a substantial HTML document whose
+ * readable text is nearly empty (content is rendered client-side) with a script
+ * bundle and a known SPA root mount. web_fetch cannot run JS, so the real content
+ * was never retrieved — return an honest note so the model doesn't treat the empty
+ * shell as the page or invent its contents (the RDK docs site is one such SPA).
+ */
+export function detectSpaShellNote(html: string, extractedText: string): string | null {
+  const readable = extractedText.replace(/\s+/g, ' ').trim();
+  if (readable.length >= 200) return null; // got real content
+  if (html.length < 600) return null; // too small to be a content SPA shell
+  const hasScript = /<script\b/i.test(html);
+  const spaRoot =
+    /(id=["'](root|app|__next|__nuxt|docusaurus(?:[_-]?root)?)["']|data-reactroot|data-server-rendered|window\.__(INITIAL_STATE|NUXT|NEXT_DATA)__|ng-version=)/i.test(html);
+  if (!hasScript || !spaRoot) return null;
+  return (
+    '⚠️ web_fetch note: this URL returned a client-side-rendered single-page app. ' +
+    'Its HTML shell has almost no readable text and loads the real content via JavaScript, ' +
+    'which web_fetch cannot execute — the page body was NOT retrieved. Do not describe, ' +
+    'summarize, or assume its content. Try the underlying data/API endpoint, a raw source ' +
+    'URL (e.g. a GitHub raw .md), or the project source repo instead.'
+  );
+}
+
 function htmlToText(html: string, maxChars: number): string {
   let out = html
     .replace(/<!--[\s\S]*?-->/g, '')
@@ -501,7 +525,13 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
           }
         } else if (isText) {
           const text = body.toString('utf-8');
-          out = contentType.includes('html') ? htmlToText(text, maxTextChars) : text.slice(0, maxTextChars);
+          if (contentType.includes('html')) {
+            out = htmlToText(text, maxTextChars);
+            const spaNote = detectSpaShellNote(text, out);
+            if (spaNote) out = out.trim() ? `${out}\n\n${spaNote}` : spaNote;
+          } else {
+            out = text.slice(0, maxTextChars);
+          }
         } else {
           out = `web_fetch_ok: ${totalBytes} bytes, binary content-type=${contentType || 'unknown'}; not returning binary data as text.`;
         }

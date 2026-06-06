@@ -34,7 +34,7 @@ import {
 import { createRemoteCompactProviderFromEnv } from '../../context/remote-compaction.js';
 import { setTraceRedactor } from '../../observability/tracing.js';
 import { PlatformExtensionRegistry, createAgentExtensionRegistryFromDefaults } from '../../extensions/registry.js';
-import { resolveContextCharsPerTokenUnit } from '../../context/tokens.js';
+import { resolveContextCharsPerTokenUnit, estimateMessagesTokens } from '../../context/tokens.js';
 import { getEffectiveContextWindowTokens } from '../../context/window-economics.js';
 import { resolveDmossMaxAgentTurns } from '../../utils/max-agent-turns.js';
 import { SteeringEngine, DEFAULT_STEERING_RULES } from '../loop/steering.js';
@@ -464,6 +464,81 @@ export class DmossAgent {
   // ─── Streaming chat ───────────────────────────────────────────
 
   /**
+   * Summarization function shared by the agent loop's compaction and the public
+   * {@link compactSession}. Single source so manual and automatic compaction summarize identically.
+   */
+  private buildSummarizeFn(): SummarizeFn {
+    const provider = this.config.llmProvider;
+    return async (params) => {
+      const resp = await provider.complete({
+        model: this.config.model ?? DEFAULT_MODEL,
+        systemPrompt: params.system,
+        messages: [{ role: 'user', content: params.userPrompt }],
+        maxTokens: params.maxTokens,
+      });
+      return resp.content
+        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+        .map((b) => b.text)
+        .join('');
+    };
+  }
+
+  /**
+   * Force one compaction pass over `sessionKey` and persist it, using the SAME machinery as
+   * automatic compaction — `config.compactionSettings`/`pruningSettings`, the remote-compact
+   * offload provider, the shared summarize function, and the agent system prompt. Does NOT run an
+   * LLM turn. Hosts call this for an explicit `/compact` so manual compaction stays consistent with
+   * what the loop does at the proactive threshold. Returns `{ compacted:false }` when the history is
+   * too short to summarize.
+   */
+  async compactSession(sessionKey: string): Promise<{
+    compacted: boolean;
+    summary?: string;
+    summaryChars: number;
+    droppedMessages: number;
+    tokensAfter: number;
+  }> {
+    const store = this.config.sessionStore;
+    const contextTokens = this.config.contextTokens ?? 200_000;
+    const maxOutputTokens = this.config.maxTokens ?? 4096;
+    const effectiveContextTokens = getEffectiveContextWindowTokens(contextTokens, maxOutputTokens);
+    // Type bridge: InternalMessage and LLMMessage share runtime shape across the module boundary.
+    const loaded = (await store.loadMessages(sessionKey)) as unknown as InternalMessage[];
+    if (loaded.length === 0) {
+      return { compacted: false, summaryChars: 0, droppedMessages: 0, tokensAfter: 0 };
+    }
+    const result = await compactHistoryIfNeeded({
+      summarize: this.buildSummarizeFn(),
+      messages: toSessionMessages(loaded),
+      contextWindowTokens: effectiveContextTokens,
+      pruningSettings: this.config.pruningSettings,
+      compactionSettings: this.config.compactionSettings,
+      systemPrompt: this.buildSystemPrompt({}),
+      charsPerTokenUnit: resolveContextCharsPerTokenUnit(),
+      forceCompaction: true,
+      remoteCompactProvider: this.remoteCompactProvider,
+    });
+    if (!result.summary || !result.summaryMessage) {
+      return {
+        compacted: false,
+        summaryChars: 0,
+        droppedMessages: 0,
+        tokensAfter: Math.max(0, Math.round(estimateMessagesTokens(toSessionMessages(loaded)))),
+      };
+    }
+    const next = [result.summaryMessage, ...result.pruneResult.messages];
+    // Type bridge: InternalMessage and LLMMessage share runtime shape across the module boundary.
+    await store.replaceMessages(sessionKey, next as unknown as LLMMessage[]);
+    return {
+      compacted: true,
+      summary: result.summary,
+      summaryChars: result.summary.length,
+      droppedMessages: result.pruneResult.droppedMessages.length,
+      tokensAfter: Math.max(0, Math.round(estimateMessagesTokens(next))),
+    };
+  }
+
+  /**
    * Setup phase: resolve config, load session, build system prompt and tools,
    * create runAgentLoop params and mutable run state.
    */
@@ -636,18 +711,7 @@ export class DmossAgent {
       };
     };
 
-    const summarize: SummarizeFn = async (params) => {
-      const resp = await provider.complete({
-        model: this.config.model ?? DEFAULT_MODEL,
-        systemPrompt: params.system,
-        messages: [{ role: 'user', content: params.userPrompt }],
-        maxTokens: params.maxTokens,
-      });
-      return resp.content
-        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-        .map((b) => b.text)
-        .join('');
-    };
+    const summarize = this.buildSummarizeFn();
 
     const params: AgentLoopParams = {
       runId,

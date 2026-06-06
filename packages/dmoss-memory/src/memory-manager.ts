@@ -2,14 +2,13 @@
  * Long-term memory system — keyword-based search over stored text entries.
  *
  * Storage: filesystem JSON index
- * Search: BM25-style keyword scoring (term frequency + document length normalization)
+ * Search: BM25-style keyword scoring
  * Deduplication: content hash-based
  *
  * Memory consolidation cues (bounded, cautious):
- * - Multi-query recall: merge scores across short cross-language anchor passes so EN questions
- *   can surface CN-stored facts (and vice versa) without embeddings.
+ * - Multi-query recall: merge scores across cross-language anchors.
  * - Soft index size hint: callers can warn when the corpus grows past MEMORY_INDEX_CHAR_SOFT_LIMIT.
- * - validateMemoryWriteContent: block a small set of obvious prompt-injection / script patterns.
+ * - validateMemoryWriteContent: block obvious prompt-injection / script patterns.
  */
 
 import fs from 'node:fs/promises';

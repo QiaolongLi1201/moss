@@ -30,9 +30,8 @@ export interface CliTheme {
 }
 
 // Aligned to Claude Code's dark theme (claude-code/src/utils/theme.ts `darkTheme`),
-// rgb→hex. NOTE: the RDK Studio orange/cyan live only in brand.ts/logo.ts (the
-// startup logo); the general accent here is Claude orange #d77757 to match the
-// "pure claude-code" look the product TUI now adopts.
+// rgb→hex. NOTE: downstream brand orange/cyan lives only in brand.ts/logo.ts
+// for the startup logo; the general accent stays Claude orange #d77757.
 export const AURORA_DARK_TOKENS: CliThemeTokens = {
   claude: '#d77757', text: '#ffffff', textSecondary: '#c4c4c4',
   textMuted: '#6a6a6a', textDim: '#505050', inverseText: '#000000',

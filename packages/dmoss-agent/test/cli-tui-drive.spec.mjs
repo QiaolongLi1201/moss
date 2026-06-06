@@ -3,8 +3,8 @@
  * Drive the REAL DmossTui like a human (ink-testing stdin) and assert the behaviors
  * behind the reported bugs:
  *   - running a command must NOT garble the frame (flexShrink squash / overdraw)
- *   - tall output must be readable: newest lines shown by default, PageUp/PageDown scroll
- *   - the header scrolls away so small terminals still show content
+ *   - tall output keeps EVERY line (history → <Static> → terminal scrollback, nothing clipped)
+ *   - mouse-report bytes are ignored, never typed into the prompt box
  *   - inline Chinese/CJK input, slash-menu arrow nav + Tab completion
  *
  * Run: npm run build -w @rdk-moss/agent && node packages/dmoss-agent/test/cli-tui-drive.spec.mjs
@@ -23,8 +23,6 @@ const { default: CursorContext } = await import(
 );
 
 const ESC = String.fromCharCode(27);
-const PAGE_UP = `${ESC}[5~`;
-const PAGE_DOWN = `${ESC}[6~`;
 const DOWN = `${ESC}[B`;
 const UP = `${ESC}[A`;
 
@@ -95,28 +93,19 @@ test('/status renders cleanly (no squash) and shows the newest lines by default'
   cleanup();
 });
 
-test('PageUp reveals the top of a tall output; PageDown re-pins to the bottom', async () => {
+test('a tall output keeps every line — history flows to native scrollback, nothing clipped', async () => {
   setRows(24);
   const { stdin, lastFrame } = mount();
   await wait(140);
-  await runSlashCommand(stdin, lastFrame, '/status');
-
-  let topSeen = false;
-  for (let i = 0; i < 6 && !topSeen; i += 1) {
-    stdin.write(PAGE_UP);
-    await wait(110);
-    const s = strip(lastFrame());
-    topSeen = /\bStatus\b/.test(s) && /session: cli/.test(s);
-  }
-  assert.ok(topSeen, 'PageUp should scroll up to the first /status lines (Status/session)');
-
-  let bottomSeen = false;
-  for (let i = 0; i < 8 && !bottomSeen; i += 1) {
-    stdin.write(PAGE_DOWN);
-    await wait(110);
-    bottomSeen = /mesh: disabled/.test(strip(lastFrame()));
-  }
-  assert.ok(bottomSeen, 'PageDown should return to the newest line (mesh)');
+  const f = await runSlashCommand(stdin, lastFrame, '/status');
+  // /status is taller than 24 rows. With the <Static> history model every committed
+  // line is written to the terminal (its own scrollback), so the FIRST line and the
+  // LAST line are both present at once — the user scrolls natively to read it all,
+  // nothing is dropped the way a fixed-height in-place frame would clip it.
+  const s = strip(f);
+  assert.match(s, /\bStatus\b/, 'the first /status line must be present (not clipped off the top)');
+  assert.match(s, /session: cli/, 'an early /status line must be present');
+  assert.match(s, /mesh: disabled/, 'the newest /status line must be present');
   cleanup();
 });
 
@@ -161,7 +150,7 @@ test('slash menu: arrow keys move the selection and Tab completes it', async () 
   cleanup();
 });
 
-test('running several commands in a row never accumulates garbling, and scrollback works', async () => {
+test('running several commands in a row never garbles, and all output is retained in scrollback', async () => {
   setRows(24);
   const { stdin, lastFrame } = mount();
   await wait(140);
@@ -169,44 +158,40 @@ test('running several commands in a row never accumulates garbling, and scrollba
     const f = await runSlashCommand(stdin, lastFrame, cmd);
     assertNoCrush(f, `after ${cmd}`);
   }
-  let sawFirst = false;
-  for (let i = 0; i < 12 && !sawFirst; i += 1) {
-    stdin.write(PAGE_UP);
-    await wait(100);
-    const s = strip(lastFrame());
-    sawFirst = /\bStatus\b/.test(s) && /session: cli/.test(s);
-  }
-  assert.ok(sawFirst, 'PageUp should reach the first command output after several commands');
+  // Every command's output stays in the committed <Static> history (terminal
+  // scrollback), so the earliest command is still present after later ones ran — it is
+  // never truncated or overwritten in place the way a fixed redraw frame would.
+  const s = strip(lastFrame());
+  assert.match(s, /\bStatus\b/, 'the first command (/status) output must still be present');
+  assert.match(s, /session: cli/, 'an early /status line must still be present after later commands');
   cleanup();
 });
 
-test('mouse wheel scrolls the transcript and never types mouse bytes into the box', async () => {
+test('mouse-report bytes are ignored — a stray wheel never types into the prompt or fires keys', async () => {
+  // The regression we guard against (see the user screenshot): with mouse reporting on
+  // — whether ours or a multiplexer's — the terminal forwards wheel events as SGR byte
+  // sequences. We no longer enable mouse reporting (so the terminal scrolls natively),
+  // but any forwarded bytes must NEVER land in the input box ("the wheel turned into
+  // [<64;… text") nor trigger an action.
   setRows(24);
   const { stdin, lastFrame } = mount();
   await wait(140);
-  await runSlashCommand(stdin, lastFrame, '/status');
+  stdin.write('hello');
+  await wait(80);
   const WHEEL_UP = `${ESC}[<64;10;12M`;
   const WHEEL_DOWN = `${ESC}[<65;10;12M`;
-  let topSeen = false;
-  for (let i = 0; i < 10 && !topSeen; i += 1) {
-    stdin.write(WHEEL_UP);
-    await wait(70);
-    const s = strip(lastFrame());
-    topSeen = /\bStatus\b/.test(s) && /session: cli/.test(s);
+  const LEGACY_WHEEL = `${ESC}[M\x60\x21\x21`;
+  for (const seq of [WHEEL_UP, WHEEL_DOWN, WHEEL_UP, LEGACY_WHEEL]) {
+    stdin.write(seq);
+    await wait(50);
   }
-  assert.ok(topSeen, 'mouse wheel up should scroll to the top of a tall output');
+  const line = inputLine(lastFrame());
+  assert.match(line, /hello/, 'real typed text must survive the wheel events');
   assert.doesNotMatch(
-    inputLine(lastFrame()),
-    /\[<|64;1|65;1|;\d+;\d+[Mm]/,
+    line,
+    /\[<|64;1|65;1|;\d+;\d+[Mm]|\[M/,
     'mouse report bytes must never be typed into the prompt box',
   );
-  let bottomSeen = false;
-  for (let i = 0; i < 12 && !bottomSeen; i += 1) {
-    stdin.write(WHEEL_DOWN);
-    await wait(70);
-    bottomSeen = /mesh: disabled/.test(strip(lastFrame()));
-  }
-  assert.ok(bottomSeen, 'mouse wheel down should return to the newest line');
   cleanup();
 });
 

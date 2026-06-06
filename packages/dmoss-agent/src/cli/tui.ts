@@ -2,8 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Box, Text, render, useApp, useInput, useStdin, useCursor, measureElement, type DOMElement } from 'ink';
-import { enableMouse, disableMouse, parseMouseEvent } from './input/mouse.js';
+import { Box, Text, render, useApp, useInput, useCursor, measureElement, Static, type DOMElement } from 'ink';
 import stringWidth from 'string-width';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { StreamingSpinner } from './components/StreamingSpinner.js';
@@ -132,7 +131,6 @@ const LONG_TOKEN_RE = /[^\s]{33,}/g;
 const COPY_SENSITIVE_TOKEN_RE = /^(?:https?:\/\/|file:\/\/|[A-Za-z]:\\|\/|\.\/|\.\.\/|[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+|[A-Za-z0-9_-]*_[A-Za-z0-9_-]*|\[[^\]\n]{1,160}\]\((?:https?:\/\/|file:\/\/)[^)]+\))/;
 const RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 const LOCAL_SHELL_OUTPUT_LIMIT = 40_000;
-const MAX_TRANSCRIPT_ITEMS = 200;
 const MAX_INPUT_HISTORY = 100;
 const WELCOME_PANEL_ROWS_ESTIMATE = 18;
 const HEADLINE_MAX = 72;
@@ -1827,8 +1825,10 @@ export function QueuePreview({ items, paused = false, now = Date.now() }: QueueP
 // Main TUI
 // ────────────────────────────────────────────────────────────────────────────
 
-/** SGR/legacy mouse report bytes that Ink may surface as `input` — handled by the
- *  dedicated stdin listener, so every useInput must ignore them (don't type/act). */
+/** SGR/legacy mouse report bytes. We never enable mouse reporting ourselves (so the
+ *  terminal's own wheel/trackpad scrolls native scrollback — see the render notes),
+ *  but a multiplexer/terminal with mouse mode on globally can still forward them; every
+ *  useInput must ignore them so a stray wheel never types bytes or fires keys. */
 function isLikelyMouseInput(s: string): boolean {
   if (!s) return false;
   return s.includes('\x1b[<') || s.includes('\x1b[M') || /\[<\d+;\d+;\d+[Mm]/.test(s) || /\[M...$/.test(s);
@@ -1880,76 +1880,25 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const [localShellApproved, setLocalShellApproved] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
   const [toolsExpanded, setToolsExpanded] = useState(false);
-  // Transcript scrolling (LINE-level, Claude-Code style). The content box is a
-  // fixed-height overflow:hidden viewport; an inner box holding ALL items is shifted
-  // by `scrollMargin` (computed at render). `scrollUp` = lines scrolled up from the
-  // bottom (0 = pinned to the newest line). Heights are measured post-layout so the
-  // margin math + max-scroll clamp track the real rendered size.
-  const [scrollUp, setScrollUp] = useState(0);
-  const [scrollStick, setScrollStick] = useState(true);
-  const transcriptViewportRef = useRef<DOMElement | null>(null);
-  const transcriptInnerRef = useRef<DOMElement | null>(null);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [contentHeight, setContentHeight] = useState(0);
-  const prevContentHeightRef = useRef(0);
+  // Bumped by /clear to remount <Static>, which resets Ink's committed-output index
+  // and accumulator (onStaticChange) so cleared history is not replayed.
+  const [staticEpoch, setStaticEpoch] = useState(0);
+  // The conversation history flows into the terminal's OWN scrollback via <Static>
+  // (each finalized item is written to stdout once and never redrawn), so the user
+  // scrolls it with the normal wheel/trackpad/scrollbar — exactly like any terminal
+  // program. We deliberately do NOT enable mouse reporting (that captures the wheel
+  // and leaks report bytes into the input box) and keep NO in-app scroll viewport.
+  // The only measured region is the LIVE tail (the in-flight turn): it is clamped
+  // below the terminal height and bottom-anchored so the dynamic frame never reaches
+  // full-screen height — at which point Ink clears the screen and rewrites everything,
+  // clobbering scrollback (see renderInteractiveFrame/shouldClearTerminalForFrame).
+  const liveInnerRef = useRef<DOMElement | null>(null);
+  const [liveContentHeight, setLiveContentHeight] = useState(0);
   useLayoutEffect(() => {
-    const vp = transcriptViewportRef.current;
-    if (vp) {
-      const h = measureElement(vp).height;
-      setViewportHeight((prev) => (prev === h ? prev : h));
-    }
-    const inner = transcriptInnerRef.current;
+    const inner = liveInnerRef.current;
     const h = inner ? measureElement(inner).height : 0;
-    setContentHeight((prev) => (prev === h ? prev : h));
+    setLiveContentHeight((prev) => (prev === h ? prev : h));
   });
-  // Follow the newest line while sticking; while scrolled up, hold the user's view
-  // as content grows by shifting scrollUp by the height delta (in lines).
-  useEffect(() => {
-    const delta = contentHeight - prevContentHeightRef.current;
-    prevContentHeightRef.current = contentHeight;
-    if (scrollStick) {
-      if (scrollUp !== 0) setScrollUp(0);
-    } else if (delta > 0) {
-      const maxScroll = Math.max(0, contentHeight - viewportHeight);
-      setScrollUp((u) => Math.min(maxScroll, u + delta));
-    }
-  }, [contentHeight, viewportHeight, scrollStick, scrollUp]);
-  // Mouse-wheel scrolling: enable SGR mouse reporting and parse wheel events straight
-  // from stdin (works during a run too), mapping them to the same line-scroll as
-  // PageUp/PageDown. Heights come from a ref so the listener is bound once.
-  const { stdin: rawStdin } = useStdin();
-  const scrollMetricsRef = useRef({ contentHeight: 0, viewportHeight: 0 });
-  scrollMetricsRef.current = { contentHeight, viewportHeight };
-  useEffect(() => {
-    if (!rawStdin || typeof rawStdin.on !== 'function') return undefined;
-    enableMouse();
-    const onData = (data: Buffer | string): void => {
-      const ev = parseMouseEvent(Buffer.isBuffer(data) ? data : Buffer.from(String(data)));
-      if (!ev) return;
-      const { contentHeight: ch, viewportHeight: vh } = scrollMetricsRef.current;
-      const maxScrollNow = Math.max(0, ch - vh);
-      if (ev.type === 'scroll-up') {
-        setScrollStick(false);
-        setScrollUp((u) => Math.min(maxScrollNow, u + 3));
-      } else if (ev.type === 'scroll-down') {
-        setScrollUp((u) => {
-          const next = Math.max(0, u - 3);
-          if (next === 0) setScrollStick(true);
-          return next;
-        });
-      }
-    };
-    rawStdin.on('data', onData);
-    // Belt-and-suspenders: also restore the terminal on a hard exit so the user's
-    // mouse isn't left in reporting mode if the process dies without unmounting.
-    const restoreOnExit = (): void => disableMouse();
-    process.once('exit', restoreOnExit);
-    return () => {
-      rawStdin.off('data', onData);
-      process.off('exit', restoreOnExit);
-      disableMouse();
-    };
-  }, [rawStdin]);
   const [flashHint, setFlashHint] = useState<string>('');
   const [ctxUsage, setCtxUsage] = useState<{ used: number; total: number } | undefined>(undefined);
   const [queuedInputs, setQueuedInputsState] = useState<QueuedInput[]>([]);
@@ -2029,7 +1978,11 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
 
   const addTranscript = useCallback((kind: TranscriptKind, text: string, extra: Partial<TranscriptItem> = {}): number => {
     const id = nextId();
-    setTranscript((items) => [...items, { id, kind, text, ...extra }].slice(-MAX_TRANSCRIPT_ITEMS));
+    // Append-only: finalized items flow into the terminal's scrollback via <Static>,
+    // which needs a stable, never-truncated prefix — front-slicing would desync Ink's
+    // static index and corrupt history. Old items are cheap: Static writes each once
+    // and never redraws it. /clear remounts Static to reclaim everything.
+    setTranscript((items) => [...items, { id, kind, text, ...extra }]);
     return id;
   }, []);
 
@@ -2157,24 +2110,9 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       });
       return;
     }
-    // Scroll the transcript history by lines (PageUp/PageDown) — keys the editor
-    // ignores, so they never clash with typing. Reaching the bottom re-engages follow.
-    if (key.pageUp) {
-      const step = Math.max(1, (viewportHeight || termRows) - 2);
-      const maxScroll = Math.max(0, contentHeight - viewportHeight);
-      setScrollStick(false);
-      setScrollUp((u) => Math.min(maxScroll, u + step));
-      return;
-    }
-    if (key.pageDown) {
-      const step = Math.max(1, (viewportHeight || termRows) - 2);
-      setScrollUp((u) => {
-        const next = Math.max(0, u - step);
-        if (next === 0) setScrollStick(true);
-        return next;
-      });
-      return;
-    }
+    // History scrollback is the terminal's job now (native wheel/trackbar over the
+    // <Static> output) — no in-app PageUp/PageDown, so those keys stay free and the
+    // view matches normal terminal usage. Esc still interrupts the active run.
     if (key.escape && activeRunControllerRef.current) {
       requestStop();
     }
@@ -2190,7 +2128,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     if (message === '/clear') {
+      // History lives in the terminal's scrollback now, so clearing means wiping the
+      // screen AND scrollback (2J + 3J), then remounting <Static> (epoch bump) so Ink
+      // forgets the committed output it already emitted.
+      if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
       setTranscript([]);
+      setStaticEpoch((n) => n + 1);
       return true;
     }
     if (message === '/queue' || message === '/queued') {
@@ -2516,6 +2459,18 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
           }));
         }
         if (event.type === 'turn_end') {
+          // Finalize this turn's assistant message now (not only at run end) so it —
+          // and the turn's already-ended tool calls — leave the live tail and commit
+          // into the <Static> scrollback immediately. The user can then scroll up to
+          // read earlier turns mid-run, and the live (redrawn) frame stays bounded to
+          // a single turn so Ink never flips into full-screen redraw.
+          if (answerIdRef.current !== null) {
+            const finishedId = answerIdRef.current;
+            setTranscript((items) => items.map((item) => (
+              item.id === finishedId ? { ...item, finalized: true } : item
+            )));
+            answerIdRef.current = null;
+          }
           currentTurnIdRef.current = null;
         }
         if (event.type === 'error') {
@@ -2629,13 +2584,6 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
   const executionPlane = executionPlaneSummary(runtime);
   const terminalRows = Math.max(12, termRows);
-  // Fill the terminal (minus one row to avoid a trailing-newline scroll) so the
-  // whole UI is a fixed-height frame: the content area flexes, the input is
-  // bottom-anchored, and the frame NEVER overflows the terminal. Overflow was the
-  // root cause of the cursor/IME drifting when the command menu opened — the frame
-  // grew past the terminal, the terminal scrolled, and Ink's relative cursor math
-  // (which assumes the frame fits) broke.
-  const frameHeight = terminalRows - 1;
   const promptRows = promptEditorRowBudget(input, {
     placeholder: promptPlaceholder(runState),
     hint: footerHint(runState),
@@ -2656,111 +2604,144 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     noticeRows,
   };
   const compactWelcome = shouldRenderCompactWelcome(viewportOptions);
-  // Line-level scroll margin (verified in stock Ink: negative marginTop + overflow
-  // hidden = a scroll viewport; positive marginTop pushes content down):
-  //   margin = min(0, viewportH - contentH) + scrollUp
-  // Content that fits is top-aligned (header + welcome visible, Claude-Code style);
-  // tall content shows the newest lines; scrollUp reveals earlier lines. The header
-  // lives INSIDE the scroll area so it scrolls away as the conversation grows, rather
-  // than permanently eating ~8 rows — exactly like Claude Code's launch panel.
-  const maxScroll = Math.max(0, contentHeight - viewportHeight);
-  const clampedScrollUp = Math.min(scrollUp, maxScroll);
-  const scrollMargin = Math.min(0, viewportHeight - contentHeight) + clampedScrollUp;
+  const expanded = toolsExpanded || detailMode === 'verbose';
 
-  return React.createElement(
-    Box,
-    // overflow:hidden is a safety net; the real anti-crush guarantee is that the
-    // bottom-chrome wrapper (input/footer) is flexShrink:0, so only the transcript
-    // viewport absorbs any height deficit and clips cleanly.
-    { flexDirection: 'column', paddingX: 1, paddingTop: 1, height: frameHeight, overflow: 'hidden' },
-    // Transcript viewport: fixed-height (flexGrow), overflow:hidden. The inner box
-    // holds the header + welcome + ALL items and is shifted by scrollMargin for
-    // line-level scrolling; the header scrolls away as the conversation grows.
-    React.createElement(
-      Box,
-      { flexDirection: 'column', flexGrow: 1, flexShrink: 1, overflow: 'hidden', ref: transcriptViewportRef },
-      React.createElement(
+  // ── Native-scrollback split ─────────────────────────────────────────────────
+  // Finalized history flows into the terminal's OWN scrollback via <Static> (each
+  // item is written to stdout once and never redrawn, so the normal wheel/trackbar
+  // scrolls it — just like any terminal program); only the in-flight turn is redrawn.
+  // An item is committable once it can never change again: user/system/error are
+  // immutable on creation; an assistant item once `finalized`; a tool item once it
+  // stops running. We commit the maximal DONE PREFIX so <Static> stays append-only.
+  const isItemDone = (it: TranscriptItem): boolean =>
+    it.kind === 'assistant' ? it.finalized === true
+      : it.kind === 'tool' ? it.status !== 'running'
+        : true;
+  let committedCount = 0;
+  for (const it of transcript) {
+    if (!isItemDone(it)) break;
+    committedCount += 1;
+  }
+  const committedItems = transcript.slice(0, committedCount);
+  const liveItems = transcript.slice(committedCount);
+
+  // Static entries: the launch header + welcome print once at the very top of
+  // scrollback (entry 0), then each committed item. Stable keys so <Static> only ever
+  // appends new output and never reprints or reorders earlier lines.
+  type StaticEntry = { key: string; header: true } | { key: string; header?: false; item: TranscriptItem };
+  const staticEntries: StaticEntry[] = [
+    { key: 'launch-header', header: true },
+    ...committedItems.map((item) => ({ key: `item-${item.id}`, item })),
+  ];
+  const renderStaticEntry = (entry: StaticEntry): React.ReactElement => entry.header
+    ? React.createElement(
         Box,
-        { flexDirection: 'column', flexShrink: 0, marginTop: scrollMargin, ref: transcriptInnerRef },
+        { key: entry.key, flexDirection: 'column', paddingX: 1, paddingTop: 1 },
         React.createElement(SessionHeader, {
           device,
           workspace,
           model: currentModel,
           state: runState,
-          toolsExpanded: toolsExpanded || detailMode === 'verbose',
+          toolsExpanded: expanded,
           version: `v${getPackageVersion()}`,
           cacheMode,
           profile,
         }),
-        transcript.length === 0
-          ? React.createElement(WelcomePanel, {
-              workspace,
-              device,
-              model: currentModel,
-              cacheMode,
-              profile,
-              executionPlane,
-              tip: boardTip(runtime),
-              compact: compactWelcome,
-            })
-          : null,
-        // Each item is flexShrink:0 so Ink never squashes the list when it is tall.
-        ...transcript.map((item) => React.createElement(Box, { key: item.id, flexShrink: 0 },
-          React.createElement(TranscriptMessage, {
-            item,
-            model: currentModel,
-            toolsExpanded: toolsExpanded || detailMode === 'verbose',
-          }),
-        )),
-      ),
-    ),
-    // Bottom chrome wrapper: flexShrink:0 so the jump hint / queue / notices /
-    // input box / footer are never squashed (overlapping lines) when the
-    // transcript is tall — only the content box above shrinks.
+        React.createElement(WelcomePanel, {
+          workspace,
+          device,
+          model: currentModel,
+          cacheMode,
+          profile,
+          executionPlane,
+          tip: boardTip(runtime),
+          compact: compactWelcome,
+        }),
+      )
+    : React.createElement(
+        Box,
+        { key: entry.key, flexShrink: 0, paddingX: 1 },
+        React.createElement(TranscriptMessage, { item: entry.item, model: currentModel, toolsExpanded: expanded }),
+      );
+
+  // Keep the dynamic (live) frame strictly below the terminal height: the moment it
+  // reaches full height Ink clears the screen and rewrites everything, destroying
+  // scrollback (see renderInteractiveFrame/shouldClearTerminalForFrame). Reserve rows
+  // for the chrome beneath the tail; clamp + bottom-anchor the in-flight turn to the rest.
+  const liveChromeRows =
+    1 /* paddingTop */
+    + (busy && !approval ? 1 : 0) /* working indicator */
+    + queueRows
+    + noticeRows
+    + (flashHint ? 1 : 0)
+    + (approval ? approvalRows : promptRows)
+    + footerRows
+    + 2 /* slack for the one-frame height-measurement lag */;
+  const liveBudget = Math.max(3, terminalRows - liveChromeRows);
+  const liveClamped = liveContentHeight > liveBudget;
+  const liveMargin = liveClamped ? liveBudget - liveContentHeight : 0; // negative → show newest lines
+
+  return React.createElement(
+    Box,
+    { flexDirection: 'column' },
+    // Committed history → terminal scrollback (written once; native scroll shows it all).
+    React.createElement(Static<StaticEntry>, { key: `history-${staticEpoch}`, items: staticEntries, children: renderStaticEntry }),
+    // Live region: the in-flight turn (clamped + bottom-anchored) and the input chrome.
+    // flexShrink:0 keeps it un-squashed; its height stays < terminalRows by construction
+    // so Ink writes the history above into scrollback instead of clearing the screen.
     React.createElement(
       Box,
-      { flexDirection: 'column', flexShrink: 0 },
-    // Live activity line: a self-animating spinner + elapsed seconds, shown only
-    // while busy, so it is always clear the agent is still running (not frozen).
-    busy && !approval ? React.createElement(WorkingIndicator, { key: 'working' }) : null,
-    // The scroll indicator lives in the footer line below (not its own row) so the
-    // transcript viewport height stays constant — otherwise it would jump by a row
-    // and make PageUp/PageDown steps asymmetric.
-    React.createElement(QueuePreview, { items: queuedInputs, paused: queuePausedAfterCancel }),
-    notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
-    flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
-    approval
-      ? React.createElement(ApprovalPromptLine, { question: approval.question })
-      : React.createElement(PromptEditor, {
-          value: input,
-          cursor: inputCursor,
-          onChange: setInputFromTyping,
-          onCursorChange: setInputCursor,
-          onSubmit: submit,
-          placeholder: promptPlaceholder(runState),
-          disabled: false,
-          mode: interactionMode,
-          onHistoryPrevious: recallHistoryPrevious,
-          onHistoryNext: recallHistoryNext,
-          onShiftEnter: () => undefined,
-        }),
-    // Single Claude-code-style line under the input: the active mode when it is
-    // not default, otherwise the key hints — plus a subtle context-used %.
-    !approval ? React.createElement(
-      Box,
-      { flexDirection: 'row', paddingX: 1 },
-      (!scrollStick && clampedScrollUp > 0)
-        ? React.createElement(Text, { color: theme.claude },
-            `${emojiEnabled() ? '↓' : 'v'} ${clampedScrollUp} line${clampedScrollUp === 1 ? '' : 's'} newer · PageDown for latest`)
-        : interactionMode !== 'default'
+      { flexDirection: 'column', flexShrink: 0, paddingX: 1, paddingTop: 1 },
+      liveItems.length > 0
+        ? React.createElement(
+            Box,
+            liveClamped
+              ? { flexDirection: 'column', height: liveBudget, overflow: 'hidden' }
+              : { flexDirection: 'column' },
+            React.createElement(
+              Box,
+              { flexDirection: 'column', flexShrink: 0, marginTop: liveMargin, ref: liveInnerRef },
+              ...liveItems.map((item) => React.createElement(Box, { key: item.id, flexShrink: 0 },
+                React.createElement(TranscriptMessage, { item, model: currentModel, toolsExpanded: expanded }),
+              )),
+            ),
+          )
+        : null,
+      // Live activity line: a self-animating spinner + elapsed seconds while busy, so it
+      // is always clear the agent is alive (not frozen) even between visible output.
+      busy && !approval ? React.createElement(WorkingIndicator, { key: 'working' }) : null,
+      React.createElement(QueuePreview, { items: queuedInputs, paused: queuePausedAfterCancel }),
+      notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
+      flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
+      approval
+        ? React.createElement(ApprovalPromptLine, { question: approval.question })
+        : React.createElement(PromptEditor, {
+            value: input,
+            cursor: inputCursor,
+            onChange: setInputFromTyping,
+            onCursorChange: setInputCursor,
+            onSubmit: submit,
+            placeholder: promptPlaceholder(runState),
+            disabled: false,
+            mode: interactionMode,
+            onHistoryPrevious: recallHistoryPrevious,
+            onHistoryNext: recallHistoryNext,
+            onShiftEnter: () => undefined,
+          }),
+      // One Claude-code-style line under the input: the active non-default mode, else
+      // the key hints — plus a subtle context-used %.
+      !approval ? React.createElement(
+        Box,
+        { flexDirection: 'row', paddingX: 1 },
+        interactionMode !== 'default'
           ? React.createElement(Text, { color: interactionMode === 'plan' ? theme.planMode : theme.autoAccept, bold: true },
               interactionMode === 'plan'
                 ? `${emojiEnabled() ? '⏸' : '||'} plan mode on ${emojiEnabled() ? '(⇧⇥ to cycle)' : '(shift+tab to cycle)'}`
                 : `${emojiEnabled() ? '⏵⏵' : '>>'} accept edits on ${emojiEnabled() ? '(⇧⇥ to cycle)' : '(shift+tab to cycle)'}`)
           : React.createElement(Text, { color: theme.textDim }, footerHint(runState)),
-      ctxUsage ? React.createElement(Text, { color: ctxUsageBarColor(ctxUsage) },
-        `   ${Math.round((ctxUsage.used / ctxUsage.total) * 100)}% context used`) : null,
-    ) : null,
+        ctxUsage ? React.createElement(Text, { color: ctxUsageBarColor(ctxUsage) },
+          `   ${Math.round((ctxUsage.used / ctxUsage.total) * 100)}% context used`) : null,
+      ) : null,
     ),
   );
 }

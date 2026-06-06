@@ -1105,6 +1105,33 @@ function markdownTableCellText(content: unknown, context: unknown): string {
   return String(content ?? '');
 }
 
+function markdownTableTokenRows(content: unknown, context: unknown): string {
+  if (!Array.isArray(content)) return '';
+  const rows = Array.isArray(content[0]) ? content : [content];
+  return rows
+    .map((row) => {
+      if (!Array.isArray(row)) return '';
+      const cells = row.map((cell) => `${markdownTableCellText(cell, context)}${MARKDOWN_TABLE_CELL}`);
+      return `${MARKDOWN_TABLE_ROW}${cells.join('')}${MARKDOWN_TABLE_ROW}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function renderMarkdownTableFromRendererArgs(args: unknown[], context: unknown): string {
+  const [first, second] = args;
+  if (args.length === 1 && first && typeof first === 'object') {
+    const token = first as { header?: unknown; rows?: unknown };
+    if ('header' in token || 'rows' in token) {
+      return renderTerminalFriendlyMarkdownTable(
+        markdownTableTokenRows(token.header, context),
+        markdownTableTokenRows(token.rows, context),
+      );
+    }
+  }
+  return renderTerminalFriendlyMarkdownTable(String(first ?? ''), String(second ?? ''));
+}
+
 function cleanMarkdownTableCell(cell: string): string {
   const withoutAnsi = cell.includes('\x1B') ? cell.replace(ANSI_RE, '') : cell;
   return CONTROL_CHAR_RE.test(withoutAnsi)
@@ -1244,15 +1271,19 @@ function ensureMarkdownRenderer(): void {
   }) as unknown as Parameters<typeof marked.use>[0] & {
     renderer: Record<string, (this: unknown, ...args: unknown[]) => string>;
   };
-  terminalMarkdown.renderer.tablecell = function tablecell(content: unknown) {
+  const terminalRenderer = terminalMarkdown.renderer as Record<
+    string,
+    (this: unknown, ...args: unknown[]) => string
+  >;
+  terminalRenderer.tablecell = function tablecell(content: unknown) {
     return `${markdownTableCellText(content, this)}${MARKDOWN_TABLE_CELL}`;
   };
-  terminalMarkdown.renderer.tablerow = function tablerow(content: unknown) {
+  terminalRenderer.tablerow = function tablerow(content: unknown) {
     const text = markdownTableCellText(content, this);
     return `${MARKDOWN_TABLE_ROW}${text}${MARKDOWN_TABLE_ROW}\n`;
   };
-  terminalMarkdown.renderer.table = function table(header: unknown, body: unknown) {
-    return renderTerminalFriendlyMarkdownTable(String(header ?? ''), String(body ?? ''));
+  terminalRenderer.table = function table(...args: unknown[]) {
+    return renderMarkdownTableFromRendererArgs(args, this);
   };
   marked.use(terminalMarkdown);
   markdownRendererConfigured = true;

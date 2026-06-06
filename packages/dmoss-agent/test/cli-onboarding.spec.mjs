@@ -10,6 +10,7 @@ import {
   renderCliExamples,
   renderCliInteractiveHelp,
   renderCliPermissions,
+  renderCliQuickStart,
   renderCliStatus,
   renderCliTools,
   renderCliUpgradeHelp,
@@ -123,7 +124,7 @@ const agent = createAgent([
   assert.match(welcome, /approval never/);
   assert.match(welcome, /cache off/);
   assert.match(welcome, /guardrails in 2 out 1/);
-  assert.match(welcome, /commands.*\/help.*\/tools.*\/status/);
+  assert.match(welcome, /commands.*\/quick_start.*\/status.*\/model.*\/help/);
 }
 
 {
@@ -132,14 +133,33 @@ const agent = createAgent([
 }
 
 {
+  const quickStart = renderCliQuickStart(agent, runtime);
+  assert.match(quickStart, /Quick start/);
+  assert.match(quickStart, /1\/3.*Model/);
+  assert.match(quickStart, /provider.*qwen/);
+  assert.match(quickStart, /api key.*configured/);
+  assert.match(quickStart, /dmoss setup/);
+  assert.match(quickStart, /\/model <name>/);
+  assert.match(quickStart, /2\/3.*Workspace/);
+  assert.match(quickStart, /\/status/);
+  assert.match(quickStart, /3\/3.*Try/);
+  assert.match(quickStart, /分析当前工程结构/);
+  assert.match(quickStart, /检查板端 CPU/);
+}
+
+{
+  const quickStart = renderCliQuickStart(agent, disconnectedRuntime);
+  assert.match(quickStart, /api key.*configured/);
+  assert.match(quickStart, /DMOSS_DEVICE_HOST/);
+}
+
+{
   const tools = renderCliTools(agent);
-  assert.match(tools, /Tools/);
-  assert.match(tools, /Workspace/);
-  assert.match(tools, /read_file Read a file/);
-  assert.match(tools, /Memory/);
-  assert.match(tools, /Device SSH/);
-  assert.match(tools, /ROS2\/TROS/);
-  assert.match(tools, /Agent Mesh/);
+  assert.match(tools, /Tools run automatically/);
+  assert.match(tools, /Ask for the outcome/);
+  assert.match(tools, /\/quick_start/);
+  assert.match(tools, /\/detail verbose/);
+  assert.doesNotMatch(tools, /read_file Read a file/);
 }
 
 {
@@ -255,6 +275,8 @@ const agent = createAgent([
 
 {
   const help = renderCliInteractiveHelp();
+  assert.match(help, /Start/);
+  assert.match(help, /\/quick_start/);
   assert.match(help, /Inspect/);
   assert.match(help, /Configure/);
   assert.match(help, /\/permissions/);

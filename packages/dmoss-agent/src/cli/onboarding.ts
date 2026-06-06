@@ -125,12 +125,6 @@ function describeDetail(mode: CliDetailMode): string {
   return 'progress';
 }
 
-function oneLine(value: string, maxChars = 96): string {
-  const compact = value.replace(/\s+/g, ' ').trim();
-  if (compact.length <= maxChars) return compact;
-  return `${compact.slice(0, maxChars - 1).trimEnd()}...`;
-}
-
 function classifyTool(tool: Tool): string {
   if (tool.name.startsWith('memory_')) return 'memory';
   if (tool.name.startsWith('device_')) return 'device';
@@ -206,7 +200,40 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
     `${statusDot(auth.apiKey ? 'ok' : 'warn')} ${authState}   ${statusDot('info')} ${policyState}   ${statusDot('info')} tools ${tools.length}   ${statusDot('info')} memory ${memoryCount}   ${statusDot('info')} skills ${skillCount}`,
     `${statusDot(rt.device ? 'ok' : 'warn')} ${deviceState}   ${statusDot(rt.meshEnabled ? 'ok' : 'info')} ${meshState}`,
     groups.length ? `${label('capabilities')} ${formatEnabledGroups(groups)}` : `${label('capabilities')} none`,
-    `${ui.dim('commands')} /help  /tools  /status  /examples  /model  /detail`,
+    `${ui.dim('commands')} /quick_start  /status  /model  /help`,
+  ].join('\n');
+}
+
+export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus = {}): string {
+  const rt = runtimeWithDefaults(runtime);
+  const auth = rt.config;
+  const toolNames = new Set(agent.tools.getNames());
+  const apiKeyState = auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing';
+  const examples = [
+    '分析当前工程结构，指出最重要的入口文件和下一步建议',
+    toolNames.has('exec') ? '检查 package.json 里有哪些脚本，然后建议一个验证命令' : null,
+    rt.device && toolNames.has('device_resources')
+      ? '检查板端 CPU、内存、温度和进程状态，判断是否有异常'
+      : '连接板端：export DMOSS_DEVICE_HOST=<board-ip> 后重启 dmoss',
+    rt.device && toolNames.has('ros2_topic_list')
+      ? '列出板端 ROS2 topic，并判断相机或感知节点是否在线'
+      : null,
+  ].filter(Boolean) as string[];
+
+  return [
+    ui.bold('Quick start'),
+    `  ${label('1/3 Model')} provider ${auth.provider} (${auth.providerSource}) · model ${agent.config.model} · api key ${apiKeyState}`,
+    '      dmoss setup',
+    '      dmoss auth status',
+    '      /model <name>',
+    `  ${label('2/3 Workspace')} ${compactPath(rt.workspace)} · safety ${rt.safetyMode}`,
+    '      /status',
+    '      /config',
+    rt.device
+      ? `      board ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
+      : '      DMOSS_DEVICE_HOST=<board-ip> enables board and ROS tools',
+    `  ${label('3/3 Try')} ask for outcomes in plain language; Moss chooses tools automatically`,
+    ...examples.slice(0, 4).map((example) => `      - ${example}`),
   ].join('\n');
 }
 
@@ -251,16 +278,22 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
 
 export function renderCliTools(agent: DmossAgent): string {
   const groups = groupTools(agent.tools.getAll()).filter((g) => g.enabled);
-  const lines = [ui.bold('Tools')];
-  for (const group of groups) {
-    lines.push(`  ${ui.bold(group.title)}`);
-    for (const tool of group.tools.sort((a, b) => a.name.localeCompare(b.name))) {
-      lines.push(`    ${ui.cyan(tool.name)} ${ui.dim(oneLine(tool.description))}`);
-    }
-  }
-  lines.push('');
-  lines.push(`${ui.dim('tip')} /detail verbose shows redacted tool inputs and outputs during a run.`);
-  return lines.join('\n');
+  const capabilityLine = groups.length
+    ? groups.map((group) => `${group.title.toLowerCase()} ${group.tools.length}`).join(' · ')
+    : 'none detected';
+  return [
+    ui.bold('Tools run automatically'),
+    `  ${label('capabilities')} ${capabilityLine}`,
+    '  Ask for the outcome, not the tool name:',
+    '    - read README and tell me how to start this project',
+    '    - run the smallest relevant test and explain the failure',
+    '    - check the board resources and ROS topics',
+    '',
+    '  Useful controls:',
+    '    /quick_start       setup and first tasks',
+    '    /status            current model, workspace, device, and capabilities',
+    '    /detail verbose    show redacted tool inputs and results',
+  ].join('\n');
 }
 
 export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
@@ -365,12 +398,14 @@ export function renderCliExamples(agent: DmossAgent, runtime: CliRuntimeStatus =
 export function renderCliInteractiveHelp(): string {
   return [
     ui.bold('Commands'),
+    '  Start',
+    '    /quick_start         setup model, workspace, board, and first useful prompts',
+    '    /examples            show prompts matched to enabled capabilities',
     '  Inspect',
-    '    /tools               show registered tools grouped by capability',
     '    /status              show model, workspace, runtime, device, and tool state',
+    '    /tools               explain how tools are selected automatically',
     '    /permissions         show safety, approval, cache, and config-file policy',
     '    /config              show the active config file and policy commands',
-    '    /examples            show prompts matched to enabled capabilities',
     '    /memory              show stored long-term memories',
     '    /skills              list learned SKILL.md files',
     '  Configure',

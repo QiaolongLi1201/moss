@@ -14,7 +14,7 @@ import type { SessionMeta } from '../core/session/session.js';
 import { SkillRegistry, type SkillMeta } from '../skills/index.js';
 import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type CliInteractionMode } from './approval.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
-import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
+import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliQuickStart, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, ui } from './ui.js';
@@ -134,6 +134,11 @@ const LOCAL_SHELL_OUTPUT_LIMIT = 40_000;
 const MAX_INPUT_HISTORY = 100;
 const WELCOME_PANEL_ROWS_ESTIMATE = 18;
 const HEADLINE_MAX = 72;
+const DEFAULT_MARKDOWN_TABLE_WIDTH = 96;
+const MIN_MARKDOWN_TABLE_WIDTH = 40;
+const MAX_MARKDOWN_TABLE_WIDTH = 160;
+const MARKDOWN_TABLE_CELL = '\u001F';
+const MARKDOWN_TABLE_ROW = '\u001E';
 
 const AGENTS_MD_TEMPLATE = `# AGENTS.md
 
@@ -153,6 +158,7 @@ Project memory for D-Moss and coding agents. Auto-loaded at the start of every s
 `;
 
 const KNOWN_COMMANDS = [
+  '/quick_start',
   '/help',
   '/tools',
   '/status',
@@ -696,7 +702,7 @@ function compactWelcomeTip(tip: string): string {
 export function footerHint(state: TuiRunState): string {
   if (state === 'approval') return 'y approve · a always this session · n/Esc deny';
   if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
-  return 'Ctrl+O tools · Tab complete · Up/Down history · /help · Ctrl+C exit';
+  return '/quick_start · Tab complete · Up/Down history · Ctrl+O details · Ctrl+C exit';
 }
 
 export function editorPreviewLines(value: string, placeholder: string, maxLines = 8): string[] {
@@ -887,9 +893,12 @@ export function completeSlashCommandInput(value: string, cursor: number): Prompt
 
   const normalized = beforeCursor.toLowerCase();
   const exactCandidates = KNOWN_COMMANDS.filter((command) => command.startsWith(normalized));
-  const completion = exactCandidates.length > 0
-    ? commonPrefix(exactCandidates)
-    : commandSuggestion(normalized);
+  const prefixCompletion = exactCandidates.length > 0 ? commonPrefix(exactCandidates) : '';
+  const completion = prefixCompletion && prefixCompletion !== beforeCursor
+    ? prefixCompletion
+    : beforeCursor.length >= 4
+      ? commandSuggestion(normalized)
+      : prefixCompletion;
   if (!completion || completion === beforeCursor) return null;
   return {
     value: `${completion}${afterCursor}`,
@@ -1074,6 +1083,149 @@ function statusBarColor(state: TuiRunState): string {
 }
 
 let markdownRendererConfigured = false;
+let activeMarkdownRenderWidth: number | undefined;
+
+function resolveMarkdownTableWidth(): number {
+  const rawWidth = activeMarkdownRenderWidth ?? process.stdout.columns ?? DEFAULT_MARKDOWN_TABLE_WIDTH;
+  const width = Number.isFinite(rawWidth) ? Math.floor(rawWidth) : DEFAULT_MARKDOWN_TABLE_WIDTH;
+  return Math.max(MIN_MARKDOWN_TABLE_WIDTH, Math.min(MAX_MARKDOWN_TABLE_WIDTH, width));
+}
+
+function markdownTableCellText(content: unknown, context: unknown): string {
+  if (content && typeof content === 'object') {
+    const maybeTokens = (content as { tokens?: unknown[] }).tokens;
+    const parser = (context as { parser?: { parseInline?: (tokens: unknown[]) => string } }).parser;
+    if (Array.isArray(maybeTokens) && typeof parser?.parseInline === 'function') {
+      return parser.parseInline(maybeTokens);
+    }
+    if ('text' in content) return String((content as { text?: unknown }).text ?? '');
+  }
+  return String(content ?? '');
+}
+
+function cleanMarkdownTableCell(cell: string): string {
+  const withoutAnsi = cell.includes('\x1B') ? cell.replace(ANSI_RE, '') : cell;
+  return CONTROL_CHAR_RE.test(withoutAnsi)
+    ? withoutAnsi.replace(CONTROL_CHAR_RE, '').trim()
+    : withoutAnsi.trim();
+}
+
+function splitMarkdownTableRows(text: string): string[][] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const unwrapped = line.split(MARKDOWN_TABLE_ROW).join('');
+      const cells = unwrapped.split(MARKDOWN_TABLE_CELL);
+      if (cells[cells.length - 1] === '') cells.pop();
+      return cells.map(cleanMarkdownTableCell);
+    })
+    .filter((row) => row.length > 0);
+}
+
+function splitWideWord(word: string, width: number): string[] {
+  const parts: string[] = [];
+  let current = '';
+  for (const char of Array.from(word)) {
+    const next = `${current}${char}`;
+    if (current && stringWidth(next) > width) {
+      parts.push(current);
+      current = char;
+    } else {
+      current = next;
+    }
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+function wrapMarkdownTableCell(value: string, width: number): string[] {
+  const text = value.replace(/、\s*/g, '、 ').replace(/\s+/g, ' ').trim();
+  if (!text) return [''];
+
+  const lines: string[] = [];
+  let current = '';
+  for (const word of text.split(/\s+/)) {
+    const pieceWidth = COPY_SENSITIVE_TOKEN_RE.test(word) ? width : Math.min(width, 32);
+    const pieces = stringWidth(word) > pieceWidth ? splitWideWord(word, pieceWidth) : [word];
+    for (const piece of pieces) {
+      if (!current) {
+        current = piece;
+      } else if (stringWidth(`${current} ${piece}`) <= width) {
+        current = `${current} ${piece}`;
+      } else {
+        lines.push(current);
+        current = piece;
+      }
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [''];
+}
+
+function padMarkdownTableCell(value: string, width: number): string {
+  return `${value}${' '.repeat(Math.max(0, width - stringWidth(value)))}`;
+}
+
+function markdownTableColumnWidths(rows: string[][], tableWidth: number): number[] {
+  const columnCount = Math.max(1, ...rows.map((row) => row.length));
+  const separatorWidth = Math.max(0, columnCount - 1) * 3;
+  const available = Math.max(columnCount * 3, tableWidth - separatorWidth);
+  const fairWidth = Math.max(3, Math.floor(available / columnCount));
+  const desired = Array.from({ length: columnCount }, (_, index) => (
+    Math.max(3, ...rows.map((row) => stringWidth(row[index] ?? '')))
+  ));
+  const widths = desired.map((width) => Math.min(width, fairWidth));
+  let remaining = available - widths.reduce((sum, width) => sum + width, 0);
+
+  while (remaining > 0) {
+    let bestIndex = -1;
+    let bestDeficit = 0;
+    for (let index = 0; index < desired.length; index += 1) {
+      const deficit = desired[index] - widths[index];
+      if (deficit > bestDeficit) {
+        bestDeficit = deficit;
+        bestIndex = index;
+      }
+    }
+    if (bestIndex < 0) break;
+    widths[bestIndex] += 1;
+    remaining -= 1;
+  }
+
+  return widths;
+}
+
+function renderMarkdownTableRows(rows: string[][], widths: number[]): string[] {
+  const lines: string[] = [];
+  for (const row of rows) {
+    const wrapped = widths.map((width, index) => wrapMarkdownTableCell(row[index] ?? '', width));
+    const rowHeight = Math.max(1, ...wrapped.map((cell) => cell.length));
+    for (let lineIndex = 0; lineIndex < rowHeight; lineIndex += 1) {
+      lines.push(widths.map((width, columnIndex) => (
+        padMarkdownTableCell(wrapped[columnIndex][lineIndex] ?? '', width)
+      )).join(' | ').trimEnd());
+    }
+  }
+  return lines;
+}
+
+function renderTerminalFriendlyMarkdownTable(headerText: string, bodyText: string): string {
+  const headerRows = splitMarkdownTableRows(headerText);
+  const bodyRows = splitMarkdownTableRows(bodyText);
+  const rows = [...headerRows, ...bodyRows];
+  if (rows.length === 0) return '';
+
+  const widths = markdownTableColumnWidths(rows, resolveMarkdownTableWidth());
+  const separator = widths.map(() => '---').join(' | ');
+  return [
+    ...renderMarkdownTableRows(headerRows, widths),
+    separator,
+    ...renderMarkdownTableRows(bodyRows, widths),
+  ].join('\n');
+}
+
 function ensureMarkdownRenderer(): void {
   if (markdownRendererConfigured) return;
   marked.setOptions({ mangle: false, headerIds: false } as Parameters<typeof marked.setOptions>[0]);
@@ -1081,19 +1233,38 @@ function ensureMarkdownRenderer(): void {
   // its current .d.ts does not model the MarkedExtension intersection.
   // Tone down the default colors so the outer theme drives accent — code/quote
   // become dim, headings keep bold so they remain scannable.
-  marked.use(markedTerminal({
+  const terminalMarkdown = markedTerminal({
     reflowText: false,
     code: ui.dim,
     blockquote: ui.dim,
     codespan: ui.cyan,
     listitem: (text: string) => `  • ${text}`,
-  }) as unknown as Parameters<typeof marked.use>[0]);
+  }) as unknown as Parameters<typeof marked.use>[0] & {
+    renderer: Record<string, (this: unknown, ...args: unknown[]) => string>;
+  };
+  terminalMarkdown.renderer.tablecell = function tablecell(content: unknown) {
+    return `${markdownTableCellText(content, this)}${MARKDOWN_TABLE_CELL}`;
+  };
+  terminalMarkdown.renderer.tablerow = function tablerow(content: unknown) {
+    const text = markdownTableCellText(content, this);
+    return `${MARKDOWN_TABLE_ROW}${text}${MARKDOWN_TABLE_ROW}\n`;
+  };
+  terminalMarkdown.renderer.table = function table(header: unknown, body: unknown) {
+    return renderTerminalFriendlyMarkdownTable(String(header ?? ''), String(body ?? ''));
+  };
+  marked.use(terminalMarkdown);
   markdownRendererConfigured = true;
 }
 
-export function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string, options: { width?: number } = {}): string {
   ensureMarkdownRenderer();
-  return sanitizeRenderableText(marked.parse(text) as string).trimEnd();
+  const previousWidth = activeMarkdownRenderWidth;
+  activeMarkdownRenderWidth = options.width;
+  try {
+    return sanitizeRenderableText(marked.parse(text) as string).trimEnd();
+  } finally {
+    activeMarkdownRenderWidth = previousWidth;
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1308,7 +1479,7 @@ export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): Rea
         React.createElement(Text, { key: idx, color: theme.diffAddedWord }, `+ ${line}`));
     } else if (typeof item.result === 'string' && item.result.trim()) {
       detailLines = item.result.split('\n').slice(0, 40).map((line, idx) =>
-        React.createElement(Text, { key: idx, color: theme.textDim }, line));
+        React.createElement(Text, { key: idx, color: theme.textMuted }, line));
     } else if (item.inputRaw !== undefined) {
       let json = '';
       try { json = typeof item.inputRaw === 'string' ? item.inputRaw : JSON.stringify(item.inputRaw, null, 2); }
@@ -1412,7 +1583,7 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
     });
   }
   if (item.kind === 'shell') {
-    return sideRule({ id: item.id, text: item.text, ruleColor: theme.tool, textColor: theme.textMuted });
+    return sideRule({ id: item.id, text: item.text, ruleColor: theme.tool, textColor: theme.text });
   }
   if (item.kind === 'assistant' && !item.finalized) {
     const refs = extractAttachmentRefs(item.text);
@@ -1507,17 +1678,19 @@ function commandRowsForInput(value: string): Array<[string, string]> {
   if (!value.startsWith('/')) return [];
   const normalized = value.trim().toLowerCase();
   const allRows: Array<[string, string]> = [
+    ['/quick_start', 'setup and first tasks'],
     ['/model', 'switch model'],
-    ['/status', 'runtime and device'],
-    ['/permissions', 'safety and approvals'],
-    ['/tools', 'tool surface'],
-    ['/sessions', 'recent sessions'],
-    ['/queue', 'queued prompts'],
-    ['/context', 'context usage'],
-    ['/diff', 'git diff'],
-    ['/init', 'create AGENTS.md'],
-    ['/config', 'config and policy'],
     ['/examples', 'starter tasks'],
+    ['/status', 'runtime and device'],
+    ['/sessions', 'recent sessions'],
+    ['/diff', 'git diff'],
+    ['/queue', 'queued prompts'],
+    ['/help', 'all commands'],
+    ['/init', 'create AGENTS.md'],
+    ['/permissions', 'safety and approvals'],
+    ['/config', 'config and policy'],
+    ['/tools', 'how tools work'],
+    ['/context', 'context usage'],
     ['/detail', 'quiet/progress/verbose'],
     ['/cost', 'token estimate'],
     ['/rewind', 'undo file changes'],
@@ -1779,8 +1952,8 @@ export function PromptEditor({
         const marker = emojiEnabled() ? '❯ ' : '> ';
         return React.createElement(Text, { key: command, wrap: 'truncate' },
           React.createElement(Text, { color: theme.claude, bold: true }, isSel ? marker : '  '),
-          React.createElement(Text, { color: theme.permission, bold: isSel, dimColor: !isSel }, command.padEnd(14)),
-          React.createElement(Text, { color: theme.textMuted, dimColor: !isSel }, desc),
+          React.createElement(Text, { color: isSel ? theme.permission : theme.textMuted, bold: isSel }, command.padEnd(14)),
+          React.createElement(Text, { color: isSel ? theme.text : theme.textDim }, desc),
         );
       }),
     ) : null,
@@ -2125,6 +2298,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     }
     if (message === '/help') {
       addTranscript('system', commandList());
+      return true;
+    }
+    if (message === '/quick_start' || message === '/start') {
+      addTranscript('system', renderCliQuickStart(agent, runtime));
       return true;
     }
     if (message === '/clear') {
@@ -2749,11 +2926,13 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
 function commandList(): string {
   return [
     'Commands',
+    '  /quick_start      setup model, workspace, board, and first tasks',
     '  /examples          starter prompts',
     '  /status            runtime and device context',
+    '  /model [name]      show or switch model',
     '  /permissions       safety, approval, cache, and config file policy',
     '  /config            active config file and policy commands',
-    '  /tools             available tools',
+    '  /tools             explain how tools are selected automatically',
     '  /stop              stop the active run',
     '  /queue [drop|clear] show, drop last, or discard queued prompts',
     '  /sessions          show current and recent saved sessions',
@@ -2770,7 +2949,6 @@ function commandList(): string {
     '  Ctrl+O             expand/collapse tool calls',
     '',
     'Runtime',
-    '  /model [name]      show or switch model',
     '  /memory            show memory count',
     '  /skills            list learned skills',
     '  /upgrade           show update commands',

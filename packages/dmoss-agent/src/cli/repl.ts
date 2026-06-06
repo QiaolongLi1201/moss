@@ -10,6 +10,7 @@ import {
   renderCliExamples,
   renderCliInteractiveHelp,
   renderCliPermissions,
+  renderCliQuickStart,
   renderCliStatus,
   renderCliTools,
   renderCliUpgradeHelp,
@@ -24,6 +25,7 @@ import { renderSkills, runInkInteractive } from './tui.js';
 let currentModel = '';
 
 export const INTERACTIVE_COMMANDS = [
+  '/quick_start',
   '/help',
   '/tools',
   '/status',
@@ -106,6 +108,12 @@ export async function runInteractive(
 
     if (msg === '/help') {
       console.error(renderCliInteractiveHelp());
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/quick_start' || msg === '/start') {
+      console.error(renderCliQuickStart(agent, runtime));
       rl.prompt();
       continue;
     }

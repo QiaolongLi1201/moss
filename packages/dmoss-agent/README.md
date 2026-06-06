@@ -140,9 +140,10 @@ By default the CLI prints a short progress trail to stderr: planning turns, tool
 The interactive REPL starts with an onboarding panel that shows the active model, workspace, provider host, enabled capability groups, memory/skill counts, device status, and mesh status. Useful discovery commands:
 
 ```
-/tools       show registered tools grouped by capability
+/quick_start setup model, workspace, board, and first useful prompts
 /status      show model, workspace, runtime, device, and tool state
 /examples    show prompts matched to the currently enabled capabilities
+/tools       explain how tools are selected automatically
 /detail      explain quiet/progress/verbose output modes
 /upgrade     show install/update commands
 /help        show interactive commands

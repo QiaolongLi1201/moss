@@ -9,6 +9,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import React from 'react';
 import { render, cleanup } from 'ink-testing-library';
+import stringWidth from 'string-width';
 import {
   StatusBar,
   SessionHeader,
@@ -24,6 +25,10 @@ import {
   executionPlaneSummary,
   inferExecutionMode,
 } from '../dist/cli/tui.js';
+import {
+  resolveTerminalThemeMode,
+  resolveThemeTokens,
+} from '../dist/cli/theme/theme.js';
 
 const require = createRequire(import.meta.url);
 const inkEntry = require.resolve('ink');
@@ -39,6 +44,24 @@ function test(name, fn) {
 function wait(ms = 10) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// ───── Theme ─────
+
+test('resolveTerminalThemeMode honors explicit and terminal background hints', () => {
+  assert.equal(resolveTerminalThemeMode({ DMOSS_TUI_THEME: 'light' }), 'light');
+  assert.equal(resolveTerminalThemeMode({ DMOSS_THEME: 'dark' }), 'dark');
+  assert.equal(resolveTerminalThemeMode({ COLORFGBG: '0;15' }), 'light');
+  assert.equal(resolveTerminalThemeMode({ COLORFGBG: '15;0' }), 'dark');
+  assert.equal(resolveTerminalThemeMode({ ITERM_PROFILE: 'Light Background' }), 'light');
+});
+
+test('resolveThemeTokens gives light terminals readable muted chrome', () => {
+  const tokens = resolveThemeTokens({ COLORFGBG: '0;15' });
+  assert.equal(tokens.textMuted, '#4b5563');
+  assert.equal(tokens.textDim, '#6b7280');
+  assert.equal(tokens.promptBorder, '#767676');
+  assert.equal(tokens.permission, '#5769f7');
+});
 
 // ───── StatusBar ─────
 
@@ -346,6 +369,29 @@ test('ActivityItemLine renders a failed tool with the failed glyph', () => {
   cleanup();
 });
 
+test('ActivityItemLine renders expanded tool results under the response connector', () => {
+  const { lastFrame } = render(
+    React.createElement(ActivityItemLine, {
+      expanded: true,
+      item: {
+        id: '4',
+        toolName: 'list_directory',
+        toolCallId: '4',
+        startedAt: 0,
+        status: 'ok',
+        elapsedMs: 12,
+        result: 'LICENSE\nREADME.md',
+      },
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /list_directory/);
+  assert.match(frame, /[⎿L]/);
+  assert.match(frame, /LICENSE/);
+  assert.match(frame, /README\.md/);
+  cleanup();
+});
+
 // ───── ApprovalPromptLine ─────
 
 test('ApprovalPromptLine renders the question and y/n hint', () => {
@@ -543,10 +589,11 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   assert.match(frame, /> \//);
   // Navigable, windowed menu (≤6 rows): the first page of commands is shown,
   // the selected (first) row highlighted. No static "… N more / type to filter" row.
+  assert.match(frame, /\/quick_start\s+setup and first tasks/);
   assert.match(frame, /\/model\s+switch model/);
-  assert.match(frame, /\/permissions\s+safety and approvals/);
-  assert.match(frame, /\/tools\s+tool surface/);
+  assert.match(frame, /\/examples\s+starter tasks/);
   assert.match(frame, /\/sessions\s+recent sessions/);
+  assert.doesNotMatch(frame, /\/tools\s+tool surface/);
   assert.doesNotMatch(frame, /more commands/);
   assert(frame.split('\n').length <= 12);
   cleanup();
@@ -787,6 +834,28 @@ test('renderMarkdown handles headings', () => {
   const out = renderMarkdown('# Title\n\nbody');
   assert.match(out, /Title/);
   assert.match(out, /body/);
+});
+
+test('renderMarkdown keeps wide CJK markdown tables terminal-friendly', () => {
+  const out = renderMarkdown(
+    [
+      '| 子包 | 职责 |',
+      '| --- | --- |',
+      '| packages/desktop | Electron 主进程 + preload + renderer (SPA)。用 electron-vite 构建，支持 Mac/Win/Linux 三平台打包 (electron-builder)。主进程里有 adapter/、api/、chat/、config/、platform/、update/ 等模块 |',
+      '| packages/web-cli | CLI 入口，可以直接启动 WebUI |',
+      '| packages/web-host | 零 Electron 依赖的 WebUI 托管层，启动后端进程 + 静态文件服务器 + 反向代理 API/WebSocket + bcrypt 鉴权 |',
+      '| packages/shared-scripts | 共享脚本工具 |',
+    ].join('\n'),
+    { width: 80 },
+  );
+  assert.doesNotMatch(out, /[┌┬┐├┼┤└┴┘╔═╗╚╝]/);
+  assert.match(out, /packages\/desktop\s+\| Electron 主进程/);
+  assert.match(out, /adapter\/、 api\/、/);
+  assert.match(out, /chat\/、 config\/、 platform\/、 update\//);
+  assert.doesNotMatch(out, /conf ig/);
+  for (const line of out.split('\n')) {
+    assert.ok(stringWidth(line) <= 80, `expected <= 80 columns, got ${stringWidth(line)}: ${line}`);
+  }
 });
 
 let failures = 0;

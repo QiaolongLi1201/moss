@@ -86,6 +86,7 @@ assert.equal(isLocalShellLine('  !pwd'), false);
 
 assert.equal(commandSuggestion('/staus'), '/status');
 assert.equal(commandSuggestion('/tool'), '/tools');
+assert.equal(commandSuggestion('/quick'), '/quick_start');
 assert.equal(commandSuggestion('/queu'), '/queue');
 assert.equal(commandSuggestion('/queue dr'), '/queue drop');
 assert.equal(commandSuggestion('/queue res'), '/queue resume');
@@ -95,6 +96,10 @@ assert.equal(commandSuggestion('status'), null);
 assert.deepEqual(
   completeSlashCommandInput('/que', 4),
   { value: '/queue', cursor: 6 },
+);
+assert.deepEqual(
+  completeSlashCommandInput('/qui', 4),
+  { value: '/quick_start', cursor: 12 },
 );
 assert.deepEqual(
   completeSlashCommandInput('/mo', 3),
@@ -121,7 +126,8 @@ assert.equal(approvalKeyDecision('a', {}), 'allow-always');
 assert.equal(approvalKeyDecision('n', {}), 'deny');
 assert.equal(approvalKeyDecision('', { escape: true }), 'deny');
 assert.equal(approvalKeyDecision('x', {}), null);
-assert.match(footerHint('ready'), /Ctrl\+O tools/);
+assert.match(footerHint('ready'), /\/quick_start/);
+assert.match(footerHint('ready'), /Ctrl\+O details/);
 assert.match(footerHint('ready'), /Tab complete/);
 assert.match(footerHint('ready'), /Up\/Down history/);
 assert.match(footerHint('approval'), /a always this session/);

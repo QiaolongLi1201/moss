@@ -180,6 +180,36 @@ test('running several commands in a row never accumulates garbling, and scrollba
   cleanup();
 });
 
+test('mouse wheel scrolls the transcript and never types mouse bytes into the box', async () => {
+  setRows(24);
+  const { stdin, lastFrame } = mount();
+  await wait(140);
+  await runSlashCommand(stdin, lastFrame, '/status');
+  const WHEEL_UP = `${ESC}[<64;10;12M`;
+  const WHEEL_DOWN = `${ESC}[<65;10;12M`;
+  let topSeen = false;
+  for (let i = 0; i < 10 && !topSeen; i += 1) {
+    stdin.write(WHEEL_UP);
+    await wait(70);
+    const s = strip(lastFrame());
+    topSeen = /\bStatus\b/.test(s) && /session: cli/.test(s);
+  }
+  assert.ok(topSeen, 'mouse wheel up should scroll to the top of a tall output');
+  assert.doesNotMatch(
+    inputLine(lastFrame()),
+    /\[<|64;1|65;1|;\d+;\d+[Mm]/,
+    'mouse report bytes must never be typed into the prompt box',
+  );
+  let bottomSeen = false;
+  for (let i = 0; i < 12 && !bottomSeen; i += 1) {
+    stdin.write(WHEEL_DOWN);
+    await wait(70);
+    bottomSeen = /mesh: disabled/.test(strip(lastFrame()));
+  }
+  assert.ok(bottomSeen, 'mouse wheel down should return to the newest line');
+  cleanup();
+});
+
 let failures = 0;
 for (const { name, fn } of tests) {
   try {

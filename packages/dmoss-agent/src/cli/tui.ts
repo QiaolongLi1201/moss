@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Box, Text, render, useApp, useInput, useCursor, measureElement, type DOMElement } from 'ink';
+import { Box, Text, render, useApp, useInput, useStdin, useCursor, measureElement, type DOMElement } from 'ink';
+import { enableMouse, disableMouse, parseMouseEvent } from './input/mouse.js';
 import stringWidth from 'string-width';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { StreamingSpinner } from './components/StreamingSpinner.js';
@@ -1686,6 +1687,8 @@ export function PromptEditor({
     }
     if (inputChar) {
       if (inputChar.length === 1 && inputChar.charCodeAt(0) < 32) return;
+      // Never type raw escape / mouse-report bytes into the box.
+      if (inputChar.includes('\x1b') || isLikelyMouseInput(inputChar)) return;
       applyEdit({ type: 'insert', text: inputChar });
     }
   }, { isActive: !disabled });
@@ -1824,6 +1827,36 @@ export function QueuePreview({ items, paused = false, now = Date.now() }: QueueP
 // Main TUI
 // ────────────────────────────────────────────────────────────────────────────
 
+/** SGR/legacy mouse report bytes that Ink may surface as `input` — handled by the
+ *  dedicated stdin listener, so every useInput must ignore them (don't type/act). */
+function isLikelyMouseInput(s: string): boolean {
+  if (!s) return false;
+  return s.includes('\x1b[<') || s.includes('\x1b[M') || /\[<\d+;\d+;\d+[Mm]/.test(s) || /\[M...$/.test(s);
+}
+
+const WORKING_FRAMES = ['✶', '✻', '✽', '✻'];
+/**
+ * Live "the agent is working" line shown above the input while busy. It is a
+ * self-animating spinner + an elapsed-seconds counter, so the moving glyph makes
+ * it obvious the run is alive (not frozen) — the missing signal users hit when a
+ * model turn streams after a tool call and the transcript area looks blank.
+ */
+function WorkingIndicator(): React.ReactElement {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 200);
+    return () => clearInterval(t);
+  }, []);
+  const glyph = emojiEnabled() ? (WORKING_FRAMES[tick % WORKING_FRAMES.length] ?? '✻') : '*';
+  const secs = Math.floor((tick * 200) / 1000);
+  return React.createElement(
+    Box,
+    { paddingX: 1 },
+    React.createElement(Text, { color: theme.claude, bold: true }, `${glyph} Working `),
+    React.createElement(Text, { color: theme.textDim }, `(${secs}s · esc to interrupt)`),
+  );
+}
+
 export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): React.ReactElement {
   const app = useApp();
   const { rows: termRows } = useTerminalSize();
@@ -1881,6 +1914,42 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       setScrollUp((u) => Math.min(maxScroll, u + delta));
     }
   }, [contentHeight, viewportHeight, scrollStick, scrollUp]);
+  // Mouse-wheel scrolling: enable SGR mouse reporting and parse wheel events straight
+  // from stdin (works during a run too), mapping them to the same line-scroll as
+  // PageUp/PageDown. Heights come from a ref so the listener is bound once.
+  const { stdin: rawStdin } = useStdin();
+  const scrollMetricsRef = useRef({ contentHeight: 0, viewportHeight: 0 });
+  scrollMetricsRef.current = { contentHeight, viewportHeight };
+  useEffect(() => {
+    if (!rawStdin || typeof rawStdin.on !== 'function') return undefined;
+    enableMouse();
+    const onData = (data: Buffer | string): void => {
+      const ev = parseMouseEvent(Buffer.isBuffer(data) ? data : Buffer.from(String(data)));
+      if (!ev) return;
+      const { contentHeight: ch, viewportHeight: vh } = scrollMetricsRef.current;
+      const maxScrollNow = Math.max(0, ch - vh);
+      if (ev.type === 'scroll-up') {
+        setScrollStick(false);
+        setScrollUp((u) => Math.min(maxScrollNow, u + 3));
+      } else if (ev.type === 'scroll-down') {
+        setScrollUp((u) => {
+          const next = Math.max(0, u - 3);
+          if (next === 0) setScrollStick(true);
+          return next;
+        });
+      }
+    };
+    rawStdin.on('data', onData);
+    // Belt-and-suspenders: also restore the terminal on a hard exit so the user's
+    // mouse isn't left in reporting mode if the process dies without unmounting.
+    const restoreOnExit = (): void => disableMouse();
+    process.once('exit', restoreOnExit);
+    return () => {
+      rawStdin.off('data', onData);
+      process.off('exit', restoreOnExit);
+      disableMouse();
+    };
+  }, [rawStdin]);
   const [flashHint, setFlashHint] = useState<string>('');
   const [ctxUsage, setCtxUsage] = useState<{ used: number; total: number } | undefined>(undefined);
   const [queuedInputs, setQueuedInputsState] = useState<QueuedInput[]>([]);
@@ -2048,6 +2117,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
 
   // Global keybinds: Ctrl+O toggles tool expansion; approval handles y/a/n/Esc
   useInput((inputChar, key) => {
+    // Mouse wheel/clicks are handled by the dedicated stdin listener; ignore any
+    // mouse-report bytes Ink surfaces here so they never fire keys (e.g. a stray
+    // Esc from a wheel event must not cancel the run).
+    if (isLikelyMouseInput(inputChar)) return;
     if (approval) {
       const decision = approvalKeyDecision(inputChar, key);
       if (decision === 'deny') {
@@ -2647,6 +2720,9 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     React.createElement(
       Box,
       { flexDirection: 'column', flexShrink: 0 },
+    // Live activity line: a self-animating spinner + elapsed seconds, shown only
+    // while busy, so it is always clear the agent is still running (not frozen).
+    busy && !approval ? React.createElement(WorkingIndicator, { key: 'working' }) : null,
     // The scroll indicator lives in the footer line below (not its own row) so the
     // transcript viewport height stays constant — otherwise it would jump by a row
     // and make PageUp/PageDown steps asymmetric.

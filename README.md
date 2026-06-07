@@ -27,20 +27,30 @@ The same runtime is **embeddable**: behind a narrow Host Adapter, your product s
 
 ## Quickstart
 
-Get the terminal agent running in under a minute:
+Install and run the terminal agent:
 
 ```bash
-npm i -g @rdk-moss/agent          # installs the `dmoss` command (or run it from this repo: node packages/dmoss-agent/dist/cli.js)
+npm i -g @rdk-moss/agent       # installs the `dmoss` command
+dmoss                          # just run it — works out of the box with a built-in free model
+```
 
-# 1) Point it at a model — set a key for any supported provider:
-export DEEPSEEK_API_KEY=...        # or OPENAI_API_KEY · ANTHROPIC_API_KEY · DASHSCOPE_API_KEY (Qwen)
-#    …or any OpenAI-compatible endpoint (base URL + key) configured in  dmoss /config
+`dmoss` ships ready to use. To run it on **your own** model instead, set a key for any supported
+provider (your config always overrides the built-in default):
 
-# 2) Start — then just type. /help lists commands, /model switches models, /config edits settings.
-dmoss
+```bash
+export DEEPSEEK_API_KEY=...     # or OPENAI_API_KEY · ANTHROPIC_API_KEY · DASHSCOPE_API_KEY (Qwen)
+#   …or any OpenAI-compatible endpoint — run `dmoss setup`, or `/config` · `/model` inside dmoss.
+```
+
+**Update** anytime (dmoss also tells you when a newer version is out):
+
+```bash
+npm i -g @rdk-moss/agent@latest   # or run `dmoss update`
 ```
 
 Config and keys live in `~/.config/dmoss/config.json` (override the dir with `DMOSS_CONFIG_DIR`); keys can also come from the environment variables above, so nothing secret needs to be written to disk.
+
+**Customize the agent** per project: drop an `AGENTS.md` in your workspace (or run `/init`) — it is auto-loaded into every session as your project's system prompt (build/test commands, layout, conventions).
 
 Scaffold a host that embeds Moss:
 

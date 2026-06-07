@@ -5,6 +5,39 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.9] - 2026-06-08
+
+### Added
+
+- Zero-config startup: `dmoss` works out of the box with a built-in free model.
+  Your own provider/key (env vars or `dmoss setup`) always overrides it. The
+  built-in gateway is hidden from `/status`, `/quick_start`, and the welcome panel.
+- `/quick_start` now surfaces `AGENTS.md` — the project system-prompt file that is
+  auto-loaded every session (scaffold it with `/init`).
+
+### Changed
+
+- The `/quick_start` panel is all-English and explains how to configure the model
+  (`dmoss setup` / env vars / config file) and the workspace.
+
+### Fixed
+
+- skills: validate the candidate id up front in `promoteSkillCandidate`
+  (path-traversal hardening; the late `removeCandidate` can no longer be the first
+  thing to reject the id after a skill is already written).
+- cli provider: throw on malformed OpenAI tool-call arguments instead of silently
+  using `{}`.
+- async tasks: cancelling a parent no longer enters a still-queued child's runner.
+- sub-agent orchestration: `runFanOut` / `runPipeline` enforce `timeoutMs` even when
+  a child runner ignores the abort signal.
+- `compactSession` returns `{ compacted: false }` for histories that fit within the
+  keep-recent window, matching its documented contract.
+- providers: accept SSE `data:<payload>` frames without the optional space.
+- memory: `syncFromFiles` no longer leaves both the old and new entry when a file's
+  content changes.
+- `web_search` no longer issues a fetch when its signal is already aborted.
+- tool registry: re-registering a tool now updates the group snapshot.
+
 ## [0.3.7] - 2026-06-04
 
 ### Added

@@ -191,7 +191,26 @@ function rawSse(res, lines) {
   console.log('[PASS] Custom baseUrl routes to /v1/chat/completions');
 }
 
-// ── Test 7: SSE comments are keepalive, not JSON payloads ──
+// ── Test 7: Custom baseUrl ending in /v1 (OpenAI-compatible) ──
+{
+  let receivedPath = '';
+  const { server, baseUrl } = await startMockServer((req, res) => {
+    receivedPath = req.url;
+    sseChunks(res, [
+      { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] },
+      { usage: { prompt_tokens: 1, completion_tokens: 1 } },
+    ]);
+  });
+
+  const provider = new OpenAILLMProvider({ apiKey: 'test-key', baseUrl: `${baseUrl}/v1` });
+  await provider.complete({ model: 'deepseek-chat', systemPrompt: '', messages: [{ role: 'user', content: 'hi' }] });
+  assert.equal(receivedPath, '/v1/chat/completions');
+
+  server.close();
+  console.log('[PASS] Custom /v1 baseUrl routes to /v1/chat/completions');
+}
+
+// ── Test 8: SSE comments are keepalive, not JSON payloads ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {
     rawSse(res, [
@@ -212,7 +231,7 @@ function rawSse(res, lines) {
   console.log('[PASS] SSE comment keepalive lines are skipped');
 }
 
-// ── Test 8: Empty data lines are keepalive, not JSON payloads ──
+// ── Test 9: Empty data lines are keepalive, not JSON payloads ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {
     rawSse(res, [
@@ -234,7 +253,7 @@ function rawSse(res, lines) {
   console.log('[PASS] Empty SSE data keepalive lines are skipped');
 }
 
-// ── Test 9: Malformed SSE data is an upstream error ──
+// ── Test 10: Malformed SSE data is an upstream error ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {
     rawSse(res, [
@@ -261,7 +280,7 @@ function rawSse(res, lines) {
   console.log('[PASS] Malformed SSE data surfaces as upstream error');
 }
 
-// ── Test 10: A malformed frame after valid content still fails the stream ──
+// ── Test 11: A malformed frame after valid content still fails the stream ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {
     rawSse(res, [
@@ -284,7 +303,7 @@ function rawSse(res, lines) {
   console.log('[PASS] Malformed SSE data fails even after valid frames');
 }
 
-// ── Test 11: Structured stream error payloads are upstream errors ──
+// ── Test 12: Structured stream error payloads are upstream errors ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {
     rawSse(res, [
@@ -311,7 +330,7 @@ function rawSse(res, lines) {
   console.log('[PASS] Structured OpenAI stream error payloads surface as upstream errors');
 }
 
-// ── Test 12: EOF with an incomplete SSE line fails the stream ──
+// ── Test 13: EOF with an incomplete SSE line fails the stream ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {
     res.writeHead(200, {
@@ -336,7 +355,7 @@ function rawSse(res, lines) {
   console.log('[PASS] Incomplete OpenAI SSE line at EOF fails the stream');
 }
 
-// ── Test 13: EOF without [DONE] or finish_reason fails even after valid deltas ──
+// ── Test 14: EOF without [DONE] or finish_reason fails even after valid deltas ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {
     rawSse(res, [
@@ -362,4 +381,4 @@ function rawSse(res, lines) {
   console.log('[PASS] OpenAI EOF without terminal marker fails the stream');
 }
 
-console.log('\n[pass] provider-openai: 13/13');
+console.log('\n[pass] provider-openai: 14/14');

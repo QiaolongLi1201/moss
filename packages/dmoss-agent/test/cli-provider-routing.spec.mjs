@@ -45,11 +45,31 @@ function runProviderProbe(env) {
 
 {
   const result = runProviderProbe({
+    DMOSS_PROVIDER: 'anthropic',
+    DMOSS_BASE_URL: 'https://internal-llm-gateway.example.com/v1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /internal-llm-gateway\.example\.com\/v1\/messages/);
+  assert.doesNotMatch(result.stdout, /\/v1\/v1\/messages/);
+}
+
+{
+  const result = runProviderProbe({
     DMOSS_PROVIDER: 'openai-compatible',
     DMOSS_BASE_URL: 'https://anthropic-compatible-openai-proxy.example.com',
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /anthropic-compatible-openai-proxy\.example\.com\/v1\/chat\/completions/);
+}
+
+{
+  const result = runProviderProbe({
+    DMOSS_PROVIDER: 'openai-compatible',
+    DMOSS_BASE_URL: 'https://anthropic-compatible-openai-proxy.example.com/v1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /anthropic-compatible-openai-proxy\.example\.com\/v1\/chat\/completions/);
+  assert.doesNotMatch(result.stdout, /\/v1\/v1\/chat\/completions/);
 }
 
 {

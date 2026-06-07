@@ -6,6 +6,7 @@ import type {
   LLMStreamEvent,
   LLMContentBlock,
 } from '../core/llm/llm-provider.js';
+import { buildApiV1Url } from '../provider/api-v1-url.js';
 
 export interface CliProviderRuntimeConfig {
   provider: CliProviderPreset;
@@ -93,7 +94,7 @@ async function callAnthropic(
     stream: false,
   };
 
-  const res = await fetch(`${config.baseUrl}/v1/messages`, {
+  const res = await fetch(buildApiV1Url(config.baseUrl, 'messages'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -198,7 +199,7 @@ async function callOpenAI(
     }));
   }
 
-  const res = await fetch(`${config.baseUrl}/v1/chat/completions`, {
+  const res = await fetch(buildApiV1Url(config.baseUrl, 'chat/completions'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

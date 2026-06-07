@@ -1,5 +1,7 @@
 # Moss
 
+**A host-neutral, model-agnostic agent runtime — and a Claude-Code-class terminal agent (`dmoss`) — that you can run standalone or embed into your own product.** It runs on any OpenAI-compatible model (plus Anthropic), ships as open npm packages, and has first-class robotics / device support.
+
 Moss is a host-neutral agent runtime extracted from a robotics product host. It is designed
 to evolve as an open-source package set while product hosts keep their own UI,
 credentials, device integrations, private services, and deployment policy.
@@ -8,6 +10,55 @@ The practical goal is simple: a downstream product host should usually get a new
 conversation experience by updating the Moss packages or the `external/moss`
 submodule. Host code changes should be needed only when the Host Adapter
 contract changes or when Moss explicitly requires new host capabilities.
+
+## What Moss Can Do
+
+Run `dmoss` and you get a full interactive coding/ops agent in the terminal:
+
+- **Tool loop** — read / write / edit files, run commands, search code, fetch the web, and render real pages in a headless browser.
+- **Slash commands** — `/checkpoint` + rewind, `/compact` context, `/context` and `/cost` budgets, `/diff`, `/memory`, `/model` · `/models`, `/permissions` · `/approval`, `/hooks`, `/init`, `/config`, and more (`/help` lists them all).
+- **Parallel sub-agents** — fan independent work out across isolated child agents and aggregate the results.
+- **MCP** — connect Model Context Protocol servers to add tools.
+- **Skills** — progressive-disclosure skills the agent discovers, validates, and reuses.
+- **Cross-session memory** — an always-on digest plus recall that carries what matters across sessions.
+- **Safety** — approval gates, permission boundaries, dangerous-action consent, and host-neutral sandboxing helpers.
+
+The same runtime is **embeddable**: behind a narrow Host Adapter, your product supplies the model keys, UI, storage, tools, and device access — Moss supplies the agent.
+
+## Quickstart
+
+Use the terminal agent:
+
+```bash
+# from this repo, built:  node packages/dmoss-agent/dist/cli.js
+# or, once the `dmoss` bin is installed:
+dmoss            # start the interactive agent; /help lists commands
+dmoss /config    # point it at a model: any OpenAI-compatible endpoint, or Anthropic
+```
+
+Scaffold a host that embeds Moss:
+
+```bash
+npx create-dmoss-app my-host
+```
+
+Embed into an existing host: install the packages, register your providers / tools / storage / approval gate / event sink, publish a `MossHostRuntimeManifest`, and run `evaluateMossHostCompatibility()` in CI — see [Integrating Moss Into A Host](#integrating-moss-into-a-host).
+
+## How Moss Compares
+
+Moss matches the core terminal-agent experience of tools like **Claude Code** and **Codex** — interactive tool loop, slash commands, sub-agents, MCP, skills, and memory. What sets it apart is **where it can run and who controls it**:
+
+| | Moss | Claude Code | Codex |
+| --- | --- | --- | --- |
+| Interactive terminal agent | ✅ `dmoss` | ✅ | ✅ |
+| Tool loop · sub-agents · MCP · skills · memory | ✅ | ✅ | ✅ |
+| **Models** | **Any OpenAI-compatible endpoint + Anthropic** — DeepSeek, Qwen, self-hosted, gateways | Anthropic | OpenAI |
+| **Embed into your own product** | ✅ Host Adapter contract — Moss is a runtime, not only an app | — standalone app | — standalone app |
+| **Open & self-hostable** | ✅ open npm packages you vendor and extend, run against your own endpoints | — | — |
+| **Robotics / device / board agent** | ✅ first-class (SSH / ROS / device tools, board-side agent) | general dev | general dev |
+| Polished first-party app & UX | the host supplies the UI | ✅ | ✅ |
+
+In short — if you want a polished **standalone** assistant tied to one vendor's models, Claude Code and Codex are excellent. If you want to **own** the agent — run it on **your** models, **embed** it in **your** product, **extend** it as open code, and reach **robots and devices** — that is Moss.
 
 ## Repository Scope
 

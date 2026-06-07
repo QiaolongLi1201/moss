@@ -5,6 +5,15 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.15] - 2026-06-08
+
+### Fixed
+
+- CLI identity prompt wiring: standalone `dmoss` now actually passes the Moss
+  identity layer into the runtime system prompt, so model requests consistently
+  identify Moss as an AI Agent developed by 地瓜机器人 (D-Robotics) instead of
+  relying on README text or model prior knowledge.
+
 ## [0.3.14] - 2026-06-08
 
 ### Fixed

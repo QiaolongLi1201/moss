@@ -12,6 +12,7 @@ import { renderCliDoctor } from './cli/doctor.js';
 import { displayHelp, displayVersion } from './cli/help.js';
 import { createConfiguredGuardrailHooks } from './cli/guardrails.js';
 import { createConfiguredHookCallbacks } from './cli/hooks.js';
+import { DMOSS_CLI_IDENTITY } from './cli/identity.js';
 import type { AgentHooks } from './core/agent/agent-hooks.js';
 import { createCliProvider } from './cli/providers.js';
 import { createMemoryTools } from './cli/tools.js';
@@ -316,6 +317,7 @@ async function main() {
 
   const agent = new DmossAgent({
     llmProvider: createCliProvider(resolvedConfig), sessionStore, model,
+    baseSystemPrompt: DMOSS_CLI_IDENTITY,
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
     memoryContextProvider: () => memoryManager.buildDigest(),
     ...resolveCliAgentRuntimeOptions(resolvedConfig),

@@ -1,6 +1,6 @@
 {
   "name": "@rdk-moss/teaching",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -38,8 +38,8 @@
     "test": "npm run build && node ../../scripts/run-package-tests.mjs"
   },
   "dependencies": {
-    "@rdk-moss/agent": "^0.3.14",
-    "@rdk-moss/skills": "^0.3.14"
+    "@rdk-moss/agent": "^0.3.15",
+    "@rdk-moss/skills": "^0.3.15"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

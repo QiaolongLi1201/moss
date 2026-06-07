@@ -15,6 +15,7 @@ contract changes or when Moss explicitly requires new host capabilities.
 
 Run `dmoss` and you get a full interactive coding/ops agent in the terminal:
 
+- **Zero-config start** — works out of the box with a built-in model; point it at your own provider/key (env vars or `dmoss setup`) anytime, and `dmoss` tells you when a new version is out.
 - **Tool loop** — read / write / edit files, run commands, search code, fetch the web, and render real pages in a headless browser.
 - **Slash commands** — `/checkpoint` + rewind, `/compact` context, `/context` and `/cost` budgets, `/diff`, `/memory`, `/model` · `/models`, `/permissions` · `/approval`, `/hooks`, `/init`, `/config`, and more (`/help` lists them all).
 - **Parallel sub-agents** — fan independent work out across isolated child agents and aggregate the results.

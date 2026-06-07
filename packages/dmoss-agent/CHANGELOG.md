@@ -5,6 +5,16 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.10] - 2026-06-08
+
+### Fixed
+
+- update notice: raise the registry check timeout from 800ms to 3000ms. On slower
+  networks (e.g. reaching `registry.npmjs.org` from China, measured ~1.9s) the
+  800ms check timed out before it could fetch, so the "a new version is available"
+  notice never appeared and the cached latest version went stale. The check stays
+  async and the timer is unref'd, so the longer wait never blocks startup or exit.
+
 ## [0.3.9] - 2026-06-08
 
 ### Added

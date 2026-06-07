@@ -4,7 +4,7 @@
  * The CLI is itself a Moss host, so it owns the agent's identity (Moss core
  * stays vendor/persona-neutral). Without this, the model has no instruction
  * about who it is and free-associates a name (it was introducing itself as
- * "Codex"). Passed as `baseSystemPrompt`, so it sits first in the system prompt,
+ * another assistant). Passed as `baseSystemPrompt`, so it sits first in the system prompt,
  * ahead of the robotics domain prompt. Kept short and bilingual for
  * cross-model consistency.
  */

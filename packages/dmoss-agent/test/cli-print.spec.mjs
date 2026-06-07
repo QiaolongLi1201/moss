@@ -4,7 +4,7 @@
  *   npm run build -w @rdk-moss/agent
  *   node packages/dmoss-agent/test/cli-print.spec.mjs
  *
- * Asserts the headless stream-json output matches Claude Code's event schema:
+ * Asserts the headless stream-json output matches agent UI event schema:
  *   - tool_use is a content block inside an `assistant` message (no bare event)
  *   - tool_result is carried inside a `user` message
  *   - result uses subtype success|error_max_turns|error_during_execution and
@@ -344,4 +344,4 @@ assert.deepEqual(init, {
   process.exitCode = originalExitCode;
 }
 
-console.log('[PASS] CLI print formatter emits Claude Code stream-json schema');
+console.log('[PASS] CLI print formatter emits headless agent stream-json schema');

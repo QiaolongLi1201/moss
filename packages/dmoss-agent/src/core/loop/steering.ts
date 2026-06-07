@@ -2,8 +2,7 @@
  * Steering Engine — injects guidance messages into the conversation
  * based on configurable heuristics.
  *
- * Inspired by the publicly observable steering behaviour in agent products
- * such as Claude Code: the engine evaluates rules
+ * Inspired by publicly observable steering behaviour in agent products: the engine evaluates rules
  * each turn and, when triggered, prepends a steering system message so the
  * LLM can self-correct without user intervention.
  *

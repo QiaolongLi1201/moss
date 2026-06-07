@@ -1,7 +1,7 @@
 /**
  * MicroCompact — 轻量级 tool_result 压缩
  *
- * Inspired by the public behaviour of Claude Code's auto-compaction: replace
+ * Inspired by public auto-compaction behaviour: replace
  * fully-consumed tool_result bodies with a placeholder so the model only pays
  * tokens for the results it still needs to read. Independently implemented.
  *

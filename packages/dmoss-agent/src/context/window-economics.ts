@@ -1,6 +1,6 @@
 /**
- * 上下文「窗口经济学」— 自动压缩 / 预算计算的常量来源（Inspired by Claude Code's
- * public auto-compact thresholds; concrete values re-derived for our workloads）
+ * 上下文「窗口经济学」— 自动压缩 / 预算计算的常量来源（参考公开 auto-compact
+ * 阈值行为；具体数值按本项目负载重新推导）
  *
  * - 有效窗口 = 模型上下文窗 − min(max_output, 摘要输出上限)，避免把「留给模型输出」的额度算进可用历史
  * - 自动压缩触发线 = 有效窗口 − buffer（默认 13k），在「满之前」主动压历史

@@ -473,7 +473,7 @@ export function classifyProviderError(input: ProviderErrorInput): ProviderErrorS
     return {
       category: 'tools_not_supported',
       userMessage:
-        '当前模型不支持工具调用，工具任务可能失败；请到设置换用支持 tools 的模型（推荐 qwen3 / qwen3-coder / llama3.1 / claude / gpt-4.x）。',
+        '当前模型不支持工具调用，工具任务可能失败；请到设置换用支持 tools 的模型（推荐 qwen3 / qwen3-coder / llama3.1 / gpt-4.x 或同类工具模型）。',
       actions: [ACTION_OPEN_SETTINGS, ACTION_SWITCH_MODEL],
       silent: false,
       retryable: false,

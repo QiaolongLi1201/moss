@@ -35,7 +35,7 @@ export type HeadlessAssistantEvent = {
   session_id: string;
 };
 
-/** Content block carried back inside a `user` message, mirroring Claude Code's tool result. */
+/** Content block carried back inside a `user` message, mirroring agent UI tool result. */
 export type HeadlessToolResultBlock = {
   type: 'tool_result';
   tool_use_id: string;
@@ -151,7 +151,7 @@ function isErrorStopReason(stopReason: string | undefined): boolean {
 
 /**
  * Flush any accumulated assistant text and/or tool_use blocks as a single
- * `assistant` message event, mirroring Claude Code (one message may carry both
+ * `assistant` message event, mirroring headless agent (one message may carry both
  * text and tool_use content blocks). Returns [] when there is nothing pending.
  */
 function flushAssistant(
@@ -227,7 +227,7 @@ export function formatHeadlessStreamEvent(
       return [];
     case 'tool_end': {
       // Emit the assistant message that issued the pending tool_use block(s)
-      // before the matching user tool_result, preserving Claude Code ordering.
+      // before the matching user tool_result, preserving headless agent ordering.
       const assistant = flushAssistant(state);
       const toolResult: HeadlessToolResultBlock = {
         type: 'tool_result',

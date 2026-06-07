@@ -337,7 +337,7 @@ export class PiAiLLMProvider implements LLMProvider {
      *   1) pollutes the persisted assistant turn (the next round's prompt
      *      ships planner-speak back to the upstream model, which then
      *      escalates its own reasoning, snowballing across turns); and
-     *   2) makes upstream behaviour drift from Claude / GPT-5 / R1, where
+     *   2) makes upstream behaviour drift from other tool-capable reasoning models, where
      *      the agent loop is supposed to see "no visible answer" and decide
      *      whether to retry / nudge / surface a placeholder.
      *

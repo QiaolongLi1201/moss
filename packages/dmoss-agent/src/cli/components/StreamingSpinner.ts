@@ -23,7 +23,7 @@ export function StreamingSpinner({ active = true, showDots = true }: { active?: 
   const spinner = SPINNER_FRAMES[tick % SPINNER_FRAMES.length];
   const dots = showDots ? DOT_FRAMES[tick % DOT_FRAMES.length] : '';
 
-  return React.createElement(Text, { color: theme.claude }, ` ${spinner}${dots} `);
+  return React.createElement(Text, { color: theme.accent }, ` ${spinner}${dots} `);
 }
 
 /** Pulsing bar indicator for active tool calls */

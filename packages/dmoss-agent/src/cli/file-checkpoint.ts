@@ -1,5 +1,5 @@
 /**
- * 文件检查点 — Claude Code 风格的写前快照与撤销安全网（交互式 TUI 用）。
+ * 文件检查点 — headless agent 风格的写前快照与撤销安全网（交互式 TUI 用）。
  * 每个用户轮次 open 一个检查点，工具写文件前备份原内容；/rewind <seq> 还原。
  * 备份落 {runtimeDir}/checkpoints/{sessionKey}/，按 seq 键（moss 消息无 uuid）。
  *

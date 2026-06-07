@@ -15,7 +15,7 @@ interface ThemeSelectorProps {
 function themeSwatch(theme: CliTheme): React.ReactElement {
   const t = theme.tokens;
   const swatches = [
-    t.claude, t.user, t.tool, t.warning, t.error, t.success,
+    t.accent, t.user, t.tool, t.warning, t.error, t.success,
     t.primary, t.primarySoft,
   ];
   return React.createElement(Text, null,

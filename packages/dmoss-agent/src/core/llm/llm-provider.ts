@@ -148,7 +148,7 @@ export interface LLMProviderCapabilities {
  * Abstract LLM provider interface.
  *
  * Implementations:
- * - AnthropicProvider (Anthropic Claude API)
+ * - AnthropicProvider (Anthropic Messages API)
  * - OpenAIProvider (OpenAI GPT API)
  * - etc.
  */

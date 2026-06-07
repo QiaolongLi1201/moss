@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,6 +38,7 @@ function withTimeout(promise, ms, label = 'operation') {
           'test-server': {
             command: 'node',
             args: ['server.js'],
+            cwd: dir,
             env: { KEY: 'value' },
           },
         },
@@ -48,6 +49,7 @@ function withTimeout(promise, ms, label = 'operation') {
     assert.ok(config.mcpServers['test-server']);
     assert.equal(config.mcpServers['test-server'].command, 'node');
     assert.deepEqual(config.mcpServers['test-server'].args, ['server.js']);
+    assert.equal(config.mcpServers['test-server'].cwd, dir);
     assert.deepEqual(config.mcpServers['test-server'].env, { KEY: 'value' });
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -273,6 +275,89 @@ rl.on('line', (line) => {
 }
 
 console.log('  [PASS] real MCP server: tool listing, namespacing, and tool calling');
+
+// ── Real MCP server: cwd is passed to the spawned stdio process ──
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-cwd-'));
+  const mockServerPath = join(dir, 'mock-mcp-cwd-server.mjs');
+  const workdir = join(dir, 'workdir');
+  const serverCode = `#!/usr/bin/env node
+import { createInterface } from 'node:readline';
+
+const rl = createInterface({ input: process.stdin });
+function respond(id, result) {
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n');
+}
+
+rl.on('line', (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+  if (msg.id === undefined || msg.id === null) return;
+
+  switch (msg.method) {
+    case 'initialize':
+      respond(msg.id, {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'cwd-server', version: '1.0.0' },
+      });
+      break;
+    case 'tools/list':
+      respond(msg.id, {
+        tools: [{
+          name: 'pwd',
+          description: 'Return process cwd',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+        }],
+      });
+      break;
+    case 'tools/call':
+      respond(msg.id, { content: [{ type: 'text', text: process.cwd() }] });
+      break;
+    default:
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: msg.id,
+        error: { code: -32601, message: 'Method not found' },
+      }) + '\\n');
+  }
+});
+`;
+  writeFileSync(mockServerPath, serverCode);
+  mkdirSync(workdir, { recursive: true });
+
+  let connections = [];
+  try {
+    connections = await withTimeout(
+      connectMcpServers({
+        mcpServers: {
+          cwdserver: {
+            command: 'node',
+            args: [mockServerPath],
+            cwd: workdir,
+          },
+        },
+      }),
+      10000,
+      'connectMcpServers(cwdserver)',
+    );
+
+    const pwdTool = connections[0].tools.find((t) => t.name === 'cwdserver__pwd');
+    assert.ok(pwdTool);
+    const result = await withTimeout(
+      pwdTool.execute({}, { workspaceDir: '/tmp', sessionKey: 'mcp-cwd' }),
+      5000,
+      'pwd.execute',
+    );
+    assert.equal(realpathSync(String(result)), realpathSync(workdir));
+  } finally {
+    await Promise.allSettled(connections.map((connection) => connection.close()));
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log('  [PASS] real MCP server: cwd is passed to the spawned stdio process');
 
 // ── Real MCP server: tool error response ──
 

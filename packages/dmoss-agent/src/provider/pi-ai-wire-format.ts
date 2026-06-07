@@ -130,11 +130,11 @@ export function normalizePiAiModelInfo(model: PiAiModelInfo, baseUrl?: string): 
  * Guard against Anthropic OAuth / session tokens.
  *
  * Upstream pi-ai's `anthropic` provider detects `apiKey.includes("sk-ant-oat")`
- * and enters a "Claude Code compatibility" code path: it injects a Claude Code
- * identity string, rewrites tool names via `toClaudeCodeName()`, and sends a
- * `claude-code-20250219,oauth-2025-04-20` beta header. `@rdk-moss/agent` does not
- * impersonate any third-party product on the wire, so we refuse such tokens
- * here — **before** the request ever leaves this package.
+ * and enters a third-party CLI compatibility code path: it injects a foreign
+ * identity string, rewrites tool names, and sends a product-specific beta
+ * header. `@rdk-moss/agent` does not impersonate any third-party product on the
+ * wire, so we refuse such tokens here — **before** the request ever leaves this
+ * package.
  *
  * We only guard the `anthropic` API shape; OpenAI-compatible gateways and
  * other providers never see pi-ai's OAuth branch regardless of the token

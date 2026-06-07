@@ -1,5 +1,5 @@
 // ShimmerText — ANSI 256-color shimmer loading animation (10fps)
-// Inspired by Claude Code's shimmer effect for in-progress content.
+// Inspired by agent UI shimmer effect for in-progress content.
 
 import React, { useState, useEffect } from 'react';
 import { Text } from 'ink';

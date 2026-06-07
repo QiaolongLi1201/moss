@@ -1,5 +1,5 @@
 // DiffView — unified diff renderer with added/removed line + word-level highlights
-// Inspired by Claude Code's code diff display with semantic coloring.
+// Inspired by agent UI code diff display with semantic coloring.
 
 import React from 'react';
 import { Box, Text } from 'ink';

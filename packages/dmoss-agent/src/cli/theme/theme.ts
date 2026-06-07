@@ -3,7 +3,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface CliThemeTokens {
-  claude: string; text: string; textSecondary: string; textMuted: string;
+  accent: string; text: string; textSecondary: string; textMuted: string;
   textDim: string; inverseText: string; inactive: string; subtle: string;
   suggestion: string; user: string; tool: string; permission: string;
   success: string; error: string; warning: string; merged: string;
@@ -14,8 +14,8 @@ export interface CliThemeTokens {
   userMessageBackground: string; bashMessageBackgroundColor: string;
   memoryBackgroundColor: string; selectionBg: string;
   rateLimitFill: string; rateLimitEmpty: string;
-  briefLabelYou: string; briefLabelClaude: string;
-  claudeShimmer: string; warningShimmer: string; permissionShimmer: string; toolShimmer: string;
+  briefLabelYou: string; briefLabelAgent: string;
+  accentShimmer: string; warningShimmer: string; permissionShimmer: string; toolShimmer: string;
   subagent1: string; subagent2: string; subagent3: string; subagent4: string;
   subagent5: string; subagent6: string; subagent7: string; subagent8: string;
   rainbowRed: string; rainbowOrange: string; rainbowYellow: string; rainbowGreen: string;
@@ -29,11 +29,11 @@ export interface CliTheme {
   tokens: CliThemeTokens;
 }
 
-// Aligned to Claude Code's dark theme (claude-code/src/utils/theme.ts `darkTheme`),
-// rgb→hex. NOTE: downstream brand orange/cyan lives only in brand.ts/logo.ts
-// for the startup logo; the general accent stays Claude orange #d77757.
+// Aligned to a low-noise terminal palette, rgb→hex. NOTE: downstream brand
+// orange/cyan lives only in brand.ts/logo.ts for the startup logo; the general
+// accent stays warm brand orange #d77757.
 export const AURORA_DARK_TOKENS: CliThemeTokens = {
-  claude: '#d77757', text: '#ffffff', textSecondary: '#c4c4c4',
+  accent: '#d77757', text: '#ffffff', textSecondary: '#c4c4c4',
   textMuted: '#6a6a6a', textDim: '#505050', inverseText: '#000000',
   inactive: '#999999', subtle: '#505050', suggestion: '#b1b9f9',
   user: '#7ab4e8', tool: '#d77757', permission: '#b1b9f9',
@@ -45,8 +45,8 @@ export const AURORA_DARK_TOKENS: CliThemeTokens = {
   userMessageBackground: '#373737', bashMessageBackgroundColor: '#413c41',
   memoryBackgroundColor: '#374146', selectionBg: '#264f78',
   rateLimitFill: '#b1b9f9', rateLimitEmpty: '#505370',
-  briefLabelYou: '#7ab4e8', briefLabelClaude: '#d77757',
-  claudeShimmer: '#eb9f7f', warningShimmer: '#ffdf39',
+  briefLabelYou: '#7ab4e8', briefLabelAgent: '#d77757',
+  accentShimmer: '#eb9f7f', warningShimmer: '#ffdf39',
   permissionShimmer: '#cfd7ff', toolShimmer: '#eb9f7f',
   subagent1: '#dc2626', subagent2: '#2563eb', subagent3: '#16a34a', subagent4: '#ca8a04',
   subagent5: '#9333ea', subagent6: '#ea580c', subagent7: '#db2777', subagent8: '#0891b2',
@@ -61,11 +61,11 @@ export const AURORA_DARK_THEME: CliTheme = {
   tokens: AURORA_DARK_TOKENS,
 };
 
-// Claude-code-aligned light palette, tuned for terminal cells rather than a web
+// compact agent-aligned light palette, tuned for terminal cells rather than a web
 // canvas. The muted/dim tokens stay dark enough for white or translucent macOS
 // Terminal backgrounds, where SGR dim can otherwise become unreadable.
 export const AURORA_LIGHT_TOKENS: CliThemeTokens = {
-  claude: '#d77757', text: '#000000', textSecondary: '#333333',
+  accent: '#d77757', text: '#000000', textSecondary: '#333333',
   textMuted: '#4b5563', textDim: '#6b7280', inverseText: '#ffffff',
   inactive: '#666666', subtle: '#9ca3af', suggestion: '#5769f7',
   user: '#2563eb', tool: '#c2410c', permission: '#5769f7',
@@ -77,8 +77,8 @@ export const AURORA_LIGHT_TOKENS: CliThemeTokens = {
   userMessageBackground: '#373737', bashMessageBackgroundColor: '#faf5fa',
   memoryBackgroundColor: '#e6f5fa', selectionBg: '#b4d5ff',
   rateLimitFill: '#5769f7', rateLimitEmpty: '#272f6f',
-  briefLabelYou: '#2563eb', briefLabelClaude: '#d77757',
-  claudeShimmer: '#f59575', warningShimmer: '#c89e50',
+  briefLabelYou: '#2563eb', briefLabelAgent: '#d77757',
+  accentShimmer: '#f59575', warningShimmer: '#c89e50',
   permissionShimmer: '#899bff', toolShimmer: '#f59575',
   subagent1: '#dc2626', subagent2: '#2563eb', subagent3: '#16a34a', subagent4: '#ca8a04',
   subagent5: '#9333ea', subagent6: '#ea580c', subagent7: '#db2777', subagent8: '#0891b2',
@@ -139,7 +139,7 @@ export function resolveThemeTokens(env: NodeJS.ProcessEnv = process.env): CliThe
 }
 
 // Active theme bag imported by tui.ts and the cli/components as `theme`.
-// It is the full Claude-code-aligned token set plus the
+// It is the full compact agent-aligned token set plus the
 // `warn` alias that the legacy call sites use, so existing `theme.x` references
 // keep working while gaining the new tokens (permission, planMode, autoAccept,
 // subtle, diffAdded/diffRemoved/word, userMessageBackground, …).

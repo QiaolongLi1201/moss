@@ -11,7 +11,7 @@ type AskUser = (question: string) => Promise<string>;
 
 let interactiveAsker: AskUser | null = null;
 
-/** 交互模式（对齐 Claude Code）：plan=只读规划 / default=正常审批 / acceptEdits=自动批准写入。TUI 经 Shift+Tab 切换。 */
+/** 交互模式（对齐 headless agent）：plan=只读规划 / default=正常审批 / acceptEdits=自动批准写入。TUI 经 Shift+Tab 切换。 */
 export type CliInteractionMode = 'plan' | 'default' | 'acceptEdits';
 let currentInteractionMode: CliInteractionMode = 'default';
 export function setCliInteractionMode(mode: CliInteractionMode): void {

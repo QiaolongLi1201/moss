@@ -159,7 +159,7 @@ import { PiAiFirstEventTimeoutError } from '../dist/provider/pi-ai-adapter.js';
         system: [
           {
             type: 'text',
-            text: 'You are Claude Code, Anthropic\'s official CLI for Claude.',
+            text: 'You are headless agent, Anthropic\'s official CLI for Claude.',
             cache_control: { type: 'ephemeral' },
           },
           {

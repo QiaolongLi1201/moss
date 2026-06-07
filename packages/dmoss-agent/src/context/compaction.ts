@@ -61,7 +61,7 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 };
 
 // Post-compaction file readback budget. Mirrors the reference implementation
-// (claude-code services/compact/compact.ts): restore at most a handful of the
+// Restore at most a handful of the
 // most recent working-set files, cap each file, and cap the total so readback
 // can never dominate the freed context window. 50K total ≈ 5K reserveTokens
 // headroom is intentionally comfortable: readback runs once per compaction and

@@ -66,7 +66,7 @@ test('resolveThemeTokens gives light terminals readable muted chrome', () => {
 
 // ───── StatusBar ─────
 
-test('SessionHeader renders a compact Claude Code-style launch panel', () => {
+test('SessionHeader renders a compact compact agent-style launch panel', () => {
   const { lastFrame } = render(
     React.createElement(SessionHeader, {
       state: 'ready',
@@ -152,7 +152,7 @@ test('StatusBar renders a disconnected device gracefully', () => {
   cleanup();
 });
 
-test('WelcomePanel renders a compact Claude Code-style tip', () => {
+test('WelcomePanel renders a compact compact agent-style tip', () => {
   const { lastFrame } = render(
     React.createElement(WelcomePanel, {
       workspace: '/Users/me/project',
@@ -173,7 +173,7 @@ test('WelcomePanel renders a compact Claude Code-style tip', () => {
     }),
   );
   const frame = lastFrame();
-  // Claude-code-style welcome: host development + optional board path. No
+  // compact agent-style welcome: host development + optional board path. No
   // device-context block, no "Try:" line.
   assert.match(frame, /Tips for getting started/);
   assert.match(frame, /Host Code/);
@@ -208,7 +208,7 @@ test('WelcomePanel highlights a connected board surface without command clutter'
     }),
   );
   const frame = lastFrame();
-  // Welcome is Claude-code-minimal now; the board surface surfaces via the tip,
+  // Welcome is compact agent-minimal now; the board surface surfaces via the tip,
   // not a device line.
   assert.match(frame, /Tips for getting started/);
   assert.match(frame, /Host Code/);
@@ -531,7 +531,7 @@ test('PromptEditor renders a disabled state with a dim placeholder', () => {
   cleanup();
 });
 
-test('PromptEditor renders a Codex-style placeholder at the prompt', () => {
+test('PromptEditor renders a agent-style placeholder at the prompt', () => {
   const { lastFrame } = render(
     React.createElement(PromptEditor, {
       value: '',
@@ -569,7 +569,7 @@ test('PromptEditor renders the active key hint below the prompt', () => {
   assert.ok(placeholderLine);
   assert.ok(hintLine);
   assert.notEqual(placeholderLine, hintLine);
-  // Hint now renders below the bordered input box (Claude-code layout).
+  // Hint now renders below the bordered input box (compact agent layout).
   assert(frame.indexOf('Ask Moss') < frame.indexOf('Tab complete'));
   cleanup();
 });
@@ -722,7 +722,7 @@ test('PromptEditor renders the cursor at the requested column', () => {
     }),
   );
   const frame = lastFrame();
-  // Cursor is an inverse-video block (Claude-code style) — color styling is
+  // Cursor is an inverse-video block (compact agent style) — color styling is
   // stripped in this no-TTY test env, so assert the text stays intact.
   assert.match(frame, /> abcd/);
   cleanup();

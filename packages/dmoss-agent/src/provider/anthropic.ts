@@ -1,5 +1,5 @@
 /**
- * AnthropicLLMProvider — built-in LLM provider for Anthropic Claude API.
+ * AnthropicLLMProvider — built-in LLM provider for Anthropic Messages API.
  *
  * Uses native `fetch` (no SDK dependency). Supports real SSE streaming.
  *
@@ -86,7 +86,7 @@ function buildAnthropicTools(
 
 export class AnthropicLLMProvider implements LLMProvider {
   readonly id = 'anthropic';
-  readonly displayName = 'Anthropic Claude';
+  readonly displayName = 'Anthropic';
   readonly capabilities = { streaming: true };
 
   private readonly apiKey: string;

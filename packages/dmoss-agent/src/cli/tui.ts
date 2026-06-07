@@ -97,7 +97,7 @@ export interface DmossTuiProps {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Theme & icons (Claude Code-inspired warm, low-noise terminal palette)
+// Theme & icons (headless agent-inspired warm, low-noise terminal palette)
 // ────────────────────────────────────────────────────────────────────────────
 
 import { legacyTheme as theme } from './theme/theme.js';
@@ -112,7 +112,7 @@ function emojiEnabled(): boolean {
   return true;
 }
 
-// Tool-call rows use Claude Code's `⏺` bullet and `⎿` result connector
+// Tool-call rows use agent UI `⏺` bullet and `⎿` result connector
 // (see ActivityItemLine). The old per-tool emoji map and status glyphs were
 // retired in favor of that single, consistent marker style.
 
@@ -1328,19 +1328,19 @@ export interface SessionHeaderProps {
 }
 
 export function SessionHeader({ device: _device, workspace, model, state: _state, toolsExpanded: _toolsExpanded, version, cacheMode: _cacheMode, profile: _profile }: SessionHeaderProps): React.ReactElement {
-  // Claude-code-style welcome card: one rounded box holding the Moss mark, a help
-  // hint, cwd and model — the same shape as Claude Code's launch panel.
+  // compact agent-style welcome card: one rounded box holding the Moss mark, a help
+  // hint, cwd and model — the same shape as agent UI launch panel.
   const cursor = emojiEnabled() ? '▪' : '#';
   return React.createElement(
     Box,
     // flexShrink:0 so the bordered card is NEVER squashed when the transcript is
     // tall — without it Yoga shrinks this multi-line box and its lines overlap
     // (the garbled "model: …cwd…" header in the bug report).
-    { flexDirection: 'column', flexShrink: 0, borderStyle: 'round', borderColor: theme.claude, paddingX: 1, marginBottom: 1 },
+    { flexDirection: 'column', flexShrink: 0, borderStyle: 'round', borderColor: theme.accent, paddingX: 1, marginBottom: 1 },
     React.createElement(Text, null,
       React.createElement(Text, { color: BRAND_ORANGE, bold: true }, '>_'),
       React.createElement(Text, { color: BRAND_CYAN }, ` ${cursor}  `),
-      React.createElement(Text, { color: theme.claude, bold: true }, 'Moss'),
+      React.createElement(Text, { color: theme.accent, bold: true }, 'Moss'),
       React.createElement(Text, { color: theme.textDim }, version ? `  ${version}` : ''),
     ),
     React.createElement(Text, null, ''),
@@ -1377,7 +1377,7 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
     React.createElement(
       Box,
       { flexDirection: 'row', borderStyle: 'single', borderTop: true, borderBottom: false, borderLeft: false, borderRight: false, borderColor: theme.border },
-      // Run mode label (kept subtle, Claude-code low-noise status line)
+      // Run mode label (kept subtle, compact agent low-noise status line)
       React.createElement(Text, { color: theme.textMuted, bold: true }, 'Default'),
       React.createElement(Text, { color: theme.textMuted }, '  '),
       // Status badge + live spinner while the agent is working (self-animating;
@@ -1426,7 +1426,7 @@ export function WelcomePanel({
 }: WelcomePanelProps): React.ReactElement {
   const plane = executionPlane ?? executionPlaneSummary();
   const resolvedTip = tip ?? boardTip();
-  // Claude-code-style minimal welcome: one slim context line, a compact "Try"
+  // compact agent-style minimal welcome: one slim context line, a compact "Try"
   // hint, the board tip, and the key hints. Heavy device block intentionally
   // de-emphasized (the RDK logo + context now live in SessionHeader).
   if (compact) {
@@ -1475,14 +1475,14 @@ export interface ActivityItemLineProps {
 export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): React.ReactElement {
   const bullet = emojiEnabled() ? '⏺' : '*';
   const connector = emojiEnabled() ? '⎿' : 'L';
-  const bulletColor = item.status === 'failed' ? theme.error : theme.claude;
+  const bulletColor = item.status === 'failed' ? theme.error : theme.accent;
   const headline = item.inputSummary || '';
   const elapsedText = item.status === 'running'
     ? '…'
     : ` ${toolOutcomeLabel(item)}${item.elapsedMs ?? 0}ms`;
   const failedMark = item.status === 'failed' ? ' !' : '';
 
-  // Claude-code headline: `⏺ Tool (summary)  <elapsed>`. Keep the test-required
+  // compact agent headline: `⏺ Tool (summary)  <elapsed>`. Keep the test-required
   // tokens (… / ms / !) and the input summary visible.
   const headEl = React.createElement(Text, null,
     React.createElement(Text, { color: bulletColor, bold: true }, `${bullet} `),
@@ -1503,7 +1503,7 @@ export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): Rea
         key: idx,
         color: (line.startsWith('+') && !line.startsWith('+++')) ? theme.diffAddedWord
           : (line.startsWith('-') && !line.startsWith('---')) ? theme.diffRemovedWord
-          : (line.startsWith('@@') || line.startsWith('***')) ? theme.claude
+          : (line.startsWith('@@') || line.startsWith('***')) ? theme.accent
           : theme.textDim,
       }, line));
     } else if (item.toolName === 'write_file' && typeof content === 'string') {
@@ -1634,7 +1634,7 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
       Box,
       { flexDirection: 'column', marginTop: 1 },
       React.createElement(Text, { color: theme.text }, visibleText(item.text)),
-      React.createElement(Text, { color: theme.claude }, '●'),
+      React.createElement(Text, { color: theme.accent }, '●'),
       ...refs.map((ref) => React.createElement(Text, {
         key: `${item.id}-${ref.label}`,
         color: ref.kind === 'image' ? theme.primary : theme.warn,
@@ -1651,7 +1651,7 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
     );
   }
   if (item.kind === 'user') {
-    // Claude-code-style echo: plain text on a subtle grey block, no border.
+    // compact agent-style echo: plain text on a subtle grey block, no border.
     const lines = visibleText(item.text).split('\n');
     return React.createElement(
       Box,
@@ -1680,7 +1680,7 @@ export function TranscriptMessage({ item, model, toolsExpanded }: TranscriptMess
       }, `  ${line || ' '}`)),
       ...refs.map((ref) => React.createElement(Text, {
         key: `${item.id}-${ref.label}`,
-        color: ref.kind === 'image' ? theme.claude : theme.warn,
+        color: ref.kind === 'image' ? theme.accent : theme.warn,
       }, formatAttachmentChip(ref))),
     );
   }
@@ -1798,7 +1798,7 @@ export function PromptEditor({
     onCursorChange?.(next.cursor);
   };
 
-  // ── Slash-command menu: navigable + responsive window (Claude-code style) ──
+  // ── Slash-command menu: navigable + responsive window (compact agent style) ──
   const { rows: termRows, columns: termColumns } = useTerminalSize();
   const commandRows = commandRowsForInput(value);
   const [menuIndex, setMenuIndex] = useState(0);
@@ -1915,7 +1915,7 @@ export function PromptEditor({
 
   const lines = editorPreviewLinesWithCursor(value, placeholder, currentCursor, 6);
   const suggestion = value.startsWith('/') ? commandSuggestion(value) : null;
-  // Border reflects the active interaction mode (Claude-code style).
+  // Border reflects the active interaction mode (compact agent style).
   const borderColor = mode === 'plan' ? theme.planMode
     : mode === 'acceptEdits' ? theme.autoAccept
     : theme.promptBorder;
@@ -1970,7 +1970,7 @@ export function PromptEditor({
   // placeholder; the visible caret is the real terminal cursor (positioned above).
   const bodyLines: Array<React.ReactElement> = (!value && placeholder)
     ? [React.createElement(Text, { key: 'placeholder' },
-        React.createElement(Text, { color: theme.claude, bold: true }, '> '),
+        React.createElement(Text, { color: theme.accent, bold: true }, '> '),
         // A leading space sits under the (block) cursor at the input start, so the
         // placeholder text itself is never covered by the caret.
         React.createElement(Text, { color: theme.textMuted }, ` ${placeholder}`),
@@ -1979,7 +1979,7 @@ export function PromptEditor({
         Text,
         { key: `${index}-${line.text}`, color: theme.text },
         index === 0
-          ? React.createElement(Text, { color: theme.claude, bold: true }, '> ')
+          ? React.createElement(Text, { color: theme.accent, bold: true }, '> ')
           : '  ',
         line.text,
       ));
@@ -1994,7 +1994,7 @@ export function PromptEditor({
         const desc = description.length > descMax ? `${description.slice(0, descMax - 1)}…` : description;
         const marker = emojiEnabled() ? '❯ ' : '> ';
         return React.createElement(Text, { key: command, wrap: 'truncate' },
-          React.createElement(Text, { color: theme.claude, bold: true }, isSel ? marker : '  '),
+          React.createElement(Text, { color: theme.accent, bold: true }, isSel ? marker : '  '),
           React.createElement(Text, { color: isSel ? theme.permission : theme.textMuted, bold: isSel }, command.padEnd(14)),
           React.createElement(Text, { color: isSel ? theme.text : theme.textDim }, desc),
         );
@@ -2068,7 +2068,7 @@ function WorkingIndicator(): React.ReactElement {
   return React.createElement(
     Box,
     { paddingX: 1 },
-    React.createElement(Text, { color: theme.claude, bold: true }, `${glyph} Working `),
+    React.createElement(Text, { color: theme.accent, bold: true }, `${glyph} Working `),
     React.createElement(Text, { color: theme.textDim }, `(${secs}s · esc to interrupt)`),
   );
 }
@@ -2961,7 +2961,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
             onHistoryNext: recallHistoryNext,
             onShiftEnter: () => undefined,
           }),
-      // One Claude-code-style line under the input: the active non-default mode, else
+      // One compact agent-style line under the input: the active non-default mode, else
       // the key hints — plus a subtle context-used %.
       !approval ? React.createElement(
         Box,

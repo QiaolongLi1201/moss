@@ -2,7 +2,7 @@
 /**
  * CLI identity layer test.
  *
- * Regression for the agent introducing itself as "Codex": the standalone CLI
+ * Regression for the agent introducing itself as another assistant: the standalone CLI
  * had no identity in its system prompt. The fix passes DMOSS_CLI_IDENTITY as the
  * agent's baseSystemPrompt. These tests check the identity text and that it
  * actually lands in buildSystemPrompt() (enforce), with a without-identity

@@ -8,7 +8,8 @@
  *     "server-name": {
  *       "command": "npx",
  *       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"],
- *       "env": { "KEY": "value" }
+ *       "env": { "KEY": "value" },
+ *       "cwd": "/path/to/workdir"
  *     }
  *   }
  * }
@@ -29,6 +30,7 @@ export interface McpServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  cwd?: string;
   requestTimeoutMs?: number;
 }
 
@@ -118,6 +120,7 @@ class McpServerConnection {
     this.process = spawn(config.command, config.args ?? [], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: safeMcpChildEnv(config.env),
+      cwd: config.cwd,
     });
 
     this.process.stdout!.on('data', (chunk: Buffer) => {

@@ -126,8 +126,10 @@ export class OpenAILLMProvider implements LLMProvider {
 
     const processLine = (line: string): void => {
       const trimmed = line.trim();
-      if (!trimmed.startsWith('data: ')) return;
-      const payload = trimmed.slice(6).trim();
+      // The single space after "data:" is optional per the SSE spec; accept
+      // "data:<payload>" as well as "data: <payload>" (trim absorbs the space).
+      if (!trimmed.startsWith('data:')) return;
+      const payload = trimmed.slice(5).trim();
       if (!payload) return;
       if (payload === '[DONE]') {
         sawDone = true;

@@ -105,7 +105,17 @@ async function runSingleChild(
   startedAt: number,
 ): Promise<SubAgentResult> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs ?? 120_000);
+  const timeoutMs = config.timeoutMs ?? 120_000;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  // Reject on timeout (not just abort the signal): a runner that ignores the
+  // abort signal must not block the parent past timeoutMs. Cooperative runners
+  // that settle on abort still win the race first, preserving their behavior.
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`child run timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
 
   const onParentAbort = () => controller.abort();
   parentSignal?.addEventListener('abort', onParentAbort, { once: true });
@@ -120,7 +130,7 @@ async function runSingleChild(
   });
 
   try {
-    const result = await runner(config, controller.signal);
+    const result = await Promise.race([runner(config, controller.signal), timeoutPromise]);
 
     if (result.success) {
       eventBus?.emit({

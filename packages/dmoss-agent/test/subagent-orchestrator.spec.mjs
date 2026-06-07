@@ -61,6 +61,26 @@ function makeConfigs(n, parentRunId) {
   console.log('  [PASS] fan-out 3 parallel runners all succeed');
 }
 
+// Regression: an uncooperative runner (ignores the abort signal) must be
+// force-failed at the timeout, not awaited to completion (Promise.race).
+{
+  const [config] = makeConfigs(1, 'parent-timeout').map((c) => ({ ...c, timeoutMs: 20 }));
+  let runnerSettled = false;
+  const uncooperativeRunner = async (cfg) => {
+    await new Promise((resolve) => setTimeout(resolve, 150)); // ignores the signal on purpose
+    runnerSettled = true;
+    return { runId: cfg.runId, summary: 'too late', toolResults: 0, turns: 1, durationMs: 150, success: true };
+  };
+  const startedAt = Date.now();
+  const result = await runFanOut([config], uncooperativeRunner);
+  const elapsed = Date.now() - startedAt;
+  assert.ok(elapsed < 120, `fan-out should return near the 20ms timeout, not wait for the 150ms runner (elapsed ${elapsed}ms)`);
+  assert.equal(result.results.length, 1, 'a timed-out child still yields a result');
+  assert.equal(result.results[0].success, false, 'a timed-out child is a failure');
+  assert.equal(runnerSettled, false, 'the orchestrator must not await an uncooperative runner to completion');
+  console.log('  [PASS] fan-out timeout force-fails an uncooperative runner instead of blocking');
+}
+
 // Test 2: fan-out with one failure
 {
   const configs = makeConfigs(2, 'parent-2');

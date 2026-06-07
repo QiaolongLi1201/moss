@@ -507,9 +507,25 @@ export class DmossAgent {
     if (loaded.length === 0) {
       return { compacted: false, summaryChars: 0, droppedMessages: 0, tokensAfter: 0 };
     }
+    const sessionMessages = toSessionMessages(loaded);
+    // Too short to summarize: if the whole history still fits within the
+    // keep-recent window, forcing compaction would only drop messages that are
+    // meant to be kept. Honor the documented `{ compacted: false }` contract —
+    // hosts (e.g. Studio's /compact) branch on `!compacted` to report
+    // "conversation too short" instead of writing a useless checkpoint.
+    const keepRecentTokens = this.config.compactionSettings?.keepRecentTokens ?? 20_000;
+    const currentTokens = estimateMessagesTokens(sessionMessages);
+    if (currentTokens <= keepRecentTokens) {
+      return {
+        compacted: false,
+        summaryChars: 0,
+        droppedMessages: 0,
+        tokensAfter: Math.max(0, Math.round(currentTokens)),
+      };
+    }
     const result = await compactHistoryIfNeeded({
       summarize: this.buildSummarizeFn(),
-      messages: toSessionMessages(loaded),
+      messages: sessionMessages,
       contextWindowTokens: effectiveContextTokens,
       pruningSettings: this.config.pruningSettings,
       compactionSettings: this.config.compactionSettings,
@@ -523,7 +539,7 @@ export class DmossAgent {
         compacted: false,
         summaryChars: 0,
         droppedMessages: 0,
-        tokensAfter: Math.max(0, Math.round(estimateMessagesTokens(toSessionMessages(loaded)))),
+        tokensAfter: Math.max(0, Math.round(estimateMessagesTokens(sessionMessages))),
       };
     }
     const next = [result.summaryMessage, ...result.pruneResult.messages];

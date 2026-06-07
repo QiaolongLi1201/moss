@@ -226,10 +226,12 @@ async function callOpenAI(
       try {
         input = JSON.parse(tc.function.arguments || '{}');
       } catch (err) {
-        console.warn(
-          `[cli-provider] Failed to parse tool call arguments for ${tc.function.name}: ${err instanceof Error ? err.message : String(err)}`,
+        // Do not silently degrade malformed tool arguments to {} — running the
+        // tool with empty params hides an upstream error. Surface it instead,
+        // matching the canonical OpenAI provider's malformed-args behavior.
+        throw new Error(
+          `CLI OpenAI-compatible provider: malformed tool call arguments for ${tc.function.name}: ${err instanceof Error ? err.message : String(err)}`,
         );
-        input = {};
       }
       content.push({
         type: 'tool_use',

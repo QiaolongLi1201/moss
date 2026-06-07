@@ -161,8 +161,9 @@ export class AnthropicLLMProvider implements LLMProvider {
     let buffer = '';
 
     const processLine = (line: string): void => {
-      if (!line.startsWith('data: ')) return;
-      const jsonStr = line.slice(6).trim();
+      // The single space after "data:" is optional per the SSE spec.
+      if (!line.startsWith('data:')) return;
+      const jsonStr = line.slice(5).trim();
       if (!jsonStr) return;
 
       let event: AnthropicSseEvent;

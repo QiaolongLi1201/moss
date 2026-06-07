@@ -64,6 +64,13 @@ export async function promoteSkillCandidate(
   opts: PromoteOptions,
 ): Promise<PromoteResult | null> {
   const { workspaceDir, candidateId, confidence } = opts;
+  // Validate the candidate id up front (mirrors removeCandidate's guard): a
+  // traversal id must never reach the candidate read path below, and the late
+  // removeCandidate() call must not be the first thing to reject the id after
+  // the skill has already been written to disk.
+  if (!candidateId || /[/\\]/.test(candidateId) || candidateId.includes("..")) {
+    throw new Error("Invalid candidate ID");
+  }
   const candidatesRoot = getCandidatesRoot(workspaceDir);
   const candidateDir = path.join(candidatesRoot, candidateId);
   const candidatePath = path.join(candidateDir, "candidate.json");

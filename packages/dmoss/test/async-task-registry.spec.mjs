@@ -103,10 +103,11 @@ total++;
     await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
     return { success: false, summary: 'child aborted' };
   });
-  registry.start(startRequest('child-queued', { parentTaskId: 'parent' }), async () => ({
-    success: true,
-    summary: 'should not run',
-  }));
+  let childQueuedRan = false;
+  registry.start(startRequest('child-queued', { parentTaskId: 'parent' }), async () => {
+    childQueuedRan = true;
+    return { success: true, summary: 'should not run' };
+  });
   registry.start(startRequest('grandchild-queued', { parentTaskId: 'child-running' }), async (_request, signal) => {
     await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
     return { success: false, summary: 'grandchild aborted' };
@@ -125,6 +126,9 @@ total++;
   assert.equal(grandchildQueued.status, 'cancelled');
   assert.equal(childRunning.error, 'Task cancelled because its parent was aborted.');
   assert.equal(grandchildQueued.error, 'Task cancelled because its parent was aborted.');
+  // Regression: a queued child must be cancelled WHILE queued, never entered into
+  // its runner first (stopTree cancels descendants before the parent's pump()).
+  assert.equal(childQueuedRan, false, 'a queued child must not run when its parent is cancelled');
   console.log('  [PASS] parent cancellation cascades to queued and running descendants');
   passed++;
 }

@@ -115,6 +115,7 @@ export class InMemoryMossAsyncTaskRegistry implements MossAsyncTaskRegistry {
   private readonly maxConcurrent: number;
   private readonly records = new Map<string, InternalTaskRecord>();
   private runningCount = 0;
+  private cascadeDepth = 0;
 
   constructor(options: InMemoryMossAsyncTaskRegistryOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -269,12 +270,22 @@ export class InMemoryMossAsyncTaskRegistry implements MossAsyncTaskRegistry {
   }
 
   private stopTree(record: InternalTaskRecord, reason: MossAsyncTaskStopReason): void {
-    this.finishStopped(record, reason);
-    for (const child of this.records.values()) {
-      if (child.snapshot.parentTaskId === record.request.taskId && !child.completion) {
-        this.stopTree(child, 'parent_aborted');
+    // Suspend pump() for the whole cancellation cascade. Otherwise finishing a
+    // running descendant frees a concurrency slot and pump() would start a
+    // still-queued sibling (entering its runner) before the cascade cancels it.
+    // Cancel the entire subtree first, then pump exactly once at the top.
+    this.cascadeDepth++;
+    try {
+      this.finishStopped(record, reason);
+      for (const child of this.records.values()) {
+        if (child.snapshot.parentTaskId === record.request.taskId && !child.completion) {
+          this.stopTree(child, 'parent_aborted');
+        }
       }
+    } finally {
+      this.cascadeDepth--;
     }
+    if (this.cascadeDepth === 0) this.pump();
   }
 
   private finishStopped(record: InternalTaskRecord, reason: MossAsyncTaskStopReason): void {
@@ -334,7 +345,8 @@ export class InMemoryMossAsyncTaskRegistry implements MossAsyncTaskRegistry {
 
     const waiters = record.waiters.splice(0);
     for (const waiter of waiters) waiter(completion);
-    this.pump();
+    // Skip pump during a cancellation cascade; stopTree pumps once when it ends.
+    if (this.cascadeDepth === 0) this.pump();
   }
 }
 

@@ -148,6 +148,11 @@ async function fetchWithTimeout(
   timeoutMs: number,
   outerSignal?: AbortSignal,
 ): Promise<FetchTextResult> {
+  // An already-aborted signal must not issue a fetch: addEventListener('abort')
+  // below never fires if the signal aborted before the listener was attached.
+  if (outerSignal?.aborted) {
+    throw new DmossError({ code: ErrorCode.USER_ABORTED, message: 'web_search aborted' });
+  }
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   outerSignal?.addEventListener('abort', onAbort, { once: true });

@@ -39,9 +39,9 @@ export class ToolRegistry {
       this.toolToGroup.set(tool.name, groupId);
       const group = this.groups.get(groupId);
       if (group) {
-        if (!group.tools.some((t) => t.name === tool.name)) {
-          group.tools.push(tool);
-        }
+        const idx = group.tools.findIndex((t) => t.name === tool.name);
+        if (idx === -1) group.tools.push(tool);
+        else group.tools[idx] = tool;
       }
     }
     this.opts.onToolRegistered?.(tool, groupId);

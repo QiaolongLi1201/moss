@@ -829,6 +829,10 @@ export class MemoryManager {
 
         const existing = this.entries.find((e) => e.path === filePath);
         if (existing && existing.hash === hash) continue;
+        // Same path, changed content: remove the stale entry first. add() dedups
+        // by content hash (id = mem_<hash>), so without this the file would keep
+        // both its old and new version.
+        if (existing) await this.delete(existing.id);
 
         await this.add(content, 'memory', filePath);
         synced++;

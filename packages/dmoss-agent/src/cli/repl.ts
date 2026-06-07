@@ -18,6 +18,7 @@ import {
   type CliRuntimeStatus,
 } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
+import { createCliSessionKey } from './session.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, label, ui } from './ui.js';
 import { renderSkills, runInkInteractive } from './tui.js';
@@ -63,7 +64,7 @@ export async function runInteractive(
 
   currentModel = agent.config.model || currentModel;
   const workspace = runtime?.workspace || process.cwd();
-  const sessionKey = options.sessionKey || 'cli';
+  const sessionKey = options.sessionKey || createCliSessionKey();
   let closed = false;
   const rl = readline.createInterface({
     input: process.stdin,

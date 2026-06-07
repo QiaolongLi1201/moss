@@ -37,6 +37,10 @@ npm i -g @rdk-moss/agent       # installs the `dmoss` command
 dmoss                          # just run it — works out of the box with a built-in free model
 ```
 
+Each plain `dmoss` launch starts a **new saved conversation**. Continue history
+only when you ask for it: `dmoss resume --last`, `dmoss resume --session <key>`,
+or `dmoss --session <key>`.
+
 `dmoss` ships ready to use. To run it on **your own** model instead, set a key for any supported
 provider (your config always overrides the built-in default):
 

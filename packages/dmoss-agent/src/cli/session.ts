@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as readline from 'node:readline';
 import type { SessionMeta, SessionStore } from '../core/session/session.js';
 
@@ -14,6 +15,10 @@ function sortRecent(sessions: SessionMeta[]): SessionMeta[] {
 
 function timestampForKey(now = new Date()): string {
   return now.toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+}
+
+export function createCliSessionKey(): string {
+  return `cli-${timestampForKey()}-${randomUUID().slice(0, 8)}`;
 }
 
 function describeSession(meta: SessionMeta): string {
@@ -72,16 +77,17 @@ export async function resolveCliSession(options: {
   forkSource?: string;
 }): Promise<CliSessionResolution> {
   if (options.command === 'chat') {
-    return { sessionKey: options.sessionKey || 'cli', forked: false };
+    return { sessionKey: options.sessionKey || createCliSessionKey(), forked: false };
   }
 
   if (options.command === 'resume') {
     const resolved = await resolveExistingSession(options.store, options.sessionKey, Boolean(options.useLast));
     if (!resolved) {
+      const sessionKey = options.sessionKey || createCliSessionKey();
       return {
-        sessionKey: options.sessionKey || 'cli',
+        sessionKey,
         forked: false,
-        notice: 'No saved sessions found; starting a new cli session.',
+        notice: `No saved sessions found; starting a new session: ${sessionKey}`,
       };
     }
     return {

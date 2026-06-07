@@ -5,6 +5,15 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.13] - 2026-06-08
+
+### Fixed
+
+- CLI sessions: a plain `dmoss` launch now starts a fresh saved session instead
+  of reusing the legacy `cli` session and inheriting old conversation history.
+  Use `resume --last` or `--session <key>` to continue previous history
+  intentionally.
+
 ## [0.3.12] - 2026-06-08
 
 ### Changed

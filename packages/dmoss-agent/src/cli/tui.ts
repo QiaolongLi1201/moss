@@ -16,6 +16,7 @@ import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliQuickStart, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
+import { createCliSessionKey } from './session.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, ui } from './ui.js';
 import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
@@ -3026,7 +3027,7 @@ export async function runInkInteractive(
       agent,
       skillLearner,
       runtime,
-      sessionKey: options.sessionKey || 'cli',
+      sessionKey: options.sessionKey || createCliSessionKey(),
     }),
     {
       stdout: process.stdout,

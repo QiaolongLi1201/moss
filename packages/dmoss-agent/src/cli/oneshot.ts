@@ -14,6 +14,7 @@ import {
   writeHeadlessJson,
   type HeadlessJsonWriter,
 } from './print.js';
+import { createCliSessionKey } from './session.js';
 
 export function dmossVerboseTools(): boolean {
   return resolveCliDetailMode() === 'verbose';
@@ -33,7 +34,7 @@ export async function runOneShot(
   learner?: SkillLearner,
   options: RunOneShotOptions = {},
 ) {
-  const sessionKey = options.sessionKey || 'cli';
+  const sessionKey = options.sessionKey || createCliSessionKey();
   const outputFormat = options.outputFormat || 'text';
   const stdout = options.stdout ?? process.stdout;
   const renderer = outputFormat === 'text' ? createCliRunRenderer() : null;

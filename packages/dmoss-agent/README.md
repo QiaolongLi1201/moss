@@ -75,6 +75,10 @@ npm i -g @rdk-moss/agent@latest
 dmoss
 ```
 
+Each plain `dmoss` launch starts a **new saved conversation**. Use
+`dmoss resume --last`, `dmoss resume --session <key>`, or
+`dmoss --session <key>` when you want to continue previous history.
+
 ### Path 2 — Local tarballs (maintainers / CI)
 
 From the monorepo root:

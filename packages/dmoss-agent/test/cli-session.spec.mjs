@@ -14,7 +14,17 @@ await new Promise((resolve) => setTimeout(resolve, 2));
 await store.appendMessage('newer', { role: 'user', content: 'new' });
 
 {
-  const session = await resolveCliSession({ command: 'chat', store });
+  const first = await resolveCliSession({ command: 'chat', store });
+  const second = await resolveCliSession({ command: 'chat', store });
+  assert.match(first.sessionKey, /^cli-/);
+  assert.match(second.sessionKey, /^cli-/);
+  assert.notEqual(second.sessionKey, first.sessionKey);
+  assert.equal(first.forked, false);
+  assert.equal(second.forked, false);
+}
+
+{
+  const session = await resolveCliSession({ command: 'chat', store, sessionKey: 'cli' });
   assert.equal(session.sessionKey, 'cli');
   assert.equal(session.forked, false);
 }

@@ -5,6 +5,15 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.14] - 2026-06-08
+
+### Fixed
+
+- CLI startup no longer crashes under SOCKS or otherwise unsupported proxy
+  environment variables before any model request is made. Moss now avoids
+  importing the pi-ai runtime during CLI startup paths that do not need it, and
+  the keep-alive dispatcher tolerates unsupported proxy protocols.
+
 ## [0.3.13] - 2026-06-08
 
 ### Fixed

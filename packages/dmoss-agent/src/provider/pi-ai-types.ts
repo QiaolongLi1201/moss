@@ -1,14 +1,14 @@
 /**
- * pi-ai type boundary — the ONLY file in Moss core (besides the adapter)
- * that imports from @mariozechner/pi-ai. All other core files import from
- * this re-export file so the pi-ai dependency is isolated to a single point.
+ * pi-ai type boundary — this file keeps @mariozechner/pi-ai as a type-only
+ * dependency for Moss core. Runtime stream primitives come from our local
+ * implementation so CLI startup is not affected by pi-ai import side effects.
  *
  * Also re-exports adapter-specific types for convenience.
  */
 
 export {
   EventStream,
-} from '@mariozechner/pi-ai';
+} from './event-stream.js';
 
 export type {
   AssistantMessage,

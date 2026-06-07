@@ -1,14 +1,13 @@
-import {
-  createAssistantMessageEventStream,
-  type AssistantMessage,
-  type AssistantMessageEventStream,
-  type Context as PiContext,
-  type Message as PiMessage,
-  type Model,
-  type SimpleStreamOptions,
-  type StreamFunction,
-  type ToolCall as PiToolCall,
-  type Usage,
+import type {
+  AssistantMessage,
+  AssistantMessageEventStream,
+  Context as PiContext,
+  Message as PiMessage,
+  Model,
+  SimpleStreamOptions,
+  StreamFunction,
+  ToolCall as PiToolCall,
+  Usage,
 } from '@mariozechner/pi-ai';
 import type {
   LLMContentBlock,
@@ -21,6 +20,7 @@ import type {
   LLMToolDeclaration,
 } from './llm-provider.js';
 import { describeError } from '../../provider/errors.js';
+import { createAssistantMessageEventStream } from '../../provider/event-stream.js';
 import {
   createInlineThinkingRouter,
   splitThinkingTagsFromAssistantText,

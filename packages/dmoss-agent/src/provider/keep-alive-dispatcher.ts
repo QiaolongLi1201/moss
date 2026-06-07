@@ -56,9 +56,18 @@ export async function ensureKeepAliveDispatcherInstalled(): Promise<void> {
     connections: 8,
   };
 
-  const nextDispatcher = hasProxyEnv()
-    ? new EnvHttpProxyAgent(common)
-    : new Agent(common);
+  let nextDispatcher: InstanceType<typeof Agent> | InstanceType<typeof EnvHttpProxyAgent>;
+  try {
+    nextDispatcher = hasProxyEnv()
+      ? new EnvHttpProxyAgent(common)
+      : new Agent(common);
+  } catch {
+    try {
+      nextDispatcher = new Agent(common);
+    } catch {
+      return;
+    }
+  }
 
   try {
     setGlobalDispatcher(nextDispatcher);

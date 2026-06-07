@@ -143,8 +143,8 @@ const agent = createAgent([
   assert.match(quickStart, /2\/3.*Workspace/);
   assert.match(quickStart, /\/status/);
   assert.match(quickStart, /3\/3.*Try/);
-  assert.match(quickStart, /分析当前工程结构/);
-  assert.match(quickStart, /检查板端 CPU/);
+  assert.match(quickStart, /Analyze this project/);
+  assert.match(quickStart, /board CPU/);
 }
 
 {
@@ -254,9 +254,9 @@ const agent = createAgent([
 
 {
   const examples = renderCliExamples(agent, runtime);
-  assert.match(examples, /分析当前工程结构/);
-  assert.match(examples, /检查板端 CPU/);
-  assert.match(examples, /列出板端 ROS2 topic/);
+  assert.match(examples, /Analyze this project/);
+  assert.match(examples, /board CPU/);
+  assert.match(examples, /ROS2 topics/);
   assert.match(examples, /mesh peer/);
 }
 

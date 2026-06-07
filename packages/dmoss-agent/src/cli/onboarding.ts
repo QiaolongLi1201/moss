@@ -210,29 +210,35 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
   const toolNames = new Set(agent.tools.getNames());
   const apiKeyState = auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing';
   const examples = [
-    '分析当前工程结构，指出最重要的入口文件和下一步建议',
-    toolNames.has('exec') ? '检查 package.json 里有哪些脚本，然后建议一个验证命令' : null,
+    'Analyze this project structure and point out the key entry files and next steps',
+    toolNames.has('exec') ? 'Check which scripts package.json defines, then suggest one command to verify the project' : null,
     rt.device && toolNames.has('device_resources')
-      ? '检查板端 CPU、内存、温度和进程状态，判断是否有异常'
-      : '连接板端：export DMOSS_DEVICE_HOST=<board-ip> 后重启 dmoss',
+      ? 'Check the board CPU, memory, temperature and processes, and flag anything abnormal'
+      : 'Connect a board: export DMOSS_DEVICE_HOST=<board-ip>, then restart dmoss',
     rt.device && toolNames.has('ros2_topic_list')
-      ? '列出板端 ROS2 topic，并判断相机或感知节点是否在线'
+      ? 'List the ROS2 topics on the board and tell me whether the camera or perception nodes are online'
       : null,
   ].filter(Boolean) as string[];
 
   return [
     ui.bold('Quick start'),
-    `  ${label('1/3 Model')} provider ${auth.provider} (${auth.providerSource}) · model ${agent.config.model} · api key ${apiKeyState}`,
-    '      dmoss setup',
-    '      dmoss auth status',
-    '      /model <name>',
+    '',
+    `  ${label('1/3 Model')} ${agent.config.model} · provider ${auth.provider} · api key ${apiKeyState}`,
+    auth.apiKey
+      ? '      Change it anytime: run `dmoss setup` (interactive), or `/model <name>` to switch model for this session.'
+      : '      Configure it: run `dmoss setup` — choose a provider, choose a model, and paste your API key.',
+    '      Or set env vars: DMOSS_PROVIDER · DMOSS_MODEL · DMOSS_API_KEY (or DEEPSEEK_API_KEY / OPENAI_API_KEY / DASHSCOPE_API_KEY).',
+    `      Settings are saved to ${compactPath(auth.configPath)} — inspect them with /config.`,
+    '',
     `  ${label('2/3 Workspace')} ${compactPath(rt.workspace)} · safety ${rt.safetyMode}`,
-    '      /status',
-    '      /config',
+    '      The workspace is the folder you launch dmoss in — cd into your project first, then run `dmoss`.',
+    '      Set it without moving: `dmoss config set workspace /path/to/project`. See the full picture with /status.',
+    '      Control what Moss may change: `dmoss config set safetyMode read-only|workspace-write|full-access` (or /config).',
     rt.device
-      ? `      board ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
-      : '      DMOSS_DEVICE_HOST=<board-ip> enables board and ROS tools',
-    `  ${label('3/3 Try')} ask for outcomes in plain language; Moss chooses tools automatically`,
+      ? `      Board connected: ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22} — device and ROS tools are on.`
+      : '      DMOSS_DEVICE_HOST=<board-ip> enables board and ROS tools.',
+    '',
+    `  ${label('3/3 Try')} ask for an outcome in plain language — Moss chooses the tools automatically:`,
     ...examples.slice(0, 4).map((example) => `      - ${example}`),
   ].join('\n');
 }
@@ -373,23 +379,23 @@ export function renderCliExamples(agent: DmossAgent, runtime: CliRuntimeStatus =
   const rt = runtimeWithDefaults(runtime);
   const toolNames = new Set(agent.tools.getNames());
   const examples = [
-    '分析当前工程结构，指出最重要的入口文件和下一步建议',
-    '读取 README 并总结这个项目如何启动',
+    'Analyze this project structure and point out the key entry files and next steps',
+    'Read the README and summarize how to start this project',
   ];
 
   if (toolNames.has('exec')) {
-    examples.push('运行测试或构建前，先检查 package.json 里有哪些脚本');
+    examples.push('Before running tests or a build, check which scripts package.json defines');
   }
   if (rt.device && toolNames.has('device_resources')) {
-    examples.push('检查板端 CPU、内存、温度和进程状态，判断是否有异常');
+    examples.push('Check the board CPU, memory, temperature and processes, and flag anything abnormal');
   } else if (!rt.device) {
-    examples.push('连接板端：设置 DMOSS_DEVICE_HOST 后重启，再运行 /status 查看设备工具');
+    examples.push('Connect a board: set DMOSS_DEVICE_HOST, restart, then run /status to see the device tools');
   }
   if (rt.device && toolNames.has('ros2_topic_list')) {
-    examples.push('列出板端 ROS2 topic，并帮我判断相机或感知节点是否在线');
+    examples.push('List the ROS2 topics on the board and help me tell whether the camera or perception nodes are online');
   }
   if (toolNames.has('mesh_list_peers')) {
-    examples.push('列出 mesh peer，看看有没有其他 agent 可以协作');
+    examples.push('List the mesh peers to see whether other agents are available to collaborate');
   }
 
   return [ui.bold('Examples'), ...examples.slice(0, 6).map((e) => `  - ${e}`)].join('\n');

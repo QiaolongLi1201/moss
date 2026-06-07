@@ -434,7 +434,7 @@ export async function runSetupWizard(): Promise<void> {
   print(`Model: ${model}`);
   print(`Base URL: ${withoutSecret(baseUrl)}`);
   print('');
-  print('Try `dmoss "帮我检查当前目录"` or run `dmoss` for interactive mode.');
+  print('Try `dmoss "explain this project and how to run it"` or run `dmoss` for interactive mode.');
 }
 
 export async function runAuthLogout(): Promise<void> {

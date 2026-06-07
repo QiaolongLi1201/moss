@@ -4,7 +4,11 @@ import path from 'node:path';
 const PACKAGE_NAME = '@rdk-moss/agent';
 const REGISTRY_URL = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}/latest`;
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_TIMEOUT_MS = 800;
+// The npm registry is often 1.5-2s+ on slower networks (e.g. reaching
+// registry.npmjs.org from China); 800ms timed out before the notice could fetch.
+// The check is async and the timer is unref'd, so a longer wait never blocks
+// startup or process exit.
+const DEFAULT_TIMEOUT_MS = 3000;
 
 export interface UpdateCheckOptions {
   configDir: string;

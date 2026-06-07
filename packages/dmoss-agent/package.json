@@ -97,6 +97,7 @@
   "files": [
     "dist",
     "src",
+    "zero-config-default.json",
     "README.md",
     "USAGE.md",
     "API.md",

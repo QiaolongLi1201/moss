@@ -240,6 +240,8 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
     '',
     `  ${label('3/3 Try')} ask for an outcome in plain language — Moss chooses the tools automatically:`,
     ...examples.slice(0, 4).map((example) => `      - ${example}`),
+    '',
+    `  ${label('Customize')} drop an AGENTS.md in your workspace (or run /init) — it is auto-loaded into every session as your project's system prompt (build/test commands, layout, conventions).`,
   ].join('\n');
 }
 

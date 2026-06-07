@@ -708,6 +708,52 @@ export function hasTrustedToolWildcard(config: Pick<ResolvedCliConfig, 'trustedT
   return config.trustedTools.some(hasToolPatternWildcard);
 }
 
+/**
+ * Optional zero-config default shipped ONLY in the published npm tarball
+ * (gitignored, never committed to source). Lets a fresh `dmoss` work with no
+ * setup by falling back to a bundled gateway. A source checkout has no such
+ * file, so it keeps the provider-default behavior. Override the lookup with
+ * DMOSS_BUNDLED_DEFAULT_FILE, or disable it with DMOSS_NO_BUNDLED_DEFAULT=1.
+ */
+function readBundledZeroConfigDefault(env: NodeJS.ProcessEnv): Partial<ConfigFile> | null {
+  if (env.DMOSS_NO_BUNDLED_DEFAULT === '1') return null;
+  const candidates: string[] = [];
+  if (env.DMOSS_BUNDLED_DEFAULT_FILE) candidates.push(env.DMOSS_BUNDLED_DEFAULT_FILE);
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    candidates.push(path.resolve(here, '../../zero-config-default.json'));
+    candidates.push(path.resolve(here, '../zero-config-default.json'));
+  } catch {
+    // import.meta unavailable — only an explicit override path can apply
+  }
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(candidate, 'utf-8')) as Record<string, unknown>;
+      const result: Partial<ConfigFile> = {};
+      for (const key of ['provider', 'model', 'baseUrl', 'apiKey'] as const) {
+        if (typeof parsed[key] === 'string' && parsed[key]) {
+          (result as Record<string, string>)[key] = parsed[key] as string;
+        }
+      }
+      if (Object.keys(result).length > 0) return result;
+    } catch {
+      // missing or invalid — try the next candidate
+    }
+  }
+  return null;
+}
+
+/** True when the user has set any model / provider / key / baseUrl via config or env. */
+function hasUserModelConfig(cfg: ConfigFile, env: NodeJS.ProcessEnv): boolean {
+  return Boolean(
+    cfg.provider || cfg.model || cfg.baseUrl || cfg.apiKey ||
+      env.DMOSS_PROVIDER || env.DMOSS_MODEL || env.DMOSS_BASE_URL || env.DMOSS_API_KEY ||
+      env.OPENAI_API_KEY || env.ANTHROPIC_API_KEY || env.DEEPSEEK_API_KEY ||
+      env.DASHSCOPE_API_KEY || env.ALIYUN_API_KEY ||
+      env.OPENAI_BASE_URL || env.ANTHROPIC_BASE_URL || env.DASHSCOPE_BASE_URL,
+  );
+}
+
 export function resolveCliConfig(
   env: NodeJS.ProcessEnv = process.env,
   config?: ConfigFile,
@@ -715,7 +761,13 @@ export function resolveCliConfig(
   loadedConfig?: Pick<LoadedCliConfigFile, 'configPath' | 'projectConfigPath'>,
 ): ResolvedCliConfig {
   const defaultLoadedConfig = config === undefined ? loadCliConfigFile(env) : undefined;
-  const activeConfig = config ?? defaultLoadedConfig?.config ?? {};
+  let activeConfig: ConfigFile = config ?? defaultLoadedConfig?.config ?? {};
+  // Zero-config fallback: when nothing is configured anywhere, use a bundled
+  // gateway default if the package ships one (npm only; gitignored in source).
+  if (!hasUserModelConfig(activeConfig, env)) {
+    const bundled = readBundledZeroConfigDefault(env);
+    if (bundled) activeConfig = { ...activeConfig, ...bundled };
+  }
   const configPaths = loadedConfig ?? defaultLoadedConfig;
   const profileEnv = env.DMOSS_PROFILE || env.DMOSS_CONFIG_PROFILE;
   const configProfile = parseConfigProfile(

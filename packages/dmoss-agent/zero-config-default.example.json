@@ -1,0 +1,7 @@
+{
+  "//": "EXAMPLE ONLY. The real zero-config-default.json is gitignored (never committed) and created at publish so it ships ONLY in the npm tarball — giving a fresh `dmoss` a working model with zero setup. A source checkout has no real file and keeps the provider default (deepseek; user supplies a key). To enable zero-config: copy this to zero-config-default.json and point it at a PUBLIC gateway that holds the upstream key server-side. Never put a raw provider key here. Disable at runtime with DMOSS_NO_BUNDLED_DEFAULT=1; override the path with DMOSS_BUNDLED_DEFAULT_FILE.",
+  "provider": "openai-compatible",
+  "model": "Moss",
+  "baseUrl": "https://your-public-gateway.example/v1",
+  "apiKey": "your-public-gateway-token"
+}

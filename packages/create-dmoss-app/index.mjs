@@ -15,6 +15,47 @@ import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_MOSS_VERSION_RANGE = '^0.3.15';
+const WORKSPACE_PACKAGE_PATHS = new Map([
+  ['@rdk-moss/core', path.join(__dirname, '../dmoss/package.json')],
+  ['@rdk-moss/agent', path.join(__dirname, '../dmoss-agent/package.json')],
+]);
+
+function readPackageVersion(packageJsonPath) {
+  if (!fs.existsSync(packageJsonPath)) return null;
+  const json = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  return typeof json.version === 'string' && json.version.trim() ? json.version : null;
+}
+
+function findInstalledPackageVersion(packageName) {
+  const workspacePackagePath = WORKSPACE_PACKAGE_PATHS.get(packageName);
+  if (workspacePackagePath) {
+    const workspaceVersion = readPackageVersion(workspacePackagePath);
+    if (workspaceVersion) return workspaceVersion;
+  }
+
+  const packageSegments = packageName.split('/');
+  const startDirs = [process.cwd(), __dirname];
+
+  for (const startDir of startDirs) {
+    let current = path.resolve(startDir);
+    while (true) {
+      const candidate = path.join(current, 'node_modules', ...packageSegments, 'package.json');
+      const installedVersion = readPackageVersion(candidate);
+      if (installedVersion) return installedVersion;
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+
+  return null;
+}
+
+function mossVersionRange(packageName) {
+  const installedVersion = findInstalledPackageVersion(packageName);
+  return installedVersion ? `^${installedVersion}` : DEFAULT_MOSS_VERSION_RANGE;
+}
 
 const TEMPLATES = {
   minimal: {
@@ -154,8 +195,8 @@ const packageJson = {
     typecheck: 'tsc --noEmit --esModuleInterop --module ESNext --moduleResolution Bundler --target ES2022 --types node --strict --skipLibCheck index.ts',
   },
   dependencies: {
-    '@rdk-moss/core': '^0.3.2',
-    '@rdk-moss/agent': '^0.3.6',
+    '@rdk-moss/core': mossVersionRange('@rdk-moss/core'),
+    '@rdk-moss/agent': mossVersionRange('@rdk-moss/agent'),
   },
   devDependencies: {
     '@types/node': '^22.13.10',

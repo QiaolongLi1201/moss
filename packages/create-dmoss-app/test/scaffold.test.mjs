@@ -30,6 +30,8 @@ test('scaffolds minimal project without installing dependencies', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(target, 'package.json'), 'utf8'));
 
   assert.equal(packageJson.name, 'demo-agent');
+  assert.equal(packageJson.dependencies['@rdk-moss/core'], '^0.3.15');
+  assert.equal(packageJson.dependencies['@rdk-moss/agent'], '^0.3.15');
   assert.equal(packageJson.scripts.typecheck.includes('tsc --noEmit'), true);
   assert.equal(fs.existsSync(path.join(target, 'index.ts')), true);
   assert.equal(fs.existsSync(path.join(target, 'README.md')), true);

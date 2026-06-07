@@ -1,6 +1,6 @@
 {
   "name": "@rdk-moss/memory",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -38,7 +38,7 @@
     "test": "npm run build && node ../../scripts/run-package-tests.mjs"
   },
   "dependencies": {
-    "@rdk-moss/core": "^0.3.9"
+    "@rdk-moss/core": "^0.3.10"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

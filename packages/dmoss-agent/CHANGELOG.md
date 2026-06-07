@@ -5,6 +5,16 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.12] - 2026-06-08
+
+### Changed
+
+- CLI identity: Moss now states that it is an AI Agent developed by
+  地瓜机器人 (D-Robotics), including the Chinese brand name in the stable
+  identity prompt.
+- README docs now state the D-Robotics / 地瓜机器人 origin while preserving the
+  host-neutral embedding model.
+
 ## [0.3.11] - 2026-06-08
 
 ### Fixed

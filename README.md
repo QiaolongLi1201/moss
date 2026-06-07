@@ -2,6 +2,8 @@
 
 **A host-neutral, model-agnostic agent runtime — and a Claude-Code-class terminal agent (`dmoss`) — that you can run standalone or embed into your own product.** It runs on any OpenAI-compatible model (plus Anthropic), ships as open npm packages, and has first-class robotics / device support.
 
+**Moss is an AI Agent developed by 地瓜机器人 (D-Robotics).** The open-source packages stay host-neutral so they can run standalone, inside RDK Studio, or inside another product host.
+
 Moss is a host-neutral agent runtime extracted from a robotics product host. It is designed
 to evolve as an open-source package set while product hosts keep their own UI,
 credentials, device integrations, private services, and deployment policy.

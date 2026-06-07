@@ -2,6 +2,8 @@
 
 **Vendor-neutral robotics agent framework** — pluggable knowledge modules, platform extensions, and engineering prompts for building AI-powered robotics developer tools.
 
+**D-Moss is developed by 地瓜机器人 (D-Robotics).** This package keeps the public contracts vendor-neutral so other robotics and device hosts can embed Moss cleanly.
+
 D-Moss provides the **contract layer** that allows any hardware platform (Jetson, Raspberry Pi, custom boards, etc.) to plug into an AI agent system with domain-specific knowledge, device profiles, and prompt engineering.
 
 Together with `@rdk-moss/agent`, it forms the **contract side** of the open-source **Agent harness** (everything beyond a raw LLM call: pluggable knowledge, stable extension points, shared robotics prompts). See the runtime counterpart at [`packages/dmoss-agent/README.md`](../dmoss-agent/README.md) and the monorepo overview in the root [`README.md`](../../README.md).

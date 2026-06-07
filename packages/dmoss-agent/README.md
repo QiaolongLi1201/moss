@@ -3,6 +3,8 @@
 > **An AI agent runtime built for robotics and edge devices.**
 > Pluggable LLMs, LAN-native Agent Mesh, framework-level tool-call self-healing, Chinese-first UX.
 
+**D-Moss Agent is developed by 地瓜机器人 (D-Robotics).** The CLI identifies itself as Moss while the reusable runtime remains host-neutral for embedding.
+
 <p align="center">
   <a href="#install"><img src="https://img.shields.io/npm/v/@rdk-moss/agent?logo=npm&color=ff6b00" alt="npm" /></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522.16-brightgreen?logo=node.js&logoColor=white" alt="node >= 22.16" />

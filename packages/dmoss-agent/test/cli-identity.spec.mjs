@@ -37,12 +37,13 @@ function newAgent(extra = {}) {
   });
 }
 
-test('DMOSS_CLI_IDENTITY names Moss and D-Robotics and forbids other names', () => {
+test('DMOSS_CLI_IDENTITY names Moss and D-Robotics/地瓜机器人 and forbids other names', () => {
   assert.match(DMOSS_CLI_IDENTITY, /\bMoss\b/);
   assert.match(DMOSS_CLI_IDENTITY, /D-Robotics/);
+  assert.match(DMOSS_CLI_IDENTITY, /地瓜机器人/);
   assert.match(DMOSS_CLI_IDENTITY, UNIQUE_CLAUSE);
   // bilingual: includes the Chinese identity too
-  assert.match(DMOSS_CLI_IDENTITY, /D-Robotics 的 Agent/);
+  assert.match(DMOSS_CLI_IDENTITY, /地瓜机器人（D-Robotics）研发的 Agent/);
 });
 
 test('without an identity baseSystemPrompt the system prompt has no identity (bug baseline)', () => {
@@ -54,5 +55,6 @@ test('CLI identity lands in buildSystemPrompt when passed as baseSystemPrompt', 
   const frame = newAgent({ baseSystemPrompt: DMOSS_CLI_IDENTITY }).buildSystemPrompt();
   assert.match(frame, /\bMoss\b/);
   assert.match(frame, /D-Robotics/);
+  assert.match(frame, /地瓜机器人/);
   assert.match(frame, UNIQUE_CLAUSE);
 });

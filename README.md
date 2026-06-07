@@ -27,14 +27,20 @@ The same runtime is **embeddable**: behind a narrow Host Adapter, your product s
 
 ## Quickstart
 
-Use the terminal agent:
+Get the terminal agent running in under a minute:
 
 ```bash
-# from this repo, built:  node packages/dmoss-agent/dist/cli.js
-# or, once the `dmoss` bin is installed:
-dmoss            # start the interactive agent; /help lists commands
-dmoss /config    # point it at a model: any OpenAI-compatible endpoint, or Anthropic
+npm i -g @rdk-moss/agent          # installs the `dmoss` command (or run it from this repo: node packages/dmoss-agent/dist/cli.js)
+
+# 1) Point it at a model — set a key for any supported provider:
+export DEEPSEEK_API_KEY=...        # or OPENAI_API_KEY · ANTHROPIC_API_KEY · DASHSCOPE_API_KEY (Qwen)
+#    …or any OpenAI-compatible endpoint (base URL + key) configured in  dmoss /config
+
+# 2) Start — then just type. /help lists commands, /model switches models, /config edits settings.
+dmoss
 ```
+
+Config and keys live in `~/.config/dmoss/config.json` (override the dir with `DMOSS_CONFIG_DIR`); keys can also come from the environment variables above, so nothing secret needs to be written to disk.
 
 Scaffold a host that embeds Moss:
 

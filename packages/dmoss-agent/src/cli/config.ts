@@ -583,6 +583,8 @@ export interface ResolvedCliConfig {
   providerSource: string;
   apiKey: string;
   apiKeySource: string;
+  /** True when provider/model/key came from the hidden bundled gateway default (redact in user-facing output). */
+  usingBundledDefault: boolean;
   model: string;
   modelSource: string;
   baseUrl: string;
@@ -762,11 +764,15 @@ export function resolveCliConfig(
 ): ResolvedCliConfig {
   const defaultLoadedConfig = config === undefined ? loadCliConfigFile(env) : undefined;
   let activeConfig: ConfigFile = config ?? defaultLoadedConfig?.config ?? {};
+  let usingBundledDefault = false;
   // Zero-config fallback: when nothing is configured anywhere, use a bundled
   // gateway default if the package ships one (npm only; gitignored in source).
   if (!hasUserModelConfig(activeConfig, env)) {
     const bundled = readBundledZeroConfigDefault(env);
-    if (bundled) activeConfig = { ...activeConfig, ...bundled };
+    if (bundled) {
+      activeConfig = { ...activeConfig, ...bundled };
+      usingBundledDefault = true;
+    }
   }
   const configPaths = loadedConfig ?? defaultLoadedConfig;
   const profileEnv = env.DMOSS_PROFILE || env.DMOSS_CONFIG_PROFILE;
@@ -990,6 +996,7 @@ export function resolveCliConfig(
     providerSource,
     apiKey: apiKeyEnv?.value || activeConfig.apiKey || '',
     apiKeySource: apiKeyEnv?.source || (activeConfig.apiKey ? 'config' : 'missing'),
+    usingBundledDefault,
     model: overrides.model || modelEnv || activeConfig.model || preset.defaultModel,
     modelSource: overrides.model ? 'cli' : modelEnv ? 'DMOSS_MODEL' : activeConfig.model ? 'config' : 'provider default',
     baseUrl: overrides.baseUrl || baseUrlEnv?.value || activeConfig.baseUrl || preset.defaultBaseUrl,

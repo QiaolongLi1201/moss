@@ -186,7 +186,9 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const skillCount = countMarkdownFiles(path.join(rt.workspace, 'skills', 'learned'));
   const auth = rt.config;
 
-  const authState = auth.apiKey ? `auth ${auth.apiKeySource}` : 'auth missing';
+  const authState = auth.usingBundledDefault
+    ? 'auth built-in (free)'
+    : auth.apiKey ? `auth ${auth.apiKeySource}` : 'auth missing';
   const policyState = `${profileLine(auth)}   ${approvalPolicyLine(auth)}   ${promptCacheLine(auth)}   ${guardrailLine(auth)}`;
   const deviceState = rt.device
     ? `device ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
@@ -195,7 +197,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
 
   return [
     `${ui.bold('D-Moss Agent')} ${ui.dim(`v${getPackageVersion()}`)}`,
-    `${label('model')} ${agent.config.model}   ${label('provider')} ${shortBaseUrl(rt.baseUrl)}   ${label('session')} ${rt.sessionKey}`,
+    `${label('model')} ${agent.config.model}   ${label('provider')} ${auth.usingBundledDefault ? 'built-in free' : shortBaseUrl(rt.baseUrl)}   ${label('session')} ${rt.sessionKey}`,
     `${label('workspace')} ${compactPath(rt.workspace)}   ${label('safety')} ${rt.safetyMode}   ${label('detail')} ${describeDetail(detailMode)}`,
     `${statusDot(auth.apiKey ? 'ok' : 'warn')} ${authState}   ${statusDot('info')} ${policyState}   ${statusDot('info')} tools ${tools.length}   ${statusDot('info')} memory ${memoryCount}   ${statusDot('info')} skills ${skillCount}`,
     `${statusDot(rt.device ? 'ok' : 'warn')} ${deviceState}   ${statusDot(rt.meshEnabled ? 'ok' : 'info')} ${meshState}`,
@@ -208,7 +210,9 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
   const rt = runtimeWithDefaults(runtime);
   const auth = rt.config;
   const toolNames = new Set(agent.tools.getNames());
-  const apiKeyState = auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing';
+  const apiKeyState = auth.usingBundledDefault
+    ? 'built-in (free)'
+    : auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing';
   const examples = [
     'Analyze this project structure and point out the key entry files and next steps',
     toolNames.has('exec') ? 'Check which scripts package.json defines, then suggest one command to verify the project' : null,
@@ -223,10 +227,12 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
   return [
     ui.bold('Quick start'),
     '',
-    `  ${label('1/3 Model')} ${agent.config.model} · provider ${auth.provider} · api key ${apiKeyState}`,
-    auth.apiKey
-      ? '      Change it anytime: run `dmoss setup` (interactive), or `/model <name>` to switch model for this session.'
-      : '      Configure it: run `dmoss setup` — choose a provider, choose a model, and paste your API key.',
+    `  ${label('1/3 Model')} ${agent.config.model} · provider ${auth.usingBundledDefault ? 'built-in free' : auth.provider} · api key ${apiKeyState}`,
+    auth.usingBundledDefault
+      ? '      Using the built-in free model — no setup needed. Run `dmoss setup` (or set DMOSS_API_KEY) to use your own; `/model` switches model.'
+      : auth.apiKey
+        ? '      Change it anytime: run `dmoss setup` (interactive), or `/model <name>` to switch model for this session.'
+        : '      Configure it: run `dmoss setup` — choose a provider, choose a model, and paste your API key.',
     '      Or set env vars: DMOSS_PROVIDER · DMOSS_MODEL · DMOSS_API_KEY (or DEEPSEEK_API_KEY / OPENAI_API_KEY / DASHSCOPE_API_KEY).',
     `      Settings are saved to ${compactPath(auth.configPath)} — inspect them with /config.`,
     '',
@@ -258,9 +264,9 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     ui.bold('Status'),
     `  ${label('session')} ${rt.sessionKey}`,
     `  ${label('model')} ${agent.config.model}`,
-    `  ${label('provider')} ${auth.provider} (${auth.providerSource}) via ${shortBaseUrl(rt.baseUrl)}`,
+    `  ${label('provider')} ${auth.usingBundledDefault ? 'built-in free model' : `${auth.provider} (${auth.providerSource}) via ${shortBaseUrl(rt.baseUrl)}`}`,
     `  ${label('profile')} ${auth.profile ?? 'balanced'} (${auth.profileSource ?? 'default'})`,
-    `  ${label('api key')} ${auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
+    `  ${label('api key')} ${auth.usingBundledDefault ? 'built-in (free, hidden)' : auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
     `  ${label('workspace')} ${rt.workspace}`,
     `  ${label('config')} ${rt.configDir}`,
     `  ${label('sessions')} ${sessionDir}`,

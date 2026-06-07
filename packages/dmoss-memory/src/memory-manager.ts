@@ -46,13 +46,42 @@ const MEMORY_INJECTION_PATTERNS: { re: RegExp; reason: string }[] = [
 ];
 
 /**
+ * 密钥/凭据形态：长期记忆是跨会话持久库，绝不该沉淀任何密钥/令牌/私钥——既是安全边界，
+ * 也避免存进「无价值且危险」的内容。保守命中、低误杀：
+ * - 私钥与高置信提供商令牌前缀（OpenAI / Stripe / GitHub / GitLab / Slack / AWS / Google / JWT）；
+ * - 连接串内嵌口令 `scheme://user:pass@host`；
+ * - `password|secret|api_key …` 形式的赋值，且值含数字（避开 `required`/`optional` 这类类型词误杀）。
+ * 单纯**谈论**密码/密钥（无具体令牌值）不命中。
+ */
+const MEMORY_SECRET_PATTERNS: RegExp[] = [
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/,
+  /\bsk-[A-Za-z0-9]{20,}/,
+  /\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/,
+  /\bgh[posru]_[A-Za-z0-9]{20,}\b/,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/,
+  /\bglpat-[A-Za-z0-9_-]{20,}\b/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\bAIza[0-9A-Za-z_-]{30,}\b/,
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/,
+  /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s:@/]{4,}@/i,
+  /\b(?:password|passwd|pwd|api[_-]?key|secret|access[_-]?key|auth[_-]?token)\b\s*[:=]\s*['"]?(?=[^\s'"]{0,40}\d)[^\s'"]{6,}/i,
+];
+
+/**
  * Conservative gate before persisting memory — narrow rule set, high precision over recall.
+ * 把关三类「无价值/危险」内容：空或超短（不构成可复用事实）、疑似提示注入、疑似密钥凭据。
+ * 「是否值得长期保留」主要靠写入侧提示词纪律 + 自动沉淀启发式判断；本函数只做确定性兜底。
  */
 export function validateMemoryWriteContent(content: string): MemoryWriteValidation {
   const text = content.trim();
   if (!text) return { ok: false, reason: '内容为空' };
+  if (text.length < 4) return { ok: false, reason: '内容过短，不构成可复用事实' };
   for (const { re, reason } of MEMORY_INJECTION_PATTERNS) {
     if (re.test(text)) return { ok: false, reason };
+  }
+  for (const re of MEMORY_SECRET_PATTERNS) {
+    if (re.test(text)) return { ok: false, reason: '疑似含密钥/凭据，不写入长期记忆' };
   }
   return { ok: true };
 }

@@ -17,7 +17,7 @@ import { runProcess, ProcessError } from '../utils/run-process.js';
 import type { Tool } from '../core/tools/tool-types.js';
 import { assertSandboxPath } from '../safety/sandbox-paths.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
-import { createSubagentTool, subagentStatusTool, subagentStopTool } from './create-subagent.js';
+import { createSubagentTool, fanOutSubagentsTool, subagentStatusTool, subagentStopTool } from './create-subagent.js';
 import { createWebFetchTool } from './web-fetch.js';
 import { createWebSearchTool } from './web-search.js';
 import { backgroundExecTools } from './background-exec.js';
@@ -819,6 +819,7 @@ export const builtinTools: Tool[] = [
   applyPatchTool,
   codeDiagnosticsTool,
   createSubagentTool,
+  fanOutSubagentsTool,
   subagentStatusTool,
   subagentStopTool,
   ...backgroundExecTools,

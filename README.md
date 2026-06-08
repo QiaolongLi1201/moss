@@ -98,8 +98,13 @@ dmoss
 `baseUrl` is the API root, not the full chat endpoint: do not include
 `/chat/completions`. Both `https://llm.example.com` and
 `https://llm.example.com/v1` are accepted; `dmoss` calls
-`/v1/chat/completions` for OpenAI-compatible providers. Inside `dmoss` you can
-also use `/config`, `/model`, and `/models`.
+`/v1/chat/completions` for OpenAI-compatible providers.
+
+Inside `dmoss`, use `/model` to open the active provider's model list (it tries
+the provider's `/v1/models` endpoint and falls back to common model names), then
+choose with `/model <number>` or type a custom model name with
+`/model <model-name>`. Use `dmoss setup` or `dmoss config set provider/model/baseUrl`
+when you want to change provider, key, or gateway rather than only the model.
 
 **Update** anytime (dmoss also tells you when a newer version is out):
 

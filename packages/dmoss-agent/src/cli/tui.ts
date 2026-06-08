@@ -16,6 +16,7 @@ import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type
 import { handleCompactCommand } from './compact-command.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
+import { formatModelChoices, loadModelChoicesForRuntime, resolveModelSelection } from './model-catalog.js';
 import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliQuickStart, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
 import { createCliSessionKey } from './session.js';
@@ -958,17 +959,6 @@ export function renderSkills(workspace: string): string {
     lines.push('Learned skills: none yet.');
   }
   return lines.join('\n');
-}
-
-function modelExamples(currentModel: string): string {
-  return [
-    `Current model: ${currentModel}`,
-    'Switch with: /model <model-name>',
-    'Examples:',
-    '  /model gpt-4o',
-    '  /model qwen-plus',
-    '  /model deepseek-chat',
-  ].join('\n');
 }
 
 function summarizeToolInput(input: unknown, maxChars = 80): string {
@@ -2495,7 +2485,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     if (message === '/models') {
-      addTranscript('system', modelExamples(currentModel));
+      const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
+        fallbackProvider: (agent.config as { provider?: string }).provider,
+      });
+      addTranscript('system', formatModelChoices(modelChoices));
       return true;
     }
     if (message === '/version') {
@@ -2505,11 +2498,25 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     if (message === '/model' || message.startsWith('/model ')) {
       const nextModel = message === '/model' ? '' : message.slice(7).trim();
       if (!nextModel) {
-        addTranscript('system', `Current model: ${currentModel}`);
+        const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
+          fallbackProvider: (agent.config as { provider?: string }).provider,
+        });
+        addTranscript('system', formatModelChoices(modelChoices));
       } else {
-        agent.config.model = nextModel;
-        setCurrentModel(nextModel);
-        addTranscript('system', `Model switched to ${nextModel}`);
+        const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
+          fallbackProvider: (agent.config as { provider?: string }).provider,
+        });
+        const selected = resolveModelSelection(nextModel, modelChoices.choices);
+        const model = selected?.model ?? nextModel;
+        agent.config.model = model;
+        if (runtime?.config) {
+          runtime.config.model = model;
+          runtime.config.modelSource = 'cli';
+        }
+        setCurrentModel(model);
+        addTranscript('system', selected
+          ? `Model switched to ${model} (${modelChoices.provider})`
+          : `Model switched to custom model ${model} (${modelChoices.provider})`);
       }
       return true;
     }
@@ -2951,7 +2958,7 @@ function commandList(): string {
   return [
     'Commands',
     '  /status            view model, workspace, device, and tool state',
-    '  /model [name]      show or switch the active model',
+    '  /model [name|#]    choose or switch the active model',
     '  /goal              show or manage the persistent session goal',
     '  /goal set <text>   set the goal Moss should keep in context',
     '  /compact           compress older conversation history into a summary',

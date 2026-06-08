@@ -232,7 +232,7 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
     auth.usingBundledDefault
       ? '      Built-in D-Robotics model is ready — no setup or API key needed. Run `dmoss setup` only when you want your own provider, account, or gateway.'
       : auth.apiKey
-        ? '      Change it anytime: run `dmoss setup` (interactive), or `/model <name>` to switch model for this session.'
+        ? '      Change it anytime: run `dmoss setup` (interactive), or `/model` to choose a model for this session.'
         : '      Configure it: run `dmoss setup` — choose a provider, choose a model, and paste your API key.',
     '      Or set env vars: DMOSS_PROVIDER · DMOSS_MODEL · DMOSS_API_KEY (or DEEPSEEK_API_KEY / OPENAI_API_KEY / DASHSCOPE_API_KEY).',
     `      Settings are saved to ${compactPath(auth.configPath)} — inspect them with /config.`,

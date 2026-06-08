@@ -139,7 +139,7 @@ const agent = createAgent([
   assert.match(quickStart, /provider.*qwen/);
   assert.match(quickStart, /api key.*configured/);
   assert.match(quickStart, /dmoss setup/);
-  assert.match(quickStart, /\/model <name>/);
+  assert.match(quickStart, /\/model` to choose a model/);
   assert.match(quickStart, /2\/3.*Workspace/);
   assert.match(quickStart, /\/status/);
   assert.match(quickStart, /3\/3.*Try/);

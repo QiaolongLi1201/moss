@@ -191,7 +191,7 @@ device status, and mesh status. Slash commands are action-oriented controls:
 
 ```
 /status      view model, workspace, device, and tool state
-/model       show or switch the active model
+/model       open the active provider's model list, then choose by number or name
 /goal        show or manage the persistent session goal
 /compact     compress older conversation history into a summary
 /context     show context-window token usage

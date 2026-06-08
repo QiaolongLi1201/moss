@@ -28,6 +28,7 @@ assert.ok(completeInteractiveCommand('/com')[0].includes('/compact'), 'readline 
 
 const interactiveHelp = renderCliInteractiveHelp();
 assert.match(interactiveHelp, /\/goal\s+show or manage the persistent session goal/);
+assert.match(interactiveHelp, /\/model\s+choose or switch the active model for this session/);
 assert.match(interactiveHelp, /\/goal set <objective>\s+set the goal Moss should keep in context/);
 assert.match(interactiveHelp, /\/compact\s+compress older conversation history into a summary/);
 assert.match(interactiveHelp, /\/context\s+show current context-window usage/);
@@ -46,6 +47,7 @@ assert.equal(help.status, 0, help.stderr);
 const helpText = `${help.stdout}\n${help.stderr}`;
 assert.match(helpText, /dmoss\s+# interactive TUI; built-in D-Robotics model, no key required/);
 assert.match(helpText, /\/goal\s+show or manage the persistent session goal/);
+assert.match(helpText, /\/model\s+choose or switch the active model for this session/);
 assert.match(helpText, /\/goal set <objective>\s+set the goal Moss should keep in context/);
 assert.match(helpText, /\/compact\s+compress older conversation history into a summary/);
 assert.match(helpText, /\/context\s+show current context-window usage/);

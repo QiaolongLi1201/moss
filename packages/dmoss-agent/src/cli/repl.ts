@@ -9,6 +9,7 @@ import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observabili
 import { setCliApprovalAsker } from './approval.js';
 import { handleCompactCommand } from './compact-command.js';
 import { INTERACTIVE_COMPLETION_COMMANDS } from './interactive-commands.js';
+import { formatModelChoices, loadModelChoicesForRuntime, resolveModelSelection } from './model-catalog.js';
 import { runOneShot } from './oneshot.js';
 import {
   renderCliDetailHelp,
@@ -235,25 +236,33 @@ export async function runInteractive(
 
     if (msg === '/model' || msg.startsWith('/model ')) {
       const newModel = msg === '/model' ? '' : msg.slice(7).trim();
+      const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
+        fallbackProvider: (agent.config as { provider?: string }).provider,
+      });
       if (newModel) {
-        currentModel = newModel;
-        agent.config.model = newModel;
-        console.error(`[config] Model switched to: ${newModel}`);
+        const selected = resolveModelSelection(newModel, modelChoices.choices);
+        const model = selected?.model ?? newModel;
+        currentModel = model;
+        agent.config.model = model;
+        if (runtime?.config) {
+          runtime.config.model = model;
+          runtime.config.modelSource = 'cli';
+        }
+        console.error(selected
+          ? `[config] Model switched to: ${model} (${modelChoices.provider})`
+          : `[config] Model switched to custom model: ${model} (${modelChoices.provider})`);
       } else {
-        console.error(`[config] Current model: ${currentModel}`);
+        console.error(formatModelChoices(modelChoices));
       }
       rl.prompt();
       continue;
     }
 
     if (msg === '/models') {
-      console.error(`[config] Current model: ${currentModel}`);
-      console.error('[config] Switch with: /model <model-name>');
-      console.error('[config] Examples:');
-      console.error('  /model gpt-4o');
-      console.error('  /model claude-sonnet-4-20250514');
-      console.error('  /model qwen-plus');
-      console.error('  /model deepseek-chat');
+      const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
+        fallbackProvider: (agent.config as { provider?: string }).provider,
+      });
+      console.error(formatModelChoices(modelChoices));
       rl.prompt();
       continue;
     }

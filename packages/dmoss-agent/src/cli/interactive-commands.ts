@@ -13,7 +13,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
     title: 'Work',
     rows: [
       { command: '/status', description: 'view model, workspace, device, and tool state' },
-      { command: '/model <name>', description: 'switch the active model for this session' },
+      { command: '/model', description: 'choose or switch the active model for this session' },
       { command: '/goal', description: 'show or manage the persistent session goal' },
       { command: '/goal set <objective>', description: 'set the goal Moss should keep in context' },
       { command: '/compact', description: 'compress older conversation history into a summary' },
@@ -39,7 +39,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       { command: '/permissions', description: 'show safety, approvals, cache, and config policy' },
       { command: '/config', description: 'show config file and policy commands' },
       { command: '/tools', description: 'view available tool groups and how Moss chooses them' },
-      { command: '/models', description: 'show model-name examples' },
+      { command: '/models', description: 'list selectable models for the active provider' },
     ],
   },
   {
@@ -61,7 +61,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
 
 export const SLASH_MENU_ROWS: readonly InteractiveCommandRow[] = [
   { command: '/status', description: 'view runtime state' },
-  { command: '/model', description: 'switch active model' },
+  { command: '/model', description: 'choose active model' },
   { command: '/goal', description: 'manage session goal' },
   { command: '/compact', description: 'compress old context' },
   { command: '/context', description: 'show token usage' },
@@ -75,7 +75,7 @@ export const SLASH_MENU_ROWS: readonly InteractiveCommandRow[] = [
   { command: '/permissions', description: 'show safety policy' },
   { command: '/config', description: 'show config policy' },
   { command: '/tools', description: 'view tool groups' },
-  { command: '/models', description: 'show model examples' },
+  { command: '/models', description: 'list models' },
   { command: '/detail', description: 'set output detail' },
   { command: '/cost', description: 'show token cost' },
   { command: '/memory', description: 'show memories' },

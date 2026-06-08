@@ -604,7 +604,7 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   // Navigable, windowed menu (≤6 rows): the first page of commands is shown,
   // the selected (first) row highlighted. No static "… N more / type to filter" row.
   assert.match(frame, /\/status\s+view runtime state/);
-  assert.match(frame, /\/model\s+switch active model/);
+  assert.match(frame, /\/model\s+choose active model/);
   assert.match(frame, /\/goal\s+manage session goal/);
   assert.match(frame, /\/compact\s+compress old context/);
   assert.match(frame, /\/context\s+show token usage/);

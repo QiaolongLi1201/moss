@@ -220,6 +220,19 @@ test('/compact is visible and handled by the TUI', async () => {
   cleanup();
 });
 
+test('/model opens a selectable model list and accepts a number', async () => {
+  setRows(24);
+  const { stdin, lastFrame } = mount();
+  await wait(140);
+  let f = await runSlashCommand(stdin, lastFrame, '/model');
+  assert.match(strip(f), /Choose for this session:/, '/model should show a selector, not only echo the current model');
+  assert.match(strip(f), /\/model <number>/, '/model selector should document numeric selection');
+  f = await runSlashCommand(stdin, lastFrame, '/model 2');
+  assert.match(strip(f), /Model switched to gpt-4o-mini/, '/model 2 should switch to the second listed model');
+  assert.doesNotMatch(strip(f), /Unknown command: \/model/);
+  cleanup();
+});
+
 test('running several commands in a row never garbles, and all output is retained in scrollback', async () => {
   setRows(24);
   const { stdin, lastFrame } = mount();

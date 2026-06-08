@@ -14,6 +14,7 @@ export type {
   AssistantMessage,
   AssistantMessageEventStream,
   Context,
+  ImageContent,
   Message,
   Model,
   SimpleStreamOptions,

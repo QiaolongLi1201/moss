@@ -20,6 +20,7 @@ export interface LLMMessage {
 
 export type LLMContentBlock =
   | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string; filename?: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | {
       type: 'tool_result';

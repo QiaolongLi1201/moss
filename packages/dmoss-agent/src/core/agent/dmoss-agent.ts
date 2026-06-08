@@ -107,6 +107,17 @@ const toSessionMessages = sharedToSessionMessages;
 const fromSessionMessages = sharedFromSessionMessages;
 const toLLMMessages = sharedToLLMMessages;
 
+function buildUserMessageContent(
+  text: string,
+  attachments: ChatOptions['attachments'] | undefined,
+): string | InternalContentBlock[] {
+  if (!attachments || attachments.length === 0) return text;
+  return [
+    { type: 'text', text },
+    ...attachments.map((block): InternalContentBlock => ({ ...block })),
+  ];
+}
+
 function formatAgentError(error: unknown): string {
   if (typeof error === 'string') return error;
   if (error instanceof Error) return error.message;
@@ -609,7 +620,11 @@ export class DmossAgent {
       userMessage: activeUserMessage,
     });
     const messages = fromSessionMessages(taskFrameLoad.messages);
-    const userMsg: InternalMessage = { role: 'user', content: activeUserMessage, timestamp: Date.now() };
+    const userMsg: InternalMessage = {
+      role: 'user',
+      content: buildUserMessageContent(activeUserMessage, options?.attachments),
+      timestamp: Date.now(),
+    };
     messages.push(userMsg);
     // Type bridge: InternalMessage and LLMMessage have compatible runtime shapes but different type definitions due to module boundaries
     await store.appendMessage(sessionKey, userMsg as unknown as LLMMessage);

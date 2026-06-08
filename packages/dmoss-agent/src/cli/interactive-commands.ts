@@ -18,6 +18,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       { command: '/goal set <objective>', description: 'set the goal Moss should keep in context' },
       { command: '/compact', description: 'compress older conversation history into a summary' },
       { command: '/context', description: 'show current context-window usage' },
+      { command: '/attach <path>', description: 'attach an image or text file to the next prompt' },
     ],
   },
   {
@@ -68,6 +69,7 @@ export const SLASH_MENU_ROWS: readonly InteractiveCommandRow[] = [
   { command: '/compact', description: 'compress old context' },
   { command: '/context', description: 'show token usage' },
   { command: '/sessions', description: 'list saved chats' },
+  { command: '/attach', description: 'attach file to next prompt' },
   { command: '/diff', description: 'show git changes' },
   { command: '/rewind', description: 'undo file edits' },
   { command: '/queue', description: 'manage queued prompts' },
@@ -117,6 +119,8 @@ const COMMAND_VARIANTS = [
   '/queue clear',
   '/queue resume',
   '/queue continue',
+  '/attach list',
+  '/attach clear',
 ] as const;
 
 function commandToken(command: string): string {

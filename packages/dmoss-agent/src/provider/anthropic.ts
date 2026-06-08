@@ -66,6 +66,46 @@ type AnthropicToolBlock = {
   cache_control?: { type: 'ephemeral' };
 };
 
+type AnthropicMessageContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+
+function convertAnthropicMessageContent(content: LLMRequestOptions['messages'][number]['content']) {
+  if (typeof content === 'string') return content;
+  const out: AnthropicMessageContentBlock[] = [];
+  for (const block of content) {
+    if (block.type === 'text') {
+      out.push({ type: 'text', text: block.text });
+    } else if (block.type === 'image') {
+      out.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: block.mimeType,
+          data: block.data,
+        },
+      });
+    } else if (block.type === 'tool_use') {
+      out.push({
+        type: 'tool_use',
+        id: block.id,
+        name: block.name,
+        input: block.input,
+      });
+    } else if (block.type === 'tool_result') {
+      out.push({
+        type: 'tool_result',
+        tool_use_id: block.tool_use_id,
+        content: block.content,
+        ...(block.is_error !== undefined ? { is_error: block.is_error } : {}),
+      });
+    }
+  }
+  return out.length > 0 ? out : '';
+}
+
 /**
  * Map tools to Anthropic shape and mark the prefix as cacheable. A single
  * `cache_control` on the LAST tool tells Anthropic to cache everything up to
@@ -114,7 +154,7 @@ export class AnthropicLLMProvider implements LLMProvider {
       system: buildAnthropicSystemPrompt(opts.systemPrompt, opts.systemPromptParts),
       messages: opts.messages.map((m) => ({
         role: m.role,
-        content: m.content,
+        content: convertAnthropicMessageContent(m.content),
       })),
       tools: buildAnthropicTools(opts.tools),
       stream: true,

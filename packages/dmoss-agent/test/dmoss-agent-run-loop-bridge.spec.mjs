@@ -87,6 +87,46 @@ function createModelEventProvider(handler) {
 {
   const store = new InMemorySessionStore();
   const { provider, requests } = createModelEventProvider((_options, onEvent) => {
+    onEvent({ type: 'content_block_delta', text: 'image received', deltaRole: 'visible' });
+    return {
+      stopReason: 'end_turn',
+      content: [{ type: 'text', text: 'image received' }],
+      usage: { inputTokens: 2, outputTokens: 3 },
+    };
+  });
+  const agent = new DmossAgent({
+    llmProvider: provider,
+    sessionStore: store,
+    model: 'fake-model',
+    domainPrompt: false,
+    includeRegisteredKnowledgePrompts: false,
+    baseSystemPrompt: 'base',
+    maxAgentTurns: 3,
+  });
+
+  const result = await agent.chat('bridge-attachment', 'describe this screenshot', {
+    attachments: [
+      { type: 'text', text: '[Image #1: screen.png]' },
+      { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png', filename: 'screen.png' },
+    ],
+  });
+
+  assert.equal(result.response, 'image received');
+  assert.equal(requests.length, 1);
+  const sentUser = requests[0].messages.find((message) => message.role === 'user');
+  assert.equal(sentUser.content[0].type, 'text');
+  assert.equal(sentUser.content[0].text, 'describe this screenshot');
+  assert.equal(sentUser.content[1].type, 'text');
+  assert.equal(sentUser.content[2].type, 'image');
+  assert.equal(sentUser.content[2].mimeType, 'image/png');
+  const stored = await store.loadMessages('bridge-attachment');
+  assert.equal(stored[0].content[2].type, 'image');
+  assert.equal(stored[0].content[2].filename, 'screen.png');
+}
+
+{
+  const store = new InMemorySessionStore();
+  const { provider, requests } = createModelEventProvider((_options, onEvent) => {
     onEvent({ type: 'content_block_delta', text: 'cache disabled', deltaRole: 'visible' });
     return {
       stopReason: 'end_turn',

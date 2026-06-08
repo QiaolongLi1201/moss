@@ -82,6 +82,49 @@ function rawSse(res, lines) {
   console.log('[PASS] Basic text streaming with events');
 }
 
+// ── Test 1b: User image blocks are sent as OpenAI image_url parts ──
+{
+  let capturedBody;
+  const { server, baseUrl } = await startMockServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk; });
+    req.on('end', () => {
+      capturedBody = JSON.parse(raw);
+      sseChunks(res, [
+        { choices: [{ delta: { role: 'assistant', content: 'ok' } }] },
+        { choices: [{ delta: {}, finish_reason: 'stop' }] },
+      ]);
+    });
+  });
+
+  const provider = new OpenAILLMProvider({ apiKey: 'test-key', baseUrl });
+  await provider.stream(
+    {
+      model: 'gpt-4o',
+      systemPrompt: '',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'describe' },
+          { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png', filename: 'screen.png' },
+        ],
+      }],
+    },
+    () => {},
+  );
+
+  assert.deepEqual(capturedBody.messages[0].content, [
+    { type: 'text', text: 'describe' },
+    {
+      type: 'image_url',
+      image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' },
+    },
+  ]);
+
+  server.close();
+  console.log('[PASS] User image blocks use OpenAI image_url parts');
+}
+
 // ── Test 2: Tool calls streaming ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {

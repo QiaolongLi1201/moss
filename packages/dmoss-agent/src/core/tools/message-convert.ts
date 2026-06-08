@@ -16,6 +16,7 @@ import type {
   Message as PiMessage,
   TextContent as PiTextContent,
   ThinkingContent,
+  ImageContent as PiImageContent,
   ToolCall as PiToolCall,
 } from '../../provider/pi-ai-types.js';
 
@@ -149,14 +150,24 @@ export function convertMessagesToPi(
         continue;
       }
 
+      const userContent: (PiTextContent | PiImageContent)[] = [];
+      const flushUserContent = (): void => {
+        if (userContent.length === 0) return;
+        result.push({
+          role: 'user',
+          content: [...userContent],
+          timestamp: msg.timestamp,
+        });
+        userContent.length = 0;
+      };
+
       for (const block of msg.content) {
         if (block.type === 'text' && block.text) {
-          result.push({
-            role: 'user',
-            content: [{ type: 'text', text: block.text }],
-            timestamp: msg.timestamp,
-          });
+          userContent.push({ type: 'text', text: block.text });
+        } else if (block.type === 'image' && block.data && block.mimeType) {
+          userContent.push({ type: 'image', data: block.data, mimeType: block.mimeType });
         } else if (block.type === 'tool_result') {
+          flushUserContent();
           let textContent = typeof block.content === 'string' ? block.content : '';
           if (block.structuredContent && block.structuredContent.length > 0) {
             const extraText = block.structuredContent
@@ -180,6 +191,7 @@ export function convertMessagesToPi(
           });
         }
       }
+      flushUserContent();
     } else {
       // assistant
       const includeThinking = shouldRoundTripAssistantThinking(messages, index, { thinkingMode });

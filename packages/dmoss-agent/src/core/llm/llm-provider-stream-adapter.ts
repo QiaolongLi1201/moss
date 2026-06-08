@@ -47,8 +47,12 @@ function mapPiMessagesToLlm(messages: PiMessage[]): LLMMessage[] {
         result.push({
           role: 'user',
           content: msg.content
-            .filter((block) => block.type === 'text')
-            .map((block) => ({ type: 'text' as const, text: block.text })),
+            .filter((block) => block.type === 'text' || block.type === 'image')
+            .map((block): LLMContentBlock => (
+              block.type === 'image'
+                ? { type: 'image', data: block.data, mimeType: block.mimeType }
+                : { type: 'text', text: block.text }
+            )),
         });
       }
       continue;

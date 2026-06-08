@@ -135,6 +135,56 @@ function rawSse(res, lines) {
   console.log('[PASS] Split system prompt uses a cacheable stable block');
 }
 
+// ── Test 1c: User image blocks are sent in Anthropic vision format ──
+{
+  let capturedBody;
+  const { server, baseUrl } = await startMockServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk; });
+    req.on('end', () => {
+      capturedBody = JSON.parse(raw);
+      sseWrite(res, [
+        ['message_start', { type: 'message_start', message: { usage: { input_tokens: 10 } } }],
+        ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }],
+        ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } }],
+        ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+        ['message_stop', { type: 'message_stop' }],
+      ]);
+    });
+  });
+
+  const provider = new AnthropicLLMProvider({ apiKey: 'test-key', baseUrl });
+  await provider.stream(
+    {
+      model: 'test-model',
+      systemPrompt: '',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'describe' },
+          { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png', filename: 'screen.png' },
+        ],
+      }],
+    },
+    () => {},
+  );
+
+  assert.deepEqual(capturedBody.messages[0].content, [
+    { type: 'text', text: 'describe' },
+    {
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: 'image/png',
+        data: 'iVBORw0KGgo=',
+      },
+    },
+  ]);
+
+  server.close();
+  console.log('[PASS] User image blocks use Anthropic vision format');
+}
+
 // ── Test 2: Tool use streaming ──
 {
   const { server, baseUrl } = await startMockServer((_req, res) => {

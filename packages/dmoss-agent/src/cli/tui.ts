@@ -13,6 +13,13 @@ import type { SkillLearner } from '../core/memory/skill-learner.js';
 import type { SessionMeta } from '../core/session/session.js';
 import { SkillRegistry, type SkillMeta } from '../skills/index.js';
 import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type CliInteractionMode } from './approval.js';
+import {
+  parseAttachArgs,
+  preparePromptAttachments,
+  renderPendingAttachmentSummary,
+  type PreparedPromptAttachment,
+  type PromptAttachmentBlock,
+} from './attachments.js';
 import { handleCompactCommand } from './compact-command.js';
 import { formatCommunityAuthStatus, renderCommunityAuthRequiredMessage } from './community-auth.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
@@ -69,6 +76,8 @@ export interface QueuedInput {
   raw: string;
   message: string;
   enqueuedAt?: number;
+  attachments?: PreparedPromptAttachment[];
+  attachmentBlocks?: PromptAttachmentBlock[];
 }
 
 export interface QueueDrainState {
@@ -293,11 +302,13 @@ export function queueItemMeta(item: QueuedInput, now = Date.now()): string {
   const lineCount = sanitizeRenderableText(item.message).split('\n').length;
   const charCount = sanitizeRenderableText(item.message).length;
   const wait = formatQueueWait(item.enqueuedAt, now);
+  const attachmentCount = item.attachments?.length ?? 0;
   return [
     queueItemKind(item),
     wait ? `waiting ${wait}` : null,
     `${lineCount} line${lineCount === 1 ? '' : 's'}`,
     `${charCount} chars`,
+    attachmentCount > 0 ? `${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}` : null,
   ].filter(Boolean).join(' · ');
 }
 
@@ -681,7 +692,7 @@ function compactWelcomeTip(tip: string): string {
 export function footerHint(state: TuiRunState): string {
   if (state === 'approval') return 'y approve · a always this session · n/Esc deny';
   if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
-  return '/quick_start · Tab complete · Up/Down history · Ctrl+O details · Ctrl+C exit';
+  return '/quick_start · /attach image · Tab complete · Up/Down history · Ctrl+O details · Ctrl+C exit';
 }
 
 export function editorPreviewLines(value: string, placeholder: string, maxLines = 8): string[] {
@@ -1977,6 +1988,27 @@ export function QueuePreview({ items, paused = false, now = Date.now() }: QueueP
   );
 }
 
+function formatPromptEcho(message: string, attachments: PreparedPromptAttachment[]): string {
+  if (attachments.length === 0) return message;
+  return `${message}\n${renderPendingAttachmentSummary(attachments)}`;
+}
+
+function PendingAttachmentPreview({ items }: { items: PreparedPromptAttachment[] }): React.ReactElement | null {
+  if (items.length === 0) return null;
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', marginTop: 1 },
+    React.createElement(Text, { color: theme.textMuted },
+      `  attached ${items.length} for next prompt · /attach list · /attach clear`),
+    ...items.slice(0, 3).map((item) => React.createElement(Text, {
+      key: `${item.index}-${item.path}`,
+      color: item.kind === 'image' ? theme.primary : theme.warn,
+    }, `  [${item.kind === 'image' ? 'Image' : 'File'} #${item.index}] ${item.label}`)),
+    items.length > 3 ? React.createElement(Text, { color: theme.textMuted },
+      `  ... ${items.length - 3} more attachment${items.length - 3 === 1 ? '' : 's'}`) : null,
+  );
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Main TUI
 // ────────────────────────────────────────────────────────────────────────────
@@ -2057,6 +2089,8 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   });
   const [flashHint, setFlashHint] = useState<string>('');
   const [ctxUsage, setCtxUsage] = useState<{ used: number; total: number } | undefined>(undefined);
+  const [pendingAttachments, setPendingAttachments] = useState<PreparedPromptAttachment[]>([]);
+  const [pendingAttachmentBlocks, setPendingAttachmentBlocks] = useState<PromptAttachmentBlock[]>([]);
   const [queuedInputs, setQueuedInputsState] = useState<QueuedInput[]>([]);
   const [queuePausedAfterCancel, setQueuePausedAfterCancelState] = useState(false);
   const answerIdRef = useRef<number | null>(null);
@@ -2339,6 +2373,47 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       addTranscript('system', count === 0 ? 'Queue is already empty.' : `Cleared ${count} queued prompt${count === 1 ? '' : 's'}.`);
       return true;
     }
+    if (message === '/attach' || message.startsWith('/attach ')) {
+      const arg = message.slice('/attach'.length).trim();
+      if (!arg || arg === 'list') {
+        addTranscript('system', [
+          renderPendingAttachmentSummary(pendingAttachments),
+          '',
+          'Usage: /attach <image-or-text-file> [more files...]',
+          'Supported images: png, jpg, jpeg, gif, webp. Text files are included as prompt context.',
+        ].join('\n'));
+        return true;
+      }
+      if (arg === 'clear') {
+        const count = pendingAttachments.length;
+        setPendingAttachments([]);
+        setPendingAttachmentBlocks([]);
+        addTranscript('system', count === 0 ? 'No pending attachments.' : `Cleared ${count} pending attachment${count === 1 ? '' : 's'}.`);
+        return true;
+      }
+      const parsed = parseAttachArgs(arg);
+      if (parsed.length === 0) {
+        addTranscript('system', 'Usage: /attach <image-or-text-file> [more files...]');
+        return true;
+      }
+      const prepared = preparePromptAttachments(parsed, {
+        cwd: workspace,
+        startIndex: pendingAttachments.length + 1,
+      });
+      if (prepared.attachments.length > 0) {
+        const nextAttachments = [...pendingAttachments, ...prepared.attachments];
+        setPendingAttachments(nextAttachments);
+        setPendingAttachmentBlocks([...pendingAttachmentBlocks, ...prepared.blocks]);
+        addTranscript('system', renderPendingAttachmentSummary(nextAttachments));
+      }
+      for (const warning of prepared.warnings) {
+        addTranscript('error', warning);
+      }
+      if (prepared.attachments.length === 0 && prepared.warnings.length === 0) {
+        addTranscript('system', 'No attachments added.');
+      }
+      return true;
+    }
     if (message === '/stop' || message === '/abort') {
       if (!requestStop()) {
         addTranscript('system', 'No active run to stop.');
@@ -2600,7 +2675,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     return false;
-  }, [addTranscript, agent, app, currentModel, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, workspace]);
+  }, [addTranscript, agent, app, currentModel, pendingAttachmentBlocks, pendingAttachments, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, workspace]);
 
   const runLocalShell = useCallback(async (raw: string): Promise<void> => {
     const command = raw.slice(1);
@@ -2640,8 +2715,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     }
   }, [addTranscript, askApproval, setBusyState, updateTranscript, workspace]);
 
-  const runPrompt = useCallback(async (message: string): Promise<void> => {
-    addTranscript('user', message);
+  const runPrompt = useCallback(async (
+    message: string,
+    attachments: PreparedPromptAttachment[] = [],
+    attachmentBlocks: PromptAttachmentBlock[] = [],
+  ): Promise<void> => {
+    addTranscript('user', formatPromptEcho(message, attachments));
     if (runtime?.communityAuth && !runtime.communityAuth.getStatus().authenticated) {
       addTranscript('error', renderCommunityAuthRequiredMessage({ interactive: true }));
       return;
@@ -2655,7 +2734,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       ? `[计划模式] 你现在处于 plan 模式：只读探索代码库，产出清晰的实施计划（步骤 / 涉及文件 / 验证方式）。在用户批准（按 Shift+Tab 切到 default 或 accept-edits）前，不要修改文件或执行有副作用的命令。\n\n${message}`
       : message;
     try {
-      for await (const event of agent.streamChat(sessionKey, effectiveMessage, { abortSignal: controller.signal })) {
+      for await (const event of agent.streamChat(sessionKey, effectiveMessage, {
+        abortSignal: controller.signal,
+        ...(attachmentBlocks.length > 0 ? { attachments: attachmentBlocks } : {}),
+      })) {
         if (event.type === 'turn_start') {
           currentTurnIdRef.current = event.turn;
         }
@@ -2763,7 +2845,11 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     }
   }, [addTranscript, agent, detailMode, runtime, sessionKey, setBusyState, showThinking, skillLearner, updateTranscript]);
 
-  const runInput = useCallback((raw: string): void => {
+  const runInput = useCallback((
+    raw: string,
+    attachments: PreparedPromptAttachment[] = [],
+    attachmentBlocks: PromptAttachmentBlock[] = [],
+  ): void => {
     const message = raw.trim();
     if (!message || approval) return;
     void (async () => {
@@ -2772,7 +2858,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
         return;
       }
       const handled = await handleCommand(message);
-      if (!handled) await runPrompt(message);
+      if (!handled) await runPrompt(message, attachments, attachmentBlocks);
     })();
   }, [approval, handleCommand, runLocalShell, runPrompt]);
 
@@ -2785,7 +2871,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     })) return;
     const [next, ...rest] = queuedInputsRef.current;
     setQueuedInputs(rest);
-    if (next) runInput(next.raw);
+    if (next) runInput(next.raw, next.attachments ?? [], next.attachmentBlocks ?? []);
   }, [approval, busy, queuePausedAfterCancel, queuedInputs.length, runInput, setQueuedInputs]);
 
   const submit = useCallback((value: string): void => {
@@ -2804,8 +2890,21 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       || message === '/sessions'
       || message === '/session'
       || queueControlCommand;
+    const attachesToPrompt = !message.startsWith('/') && !isLocalShellLine(raw);
+    const attachmentsForSubmit = attachesToPrompt ? pendingAttachments : [];
+    const attachmentBlocksForSubmit = attachesToPrompt ? pendingAttachmentBlocks : [];
+    if (attachesToPrompt && pendingAttachments.length > 0) {
+      setPendingAttachments([]);
+      setPendingAttachmentBlocks([]);
+    }
     if (queuePaused && !queueControlCommand && !message.startsWith('/')) {
-      const nextQueue = [...queuedInputsRef.current, { raw, message, enqueuedAt: Date.now() }];
+      const nextQueue = [...queuedInputsRef.current, {
+        raw,
+        message,
+        enqueuedAt: Date.now(),
+        attachments: attachmentsForSubmit,
+        attachmentBlocks: attachmentBlocksForSubmit,
+      }];
       setQueuedInputs(nextQueue);
       setQueuePausedAfterCancel(false);
       addTranscript('system', `Queued #${nextQueue.length}; queue resumed: ${message}`);
@@ -2816,13 +2915,19 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return;
     }
     if (busyRef.current) {
-      const nextQueue = [...queuedInputsRef.current, { raw, message, enqueuedAt: Date.now() }];
+      const nextQueue = [...queuedInputsRef.current, {
+        raw,
+        message,
+        enqueuedAt: Date.now(),
+        attachments: attachmentsForSubmit,
+        attachmentBlocks: attachmentBlocksForSubmit,
+      }];
       setQueuedInputs(nextQueue);
       addTranscript('system', `Queued #${nextQueue.length}; next runs when the current task finishes: ${message}`);
       return;
     }
-    runInput(raw);
-  }, [addTranscript, approval, runInput, setQueuePausedAfterCancel, setQueuedInputs]);
+    runInput(raw, attachmentsForSubmit, attachmentBlocksForSubmit);
+  }, [addTranscript, approval, pendingAttachmentBlocks, pendingAttachments, runInput, setQueuePausedAfterCancel, setQueuedInputs]);
 
   const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
   const cacheMode = promptCacheModeLabel(runtime);
@@ -2957,6 +3062,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       // is always clear the agent is alive (not frozen) even between visible output.
       busy && !approval ? React.createElement(WorkingIndicator, { key: 'working' }) : null,
       React.createElement(QueuePreview, { items: queuedInputs, paused: queuePausedAfterCancel }),
+      React.createElement(PendingAttachmentPreview, { items: pendingAttachments }),
       notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
       flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
       approval
@@ -3014,6 +3120,7 @@ function commandList(): string {
     '  /examples          show task examples for enabled capabilities',
     '  /stop              stop the active run',
     '  /queue [drop|clear] show, drop last, or discard queued prompts',
+    '  /attach <path>     attach an image or text file to the next prompt',
     '  /version           show the installed dmoss version',
     '  /init              create an AGENTS.md project memory file',
     '',

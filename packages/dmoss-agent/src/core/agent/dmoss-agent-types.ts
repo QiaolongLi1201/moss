@@ -199,6 +199,15 @@ export interface ChatOptions {
   ephemeralTools?: Tool[];
   /** Extra context to inject into the system prompt */
   extraContext?: string;
+  /**
+   * Additional user-supplied content blocks for the next turn, such as local
+   * image attachments. The main user text is still supplied via userMessage
+   * and becomes the first text block when attachments are present.
+   */
+  attachments?: Array<
+    | { type: 'text'; text: string }
+    | { type: 'image'; data: string; mimeType: string; filename?: string }
+  >;
   /** Override temperature for this chat turn */
   temperature?: number;
   /** Run ID for tracing (auto-generated if omitted) */
@@ -279,6 +288,9 @@ export type InternalContentBlock = Pick<
   ContentBlock,
   | 'type'
   | 'text'
+  | 'data'
+  | 'mimeType'
+  | 'filename'
   | 'id'
   | 'name'
   | 'input'
@@ -314,6 +326,9 @@ export function fromSessionMessages(msgs: Message[]): InternalMessage[] {
         : m.content.map((b) => ({
             type: b.type,
             ...(b.text !== undefined ? { text: b.text } : {}),
+            ...(b.data !== undefined ? { data: b.data } : {}),
+            ...(b.mimeType !== undefined ? { mimeType: b.mimeType } : {}),
+            ...(b.filename !== undefined ? { filename: b.filename } : {}),
             ...(b.id !== undefined ? { id: b.id } : {}),
             ...(b.name !== undefined ? { name: b.name } : {}),
             ...(b.input !== undefined ? { input: b.input } : {}),
@@ -336,6 +351,13 @@ export function toLLMMessages(msgs: InternalMessage[]): LLMMessage[] {
         ? m.content
         : m.content.map((b): LLMContentBlock => {
             if (b.type === 'text') return { type: 'text', text: b.text ?? '' };
+            if (b.type === 'image')
+              return {
+                type: 'image',
+                data: b.data ?? '',
+                mimeType: b.mimeType ?? 'application/octet-stream',
+                ...(b.filename !== undefined ? { filename: b.filename } : {}),
+              };
             if (b.type === 'tool_use')
               return { type: 'tool_use', id: b.id ?? '', name: b.name ?? '', input: b.input ?? {} };
             return {

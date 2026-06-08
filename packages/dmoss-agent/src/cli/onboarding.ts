@@ -318,6 +318,7 @@ export function renderCliTools(agent: DmossAgent): string {
     '  Useful controls:',
     '    /quick_start       configure model, workspace, board, and first tasks',
     '    /status            view model, workspace, device, and capabilities',
+    '    /attach <path>     attach an image or text file to the next prompt',
     '    /compact           compress older conversation history into a summary',
     '    /detail verbose    show redacted tool inputs and results',
   ].join('\n');

@@ -41,6 +41,46 @@ interface OpenAIResponse {
   usage?: { prompt_tokens: number; completion_tokens: number };
 }
 
+type AnthropicCliContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+
+function convertAnthropicCliContent(content: LLMRequestOptions['messages'][number]['content']) {
+  if (typeof content === 'string') return content;
+  const out: AnthropicCliContentBlock[] = [];
+  for (const block of content) {
+    if (block.type === 'text') {
+      out.push({ type: 'text', text: block.text });
+    } else if (block.type === 'image') {
+      out.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: block.mimeType,
+          data: block.data,
+        },
+      });
+    } else if (block.type === 'tool_use') {
+      out.push({
+        type: 'tool_use',
+        id: block.id,
+        name: block.name,
+        input: block.input,
+      });
+    } else if (block.type === 'tool_result') {
+      out.push({
+        type: 'tool_result',
+        tool_use_id: block.tool_use_id,
+        content: block.content,
+        ...(block.is_error !== undefined ? { is_error: block.is_error } : {}),
+      });
+    }
+  }
+  return out.length > 0 ? out : '';
+}
+
 export function createCliProvider(config: CliProviderRuntimeConfig): LLMProvider {
   return {
     id: 'cli-provider',
@@ -94,7 +134,7 @@ async function callAnthropic(
     system: opts.systemPrompt,
     messages: opts.messages.map((m) => ({
       role: m.role,
-      content: m.content,
+      content: convertAnthropicCliContent(m.content),
     })),
     tools: opts.tools?.map((t) => ({
       name: t.name,
@@ -159,11 +199,18 @@ async function callOpenAI(
       openaiMessages.push({ role: m.role, content: m.content });
     } else if (Array.isArray(m.content)) {
       const textParts: string[] = [];
+      const contentParts: Array<Record<string, unknown>> = [];
       const toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
 
       for (const block of m.content) {
         if (block.type === 'text') {
           textParts.push(block.text);
+          contentParts.push({ type: 'text', text: block.text });
+        } else if (block.type === 'image') {
+          contentParts.push({
+            type: 'image_url',
+            image_url: { url: `data:${block.mimeType};base64,${block.data}` },
+          });
         } else if (block.type === 'tool_use') {
           toolCalls.push({
             id: block.id,
@@ -182,9 +229,11 @@ async function callOpenAI(
         }
       }
 
-      if (textParts.length > 0 || toolCalls.length > 0) {
+      if (textParts.length > 0 || contentParts.length > 0 || toolCalls.length > 0) {
         const msg: Record<string, unknown> = { role: m.role };
-        if (textParts.length > 0) {
+        if (contentParts.some((part) => part.type === 'image_url')) {
+          msg.content = contentParts;
+        } else if (textParts.length > 0) {
           msg.content = textParts.join('\n');
         } else {
           msg.content = '';

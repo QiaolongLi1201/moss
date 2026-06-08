@@ -230,6 +230,7 @@ device status, and mesh status. Slash commands are action-oriented controls:
 /goal        show or manage the persistent session goal
 /compact     compress older conversation history into a summary
 /context     show context-window token usage
+/attach      attach an image or text file to the next prompt
 /sessions    list saved conversations you can resume
 /diff        show git working-tree changes
 /rewind      undo file edits from a checkpoint
@@ -238,6 +239,11 @@ device status, and mesh status. Slash commands are action-oriented controls:
 /quick_start configure model, workspace, board, and first tasks
 /help        show the full command reference
 ```
+
+Use `/attach <path>` before your next prompt to add local context. Images
+(`png`, `jpg`, `jpeg`, `gif`, `webp`) are sent as real image blocks to vision
+models; text files are inserted as prompt context. `/attach list` shows pending
+attachments, and `/attach clear` discards them.
 
 All flags also available via env vars: `DMOSS_LOG_LEVEL`, `DMOSS_LOG_JSON=1`, `DMOSS_NO_COLOR=1`.
 

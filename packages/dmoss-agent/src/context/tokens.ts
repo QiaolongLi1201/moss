@@ -52,6 +52,9 @@ function estimateBlockChars(block: ContentBlock): number {
   if (block.type === "tool_result") {
     return block.content?.length ?? 0;
   }
+  if (block.type === "image") {
+    return block.filename?.length ?? 0;
+  }
   return 0;
 }
 
@@ -62,6 +65,9 @@ function estimateBlockTokens(block: ContentBlock): number {
   if (block.type === "tool_result") {
     // tool_result 内容可能包含中文（如设备端命令输出），使用精确估算
     return estimateTokensForText(block.content ?? "");
+  }
+  if (block.type === "image") {
+    return 1024;
   }
   // tool_use 的 input 通常是 JSON（英文为主），使用字符数估算
   return Math.max(1, Math.ceil(estimateBlockChars(block) / CHARS_PER_TOKEN_ESTIMATE));

@@ -275,7 +275,58 @@ import { convertMessages as convertMessagesToPiAiWire } from '../dist/provider/p
   console.log('[PASS] Structured tool result content round-trip');
 }
 
-// ── Test 9: Structured text is not duplicated when content already mirrors it ──
+// ── Test 9: User image attachment blocks survive round-trip and pi conversion ──
+{
+  const internal = [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'What does this screenshot show?' },
+        { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png', filename: 'screen.png' },
+      ],
+      timestamp: 1000,
+    },
+  ];
+
+  const session = toSessionMessages(internal);
+  assert.equal(session[0].content[1].type, 'image');
+  assert.equal(session[0].content[1].data, 'iVBORw0KGgo=');
+  assert.equal(session[0].content[1].mimeType, 'image/png');
+  assert.equal(session[0].content[1].filename, 'screen.png');
+
+  const back = fromSessionMessages(session);
+  assert.equal(back[0].content[1].type, 'image');
+  assert.equal(back[0].content[1].data, 'iVBORw0KGgo=');
+
+  const llm = toLLMMessages(back);
+  assert.equal(llm[0].content[1].type, 'image');
+  assert.equal(llm[0].content[1].mimeType, 'image/png');
+
+  const pi = convertMessagesToPi(back, {
+    api: 'openai-completions',
+    provider: 'test',
+    id: 'test-model',
+  });
+  assert.equal(pi[0].role, 'user');
+  assert.deepEqual(pi[0].content[1], { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' });
+
+  const piAiWire = convertMessagesToPiAiWire(
+    [{ role: 'user', content: llm[0].content }],
+    {
+      api: 'openai-chat',
+      provider: 'test',
+      id: 'test-model',
+      reasoning: false,
+      input: ['text', 'image'],
+    },
+    false,
+  );
+  assert.deepEqual(piAiWire[0].content[1], { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' });
+
+  console.log('[PASS] User image attachment block round-trip');
+}
+
+// ── Test 10: Structured text is not duplicated when content already mirrors it ──
 {
   const messages = [
     {
@@ -326,4 +377,4 @@ import { convertMessages as convertMessagesToPiAiWire } from '../dist/provider/p
   console.log('[PASS] Structured tool result text is not duplicated for pi conversion');
 }
 
-console.log('\n[pass] message-conversion-roundtrip: 9/9');
+console.log('\n[pass] message-conversion-roundtrip: 10/10');

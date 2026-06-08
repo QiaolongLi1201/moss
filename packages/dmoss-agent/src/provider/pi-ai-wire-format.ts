@@ -414,10 +414,19 @@ export function convertMessages(
       if (typeof msg.content === 'string') {
         result.push({ role: 'user', content: msg.content });
       } else {
+        const userContent: unknown[] = [];
+        const flushUserContent = (): void => {
+          if (userContent.length === 0) return;
+          result.push({ role: 'user', content: [...userContent] });
+          userContent.length = 0;
+        };
         for (const block of msg.content) {
           if (block.type === 'text') {
-            result.push({ role: 'user', content: [{ type: 'text', text: block.text }] });
+            userContent.push({ type: 'text', text: block.text });
+          } else if (block.type === 'image') {
+            userContent.push({ type: 'image', data: block.data, mimeType: block.mimeType });
           } else if (block.type === 'tool_result') {
+            flushUserContent();
             const textContent = appendStructuredTextContent(block, block.content);
             result.push({
               role: 'toolResult',
@@ -428,6 +437,7 @@ export function convertMessages(
             });
           }
         }
+        flushUserContent();
       }
     } else if (msg.role === 'assistant') {
       /**

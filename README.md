@@ -109,6 +109,19 @@ choose with `/model <number>` or type a custom model name with
 `/model <model-name>`. Use `dmoss setup` or `dmoss config set provider/model/baseUrl`
 when you want to change provider, key, or gateway rather than only the model.
 
+Attach local context to the next prompt from the TUI:
+
+```text
+/attach ./screenshot.png
+/attach ./notes.txt
+What is wrong in this UI?
+```
+
+Images (`png`, `jpg`, `jpeg`, `gif`, `webp`) are sent as model image blocks when
+the active provider/model supports vision. Text files are inserted as prompt
+context. Use `/attach list` to review pending attachments and `/attach clear` to
+discard them before sending.
+
 **Update** anytime (dmoss also tells you when a newer version is out):
 
 ```bash

@@ -30,13 +30,19 @@ export interface Message {
 
 /**
  * 内容块结构
- * 支持文本、工具调用、工具结果三种类型
+ * 支持文本、图片、工具调用、工具结果
  */
 export interface ContentBlock {
   /** 类型 */
-  type: "text" | "tool_use" | "tool_result";
+  type: "text" | "image" | "tool_use" | "tool_result";
   /** 文本内容 (type=text 时) */
   text?: string;
+  /** Base64 图片内容 (type=image 时) */
+  data?: string;
+  /** 图片 MIME 类型 (type=image 时) */
+  mimeType?: string;
+  /** 原始文件名，用于 UI/审计，不要求 provider 透传 */
+  filename?: string;
   /** 工具调用 ID (type=tool_use 时由 API 生成) */
   id?: string;
   /** 工具名称 (type=tool_use 时) */

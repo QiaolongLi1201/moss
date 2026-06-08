@@ -93,6 +93,12 @@ function sanitizePayloadForRemote(messages: Message[]): Message[] {
           if (block.type === 'tool_result' && typeof block.content === 'string') {
             return { ...block, content: redactSecretsInText(block.content) };
           }
+          if (block.type === 'image') {
+            return {
+              type: 'text',
+              text: `[image attachment omitted for remote compaction${block.filename ? `: ${block.filename}` : ''}]`,
+            };
+          }
           return block;
         }),
       };

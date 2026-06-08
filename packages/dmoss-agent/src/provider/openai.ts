@@ -293,6 +293,7 @@ export class OpenAILLMProvider implements LLMProvider {
   ): void {
     const blocks = m.content as LLMContentBlock[];
     const textParts: string[] = [];
+    const contentParts: Array<Record<string, unknown>> = [];
     const toolCalls: Array<{
       id: string;
       type: 'function';
@@ -302,6 +303,12 @@ export class OpenAILLMProvider implements LLMProvider {
     for (const block of blocks) {
       if (block.type === 'text') {
         textParts.push(block.text);
+        contentParts.push({ type: 'text', text: block.text });
+      } else if (block.type === 'image') {
+        contentParts.push({
+          type: 'image_url',
+          image_url: { url: `data:${block.mimeType};base64,${block.data}` },
+        });
       } else if (block.type === 'tool_use') {
         toolCalls.push({
           id: block.id,
@@ -317,10 +324,12 @@ export class OpenAILLMProvider implements LLMProvider {
       }
     }
 
-    if (textParts.length > 0 || toolCalls.length > 0) {
+    if (textParts.length > 0 || contentParts.length > 0 || toolCalls.length > 0) {
       const msg: Record<string, unknown> = {
         role: m.role,
-        content: textParts.join('\n') || '',
+        content: contentParts.some((part) => part.type === 'image_url')
+          ? contentParts
+          : textParts.join('\n') || '',
       };
       if (toolCalls.length > 0) {
         msg.tool_calls = toolCalls;

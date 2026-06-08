@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_MOSS_VERSION_RANGE = '^0.3.27';
+const DEFAULT_MOSS_VERSION_RANGE = '^0.3.28';
 const WORKSPACE_PACKAGE_PATHS = new Map([
   ['@rdk-moss/core', path.join(__dirname, '../dmoss/package.json')],
   ['@rdk-moss/agent', path.join(__dirname, '../dmoss-agent/package.json')],

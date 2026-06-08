@@ -118,6 +118,8 @@ export type { ToolGroup, ToolRegistryOptions } from './core/index.js';
 export type { ToolContext, Tool, ToolCall, ToolResult, ToolResultOutcome, ToolContentBlock, StructuredToolResult } from './core/index.js';
 export { collectCapabilityPacks } from './core/index.js';
 export type { CapabilityPack, CapabilityPackContributions } from './core/index.js';
+export { createBrowserTools, createBrowserFetchTool, createBrowserControlTool } from './tools/browser-tools.js';
+export type { BrowserToolOptions } from './tools/browser-tools.js';
 /** @internal Tool pipeline implementation detail. */
 export { canHostInjectToolWithEmptyInput } from './core/index.js';
 export type {

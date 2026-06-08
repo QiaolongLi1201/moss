@@ -21,7 +21,6 @@ import {
   DmossCommunityAuthRequiredError,
   ensureDmossCommunityAuth,
   getDmossCommunityAuthStatus,
-  renderCommunityAuthRequiredMessage,
   runDmossCommunityAuthLogin,
 } from './cli/community-auth.js';
 import type { DmossCommunityAuthContext, DmossCommunityAuthRuntime } from './cli/community-auth.js';
@@ -337,13 +336,7 @@ async function main() {
   }
 
   const configDir = resolveConfigDir();
-  const oneShotOrHeadless = Boolean(oneShotMessage) || !process.stdin.isTTY;
   const communityAuth = await loadStoredCommunityAuth(configDir);
-  if (oneShotOrHeadless && !communityAuth) {
-    console.error(renderCommunityAuthRequiredMessage());
-    process.exitCode = 1;
-    return;
-  }
   const providerConfig: CliProviderRuntimeConfig = { ...resolvedConfig, communityAuth };
   const communityAuthRuntime = createCommunityAuthRuntime(providerConfig, configDir);
 

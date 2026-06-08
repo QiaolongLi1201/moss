@@ -1,7 +1,7 @@
 # @rdk-moss/agent
 
 > **Moss is a ready-to-use terminal agent and embeddable robotics agent runtime developed by 地瓜机器人 (D-Robotics).**
-> Install `moss`, log in with the D-Robotics developer community, and start with the built-in D-Robotics model gateway. Switch to your own OpenAI-compatible, Anthropic, private, or self-hosted model whenever you want.
+> Install `moss` and start with the built-in D-Robotics model gateway; community login is optional. Switch to your own OpenAI-compatible, Anthropic, private, or self-hosted model whenever you want.
 
 The project is **Moss**. The npm package is **`@rdk-moss/agent`**. The primary CLI command is **`moss`**. `dmoss` remains a compatible alias for existing users and scripts.
 
@@ -15,7 +15,6 @@ The project is **Moss**. The npm package is **`@rdk-moss/agent`**. The primary C
 
 ```bash
 npm i -g @rdk-moss/agent@latest
-moss auth login
 moss
 ```
 
@@ -31,7 +30,7 @@ moss
 
 Moss gives you the familiar terminal-agent workflow of Claude Code and Codex, but keeps the runtime open, provider-flexible, and device-aware:
 
-- **Built-in first run** - community login unlocks the D-Robotics gateway; no model API key is required to try the CLI.
+- **Built-in first run** - the D-Robotics gateway works without a model API key or forced community login.
 - **Bring your own model** - DeepSeek, Qwen, OpenAI-compatible gateways, Anthropic, or self-hosted endpoints.
 - **RDK board workflows** - `/connect <ip>` enables board SSH, diagnostics, and ROS2 tooling inside a live session.
 - **Embeddable runtime** - use the Host Adapter contract to put Moss inside your own IDE, robot console, desktop app, or device platform.
@@ -44,7 +43,7 @@ If that ownership model matters to you, star the repo, fork it for your host, an
 | Capability | Moss | Claude Code | Codex |
 | --- | --- | --- | --- |
 | Interactive terminal agent | `moss` (`dmoss` alias) | yes | yes |
-| Default first run | Built-in D-Robotics gateway after community login | Anthropic account | OpenAI account |
+| Default first run | Built-in D-Robotics gateway, no model key or forced login | Anthropic account | OpenAI account |
 | Bring your own model | OpenAI-compatible, Anthropic, private gateways, self-hosted models | limited to Anthropic path | limited to OpenAI path |
 | Robotics / board workflows | RDK board connect, SSH, diagnostics, ROS2 tool path | general developer agent | general developer agent |
 | Embedding model | Public Host Adapter contract and npm packages | standalone product | standalone product |
@@ -86,11 +85,10 @@ Requires **Node >= 22.16**.
 
 ```bash
 npm i -g @rdk-moss/agent@latest
-moss auth login
 moss
 ```
 
-`moss` uses the built-in D-Robotics model gateway after community login, so first use does **not** require a model API key. Run `moss setup` only when you want your own provider, account, private gateway, or self-hosted OpenAI-compatible model.
+`moss` uses the built-in D-Robotics model gateway, so first use does **not** require a model API key or forced community login. Run `moss auth login` only when you want to link a D-Robotics developer community account. Run `moss setup` when you want your own provider, account, private gateway, or self-hosted OpenAI-compatible model.
 
 Each plain `moss` launch starts a **new saved conversation**. Continue previous history only when you ask for it:
 
@@ -212,7 +210,7 @@ Images (`png`, `jpg`, `jpeg`, `gif`, `webp`) are sent as model image blocks when
 ```
 moss                 open the interactive TUI
 moss "prompt"        run a one-shot prompt
-moss auth login      sign in to the D-Robotics developer community
+moss auth login      optional: link a D-Robotics developer community account
 moss auth status     show community login and provider/model/key source
 moss setup           configure your own provider/model/API key
 moss config --help   show configuration commands
@@ -231,7 +229,7 @@ Inside Moss:
 /connect     connect an RDK board for this session
 /sessions    list saved conversations you can resume
 /diff        show git working-tree changes
-/auth login  log in to the D-Robotics developer community
+/auth login  optional: link a D-Robotics developer community account
 /help        show focused command help
 ```
 

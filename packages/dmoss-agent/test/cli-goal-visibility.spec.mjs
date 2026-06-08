@@ -39,7 +39,7 @@ assert.match(interactiveHelp, /\/goal\s+show or manage the persistent session go
 assert.match(interactiveHelp, /\/model\s+choose or switch the active model for this session/);
 assert.match(interactiveHelp, /\/goal set <objective>\s+set the goal Moss should keep in context/);
 assert.match(interactiveHelp, /\/compact\s+compress older conversation history into a summary/);
-assert.match(interactiveHelp, /\/auth login\s+log in to the D-Robotics developer community/);
+assert.match(interactiveHelp, /\/auth login\s+optional: link a D-Robotics developer community account/);
 assert.match(interactiveHelp, /\/connect <ip>\s+connect an RDK board/);
 assert.match(interactiveHelp, /Advanced commands still work when needed: .*\/context/);
 assert.doesNotMatch(interactiveHelp, /\/logout\s+log out of the D-Robotics/);
@@ -64,7 +64,7 @@ assert.match(helpText, /Inside Moss/);
 assert.match(helpText, /\/model\s+choose\/switch model for this session/);
 assert.match(helpText, /\/connect <ip>\s+connect an RDK board/);
 assert.match(helpText, /Model configuration/);
-assert.match(helpText, /Built-in: no model API key is needed/);
+assert.match(helpText, /Built-in: no model API key or community login is required/);
 assert.match(helpText, /OpenAI-compatible example/);
 assert.match(helpText, /Priority: CLI flags\/-c > environment variables > project \.dmoss\/config\.json > user config > built-in default/);
 assert.match(helpText, /moss --help --all/);

@@ -195,11 +195,13 @@ await runLoginCallbackTest((redirectUrl) => {
 {
   const message = renderCommunityAuthRequiredMessage({ interactive: true });
   assert.match(message, /\/auth login/);
+  assert.match(message, /optional/i);
+  assert.doesNotMatch(message, /requires .* before use/i);
   assert.doesNotMatch(message, /start dmoss again/i);
 }
 
 {
-  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-community-auth-required-'));
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-community-auth-optional-'));
   const result = spawnSync(process.execPath, [
     cliPath,
     '--provider',
@@ -221,9 +223,10 @@ await runLoginCallbackTest((redirectUrl) => {
       no_proxy: '127.0.0.1,localhost',
     },
   });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /moss auth login/);
-  assert.doesNotMatch(result.stderr, /provider returned HTTP|ECONNREFUSED|fetch failed/);
+  assert.notEqual(result.status, 0);
+  const output = `${result.stdout}\n${result.stderr}`;
+  assert.doesNotMatch(output, /moss auth login|requires a D-Robotics developer community login/i);
+  assert.match(output, /OpenAI-compatible provider|provider returned HTTP|ECONNREFUSED|fetch failed|connection/i);
 }
 
 console.log('[PASS] CLI D-Robotics community auth callback handling');

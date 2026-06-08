@@ -39,8 +39,8 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
   {
     title: 'Configure',
     rows: [
-      { command: '/auth login', description: 'log in to the D-Robotics developer community' },
-      { command: '/auth login --manual', description: 'log in from SSH by pasting the browser redirect URL or token', hidden: true },
+      { command: '/auth login', description: 'optional: link a D-Robotics developer community account' },
+      { command: '/auth login --manual', description: 'optional SSH login by pasting the browser redirect URL or token', hidden: true },
       { command: '/logout', description: 'log out of the D-Robotics developer community', hidden: true },
       {
         command: '/quickstart',

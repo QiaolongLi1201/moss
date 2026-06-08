@@ -539,7 +539,7 @@ async function waitForCommunityLoginToken(options: {
 
   const callbackUrl = `http://127.0.0.1:${address.port}${CALLBACK_PATH}/${encodeURIComponent(state)}`;
   const loginUrl = buildPortalLoginUrl(options.ssoBaseUrl, callbackUrl);
-  options.print('[auth] D-Moss requires a D-Robotics developer community login.');
+  options.print('[auth] D-Robotics developer community login is optional.');
   options.print(`[auth] Login URL: ${loginUrl}`);
   if (options.openBrowser) {
     const opened = openExternalUrl(loginUrl);
@@ -618,23 +618,23 @@ export async function runDmossCommunityAuthLogin(options: {
 export function renderCommunityAuthRequiredMessage(options: { interactive?: boolean } = {}): string {
   if (options.interactive) {
     return [
-      'D-Moss requires a D-Robotics developer community login before use.',
+      'D-Robotics developer community login is optional.',
       '',
-      'Run this inside Moss:',
+      'To link this Moss session, run:',
       '  /auth login',
       '  /auth login --manual   # SSH/remote terminal fallback',
       '',
-      'Then ask Moss again in this session.',
+      'You can keep using Moss without logging in.',
     ].join(os.EOL);
   }
   return [
-    'D-Moss requires a D-Robotics developer community login before use.',
+    'D-Robotics developer community login is optional.',
     '',
-    'Run:',
+    'To link Moss to your community account, run:',
     '  moss auth login',
     '  moss auth login --manual   # SSH/remote terminal fallback',
     '',
-    'Then start Moss again.',
+    'You can keep using Moss without logging in.',
   ].join(os.EOL);
 }
 
@@ -649,9 +649,9 @@ export function formatCommunityAuthLoginError(err: unknown): string {
 
 export function formatCommunityAuthStatus(status: DmossCommunityAuthStatus): string {
   if (!status.authenticated) {
-    if (status.reason === 'expired') return `expired; run moss auth login (${status.sessionPath})`;
-    if (status.reason === 'invalid') return `invalid; run moss auth login (${status.sessionPath})`;
-    return `not logged in; run moss auth login (${status.sessionPath})`;
+    if (status.reason === 'expired') return `expired; optional: run moss auth login (${status.sessionPath})`;
+    if (status.reason === 'invalid') return `invalid; optional: run moss auth login (${status.sessionPath})`;
+    return `not logged in (optional); run moss auth login (${status.sessionPath})`;
   }
   const user = status.user;
   const name = user ? user.name || user.email || user.id : 'unknown user';

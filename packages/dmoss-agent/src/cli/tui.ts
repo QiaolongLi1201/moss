@@ -22,7 +22,7 @@ import {
 } from './attachments.js';
 import { prepareClipboardImageAttachment } from './clipboard-image.js';
 import { handleCompactCommand } from './compact-command.js';
-import { formatCommunityAuthLoginError, formatCommunityAuthStatus, renderCommunityAuthRequiredMessage } from './community-auth.js';
+import { formatCommunityAuthLoginError, formatCommunityAuthStatus } from './community-auth.js';
 import { connectDeviceForSession, parseDeviceConnectArgs } from './device-connect.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
@@ -2149,7 +2149,6 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const inputHistoryRef = useRef<string[]>([]);
   const historyIndexRef = useRef<number | null>(null);
   const historyDraftRef = useRef('');
-  const authPromptedRef = useRef(false);
 
   const setQueuedInputs = useCallback((next: QueuedInput[]): void => {
     queuedInputsRef.current = next;
@@ -2294,41 +2293,6 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const askApproval = useCallback((question: string): Promise<string> => new Promise((resolve) => {
     setApproval({ question, resolve });
   }), []);
-
-  useEffect(() => {
-    const auth = runtime?.communityAuth;
-    if (!auth || auth.getStatus().authenticated || authPromptedRef.current) return;
-    authPromptedRef.current = true;
-    const manual = Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY);
-    addTranscript('system', manual
-      ? '[auth] Built-in D-Robotics model needs community login. SSH detected; login will use manual paste mode.'
-      : '[auth] Built-in D-Robotics model needs community login.');
-    void (async () => {
-      const answer = await askApproval([
-        'Log in to the D-Robotics developer community now?',
-        manual
-          ? 'SSH/remote mode: Moss will print a URL, then ask you to paste the browser redirect URL or token.'
-          : 'Moss will open a browser and wait for the local callback.',
-        'Press y to log in, n/Esc to skip. You can run /auth login later.',
-      ].join('\n'));
-      if (answer.trim().toLowerCase() !== 'y' && answer.trim().toLowerCase() !== 'a') {
-        addTranscript('system', '[auth] Skipped. Ask after /auth login, or use /auth login --manual over SSH.');
-        return;
-      }
-      setBusyState(true);
-      try {
-        const context = await auth.login((line) => addTranscript('system', line), {
-          manual,
-          openBrowser: !manual,
-        });
-        addTranscript('system', `[auth] Ready. Logged in as ${context.user.name || context.user.email || context.user.id}.`);
-      } catch (err) {
-        addTranscript('error', `[auth] ${formatCommunityAuthLoginError(err)}`);
-      } finally {
-        setBusyState(false);
-      }
-    })();
-  }, [addTranscript, askApproval, runtime?.communityAuth, setBusyState]);
 
   useEffect(() => {
     setCliApprovalAsker((question) => new Promise((resolve) => {
@@ -2844,10 +2808,6 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     attachmentBlocks: PromptAttachmentBlock[] = [],
   ): Promise<void> => {
     addTranscript('user', formatPromptEcho(message, attachments));
-    if (runtime?.communityAuth && !runtime.communityAuth.getStatus().authenticated) {
-      addTranscript('error', renderCommunityAuthRequiredMessage({ interactive: true }));
-      return;
-    }
     checkpointRef.current?.open(message);
     setBusyState(true);
     answerIdRef.current = null;
@@ -3229,7 +3189,7 @@ function commandList(): string {
     '  /model [name|#]    choose or switch the active model',
     '  /goal set <text>   set what Moss should keep working toward',
     '  /compact           compress older conversation history into a summary',
-    '  /auth login        log in to the D-Robotics developer community',
+    '  /auth login        optional: link a D-Robotics developer community account',
     '  /attach <path>     attach an image or text file to the next prompt',
     '  /connect <ip>      connect an RDK board for this session',
     '  /sessions          list saved conversations you can resume',

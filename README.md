@@ -1,6 +1,6 @@
 # Moss
 
-**Moss is an open, robotics-aware terminal agent and embeddable agent runtime developed by 地瓜机器人 (D-Robotics).** Install `moss`, log in with the D-Robotics developer community, and start with the built-in D-Robotics model gateway. When you want your own model, billing, data boundary, or private gateway, switch to any OpenAI-compatible endpoint or Anthropic without changing the agent.
+**Moss is an open, robotics-aware terminal agent and embeddable agent runtime developed by 地瓜机器人 (D-Robotics).** Install `moss` and start with the built-in D-Robotics model gateway; community login is optional. When you want your own model, billing, data boundary, or private gateway, switch to any OpenAI-compatible endpoint or Anthropic without changing the agent.
 
 `moss` is the primary CLI command. `dmoss` remains a compatible alias for existing users and scripts.
 
@@ -17,7 +17,7 @@
 Moss gives you the familiar terminal-agent loop from Claude Code and Codex, but with a different ownership model:
 
 - **Bring your own model** - DeepSeek, Qwen, OpenAI-compatible gateways, Anthropic, or self-hosted endpoints.
-- **Use it immediately** - community login unlocks the built-in D-Robotics gateway; no model API key is required for first use.
+- **Use it immediately** - the built-in D-Robotics gateway works without a model API key or forced community login.
 - **Work with robots and edge devices** - `/connect <ip>` adds RDK board SSH, diagnostics, and ROS2 tools inside the same session.
 - **Embed it in your own product** - Moss is a runtime with public contracts, not only a closed standalone app.
 - **Keep the first screen usable** - focused slash commands, image/file attachment, goals, compaction, sessions, MCP, skills, and sub-agents stay available without turning `/help` into a wall.
@@ -29,7 +29,7 @@ If that direction is useful, star the repo to follow the open runtime, fork it t
 | Capability | Moss | Claude Code | Codex |
 | --- | --- | --- | --- |
 | Interactive terminal agent | `moss` (`dmoss` alias) | yes | yes |
-| Default first run | Built-in D-Robotics gateway after community login | Anthropic account | OpenAI account |
+| Default first run | Built-in D-Robotics gateway, no model key or forced login | Anthropic account | OpenAI account |
 | Bring your own model | OpenAI-compatible, Anthropic, private gateways, self-hosted models | limited to Anthropic path | limited to OpenAI path |
 | Robotics / board workflows | First-class RDK board connect, SSH, diagnostics, ROS2 tool path | general developer agent | general developer agent |
 | Embedding model | Public Host Adapter contract and npm packages | standalone product | standalone product |
@@ -41,11 +41,12 @@ Claude Code and Codex are excellent polished standalone assistants. Moss is for 
 
 ```bash
 npm i -g @rdk-moss/agent@latest
-moss auth login
 moss
 ```
 
 The npm package is `@rdk-moss/agent`. The command is `moss`. Existing `dmoss` commands still work.
+
+Optional: run `moss auth login` when you want to link a D-Robotics developer community account. It is not required for normal first use.
 
 Every plain `moss` launch starts a **new saved conversation**. Resume only when you ask for it:
 

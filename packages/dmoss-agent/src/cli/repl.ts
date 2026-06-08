@@ -8,7 +8,7 @@ import { handleGoalCommand } from '../goal.js';
 import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
 import { setCliApprovalAsker } from './approval.js';
 import { handleCompactCommand } from './compact-command.js';
-import { formatCommunityAuthLoginError, formatCommunityAuthStatus, renderCommunityAuthRequiredMessage } from './community-auth.js';
+import { formatCommunityAuthLoginError, formatCommunityAuthStatus } from './community-auth.js';
 import { connectDeviceForSession, parseDeviceConnectArgs } from './device-connect.js';
 import { INTERACTIVE_COMPLETION_COMMANDS } from './interactive-commands.js';
 import { formatModelChoices, loadModelChoicesForRuntime, resolveModelSelection } from './model-catalog.js';
@@ -80,30 +80,6 @@ async function handleInteractiveAuthCommand(
   return true;
 }
 
-async function promptForCommunityLoginIfNeeded(
-  rl: readline.Interface,
-  runtime: CliRuntimeStatus | undefined,
-): Promise<void> {
-  const auth = runtime?.communityAuth;
-  if (!auth || auth.getStatus().authenticated || !process.stdin.isTTY) return;
-  const answer = await new Promise<string>((resolve) => {
-    rl.question(
-      'D-Moss built-in model needs a D-Robotics community login. Log in now? (Y/n) ',
-      resolve,
-    );
-  });
-  if (/^(n|no)$/i.test(answer.trim())) {
-    console.error('[auth] Skipped. Run /auth login later, or /auth login --manual over SSH.');
-    return;
-  }
-  try {
-    const context = await auth.login((line) => console.error(line));
-    console.error(`[auth] Ready. Logged in as ${context.user.name || context.user.email || context.user.id}.`);
-  } catch (err) {
-    console.error(`[auth] ${formatCommunityAuthLoginError(err)}`);
-  }
-}
-
 function basicReplUnsupportedMessage(command: string): string {
   const token = command.split(/\s+/, 1)[0] || command;
   if (token === '/rewind') return '[help] /rewind needs the full TUI checkpoint view. Use `git diff` or `/diff` here to inspect changes.';
@@ -150,7 +126,6 @@ export async function runInteractive(
 
   console.error(renderCliWelcome(agent, { ...runtime, sessionKey }));
   console.error(ui.dim(`${label('directory')} ${compactPath(workspace)}   ${label('exit')} Ctrl+D or /quit`));
-  await promptForCommunityLoginIfNeeded(rl, runtime);
   rl.prompt();
   if (runtime?.configDir) {
     startCliUpdateCheck({
@@ -399,12 +374,6 @@ export async function runInteractive(
     if (msg.startsWith('/')) {
       console.error(`[help] Unknown command: ${msg}`);
       console.error(`[help] Available: ${INTERACTIVE_COMMANDS.filter((cmd) => !cmd.includes(' ')).join(' ')}`);
-      rl.prompt();
-      continue;
-    }
-
-    if (runtime?.communityAuth && !runtime.communityAuth.getStatus().authenticated) {
-      console.error(renderCommunityAuthRequiredMessage({ interactive: true }));
       rl.prompt();
       continue;
     }

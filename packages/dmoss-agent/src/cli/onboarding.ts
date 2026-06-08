@@ -171,7 +171,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const loginState = community?.authenticated
     ? formatCommunityAuthStatus(community)
     : auth.usingBundledDefault
-      ? 'login needed for built-in model'
+      ? 'optional; /auth login links community'
       : auth.apiKey ? 'own provider configured' : 'model key missing';
   const deviceState = rt.device
     ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
@@ -183,7 +183,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
     `${label('workspace')} ${compactPath(rt.workspace)}`,
     `${label('login')} ${loginState}`,
     `${label('board')} ${deviceState}`,
-    `${ui.dim('next')} ${community?.authenticated || !auth.usingBundledDefault ? '/help or ask Moss directly' : '/auth login, then ask Moss directly'}`,
+    `${ui.dim('next')} /help or ask Moss directly`,
   ].join('\n');
 }
 
@@ -210,7 +210,7 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
     '',
     `  ${label('1/3 Model')} ${agent.config.model} · provider ${auth.usingBundledDefault ? 'built-in D-Robotics model' : auth.provider} · api key ${apiKeyState}`,
     auth.usingBundledDefault
-      ? '      Built-in D-Robotics model needs community login, but no model API key. Run `/auth login` first, or `moss setup` when you want your own provider.'
+      ? '      Built-in D-Robotics model is ready without a model API key or forced login. Optional: `/auth login` links a community session; `moss setup` uses your own provider.'
       : auth.apiKey
         ? '      Change it anytime: run `moss setup` (interactive), or `/model` to choose a model for this session.'
         : '      Configure it: run `moss setup` — choose a provider, choose a model, and paste your API key.',

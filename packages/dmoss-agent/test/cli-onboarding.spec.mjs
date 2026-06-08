@@ -5,6 +5,7 @@
  *   node packages/dmoss-agent/test/cli-onboarding.spec.mjs
  */
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import {
   renderCliDetailHelp,
   renderCliExamples,
@@ -16,6 +17,10 @@ import {
   renderCliUpgradeHelp,
   renderCliWelcome,
 } from '../dist/cli/onboarding.js';
+
+function literalPattern(value) {
+  return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+}
 
 function createAgent(tools) {
   return {
@@ -43,10 +48,16 @@ function tool(name, description = `${name} description`) {
   };
 }
 
+const workspacePath = path.resolve('/tmp/dmoss-workspace');
+const runtimeDirPath = path.resolve('/tmp/dmoss-runtime');
+const configDirPath = path.resolve('/tmp/dmoss-config');
+const mcpConfigPath = path.join(configDirPath, 'mcp.json');
+const configPath = path.join(configDirPath, 'config.json');
+
 const runtime = {
-  workspace: '/tmp/dmoss-workspace',
-  runtimeDir: '/tmp/dmoss-runtime',
-  configDir: '/tmp/dmoss-config',
+  workspace: workspacePath,
+  runtimeDir: runtimeDirPath,
+  configDir: configDirPath,
   baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
   execBackend: 'local',
   safetyMode: 'workspace-write',
@@ -63,7 +74,7 @@ const runtime = {
     modelSource: 'config',
     baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
     baseUrlSource: 'config',
-    workspace: '/tmp/dmoss-workspace',
+    workspace: workspacePath,
     workspaceSource: 'config',
     safetyMode: 'workspace-write',
     safetyModeSource: 'config',
@@ -79,7 +90,7 @@ const runtime = {
     promptCacheDebugSource: 'config',
     mcpEnabled: true,
     mcpEnabledSource: 'config',
-    mcpConfigPath: '/tmp/dmoss-config/mcp.json',
+    mcpConfigPath,
     mcpConfigPathSource: 'config',
     guardrails: {
       input: { blockPatterns: ['forbidden input'], redactPatterns: ['SECRET=[^\\s]+'] },
@@ -92,7 +103,7 @@ const runtime = {
     contextTokensSource: 'config',
     compactionSettings: { reserveTokens: 8000, keepRecentTokens: 9000 },
     compactionSettingsSource: 'config',
-    configPath: '/tmp/dmoss-config/config.json',
+    configPath,
   },
 };
 
@@ -115,7 +126,7 @@ const agent = createAgent([
   const welcome = renderCliWelcome(agent, runtime);
   assert.match(welcome, /D-Moss Agent/);
   assert.match(welcome, /model: qwen3\.7-max/);
-  assert.match(welcome, /workspace: \/tmp\/dmoss-workspace/);
+  assert.match(welcome, literalPattern(`workspace: ${workspacePath}`));
   assert.match(welcome, /login: own provider configured/);
   assert.match(welcome, /board: root@10\.64\.1\.10:22/);
   assert.match(welcome, /next \/help or ask Moss directly/);
@@ -164,7 +175,7 @@ const agent = createAgent([
   const status = renderCliStatus(agent, runtime);
   assert.match(status, /Status/);
   assert.match(status, /model: qwen3\.7-max \(qwen\)/);
-  assert.match(status, /workspace: \/tmp\/dmoss-workspace/);
+  assert.match(status, literalPattern(`workspace: ${workspacePath}`));
   assert.match(status, /board: root@10\.64\.1\.10:22/);
   assert.match(status, /tools: 7/);
   assert.match(status, /Details: \/status --verbose/);
@@ -195,7 +206,7 @@ const agent = createAgent([
 {
   const permissions = renderCliPermissions(runtime);
   assert.match(permissions, /Permissions & Config/);
-  assert.match(permissions, /config file: \/tmp\/dmoss-config\/config\.json/);
+  assert.match(permissions, literalPattern(`config file: ${configPath}`));
   assert.match(permissions, /profile: autonomous \(config\)/);
   assert.match(permissions, /safety: workspace-write \(config\)/);
   assert.match(permissions, /approval: never \(config\)/);
@@ -204,7 +215,7 @@ const agent = createAgent([
   assert.match(permissions, /prompt cache: disabled \(config\)/);
   assert.match(permissions, /prompt cache debug: enabled \(config\)/);
   assert.match(permissions, /mcp: enabled \(config\)/);
-  assert.match(permissions, /mcp config: \/tmp\/dmoss-config\/mcp\.json \(config\)/);
+  assert.match(permissions, literalPattern(`mcp config: ${mcpConfigPath} (config)`));
   assert.match(permissions, /guardrails: input 2, output 1 \(config\)/);
   assert.match(permissions, /max turns: 18 \(config\)/);
   assert.match(permissions, /context tokens: 96000 \(config\)/);

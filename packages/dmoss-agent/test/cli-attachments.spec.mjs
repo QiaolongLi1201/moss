@@ -25,6 +25,14 @@ try {
     parseAttachArgs(`"${imagePath}" ${textPath.replace(/ /g, '\\ ')}`),
     [imagePath, textPath],
   );
+  assert.deepEqual(
+    parseAttachArgs(String.raw`"C:\Users\dmoss\screen shot.png" C:\tmp\notes.txt ./plain\ name.png`),
+    [
+      String.raw`C:\Users\dmoss\screen shot.png`,
+      String.raw`C:\tmp\notes.txt`,
+      './plain name.png',
+    ],
+  );
 
   const result = preparePromptAttachments([imagePath, textPath], { cwd: tempDir });
   assert.equal(result.attachments.length, 2);

@@ -119,16 +119,21 @@ export function parseAttachArgs(input: string): string[] {
   const out: string[] = [];
   let current = '';
   let quote: '"' | "'" | null = null;
-  let escaped = false;
 
-  for (const char of input.trim()) {
-    if (escaped) {
-      current += char;
-      escaped = false;
-      continue;
-    }
+  const trimmed = input.trim();
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const char = trimmed[i];
     if (char === '\\') {
-      escaped = true;
+      const next = trimmed[i + 1];
+      const canEscape = quote
+        ? next === quote || next === '\\'
+        : next === '"' || next === "'" || next === '\\' || (next !== undefined && /\s/.test(next));
+      if (canEscape && next !== undefined) {
+        current += next;
+        i += 1;
+      } else {
+        current += char;
+      }
       continue;
     }
     if (quote) {
@@ -150,7 +155,6 @@ export function parseAttachArgs(input: string): string[] {
     current += char;
   }
 
-  if (escaped) current += '\\';
   if (current) out.push(current);
   return out;
 }

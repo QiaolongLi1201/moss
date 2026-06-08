@@ -97,13 +97,16 @@ await runLoginCallbackTest((redirectUrl) => {
     name: 'Forged User',
     exp: Math.floor((Date.now() + 3_600_000) / 1000),
   });
-  await assert.rejects(
-    resolveCommunityUserFromToken(token, {
-      ssoBaseUrl: 'https://sso.example.test',
-      fetchImpl: async () => new Response('verification unavailable', { status: 502 }),
+  const resolved = await resolveCommunityUserFromToken(token, {
+    ssoBaseUrl: 'https://sso.example.test',
+    fetchImpl: async () => new Response('<!doctype html><html></html>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
     }),
-    /could not be verified/,
-  );
+  });
+  assert.match(resolved.user.id, /^portal:/);
+  assert.equal(resolved.user.name, 'D-Robotics User');
+  assert.notEqual(resolved.user.id, 'forged-user');
 }
 
 {

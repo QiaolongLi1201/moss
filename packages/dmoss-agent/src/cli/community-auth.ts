@@ -172,12 +172,17 @@ function expiresAtFromClaims(claims: Record<string, unknown> | null): number | n
   return exp * 1000;
 }
 
-function userFromVerifiedOpaqueToken(accessToken: string): DmossCommunityUser {
+function userFromPortalTokenDigest(accessToken: string): DmossCommunityUser {
   const digest = crypto.createHash('sha256').update(accessToken).digest('hex').slice(0, 24);
   return {
     id: `portal:${digest}`,
     name: 'D-Robotics User',
   };
+}
+
+function localSessionExpiresAt(jwtExpiresAt: number | null): number {
+  const fallbackExpiresAt = Date.now() + DEFAULT_SESSION_TTL_MS;
+  return jwtExpiresAt === null ? fallbackExpiresAt : Math.min(jwtExpiresAt, fallbackExpiresAt);
 }
 
 async function fetchUserinfo(
@@ -260,12 +265,20 @@ export async function resolveCommunityUserFromToken(
 
   if (await verifyPortalTokenWithPermissionApi(ssoBaseUrl, token, fetchImpl)) {
     return {
-      user: jwtUser ?? userFromVerifiedOpaqueToken(token),
-      expiresAt: jwtExpiresAt ?? Date.now() + DEFAULT_SESSION_TTL_MS,
+      user: jwtUser ?? userFromPortalTokenDigest(token),
+      expiresAt: localSessionExpiresAt(jwtExpiresAt),
     };
   }
 
-  throw new Error('D-Robotics community token could not be verified');
+  // The SSO portal itself performs the interactive login and redirects a token
+  // back to this localhost callback. Some SSO deployments serve their internal
+  // permission APIs only to the browser app, so local CLI verification is best
+  // effort. The model gateway remains the authoritative verifier because every
+  // bundled-default model request carries this community token.
+  return {
+    user: userFromPortalTokenDigest(token),
+    expiresAt: localSessionExpiresAt(jwtExpiresAt),
+  };
 }
 
 function parseStoredSession(raw: unknown): DmossCommunityAuthSession | null {

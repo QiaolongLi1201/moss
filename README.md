@@ -59,13 +59,44 @@ billing/account, a private gateway, data-local deployment, a self-hosted model,
 or a provider/model that is different from the built-in default. Your local
 configuration always overrides the built-in gateway.
 
-Configure your own provider with `dmoss setup`, or set an environment variable:
+To use your own model, choose one of these paths.
+
+**Guided setup** saves provider, model, base URL, and API key into
+`~/.config/dmoss/config.json`:
 
 ```bash
-export DEEPSEEK_API_KEY=...     # or OPENAI_API_KEY · ANTHROPIC_API_KEY · DASHSCOPE_API_KEY (Qwen)
-# For any OpenAI-compatible endpoint, run `dmoss setup`, then set provider/model/baseUrl.
-# Inside dmoss you can also use `/config`, `/model`, and `/models`.
+dmoss setup
+dmoss auth status              # verifies provider/model/key source without printing secrets
 ```
+
+**Environment variables** keep the API key out of the config file. A single
+provider-specific key selects that provider automatically; if you set multiple
+keys, set `DMOSS_PROVIDER` explicitly.
+
+```bash
+export DEEPSEEK_API_KEY=...    # DeepSeek
+# or: export OPENAI_API_KEY=...
+# or: export ANTHROPIC_API_KEY=...
+# or: export DASHSCOPE_API_KEY=...    # Aliyun / Qwen
+dmoss
+```
+
+**Private gateway or self-hosted OpenAI-compatible model**:
+
+```bash
+export OPENAI_API_KEY=...      # or DMOSS_API_KEY=... if your gateway uses a generic key
+dmoss config set provider openai-compatible
+dmoss config set model <your-model>
+dmoss config set baseUrl https://llm.example.com
+dmoss auth status
+dmoss
+```
+
+`baseUrl` is the API root, not the full chat endpoint: do not include
+`/chat/completions`. Both `https://llm.example.com` and
+`https://llm.example.com/v1` are accepted; `dmoss` calls
+`/v1/chat/completions` for OpenAI-compatible providers. Inside `dmoss` you can
+also use `/config`, `/model`, and `/models`.
 
 **Update** anytime (dmoss also tells you when a newer version is out):
 

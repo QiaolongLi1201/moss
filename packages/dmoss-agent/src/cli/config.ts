@@ -548,6 +548,15 @@ function inferProviderFromBaseUrl(baseUrl: string | undefined): CliProviderPrese
   return 'openai-compatible';
 }
 
+function inferProviderFromApiKeyEnv(env: NodeJS.ProcessEnv): { provider: CliProviderPreset; source: string } | null {
+  if (env.DEEPSEEK_API_KEY) return { provider: 'deepseek', source: 'DEEPSEEK_API_KEY' };
+  if (env.DASHSCOPE_API_KEY) return { provider: 'qwen', source: 'DASHSCOPE_API_KEY' };
+  if (env.ALIYUN_API_KEY) return { provider: 'qwen', source: 'ALIYUN_API_KEY' };
+  if (env.OPENAI_API_KEY) return { provider: 'openai', source: 'OPENAI_API_KEY' };
+  if (env.ANTHROPIC_API_KEY) return { provider: 'anthropic', source: 'ANTHROPIC_API_KEY' };
+  return null;
+}
+
 function firstEnv(env: NodeJS.ProcessEnv, names: string[]): { value: string; source: string } | null {
   for (const name of names) {
     const value = env[name];
@@ -800,10 +809,10 @@ export function resolveCliConfig(
       env.DASHSCOPE_BASE_URL ||
       activeConfig.baseUrl,
   );
-  const envInferredProvider = env.DEEPSEEK_API_KEY ? 'deepseek' : null;
+  const envInferredProvider = inferProviderFromApiKeyEnv(env);
   const provider = overrides.provider || providerEnv || activeConfig.provider
     ? normalizeProvider(overrides.provider || providerEnv || activeConfig.provider)
-    : inferredProvider || envInferredProvider || 'deepseek';
+    : inferredProvider || envInferredProvider?.provider || 'deepseek';
   const preset = PROVIDER_PRESETS[provider];
   const providerSource = overrides.provider
     ? 'cli'
@@ -814,7 +823,7 @@ export function resolveCliConfig(
         : inferredProvider
           ? 'baseUrl'
           : envInferredProvider
-            ? 'DEEPSEEK_API_KEY'
+            ? envInferredProvider.source
             : 'default';
 
   const apiKeyEnv = firstEnv(env, [

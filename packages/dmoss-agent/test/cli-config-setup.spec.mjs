@@ -133,6 +133,35 @@ try {
   assert.equal(deepseekEnvResolved.model, 'deepseek-v4-pro');
   assert.equal(deepseekEnvResolved.baseUrl, 'https://api.deepseek.com');
 
+  const qwenEnvResolved = resolveCliConfig({
+    DASHSCOPE_API_KEY: 'qwen-env-secret',
+  }, {});
+  assert.equal(qwenEnvResolved.provider, 'qwen');
+  assert.equal(qwenEnvResolved.providerSource, 'DASHSCOPE_API_KEY');
+  assert.equal(qwenEnvResolved.apiKey, 'qwen-env-secret');
+  assert.equal(qwenEnvResolved.apiKeySource, 'DASHSCOPE_API_KEY');
+  assert.equal(qwenEnvResolved.model, 'qwen3.7-max');
+  assert.equal(qwenEnvResolved.baseUrl, 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode');
+
+  const openaiEnvResolved = resolveCliConfig({
+    OPENAI_API_KEY: 'openai-env-secret',
+  }, {});
+  assert.equal(openaiEnvResolved.provider, 'openai');
+  assert.equal(openaiEnvResolved.providerSource, 'OPENAI_API_KEY');
+  assert.equal(openaiEnvResolved.apiKey, 'openai-env-secret');
+  assert.equal(openaiEnvResolved.apiKeySource, 'OPENAI_API_KEY');
+  assert.equal(openaiEnvResolved.model, 'gpt-4o-mini');
+  assert.equal(openaiEnvResolved.baseUrl, 'https://api.openai.com');
+
+  const anthropicEnvResolved = resolveCliConfig({
+    ANTHROPIC_API_KEY: 'anthropic-env-secret',
+  }, {});
+  assert.equal(anthropicEnvResolved.provider, 'anthropic');
+  assert.equal(anthropicEnvResolved.providerSource, 'ANTHROPIC_API_KEY');
+  assert.equal(anthropicEnvResolved.apiKey, 'anthropic-env-secret');
+  assert.equal(anthropicEnvResolved.apiKeySource, 'ANTHROPIC_API_KEY');
+  assert.equal(anthropicEnvResolved.baseUrl, 'https://api.anthropic.com');
+
   const invalidEnvResolved = resolveCliConfig({
     DMOSS_MAX_AGENT_TURNS: '1.5',
     DMOSS_CONTEXT_TOKENS: '64000x',
@@ -377,6 +406,10 @@ try {
     'DMOSS_PROVIDER',
     'DMOSS_API_KEY',
     'DEEPSEEK_API_KEY',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'DASHSCOPE_API_KEY',
+    'ALIYUN_API_KEY',
     'DMOSS_MODEL',
     'DMOSS_BASE_URL',
     'OPENAI_BASE_URL',

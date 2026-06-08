@@ -79,6 +79,40 @@ dmoss
 does not require an API key. Run `dmoss setup` only when you want to use your
 own provider, account, private gateway, or self-hosted OpenAI-compatible model.
 
+To use your own model, either run the guided setup:
+
+```bash
+dmoss setup
+dmoss auth status              # verifies provider/model/key source without printing secrets
+```
+
+Or keep the API key in the environment:
+
+```bash
+export DEEPSEEK_API_KEY=...    # DeepSeek
+# or: export OPENAI_API_KEY=...
+# or: export ANTHROPIC_API_KEY=...
+# or: export DASHSCOPE_API_KEY=...    # Aliyun / Qwen
+dmoss
+```
+
+For a private gateway or self-hosted OpenAI-compatible model:
+
+```bash
+export OPENAI_API_KEY=...      # or DMOSS_API_KEY=... if your gateway uses a generic key
+dmoss config set provider openai-compatible
+dmoss config set model <your-model>
+dmoss config set baseUrl https://llm.example.com
+dmoss auth status
+dmoss
+```
+
+`baseUrl` is the API root, not the full chat endpoint: do not include
+`/chat/completions`. Both `https://llm.example.com` and
+`https://llm.example.com/v1` are accepted; `dmoss` calls
+`/v1/chat/completions` for OpenAI-compatible providers. If multiple provider
+keys are set in your shell, set `DMOSS_PROVIDER` explicitly.
+
 Each plain `dmoss` launch starts a **new saved conversation**. Use
 `dmoss resume --last`, `dmoss resume --session <key>`, or
 `dmoss --session <key>` when you want to continue previous history.
@@ -124,9 +158,9 @@ node packages/dmoss-agent/dist/cli.js "check disk usage on /"
 ```bash
 dmoss auth status
 dmoss auth logout
-dmoss config set model qwen3.7-max
-dmoss config set baseUrl https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode
-dmoss config set provider qwen
+dmoss config set provider openai-compatible
+dmoss config set model <your-model>
+dmoss config set baseUrl https://llm.example.com
 ```
 
 ### CLI flags recap

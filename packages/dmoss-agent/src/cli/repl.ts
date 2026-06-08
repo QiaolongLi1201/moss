@@ -8,7 +8,8 @@ import { handleGoalCommand } from '../goal.js';
 import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
 import { setCliApprovalAsker } from './approval.js';
 import { handleCompactCommand } from './compact-command.js';
-import { formatCommunityAuthStatus, renderCommunityAuthRequiredMessage } from './community-auth.js';
+import { formatCommunityAuthLoginError, formatCommunityAuthStatus, renderCommunityAuthRequiredMessage } from './community-auth.js';
+import { connectDeviceForSession, parseDeviceConnectArgs } from './device-connect.js';
 import { INTERACTIVE_COMPLETION_COMMANDS } from './interactive-commands.js';
 import { formatModelChoices, loadModelChoicesForRuntime, resolveModelSelection } from './model-catalog.js';
 import { runOneShot } from './oneshot.js';
@@ -58,12 +59,13 @@ async function handleInteractiveAuthCommand(
     write(`[auth] ${formatCommunityAuthStatus(auth.getStatus())}`);
     return true;
   }
-  if (msg === '/auth login') {
+  if (msg === '/auth login' || msg.startsWith('/auth login ')) {
+    const manual = msg.split(/\s+/).includes('--manual');
     try {
-      const context = await auth.login(write);
+      const context = await auth.login(write, { manual });
       write(`[auth] Ready. Logged in as ${context.user.name || context.user.email || context.user.id}.`);
     } catch (err) {
-      write(`[auth] Login failed: ${err instanceof Error ? err.message : String(err)}`);
+      write(`[auth] ${formatCommunityAuthLoginError(err)}`);
     }
     return true;
   }
@@ -76,6 +78,41 @@ async function handleInteractiveAuthCommand(
   }
   write('Usage: /auth <login|status|logout>');
   return true;
+}
+
+async function promptForCommunityLoginIfNeeded(
+  rl: readline.Interface,
+  runtime: CliRuntimeStatus | undefined,
+): Promise<void> {
+  const auth = runtime?.communityAuth;
+  if (!auth || auth.getStatus().authenticated || !process.stdin.isTTY) return;
+  const answer = await new Promise<string>((resolve) => {
+    rl.question(
+      'D-Moss built-in model needs a D-Robotics community login. Log in now? (Y/n) ',
+      resolve,
+    );
+  });
+  if (/^(n|no)$/i.test(answer.trim())) {
+    console.error('[auth] Skipped. Run /auth login later, or /auth login --manual over SSH.');
+    return;
+  }
+  try {
+    const context = await auth.login((line) => console.error(line));
+    console.error(`[auth] Ready. Logged in as ${context.user.name || context.user.email || context.user.id}.`);
+  } catch (err) {
+    console.error(`[auth] ${formatCommunityAuthLoginError(err)}`);
+  }
+}
+
+function basicReplUnsupportedMessage(command: string): string {
+  const token = command.split(/\s+/, 1)[0] || command;
+  if (token === '/rewind') return '[help] /rewind needs the full TUI checkpoint view. Use `git diff` or `/diff` here to inspect changes.';
+  if (token === '/queue') return '[help] Queue controls need the full TUI. This basic REPL runs one prompt at a time.';
+  if (token === '/stop' || token === '/abort') return '[help] Press Ctrl+C to interrupt the terminal process in this basic REPL.';
+  if (token === '/thinking') return '[help] Thinking display is a full TUI control. Use `/detail verbose` for more runtime detail here.';
+  if (token === '/clear') return '[help] Use Ctrl+L or your shell `clear` command to clear this terminal.';
+  if (token === '/init') return '[help] /init is available in the full TUI. In this REPL, create AGENTS.md in your workspace manually.';
+  return '[help] This control is available in the full terminal TUI.';
 }
 
 export async function runInteractive(
@@ -113,6 +150,7 @@ export async function runInteractive(
 
   console.error(renderCliWelcome(agent, { ...runtime, sessionKey }));
   console.error(ui.dim(`${label('directory')} ${compactPath(workspace)}   ${label('exit')} Ctrl+D or /quit`));
+  await promptForCommunityLoginIfNeeded(rl, runtime);
   rl.prompt();
   if (runtime?.configDir) {
     startCliUpdateCheck({
@@ -145,14 +183,21 @@ export async function runInteractive(
       continue;
     }
 
-    if (msg === '/quick_start' || msg === '/start') {
+    if (msg === '/quickstart' || msg === '/quick_start' || msg === '/start') {
       console.error(renderCliQuickStart(agent, runtime));
       rl.prompt();
       continue;
     }
 
-    if (msg === '/status') {
-      console.error(renderCliStatus(agent, runtime));
+    if (msg === '/status' || msg === '/status --verbose') {
+      console.error(renderCliStatus(agent, runtime, { verbose: msg.includes('--verbose') }));
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/connect' || msg.startsWith('/connect ')) {
+      const parsed = parseDeviceConnectArgs(msg.slice('/connect'.length));
+      console.error(parsed.error || connectDeviceForSession(agent, runtime, parsed.config!));
       rl.prompt();
       continue;
     }
@@ -169,6 +214,7 @@ export async function runInteractive(
         console.error(await handleCompactCommand(agent, sessionKey));
       } catch (err) {
         console.error(`[compact] ${err instanceof Error ? err.message : String(err)}`);
+        console.error('[compact] You can keep chatting; try /status --verbose to inspect context, or ask Moss to summarize the current session manually.');
       }
       rl.prompt();
       continue;
@@ -270,7 +316,7 @@ export async function runInteractive(
       || msg === '/clear'
       || msg === '/init'
     ) {
-      console.error('[help] This control is available in the full terminal TUI. Open dmoss in a TTY to use it.');
+      console.error(basicReplUnsupportedMessage(msg));
       rl.prompt();
       continue;
     }
@@ -309,7 +355,7 @@ export async function runInteractive(
     }
 
     if (msg === '/version') {
-      console.error(`dmoss v${getPackageVersion()}`);
+      console.error(`moss v${getPackageVersion()}`);
       rl.prompt();
       continue;
     }

@@ -13,6 +13,7 @@ import {
   preparePromptAttachments,
   renderPendingAttachmentSummary,
 } from '../dist/cli/attachments.js';
+import { prepareClipboardImageAttachment } from '../dist/cli/clipboard-image.js';
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-attachments-'));
 try {
@@ -54,6 +55,22 @@ try {
   const unsupportedResult = preparePromptAttachments([unsupported], { cwd: tempDir });
   assert.equal(unsupportedResult.attachments.length, 0);
   assert.match(unsupportedResult.warnings[0], /Unsupported attachment/);
+
+  const runtimeDir = path.join(tempDir, 'runtime');
+  const clipboardResult = await prepareClipboardImageAttachment({
+    runtimeDir,
+    cwd: tempDir,
+    startIndex: 3,
+    saveClipboardImage: async (destPath) => {
+      assert.match(destPath, /clipboard-.*\.png$/);
+      fs.writeFileSync(destPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    },
+  });
+  assert.equal(clipboardResult.attachments.length, 1);
+  assert.equal(clipboardResult.attachments[0].kind, 'image');
+  assert.equal(clipboardResult.attachments[0].index, 3);
+  assert.equal(clipboardResult.blocks[0].type, 'text');
+  assert.match(clipboardResult.blocks[0].text, /\[Image #3:/);
 
   console.log('[PASS] CLI attachment preparation');
 } finally {

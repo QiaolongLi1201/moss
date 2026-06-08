@@ -7,7 +7,7 @@ import { auditResolvedCliConfig, BASE_URL, resolveCliConfig, resolveConfigDir, r
 import { formatInteractiveCommandSections } from './interactive-commands.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
 import { getPackageVersion } from './package-info.js';
-import { compactPath, label, statusDot, ui } from './ui.js';
+import { compactPath, label, ui } from './ui.js';
 
 export interface CliDeviceStatus {
   host: string;
@@ -66,19 +66,6 @@ const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage' 
 
 function runtimeWithDefaults(runtime: CliRuntimeStatus = {}) {
   return { ...DEFAULT_RUNTIME, ...runtime };
-}
-
-function approvalPolicyLine(config: ResolvedCliConfig): string {
-  return `approval ${config.approvalPolicy ?? 'prompt'}`;
-}
-
-function profileLine(config: ResolvedCliConfig): string {
-  return `profile ${config.profile ?? 'balanced'}`;
-}
-
-function promptCacheLine(config: ResolvedCliConfig): string {
-  if (config.promptCacheDebug === true && config.promptCacheEnabled !== false) return 'cache debug';
-  return config.promptCacheEnabled === false ? 'cache off' : 'cache stable';
 }
 
 function guardrailLine(config: ResolvedCliConfig): string {
@@ -176,43 +163,27 @@ function groupTools(tools: Tool[]): ToolGroupSummary[] {
   return groups;
 }
 
-function formatEnabledGroups(groups: ToolGroupSummary[]): string {
-  return groups
-    .map((g) => `${g.title.toLowerCase()} ${g.tools.length}`)
-    .join('  ');
-}
-
 export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = {}): string {
   const rt = runtimeWithDefaults(runtime);
-  const detailMode = resolveCliDetailMode();
-  const tools = agent.tools.getAll();
-  const groups = groupTools(tools).filter((g) => g.enabled);
-  const memoryCount = countJsonIndex(path.join(rt.runtimeDir, 'memory', 'index.json'));
-  const skillCount = countMarkdownFiles(path.join(rt.workspace, 'skills', 'learned'));
   const auth = rt.config;
   const community = rt.communityAuth?.getStatus();
-
-  const authState = auth.usingBundledDefault
-    ? 'auth built-in model (no model key required)'
-    : auth.apiKey ? `auth ${auth.apiKeySource}` : 'auth missing';
-  const communityState = community
-    ? `community ${formatCommunityAuthStatus(community)}`
-    : 'community unknown';
-  const policyState = `${profileLine(auth)}   ${approvalPolicyLine(auth)}   ${promptCacheLine(auth)}   ${guardrailLine(auth)}`;
+  const providerState = auth.usingBundledDefault ? 'built-in D-Robotics model' : auth.provider;
+  const loginState = community?.authenticated
+    ? formatCommunityAuthStatus(community)
+    : auth.usingBundledDefault
+      ? 'login needed for built-in model'
+      : auth.apiKey ? 'own provider configured' : 'model key missing';
   const deviceState = rt.device
-    ? `device ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
-    : 'device not configured';
-  const meshState = rt.meshEnabled ? 'mesh on' : 'mesh off';
+    ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
+    : 'not connected';
 
   return [
     `${ui.bold('D-Moss Agent')} ${ui.dim(`v${getPackageVersion()}`)}`,
-    `${label('model')} ${agent.config.model}   ${label('provider')} ${auth.usingBundledDefault ? 'built-in D-Robotics model' : shortBaseUrl(rt.baseUrl)}   ${label('session')} ${rt.sessionKey}`,
-    `${label('workspace')} ${compactPath(rt.workspace)}   ${label('safety')} ${rt.safetyMode}   ${label('detail')} ${describeDetail(detailMode)}`,
-    `${statusDot(auth.usingBundledDefault || auth.apiKey ? 'ok' : 'warn')} ${authState}   ${statusDot('info')} ${policyState}   ${statusDot('info')} tools ${tools.length}   ${statusDot('info')} memory ${memoryCount}   ${statusDot('info')} skills ${skillCount}`,
-    `${statusDot(community?.authenticated ? 'ok' : 'warn')} ${communityState}`,
-    `${statusDot(rt.device ? 'ok' : 'warn')} ${deviceState}   ${statusDot(rt.meshEnabled ? 'ok' : 'info')} ${meshState}`,
-    groups.length ? `${label('capabilities')} ${formatEnabledGroups(groups)}` : `${label('capabilities')} none`,
-    `${ui.dim('commands')} /auth login  /status  /model  /goal  /compact  /context  /help`,
+    `${label('model')} ${agent.config.model} (${providerState})`,
+    `${label('workspace')} ${compactPath(rt.workspace)}`,
+    `${label('login')} ${loginState}`,
+    `${label('board')} ${deviceState}`,
+    `${ui.dim('next')} ${community?.authenticated || !auth.usingBundledDefault ? '/help or ask Moss directly' : '/auth login, then ask Moss directly'}`,
   ].join('\n');
 }
 
@@ -228,7 +199,7 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
     toolNames.has('exec') ? 'Check which scripts package.json defines, then suggest one command to verify the project' : null,
     rt.device && toolNames.has('device_resources')
       ? 'Check the board CPU, memory, temperature and processes, and flag anything abnormal'
-      : 'Connect a board: export DMOSS_DEVICE_HOST=<board-ip>, then restart dmoss',
+      : 'Connect a board: /connect <board-ip> (uses DMOSS_DEVICE_USER/PASSWORD/KEY/PORT if set)',
     rt.device && toolNames.has('ros2_topic_list')
       ? 'List the ROS2 topics on the board and tell me whether the camera or perception nodes are online'
       : null,
@@ -239,20 +210,20 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
     '',
     `  ${label('1/3 Model')} ${agent.config.model} · provider ${auth.usingBundledDefault ? 'built-in D-Robotics model' : auth.provider} · api key ${apiKeyState}`,
     auth.usingBundledDefault
-      ? '      Built-in D-Robotics model needs community login, but no model API key. Run `/auth login` first, or `dmoss setup` when you want your own provider.'
+      ? '      Built-in D-Robotics model needs community login, but no model API key. Run `/auth login` first, or `moss setup` when you want your own provider.'
       : auth.apiKey
-        ? '      Change it anytime: run `dmoss setup` (interactive), or `/model` to choose a model for this session.'
-        : '      Configure it: run `dmoss setup` — choose a provider, choose a model, and paste your API key.',
+        ? '      Change it anytime: run `moss setup` (interactive), or `/model` to choose a model for this session.'
+        : '      Configure it: run `moss setup` — choose a provider, choose a model, and paste your API key.',
     '      Or set env vars: DMOSS_PROVIDER · DMOSS_MODEL · DMOSS_API_KEY (or DEEPSEEK_API_KEY / OPENAI_API_KEY / DASHSCOPE_API_KEY).',
     `      Settings are saved to ${compactPath(auth.configPath)} — inspect them with /config.`,
     '',
     `  ${label('2/3 Workspace')} ${compactPath(rt.workspace)} · safety ${rt.safetyMode}`,
-    '      The workspace is the folder you launch dmoss in — cd into your project first, then run `dmoss`.',
-    '      Set it without moving: `dmoss config set workspace /path/to/project`. See the full picture with /status.',
-    '      Control what Moss may change: `dmoss config set safetyMode read-only|workspace-write|full-access` (or /config).',
+    '      The workspace is the folder you launch Moss in — cd into your project first, then run `moss`.',
+    '      Set it without moving: `moss config set workspace /path/to/project`. See the full picture with /status.',
+    '      Control what Moss may change: `moss config set safetyMode read-only|workspace-write|full-access` (or /config).',
     rt.device
       ? `      Board connected: ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22} — device and ROS tools are on.`
-      : '      DMOSS_DEVICE_HOST=<board-ip> enables board and ROS tools.',
+      : '      /connect <board-ip> enables board and ROS tools for this session. Use env vars for credentials: DMOSS_DEVICE_USER/PASSWORD/KEY/PORT.',
     '',
     `  ${label('3/3 Try')} ask for an outcome in plain language — Moss chooses the tools automatically:`,
     ...examples.slice(0, 4).map((example) => `      - ${example}`),
@@ -261,7 +232,11 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
   ].join('\n');
 }
 
-export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {}): string {
+export function renderCliStatus(
+  agent: DmossAgent,
+  runtime: CliRuntimeStatus = {},
+  options: { verbose?: boolean } = {},
+): string {
   const rt = runtimeWithDefaults(runtime);
   const memoryCount = countJsonIndex(path.join(rt.runtimeDir, 'memory', 'index.json'));
   const skillCount = countMarkdownFiles(path.join(rt.workspace, 'skills', 'learned'));
@@ -270,6 +245,20 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
   const toolGroups = groupTools(agent.tools.getAll()).filter((g) => g.enabled);
   const auth = rt.config;
   const community = rt.communityAuth?.getStatus();
+  if (!options.verbose) {
+    return [
+      ui.bold('Status'),
+      `  ${label('model')} ${agent.config.model} (${auth.usingBundledDefault ? 'built-in D-Robotics model' : auth.provider})`,
+      `  ${label('login')} ${community ? formatCommunityAuthStatus(community) : 'unknown'}`,
+      `  ${label('workspace')} ${rt.workspace}`,
+      `  ${label('board')} ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}` : 'not connected'}`,
+      `  ${label('tools')} ${agent.tools.size} (${toolGroups.map((g) => g.title).join(', ') || 'none'})`,
+      `  ${label('memory')} ${memoryCount} entries`,
+      `  ${label('skills')} ${skillCount}`,
+      '',
+      '  Details: /status --verbose',
+    ].join('\n');
+  }
 
   return [
     ui.bold('Status'),
@@ -316,7 +305,7 @@ export function renderCliTools(agent: DmossAgent): string {
     '    - check the board resources and ROS topics',
     '',
     '  Useful controls:',
-    '    /quick_start       configure model, workspace, board, and first tasks',
+    '    /quickstart        configure model, workspace, board, and first tasks',
     '    /status            view model, workspace, device, and capabilities',
     '    /attach <path>     attach an image or text file to the next prompt',
     '    /compact           compress older conversation history into a summary',
@@ -373,24 +362,24 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    never            auto-approve allowed side-effectful tools',
     '',
     '  Persist changes:',
-    '    dmoss config init --project',
-    '    dmoss config set profile cautious|balanced|autonomous',
-    '    dmoss config set --project safetyMode workspace-write',
-    '    dmoss config set workspace /path/to/workspace',
-    '    dmoss config set safetyMode read-only|workspace-write|full-access',
-    '    dmoss config set approvalPolicy prompt|never',
-    '    dmoss config set trustedTools exec,filesystem__*',
-    '    dmoss config set deniedTools device_*,write_file',
-    '    dmoss config set promptCache true|false',
-    '    dmoss config set promptCacheDebug true|false',
-    '    dmoss config set mcp.enabled true|false',
-    '    dmoss config set mcp.configPath .dmoss/mcp.json',
+    '    moss config init --project',
+    '    moss config set profile cautious|balanced|autonomous',
+    '    moss config set --project safetyMode workspace-write',
+    '    moss config set workspace /path/to/workspace',
+    '    moss config set safetyMode read-only|workspace-write|full-access',
+    '    moss config set approvalPolicy prompt|never',
+    '    moss config set trustedTools exec,filesystem__*',
+    '    moss config set deniedTools device_*,write_file',
+    '    moss config set promptCache true|false',
+    '    moss config set promptCacheDebug true|false',
+    '    moss config set mcp.enabled true|false',
+    '    moss config set mcp.configPath .dmoss/mcp.json',
     '    edit guardrails.input/output blockPatterns or redactPatterns in config JSON',
-    '    dmoss config set agent.maxTurns 96',
-    '    dmoss config set agent.contextTokens 200000',
-    '    dmoss config set agent.compaction.reserveTokens 20000',
-    '    dmoss config unset --project safetyMode',
-    '    dmoss config unset approvalPolicy',
+    '    moss config set agent.maxTurns 96',
+    '    moss config set agent.contextTokens 200000',
+    '    moss config set agent.compaction.reserveTokens 20000',
+    '    moss config unset --project safetyMode',
+    '    moss config unset approvalPolicy',
     '',
     '  Environment overrides:',
     '    DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG, DMOSS_MCP_ENABLED, DMOSS_MCP_CONFIG, DMOSS_MAX_AGENT_TURNS, DMOSS_CONTEXT_TOKENS',
@@ -411,7 +400,7 @@ export function renderCliExamples(agent: DmossAgent, runtime: CliRuntimeStatus =
   if (rt.device && toolNames.has('device_resources')) {
     examples.push('Check the board CPU, memory, temperature and processes, and flag anything abnormal');
   } else if (!rt.device) {
-    examples.push('Connect a board: set DMOSS_DEVICE_HOST, restart, then run /status to see the device tools');
+    examples.push('Connect a board: /connect <board-ip>, then run /status to see the device tools');
   }
   if (rt.device && toolNames.has('ros2_topic_list')) {
     examples.push('List the ROS2 topics on the board and help me tell whether the camera or perception nodes are online');
@@ -427,6 +416,14 @@ export function renderCliInteractiveHelp(): string {
   return [
     ui.bold('Commands'),
     ...formatInteractiveCommandSections({ indent: '    ', commandWidth: 24 }),
+    '',
+    '  Shortcuts',
+    '    Ctrl+V                   attach clipboard image in the full TUI on macOS',
+    '    Esc                      stop the active run in the full TUI',
+    '    Ctrl+O                   expand/collapse tool calls in the full TUI',
+    '    Ctrl+C                   exit',
+    '',
+    '  Advanced commands still work when needed: /status --verbose, /context, /cost, /rewind, /permissions, /tools, /memory, /skills, /upgrade, /detail, /queue.',
   ].join('\n');
 }
 
@@ -434,12 +431,12 @@ export function renderCliUpgradeHelp(): string {
   return [
     ui.bold('Upgrade'),
     '  Built-in update:',
-    '    dmoss update',
-    '    dmoss doctor',
+    '    moss update',
+    '    moss doctor',
     '',
   '  Global install:',
     '    npm i -g @rdk-moss/agent@latest',
-    '    dmoss --version',
+    '    moss --version',
     '',
     '  Without global install:',
     '    npx -y @rdk-moss/agent@latest',

@@ -21,7 +21,7 @@ const builtIn = await loadModelChoicesForRuntime({
 assert.equal(builtIn.source, 'built-in');
 assert.equal(builtIn.choices[0].model, 'Moss');
 assert.match(formatModelChoices(builtIn), /\/model <number>/);
-assert.match(formatModelChoices(builtIn), /dmoss setup\s+change provider, base URL, or API key/);
+assert.match(formatModelChoices(builtIn), /moss setup\s+change provider, base URL, or API key/);
 
 const selectedByNumber = resolveModelSelection('1', builtIn.choices);
 assert.equal(selectedByNumber?.model, 'Moss');
@@ -51,4 +51,3 @@ assert.equal(fallback.source, 'common');
 assert.ok(fallback.choices.some((choice) => choice.model === 'qwen-plus'));
 
 console.log('[PASS] CLI model catalog supports selectable model lists');
-

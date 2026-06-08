@@ -172,7 +172,7 @@ export function formatModelChoices(list: ModelChoiceList): string {
     'Use:',
     '  /model <number>        choose one of the models above',
     '  /model <model-name>    use a custom model name for this session',
-    '  dmoss setup            change provider, base URL, or API key',
+    '  moss setup             change provider, base URL, or API key',
   );
   return lines.join('\n');
 }

@@ -288,24 +288,24 @@ try {
   assert.match(conflictingPolicyJson.configWarnings[0].message, /deniedTools takes precedence/);
 
   const usage = renderConfigUsage();
-  assert.match(usage, /dmoss config init \[--project\] \[--force\]/);
-  assert.match(usage, /dmoss config show/);
-  assert.match(usage, /dmoss config show --json/);
-  assert.match(usage, /dmoss config validate \[--strict\] \[--json\]/);
-  assert.match(usage, /dmoss config validate --strict/);
-  assert.match(usage, /dmoss config init --project/);
-  assert.match(usage, /dmoss config set profile autonomous/);
-  assert.match(usage, /dmoss config set --project safetyMode workspace-write/);
-  assert.match(usage, /dmoss config set deniedTools device_\*,write_file/);
-  assert.match(usage, /dmoss config set guardrails\.input\.redactPatterns/);
-  assert.match(usage, /dmoss config unset <key>/);
-  assert.match(usage, /dmoss config unset --project <key>/);
+  assert.match(usage, /moss config init \[--project\] \[--force\]/);
+  assert.match(usage, /moss config show/);
+  assert.match(usage, /moss config show --json/);
+  assert.match(usage, /moss config validate \[--strict\] \[--json\]/);
+  assert.match(usage, /moss config validate --strict/);
+  assert.match(usage, /moss config init --project/);
+  assert.match(usage, /moss config set profile autonomous/);
+  assert.match(usage, /moss config set --project safetyMode workspace-write/);
+  assert.match(usage, /moss config set deniedTools device_\*,write_file/);
+  assert.match(usage, /moss config set guardrails\.input\.redactPatterns/);
+  assert.match(usage, /moss config unset <key>/);
+  assert.match(usage, /moss config unset --project <key>/);
   assert.match(usage, /\.dmoss\/config\.json/);
   assert.match(usage, /DMOSS_CONFIG_FILE/);
   assert.match(usage, /promptCacheDebug/);
 
-  const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/cli.js');
-  const cleanCliEnv = {
+	  const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/cli.js');
+	  const cleanCliEnv = {
     ...process.env,
     DMOSS_CONFIG_DIR: tmp,
     DMOSS_PROFILE: '',
@@ -326,9 +326,18 @@ try {
     DMOSS_MCP_ENABLED: '',
     DMOSS_MCP_CONFIG: '',
     DMOSS_MCP_CONFIG_FILE: '',
-    NO_COLOR: '1',
-  };
-  for (const args of [['config'], ['config', 'show']]) {
+	    NO_COLOR: '1',
+	  };
+	  {
+	    const result = spawnSync(process.execPath, [cliPath, 'config', '--help'], {
+	      env: cleanCliEnv,
+	      encoding: 'utf8',
+	    });
+	    assert.equal(result.status, 0, `config --help should exit cleanly: ${result.stderr || result.stdout}`);
+	    assert.match(result.stdout, /moss config init \[--project\] \[--force\]/);
+	    assert.equal(result.stderr, '');
+	  }
+	  for (const args of [['config'], ['config', 'show']]) {
     const result = spawnSync(process.execPath, [cliPath, ...args], {
       env: cleanCliEnv,
       encoding: 'utf8',

@@ -603,15 +603,32 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   assert.match(frame, /> \//);
   // Navigable, windowed menu (≤6 rows): the first page of commands is shown,
   // the selected (first) row highlighted. No static "… N more / type to filter" row.
-  assert.match(frame, /\/status\s+view runtime state/);
-  assert.match(frame, /\/model\s+choose active model/);
-  assert.match(frame, /\/goal\s+manage session goal/);
-  assert.match(frame, /\/compact\s+compress old context/);
-  assert.match(frame, /\/context\s+show token usage/);
-  assert.match(frame, /\/sessions\s+list saved chats/);
+  assert.match(frame, /\/status\s+view model, workspace, device, and tool state/);
+  assert.match(frame, /\/model\s+choose or switch the active model/);
+  assert.match(frame, /\/goal\s+show or manage the persistent session goal/);
+  assert.match(frame, /\/compact\s+compress older conversation history/);
+  assert.match(frame, /\/attach\s+attach an image or text file/);
+  assert.match(frame, /\/connect\s+connect an RDK board/);
+  assert.doesNotMatch(frame, /\/sessions\s+list saved chats/);
+  assert.doesNotMatch(frame, /\/context\s+show token usage/);
   assert.doesNotMatch(frame, /\/tools\s+tool surface/);
   assert.doesNotMatch(frame, /more commands/);
   assert(frame.split('\n').length <= 12);
+  cleanup();
+});
+
+test('PromptEditor renders inline argument hints for slash commands', () => {
+  const { lastFrame } = render(
+    React.createElement(PromptEditor, {
+      value: '/goal',
+      onChange: () => undefined,
+      onSubmit: () => undefined,
+      placeholder: '',
+      disabled: false,
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /\/goal\s+\[<condition> \| clear\]/);
   cleanup();
 });
 
@@ -671,7 +688,7 @@ test('PromptEditor accepts slash command completion with Tab', async () => {
   let nextCursor = -1;
   const { stdin } = render(
     React.createElement(PromptEditor, {
-      value: '/que',
+      value: '/con',
       cursor: 4,
       onChange: (value) => {
         nextValue = value;
@@ -686,8 +703,8 @@ test('PromptEditor accepts slash command completion with Tab', async () => {
   );
   stdin.write('\t');
   await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal(nextValue, '/queue');
-  assert.equal(nextCursor, 6);
+  assert.equal(nextValue, '/connect');
+  assert.equal(nextCursor, 8);
   cleanup();
 });
 

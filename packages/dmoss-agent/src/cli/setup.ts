@@ -308,35 +308,35 @@ export function renderConfigJson(
 export function renderConfigUsage(): string {
   return [
     'Usage:',
-    '  dmoss config',
-    '  dmoss config init [--project] [--force]',
-    '  dmoss config show',
-    '  dmoss config show --json',
-    '  dmoss config validate [--strict] [--json]',
-    '  dmoss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|guardrails.*|mcp.enabled|mcp.configPath|agent.*> <value>',
-    '  dmoss config set --project <key> <value>',
-    '  dmoss config unset <key>',
-    '  dmoss config unset --project <key>',
+    '  moss config',
+    '  moss config init [--project] [--force]',
+    '  moss config show',
+    '  moss config show --json',
+    '  moss config validate [--strict] [--json]',
+    '  moss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|guardrails.*|mcp.enabled|mcp.configPath|agent.*> <value>',
+    '  moss config set --project <key> <value>',
+    '  moss config unset <key>',
+    '  moss config unset --project <key>',
     '',
     'Config file:',
-    '  dmoss reads .dmoss/config.json from the current workspace as project defaults',
-    '  dmoss --config-file /path/to/config.json config show',
+    '  Moss reads .dmoss/config.json from the current workspace as project defaults',
+    '  moss --config-file /path/to/config.json config show',
     '  set DMOSS_CONFIG_FILE=/path/to/config.json to use an explicit config file',
     '',
     'Examples:',
-    '  dmoss config init --project',
-    '  dmoss config validate --strict',
-    '  dmoss config set profile autonomous',
-    '  dmoss config set --project safetyMode workspace-write',
-    '  dmoss config set approvalPolicy prompt',
-    '  dmoss config set trustedTools exec,filesystem__*',
-    '  dmoss config set deniedTools device_*,write_file',
-    '  dmoss config set mcp.enabled true',
-    '  dmoss config set mcp.configPath .dmoss/mcp.json',
-    '  dmoss config set guardrails.input.redactPatterns SECRET=[^\\\\s]+',
-    '  dmoss config set agent.maxTurns 96',
-    '  dmoss config set agent.contextTokens 200000',
-    '  dmoss config set agent.compaction.reserveTokens 20000',
+    '  moss config init --project',
+    '  moss config validate --strict',
+    '  moss config set profile autonomous',
+    '  moss config set --project safetyMode workspace-write',
+    '  moss config set approvalPolicy prompt',
+    '  moss config set trustedTools exec,filesystem__*',
+    '  moss config set deniedTools device_*,write_file',
+    '  moss config set mcp.enabled true',
+    '  moss config set mcp.configPath .dmoss/mcp.json',
+    '  moss config set guardrails.input.redactPatterns SECRET=[^\\\\s]+',
+    '  moss config set agent.maxTurns 96',
+    '  moss config set agent.contextTokens 200000',
+    '  moss config set agent.compaction.reserveTokens 20000',
   ].join('\n');
 }
 
@@ -454,7 +454,7 @@ export async function runAuthLogout(): Promise<void> {
     if (!removedCommunitySession) print('[auth] No API key or D-Robotics community session is stored.');
     return;
   }
-  const answer = await question('Remove stored API key from dmoss config? [y/N] ');
+  const answer = await question('Remove stored API key from Moss config? [y/N] ');
   if (!/^y(es)?$/i.test(answer)) {
     print('[auth] Cancelled.');
     return;
@@ -809,7 +809,7 @@ export function printMissingConfigGuidance(interactive: boolean): void {
   print('D-Moss needs a model configuration before it can run.');
   print('');
   print('Fast path:');
-  print('  dmoss setup');
+    print('  moss setup');
   print('');
   print('Script/env path:');
   print('  export DEEPSEEK_API_KEY=your-key');
@@ -829,7 +829,7 @@ export async function offerSetupForInteractiveMissingConfig(): Promise<void> {
   if (!answer || /^y(es)?$/i.test(answer)) {
     await runSetupWizard();
   } else {
-    print('Setup skipped. Run `dmoss setup` when you are ready.');
+    print('Setup skipped. Run `moss setup` when you are ready.');
     process.exitCode = 1;
   }
 }

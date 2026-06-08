@@ -29,8 +29,8 @@ const socksProxyEnv = {
     encoding: 'utf8',
   });
 
-  assertSocksProxyTolerated(result, 'dmoss --version');
-  assert.match(result.stdout, /dmoss v\d+\.\d+\.\d+/);
+  assertSocksProxyTolerated(result, 'moss --version');
+  assert.match(result.stdout, /moss v\d+\.\d+\.\d+/);
 }
 
 {

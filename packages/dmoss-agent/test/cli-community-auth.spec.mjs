@@ -92,6 +92,30 @@ await runLoginCallbackTest((redirectUrl) => {
 });
 
 {
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-community-auth-manual-'));
+  const lines = [];
+  let prompted = false;
+  const auth = await runDmossCommunityAuthLogin({
+    configDir,
+    fetchImpl: mockFetch(),
+    manual: true,
+    print: (line) => lines.push(line),
+    readLine: async (prompt) => {
+      prompted = true;
+      assert.match(prompt, /Paste redirected URL or token/);
+      const loginLine = lines.find((entry) => entry.includes('Login URL:'));
+      assert.ok(loginLine, 'manual mode prints a login URL before prompting');
+      const redirectUrl = redirectUrlFromLoginUrl(loginLine.replace(/^.*Login URL:\s*/, '').trim());
+      return `${redirectUrl.toString()}?bearer=${encodeURIComponent('opaque-token-manual')}`;
+    },
+  });
+  assert.equal(prompted, true);
+  assert.equal(auth.user.id, 'user-123');
+  assert.match(lines.join('\n'), /Manual login mode for SSH\/remote terminals/);
+  assert.equal(getDmossCommunityAuthStatus({ configDir }).authenticated, true);
+}
+
+{
   const token = jwt({
     sub: 'forged-user',
     name: 'Forged User',
@@ -198,7 +222,7 @@ await runLoginCallbackTest((redirectUrl) => {
     },
   });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /dmoss auth login/);
+  assert.match(result.stderr, /moss auth login/);
   assert.doesNotMatch(result.stderr, /provider returned HTTP|ECONNREFUSED|fetch failed/);
 }
 

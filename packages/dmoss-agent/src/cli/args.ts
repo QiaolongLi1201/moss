@@ -18,6 +18,7 @@ export interface ParsedCliArgs {
   detailMode?: 'quiet' | 'progress' | 'verbose';
   mesh: boolean;
   help: boolean;
+  helpAll: boolean;
   version: boolean;
   print: boolean;
   outputFormat: 'text' | 'json' | 'stream-json';
@@ -182,6 +183,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
   let detailMode: ParsedCliArgs['detailMode'];
   let mesh = false;
   let help = false;
+  let helpAll = false;
   let version = false;
   let print = false;
   let outputFormat: ParsedCliArgs['outputFormat'] = 'text';
@@ -202,6 +204,10 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
 
     if (arg === '-h' || arg === '--help') {
       help = true;
+      continue;
+    }
+    if (arg === '--all') {
+      helpAll = true;
       continue;
     }
     if (arg === '-v' || arg === '--version') {
@@ -357,6 +363,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     detailMode,
     mesh,
     help,
+    helpAll,
     version,
     print,
     outputFormat,

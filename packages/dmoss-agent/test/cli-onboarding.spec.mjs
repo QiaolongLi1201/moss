@@ -115,21 +115,18 @@ const agent = createAgent([
   const welcome = renderCliWelcome(agent, runtime);
   assert.match(welcome, /D-Moss Agent/);
   assert.match(welcome, /model: qwen3\.7-max/);
-  assert.match(welcome, /session: cli/);
-  assert.doesNotMatch(welcome, /\+-+\+/);
-  assert.match(welcome, /capabilities: workspace 2/);
-  assert.match(welcome, /device root@10\.64\.1\.10:22/);
-  assert.match(welcome, /mesh on/);
-  assert.match(welcome, /profile autonomous/);
-  assert.match(welcome, /approval never/);
-  assert.match(welcome, /cache off/);
-  assert.match(welcome, /guardrails in 2 out 1/);
-  assert.match(welcome, /commands.*\/status.*\/model.*\/goal.*\/compact.*\/context.*\/help/);
+  assert.match(welcome, /workspace: \/tmp\/dmoss-workspace/);
+  assert.match(welcome, /login: own provider configured/);
+  assert.match(welcome, /board: root@10\.64\.1\.10:22/);
+  assert.match(welcome, /next \/help or ask Moss directly/);
+  assert.doesNotMatch(welcome, /profile autonomous/);
+  assert.doesNotMatch(welcome, /approval never/);
+  assert(welcome.split('\n').length <= 6);
 }
 
 {
   const welcome = renderCliWelcome(agent, disconnectedRuntime);
-  assert.match(welcome, /device not configured/);
+  assert.match(welcome, /board: not connected/);
 }
 
 {
@@ -138,7 +135,7 @@ const agent = createAgent([
   assert.match(quickStart, /1\/3.*Model/);
   assert.match(quickStart, /provider.*qwen/);
   assert.match(quickStart, /api key.*configured/);
-  assert.match(quickStart, /dmoss setup/);
+  assert.match(quickStart, /moss setup/);
   assert.match(quickStart, /\/model` to choose a model/);
   assert.match(quickStart, /2\/3.*Workspace/);
   assert.match(quickStart, /\/status/);
@@ -150,20 +147,33 @@ const agent = createAgent([
 {
   const quickStart = renderCliQuickStart(agent, disconnectedRuntime);
   assert.match(quickStart, /api key.*configured/);
-  assert.match(quickStart, /DMOSS_DEVICE_HOST/);
+  assert.match(quickStart, /\/connect <board-ip>/);
+  assert.doesNotMatch(quickStart, /restart dmoss/i);
 }
 
 {
   const tools = renderCliTools(agent);
   assert.match(tools, /Tools run automatically/);
   assert.match(tools, /Ask for the outcome/);
-  assert.match(tools, /\/quick_start/);
+  assert.match(tools, /\/quickstart/);
   assert.match(tools, /\/detail verbose/);
   assert.doesNotMatch(tools, /read_file Read a file/);
 }
 
 {
   const status = renderCliStatus(agent, runtime);
+  assert.match(status, /Status/);
+  assert.match(status, /model: qwen3\.7-max \(qwen\)/);
+  assert.match(status, /workspace: \/tmp\/dmoss-workspace/);
+  assert.match(status, /board: root@10\.64\.1\.10:22/);
+  assert.match(status, /tools: 7/);
+  assert.match(status, /Details: \/status --verbose/);
+  assert.doesNotMatch(status, /profile: autonomous \(config\)/);
+  assert.doesNotMatch(status, /token-plan\.cn-beijing\.maas\.aliyuncs\.com/);
+}
+
+{
+  const status = renderCliStatus(agent, runtime, { verbose: true });
   assert.match(status, /session: cli/);
   assert.match(status, /provider: qwen/);
   assert.match(status, /profile: autonomous \(config\)/);
@@ -202,21 +212,21 @@ const agent = createAgent([
   assert.match(permissions, /config warnings: 1/);
   assert.match(permissions, /approval\.auto_approval: auto-approval is enabled via config/);
   assert.match(permissions, /edit guardrails\.input\/output/);
-  assert.match(permissions, /dmoss config init --project/);
-  assert.match(permissions, /dmoss config set agent\.maxTurns/);
-  assert.match(permissions, /dmoss config set agent\.contextTokens/);
-  assert.match(permissions, /dmoss config set agent\.compaction\.reserveTokens/);
-  assert.match(permissions, /dmoss config set safetyMode/);
-  assert.match(permissions, /dmoss config set --project safetyMode/);
-  assert.match(permissions, /dmoss config set workspace/);
-  assert.match(permissions, /dmoss config set profile/);
-  assert.match(permissions, /dmoss config set trustedTools/);
-  assert.match(permissions, /dmoss config set deniedTools/);
-  assert.match(permissions, /dmoss config set promptCacheDebug/);
-  assert.match(permissions, /dmoss config set mcp\.enabled/);
-  assert.match(permissions, /dmoss config set mcp\.configPath/);
-  assert.match(permissions, /dmoss config unset --project safetyMode/);
-  assert.match(permissions, /dmoss config unset approvalPolicy/);
+  assert.match(permissions, /moss config init --project/);
+  assert.match(permissions, /moss config set agent\.maxTurns/);
+  assert.match(permissions, /moss config set agent\.contextTokens/);
+  assert.match(permissions, /moss config set agent\.compaction\.reserveTokens/);
+  assert.match(permissions, /moss config set safetyMode/);
+  assert.match(permissions, /moss config set --project safetyMode/);
+  assert.match(permissions, /moss config set workspace/);
+  assert.match(permissions, /moss config set profile/);
+  assert.match(permissions, /moss config set trustedTools/);
+  assert.match(permissions, /moss config set deniedTools/);
+  assert.match(permissions, /moss config set promptCacheDebug/);
+  assert.match(permissions, /moss config set mcp\.enabled/);
+  assert.match(permissions, /moss config set mcp\.configPath/);
+  assert.match(permissions, /moss config unset --project safetyMode/);
+  assert.match(permissions, /moss config unset approvalPolicy/);
   assert.match(permissions, /trust the approved tool for the current session/);
   assert.match(permissions, /DMOSS_PROFILE/);
   assert.match(permissions, /DMOSS_SAFETY_MODE/);
@@ -248,7 +258,7 @@ const agent = createAgent([
 }
 
 {
-  const status = renderCliStatus(agent, { ...runtime, safetyMode: 'read-only' });
+  const status = renderCliStatus(agent, { ...runtime, safetyMode: 'read-only' }, { verbose: true });
   assert.match(status, /safety: read-only/);
 }
 
@@ -262,7 +272,7 @@ const agent = createAgent([
 
 {
   const examples = renderCliExamples(agent, disconnectedRuntime);
-  assert.match(examples, /DMOSS_DEVICE_HOST/);
+  assert.match(examples, /\/connect <board-ip>/);
 }
 
 {
@@ -276,18 +286,21 @@ const agent = createAgent([
 {
   const help = renderCliInteractiveHelp();
   assert.match(help, /Work/);
-  assert.match(help, /\/quick_start/);
+  assert.match(help, /\/connect <ip>/);
   assert.match(help, /Inspect/);
   assert.match(help, /Configure/);
   assert.match(help, /\/compact\s+compress older conversation history into a summary/);
-  assert.match(help, /\/permissions/);
-  assert.match(help, /\/config/);
-  assert.match(help, /\/upgrade/);
+  assert.match(help, /Shortcuts/);
+  assert.match(help, /Ctrl\+V\s+attach clipboard image/);
+  assert.match(help, /Advanced commands still work/);
+  assert.doesNotMatch(help, /\/permissions\s+show safety/);
+  assert.doesNotMatch(help, /\/config\s+show config file/);
+  assert.doesNotMatch(help, /\/upgrade\s+show install/);
 }
 
 {
   const upgrade = renderCliUpgradeHelp();
-  assert.match(upgrade, /dmoss update/);
+  assert.match(upgrade, /moss update/);
   assert.match(upgrade, /npm i -g @rdk-moss\/agent@latest/);
   assert.match(upgrade, /npx -y @rdk-moss\/agent@latest/);
   assert.doesNotMatch(upgrade, /API key/);

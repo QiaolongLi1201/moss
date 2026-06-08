@@ -91,10 +91,12 @@
     "access": "public"
   },
   "bin": {
+    "moss": "dist/cli.js",
     "dmoss": "dist/cli.js",
     "dmoss-agent": "dist/cli.js"
   },
   "files": [
+    "assets",
     "dist",
     "src",
     "zero-config-default.json",
@@ -129,7 +131,6 @@
     "docs": "typedoc --out docs-api src/index.ts src/core/index.ts src/knowledge/index.ts --tsconfig tsconfig.build.json"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "^0.50.7",
     "@rdk-moss/core": "^0.3.26",
     "@rdk-moss/memory": "^0.3.26",
     "@rdk-moss/skills": "^0.3.26",

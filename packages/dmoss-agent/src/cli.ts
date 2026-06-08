@@ -152,8 +152,14 @@ function createCommunityAuthRuntime(
   return {
     getStatus: () => getDmossCommunityAuthStatus({ configDir }),
     getContext: () => providerConfig.communityAuth,
-    login: async (print) => {
-      const auth = await runDmossCommunityAuthLogin({ configDir, print });
+    login: async (print, options) => {
+      const auth = await runDmossCommunityAuthLogin({
+        configDir,
+        print,
+        manual: options?.manual,
+        openBrowser: options?.openBrowser,
+        readLine: options?.readLine,
+      });
       providerConfig.communityAuth = auth;
       return auth;
     },
@@ -168,7 +174,11 @@ if (process.env.DMOSS_TRACE === 'console' || process.env.DMOSS_TRACE === '1' || 
   setTracer('console');
 }
 
-if (parsedArgs.help) displayHelp(c);
+if (parsedArgs.help && parsedArgs.command === 'config') {
+  console.log(renderConfigUsage());
+  process.exit(0);
+}
+if (parsedArgs.help) displayHelp(c, { all: parsedArgs.helpAll });
 if (parsedArgs.version) displayVersion(c);
 
 async function setupMesh(agent: DmossAgent, deviceConfig: DeviceSshConfig | null) {
@@ -237,7 +247,10 @@ async function main() {
     return;
   }
   if (parsedArgs.command === 'auth' && parsedArgs.commandArgs[0] === 'login') {
-    await runDmossCommunityAuthLogin();
+    await runDmossCommunityAuthLogin({
+      manual: parsedArgs.commandArgs.includes('--manual'),
+      openBrowser: !parsedArgs.commandArgs.includes('--manual'),
+    });
     return;
   }
   if (parsedArgs.command === 'auth' && parsedArgs.commandArgs[0] === 'logout') {
@@ -245,7 +258,7 @@ async function main() {
     return;
   }
   if (parsedArgs.command === 'auth') {
-    console.error('Usage: dmoss auth <login|status|logout>');
+    console.error('Usage: moss auth <login|status|logout>');
     process.exitCode = 1;
     return;
   }

@@ -446,7 +446,7 @@ export function convertMessages(
        * verbatim or the next turn is 400-rejected. Non-thinking models
        * only round-trip on tool-follow-up turns to avoid feeding UI-playback
        * thinking into normal history.
-       * @see node_modules/@mariozechner/pi-ai/dist/providers/openai-completions.js
+       * @see pi-ai-compatible openai-completions provider behavior
        */
       const includeThinking = shouldRoundTripAssistantThinking(messages, index, { thinkingMode });
       const pushThinkingBlocks = (out: unknown[]) => {

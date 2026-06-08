@@ -8,7 +8,7 @@ import type {
   StreamFunction,
   ToolCall as PiToolCall,
   Usage,
-} from '@mariozechner/pi-ai';
+} from '../../provider/pi-ai-types.js';
 import type {
   LLMContentBlock,
   LLMMessage,

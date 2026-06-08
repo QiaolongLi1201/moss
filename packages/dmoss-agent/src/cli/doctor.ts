@@ -129,7 +129,7 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
   lines.push(ok('version', options.currentVersion));
   lines.push(options.config.apiKey
     ? ok('auth', `configured via ${options.config.apiKeySource}`)
-    : fail('auth', 'missing API key; run dmoss setup or set DEEPSEEK_API_KEY'));
+    : fail('auth', 'missing API key; run moss setup or set DEEPSEEK_API_KEY'));
   lines.push(ok('provider', `${options.config.provider} (${options.config.providerSource})`));
   lines.push(ok('model', `${options.config.model} (${options.config.modelSource})`));
   lines.push(renderBaseUrlDoctor(options.config));
@@ -166,7 +166,7 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
     fetchImpl: options.updateFetchImpl,
   });
   if (notice) {
-    lines.push(warn('npm update', `${notice.currentVersion} -> ${notice.latestVersion}; run dmoss update`));
+    lines.push(warn('npm update', `${notice.currentVersion} -> ${notice.latestVersion}; run moss update`));
   } else if (options.npmLatest && options.npmLatest !== options.currentVersion) {
     lines.push(warn('npm registry', `latest is ${options.npmLatest}; installed source reports ${options.currentVersion}`));
   } else {

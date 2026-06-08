@@ -16,24 +16,62 @@ interface Colors {
   gray: ColorFn;
 }
 
-export function displayHelp(c: Colors): void {
+export function displayHelp(c: Colors, options: { all?: boolean } = {}): void {
   const configPath = resolveConfigPath();
   const interactiveLines = INTERACTIVE_COMMAND_SECTIONS.flatMap((section) => [
     `    ${c.bold(section.title)}`,
     ...section.rows.map((row) => `      ${c.green(row.command.padEnd(24))} ${row.description}`),
   ]);
+  if (!options.all) {
+    const lines = [
+      '',
+      `  ${c.bold(c.cyan('moss'))}  ${c.dim('— Moss, the D-Robotics robotics agent')}`,
+      '',
+      `  ${c.bold('Most useful')}`,
+      `    ${c.cyan('$')} moss                          ${c.dim('# start interactive Moss; built-in model is ready after community login')}`,
+      `    ${c.cyan('$')} moss auth login               ${c.dim('# log in for the built-in D-Robotics model')}`,
+      `    ${c.cyan('$')} moss auth login --manual      ${c.dim('# SSH/board login fallback: paste browser redirect URL or token')}`,
+      `    ${c.cyan('$')} moss setup                    ${c.dim('# use your own provider/model/API key instead')}`,
+      `    ${c.cyan('$')} moss "check this project"      ${c.dim('# one-shot mode')}`,
+      '',
+      `  ${c.bold('Inside Moss')}`,
+      `    ${c.green('/help')}          focused command help`,
+      `    ${c.green('/status')}        current model, login, workspace, board`,
+      `    ${c.green('/model')}         choose/switch model for this session`,
+      `    ${c.green('/attach <path>')} attach image/text; macOS clipboard image: press Ctrl+V in the TUI`,
+      `    ${c.green('/connect <ip>')}  connect an RDK board for this session`,
+      '',
+      `  ${c.bold('Model configuration')}`,
+      `    Built-in: no model API key is needed; log in with ${c.green('moss auth login')}.`,
+      `    Own model example:`,
+      `      export DEEPSEEK_API_KEY=...`,
+      `      moss setup`,
+      `    OpenAI-compatible example:`,
+      `      export DMOSS_API_KEY=...`,
+      `      moss config set provider openai-compatible`,
+      `      moss config set model <your-model>`,
+      `      moss config set baseUrl <https://host/v1>`,
+      `    Priority: ${c.bold('CLI flags/-c')} > ${c.bold('environment variables')} > ${c.bold('project .dmoss/config.json')} > ${c.bold('user config')} > ${c.bold('built-in default')}.`,
+      '',
+      `  ${c.dim('Full reference: moss --help --all · config reference: moss config --help · dmoss remains a compatible alias')}`,
+      `  ${c.dim(`Config file: ${configPath}`)}`,
+      '',
+    ];
+    console.log(lines.join('\n'));
+    process.exit(0);
+  }
   const lines = [
     '',
-    `  ${c.bold(c.cyan('dmoss'))}  ${c.dim('— standalone agent for robotics & edge devices')}`,
+    `  ${c.bold(c.cyan('moss'))}  ${c.dim('— standalone agent for robotics & edge devices')}`,
     '',
     `  ${c.bold('Quick start')}`,
-    `    ${c.cyan('$')} dmoss                      ${c.dim('# interactive TUI; log in with /auth login before asking')}`,
-    `    ${c.cyan('$')} dmoss setup                ${c.dim('# optional: use your own provider, model, and API key')}`,
-    `    ${c.cyan('$')} dmoss -m qwen-plus         ${c.dim('# override model for this run')}`,
-    `    ${c.cyan('$')} dmoss resume --last        ${c.dim('# continue the latest saved session')}`,
-    `    ${c.cyan('$')} dmoss --session work       ${c.dim('# continue or create a named session')}`,
-    `    ${c.cyan('$')} dmoss "check disk usage"   ${c.dim('# one-shot mode')}`,
-    `    ${c.cyan('$')} echo "list files" | dmoss  ${c.dim('# piped stdin')}`,
+    `    ${c.cyan('$')} moss                       ${c.dim('# interactive TUI; log in with /auth login before asking')}`,
+    `    ${c.cyan('$')} moss setup                 ${c.dim('# optional: use your own provider, model, and API key')}`,
+    `    ${c.cyan('$')} moss -m qwen-plus          ${c.dim('# override model for this run')}`,
+    `    ${c.cyan('$')} moss resume --last         ${c.dim('# continue the latest saved session')}`,
+    `    ${c.cyan('$')} moss --session work        ${c.dim('# continue or create a named session')}`,
+    `    ${c.cyan('$')} moss "check disk usage"    ${c.dim('# one-shot mode')}`,
+    `    ${c.cyan('$')} echo "list files" | moss   ${c.dim('# piped stdin')}`,
     '',
     `  ${c.bold('Setup & auth')}`,
     `    ${c.green('setup')}                 configure your own provider/model/API key`,
@@ -41,7 +79,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.green('auth status')}           show community login and provider/model/key status`,
     `    ${c.green('auth logout')}           remove stored community login and API key config`,
     `    ${c.green('doctor')}                inspect config, auth, workspace, runtime, and update state`,
-    `    ${c.green('update')}                run npm global update for dmoss`,
+    `    ${c.green('update')}                run npm global update for Moss`,
     `    ${c.green('resume')} ${c.dim('[--last]')}       resume a saved JSONL session`,
     `    ${c.green('fork')} ${c.dim('[--last]')}         copy a saved session into a new branch`,
     `    ${c.green('config')}               show resolved config values and sources`,
@@ -148,6 +186,6 @@ export function displayHelp(c: Colors): void {
 
 export function displayVersion(c: Colors): void {
   const version = getPackageVersion();
-  console.log(`${c.bold('dmoss')} ${version === 'unknown' ? c.dim('(unknown version)') : c.cyan(`v${version}`)}`);
+  console.log(`${c.bold('moss')} ${version === 'unknown' ? c.dim('(unknown version)') : c.cyan(`v${version}`)}`);
   process.exit(0);
 }

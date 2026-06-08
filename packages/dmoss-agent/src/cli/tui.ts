@@ -20,8 +20,10 @@ import {
   type PreparedPromptAttachment,
   type PromptAttachmentBlock,
 } from './attachments.js';
+import { prepareClipboardImageAttachment } from './clipboard-image.js';
 import { handleCompactCommand } from './compact-command.js';
-import { formatCommunityAuthStatus, renderCommunityAuthRequiredMessage } from './community-auth.js';
+import { formatCommunityAuthLoginError, formatCommunityAuthStatus, renderCommunityAuthRequiredMessage } from './community-auth.js';
+import { connectDeviceForSession, parseDeviceConnectArgs } from './device-connect.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
 import { formatModelChoices, loadModelChoicesForRuntime, resolveModelSelection } from './model-catalog.js';
@@ -393,9 +395,9 @@ export function formatTuiSessions(
     }
   }
   lines.push('');
-  lines.push('Shell: dmoss resume --last');
-  lines.push('Shell: dmoss resume --session <key>');
-  lines.push('Shell: dmoss fork --fork-from <key>');
+  lines.push('Shell: moss resume --last');
+  lines.push('Shell: moss resume --session <key>');
+  lines.push('Shell: moss fork --fork-from <key>');
   return lines.join('\n');
 }
 
@@ -692,7 +694,7 @@ function compactWelcomeTip(tip: string): string {
 export function footerHint(state: TuiRunState): string {
   if (state === 'approval') return 'y approve · a always this session · n/Esc deny';
   if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
-  return '/quick_start · /attach image · Tab complete · Up/Down history · Ctrl+O details · Ctrl+C exit';
+  return 'Ctrl+V image · /attach file · Tab complete · Up/Down history · Ctrl+O details · Ctrl+C exit';
 }
 
 export function editorPreviewLines(value: string, placeholder: string, maxLines = 8): string[] {
@@ -840,16 +842,17 @@ function editorPreviewLinesWithCursor(
 export function commandSuggestion(command: string): string | null {
   const normalized = command.trim().toLowerCase();
   if (!normalized.startsWith('/')) return null;
+  const firstMeaningfulChar = normalized.replace(/^\//, '')[0] ?? '';
   const preferSubcommand = normalized.includes(' ');
   const scored = KNOWN_COMMANDS
     .map((known, index) => {
       const prefixMatch = known.startsWith(normalized) || normalized.startsWith(known);
       if (prefixMatch) return { known, score: 0, prefixMatch, index };
-      let score = Math.abs(known.length - normalized.length);
-      const limit = Math.min(known.length, normalized.length);
-      for (let i = 0; i < limit; i += 1) {
-        if (known[i] !== normalized[i]) score += 1;
+      const knownFirstChar = known.replace(/^\//, '')[0] ?? '';
+      if (!firstMeaningfulChar || knownFirstChar !== firstMeaningfulChar) {
+        return { known, score: Number.POSITIVE_INFINITY, prefixMatch, index };
       }
+      const score = editDistance(known, normalized);
       return { known, score, prefixMatch, index };
     })
     .sort((a, b) => (
@@ -860,7 +863,24 @@ export function commandSuggestion(command: string): string | null {
         : a.index - b.index)
     ));
   const best = scored[0];
-  return best && best.score <= 3 ? best.known : null;
+  return best && best.score <= 2 ? best.known : null;
+}
+
+function editDistance(a: string, b: string): number {
+  const rows = Array.from({ length: a.length + 1 }, () => Array<number>(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i += 1) rows[i]![0] = i;
+  for (let j = 0; j <= b.length; j += 1) rows[0]![j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      rows[i]![j] = Math.min(
+        rows[i - 1]![j]! + 1,
+        rows[i]![j - 1]! + 1,
+        rows[i - 1]![j - 1]! + cost,
+      );
+    }
+  }
+  return rows[a.length]![b.length]!;
 }
 
 function commonPrefix(values: readonly string[]): string {
@@ -895,6 +915,21 @@ export function completeSlashCommandInput(value: string, cursor: number): Prompt
     value: `${completion}${afterCursor}`,
     cursor: completion.length,
   };
+}
+
+export function commandArgumentHint(value: string): string | null {
+  const normalized = value.trimStart().toLowerCase();
+  if (!normalized.startsWith('/')) return null;
+  if (normalized === '/auth login') return '[--manual]';
+  const [command, ...rest] = normalized.split(/\s+/);
+  const hasArg = rest.some(Boolean);
+  if (command === '/goal') return hasArg ? null : '[<condition> | clear]';
+  if (command === '/connect') return hasArg ? null : '<board-ip> [--user root --port 22]';
+  if (command === '/attach') return hasArg ? null : '<image-or-text-file>';
+  if (command === '/model') return hasArg ? null : '<model-name-or-number>';
+  if (command === '/auth') return hasArg ? null : '[login | status | logout]';
+  if (command === '/status') return hasArg ? null : '[--verbose]';
+  return null;
 }
 
 export function promptPlaceholder(state: TuiRunState): string {
@@ -1690,6 +1725,7 @@ export interface PromptEditorProps {
   onHistoryPrevious?: () => void;
   onHistoryNext?: () => void;
   onShiftEnter?: () => void;
+  onPasteImageShortcut?: () => void;
   hint?: string;
   model?: string;
   mode?: string;
@@ -1736,6 +1772,7 @@ export function PromptEditor({
   onHistoryPrevious,
   onHistoryNext,
   onShiftEnter,
+  onPasteImageShortcut,
   hint,
   model: _model,
   mode,
@@ -1833,6 +1870,10 @@ export function PromptEditor({
       applyEdit({ type: 'deletePreviousWord' });
       return;
     }
+    if (key.ctrl && (normalizedInput === 'v' || inputChar === '\u0016')) {
+      onPasteImageShortcut?.();
+      return;
+    }
     if (key.return) {
       if (shouldPromptReturnInsertNewline(key)) {
         applyEdit({ type: 'insert', text: '\n' });
@@ -1866,6 +1907,7 @@ export function PromptEditor({
 
   const lines = editorPreviewLinesWithCursor(value, placeholder, currentCursor, 6);
   const suggestion = value.startsWith('/') ? commandSuggestion(value) : null;
+  const argumentHint = commandArgumentHint(value);
   // Border reflects the active interaction mode (compact agent style).
   const borderColor = mode === 'plan' ? theme.planMode
     : mode === 'acceptEdits' ? theme.autoAccept
@@ -1933,6 +1975,9 @@ export function PromptEditor({
           ? React.createElement(Text, { color: theme.accent, bold: true }, '> ')
           : '  ',
         line.text,
+        argumentHint && index === lines.length - 1
+          ? React.createElement(Text, { color: theme.textDim }, ` ${argumentHint}`)
+          : null,
       ));
 
   return React.createElement(
@@ -2104,6 +2149,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const inputHistoryRef = useRef<string[]>([]);
   const historyIndexRef = useRef<number | null>(null);
   const historyDraftRef = useRef('');
+  const authPromptedRef = useRef(false);
 
   const setQueuedInputs = useCallback((next: QueuedInput[]): void => {
     queuedInputsRef.current = next;
@@ -2188,6 +2234,46 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     flashTimerRef.current = setTimeout(() => setFlashHint(''), 2000);
   }, []);
 
+  const appendPreparedAttachments = useCallback((prepared: {
+    attachments: PreparedPromptAttachment[];
+    blocks: PromptAttachmentBlock[];
+    warnings: string[];
+  }): void => {
+    if (prepared.attachments.length > 0) {
+      const nextAttachments = [...pendingAttachments, ...prepared.attachments];
+      setPendingAttachments(nextAttachments);
+      setPendingAttachmentBlocks([...pendingAttachmentBlocks, ...prepared.blocks]);
+      const refs = prepared.attachments.map((item) => `[${item.kind === 'image' ? 'Image' : 'File'} #${item.index}]`).join(' ');
+      const nextInput = input.trim() ? `${input.trimEnd()} ${refs}` : refs;
+      setInput(nextInput);
+      setInputCursor(nextInput.length);
+      addTranscript('system', renderPendingAttachmentSummary(nextAttachments));
+    }
+    for (const warning of prepared.warnings) {
+      addTranscript('error', warning);
+    }
+    if (prepared.attachments.length === 0 && prepared.warnings.length === 0) {
+      addTranscript('system', 'No attachments added.');
+    }
+  }, [addTranscript, input, pendingAttachmentBlocks, pendingAttachments]);
+
+  const pasteClipboardImage = useCallback(async (): Promise<void> => {
+    try {
+      const prepared = await prepareClipboardImageAttachment({
+        runtimeDir: runtime?.runtimeDir || path.join(workspace, '.dmoss-runtime'),
+        cwd: workspace,
+        startIndex: pendingAttachments.length + 1,
+      });
+      appendPreparedAttachments(prepared);
+      if (prepared.attachments.length > 0) showFlash(`attached ${prepared.attachments.length} clipboard image${prepared.attachments.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      addTranscript('error', [
+        `Could not paste clipboard image: ${err instanceof Error ? err.message : String(err)}`,
+        'Try /attach <image-file> instead. On macOS, copy a screenshot/image to the clipboard, then run /paste or press Ctrl+V inside Moss.',
+      ].join('\n'));
+    }
+  }, [addTranscript, appendPreparedAttachments, pendingAttachments.length, runtime?.runtimeDir, showFlash, workspace]);
+
   useEffect(() => () => {
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
   }, []);
@@ -2208,6 +2294,41 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const askApproval = useCallback((question: string): Promise<string> => new Promise((resolve) => {
     setApproval({ question, resolve });
   }), []);
+
+  useEffect(() => {
+    const auth = runtime?.communityAuth;
+    if (!auth || auth.getStatus().authenticated || authPromptedRef.current) return;
+    authPromptedRef.current = true;
+    const manual = Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY);
+    addTranscript('system', manual
+      ? '[auth] Built-in D-Robotics model needs community login. SSH detected; login will use manual paste mode.'
+      : '[auth] Built-in D-Robotics model needs community login.');
+    void (async () => {
+      const answer = await askApproval([
+        'Log in to the D-Robotics developer community now?',
+        manual
+          ? 'SSH/remote mode: Moss will print a URL, then ask you to paste the browser redirect URL or token.'
+          : 'Moss will open a browser and wait for the local callback.',
+        'Press y to log in, n/Esc to skip. You can run /auth login later.',
+      ].join('\n'));
+      if (answer.trim().toLowerCase() !== 'y' && answer.trim().toLowerCase() !== 'a') {
+        addTranscript('system', '[auth] Skipped. Ask after /auth login, or use /auth login --manual over SSH.');
+        return;
+      }
+      setBusyState(true);
+      try {
+        const context = await auth.login((line) => addTranscript('system', line), {
+          manual,
+          openBrowser: !manual,
+        });
+        addTranscript('system', `[auth] Ready. Logged in as ${context.user.name || context.user.email || context.user.id}.`);
+      } catch (err) {
+        addTranscript('error', `[auth] ${formatCommunityAuthLoginError(err)}`);
+      } finally {
+        setBusyState(false);
+      }
+    })();
+  }, [addTranscript, askApproval, runtime?.communityAuth, setBusyState]);
 
   useEffect(() => {
     setCliApprovalAsker((question) => new Promise((resolve) => {
@@ -2317,8 +2438,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       addTranscript('system', commandList());
       return true;
     }
-    if (message === '/quick_start' || message === '/start') {
+    if (message === '/quickstart' || message === '/quick_start' || message === '/start') {
       addTranscript('system', renderCliQuickStart(agent, runtime));
+      return true;
+    }
+    if (message === '/paste') {
+      await pasteClipboardImage();
       return true;
     }
     if (message === '/clear') {
@@ -2400,18 +2525,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
         cwd: workspace,
         startIndex: pendingAttachments.length + 1,
       });
-      if (prepared.attachments.length > 0) {
-        const nextAttachments = [...pendingAttachments, ...prepared.attachments];
-        setPendingAttachments(nextAttachments);
-        setPendingAttachmentBlocks([...pendingAttachmentBlocks, ...prepared.blocks]);
-        addTranscript('system', renderPendingAttachmentSummary(nextAttachments));
-      }
-      for (const warning of prepared.warnings) {
-        addTranscript('error', warning);
-      }
-      if (prepared.attachments.length === 0 && prepared.warnings.length === 0) {
-        addTranscript('system', 'No attachments added.');
-      }
+      appendPreparedAttachments(prepared);
       return true;
     }
     if (message === '/stop' || message === '/abort') {
@@ -2428,8 +2542,13 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       });
       return true;
     }
-    if (message === '/status') {
-      addTranscript('system', renderCliStatus(agent, runtime));
+    if (message === '/status' || message === '/status --verbose') {
+      addTranscript('system', renderCliStatus(agent, runtime, { verbose: message.includes('--verbose') }));
+      return true;
+    }
+    if (message === '/connect' || message.startsWith('/connect ')) {
+      const parsed = parseDeviceConnectArgs(message.slice('/connect'.length));
+      addTranscript(parsed.error ? 'error' : 'system', parsed.error || connectDeviceForSession(agent, runtime, parsed.config!));
       return true;
     }
     if (message === '/auth' || message.startsWith('/auth ') || message === '/logout') {
@@ -2442,13 +2561,14 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
         addTranscript('system', `[auth] ${formatCommunityAuthStatus(auth.getStatus())}`);
         return true;
       }
-      if (message === '/auth login') {
+      if (message === '/auth login' || message.startsWith('/auth login ')) {
+        const manual = message.split(/\s+/).includes('--manual');
         setBusyState(true);
         try {
-          const context = await auth.login((line) => addTranscript('system', line));
+          const context = await auth.login((line) => addTranscript('system', line), { manual, openBrowser: !manual });
           addTranscript('system', `[auth] Ready. Logged in as ${context.user.name || context.user.email || context.user.id}.`);
         } catch (err) {
-          addTranscript('error', `[auth] Login failed: ${err instanceof Error ? err.message : String(err)}`);
+          addTranscript('error', `[auth] ${formatCommunityAuthLoginError(err)}`);
         } finally {
           setBusyState(false);
         }
@@ -2474,7 +2594,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       try {
         addTranscript('system', await handleCompactCommand(agent, sessionKey));
       } catch (err) {
-        addTranscript('error', `Could not compact conversation: ${err instanceof Error ? err.message : String(err)}`);
+        addTranscript('error', [
+          `Could not compact conversation: ${err instanceof Error ? err.message : String(err)}`,
+          'You can keep chatting; try /status --verbose to inspect context, or ask Moss to summarize the current session manually.',
+        ].join('\n'));
       } finally {
         setBusyState(false);
       }
@@ -2601,7 +2724,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     if (message === '/version') {
-      addTranscript('system', `dmoss v${getPackageVersion()}`);
+      addTranscript('system', `moss v${getPackageVersion()}`);
       return true;
     }
     if (message === '/model' || message.startsWith('/model ')) {
@@ -2675,7 +2798,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     return false;
-  }, [addTranscript, agent, app, currentModel, pendingAttachmentBlocks, pendingAttachments, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, workspace]);
+  }, [addTranscript, agent, app, currentModel, pasteClipboardImage, pendingAttachmentBlocks, pendingAttachments, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, workspace]);
 
   const runLocalShell = useCallback(async (raw: string): Promise<void> => {
     const command = raw.slice(1);
@@ -3079,6 +3202,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
             onHistoryPrevious: recallHistoryPrevious,
             onHistoryNext: recallHistoryNext,
             onShiftEnter: () => undefined,
+            onPasteImageShortcut: () => { void pasteClipboardImage(); },
           }),
       // One compact agent-style line under the input: the active non-default mode, else
       // the key hints — plus a subtle context-used %.
@@ -3100,44 +3224,27 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
 
 function commandList(): string {
   return [
-    'Commands',
+    'Core commands',
     '  /status            view model, workspace, device, and tool state',
     '  /model [name|#]    choose or switch the active model',
-    '  /goal              show or manage the persistent session goal',
-    '  /goal set <text>   set the goal Moss should keep in context',
+    '  /goal set <text>   set what Moss should keep working toward',
     '  /compact           compress older conversation history into a summary',
-    '  /context           show context-window token usage',
-    '  /sessions          list saved conversations you can resume',
-    '  /cost              show recorded token usage and estimated cost',
-    '  /diff              show git working-tree changes',
-    '  /rewind [seq]      undo file edits from a checkpoint',
-    '  /tools             view available tool groups and selection rules',
-    '  /permissions       show safety, approvals, cache, and config policy',
-    '  /config            show config file and policy commands',
     '  /auth login        log in to the D-Robotics developer community',
-    '  /logout            log out of the D-Robotics developer community',
-    '  /quick_start       configure model, workspace, board, and first tasks',
-    '  /examples          show task examples for enabled capabilities',
-    '  /stop              stop the active run',
-    '  /queue [drop|clear] show, drop last, or discard queued prompts',
     '  /attach <path>     attach an image or text file to the next prompt',
-    '  /version           show the installed dmoss version',
-    '  /init              create an AGENTS.md project memory file',
+    '  /connect <ip>      connect an RDK board for this session',
+    '  /sessions          list saved conversations you can resume',
+    '  /diff              show git working-tree changes',
     '',
-    'Conversation',
-    '  /clear             clear visible transcript',
-    '  /thinking          toggle thinking deltas',
-    '  /detail [mode]     quiet | progress | verbose',
+    'Shortcuts',
+    '  Ctrl+V             attach a screenshot/image from the clipboard on macOS',
+    '  Esc                stop the active run',
     '  Ctrl+O             expand/collapse tool calls',
-    '',
-    'Runtime',
-    '  /memory            show memory count',
-    '  /skills            list learned skills',
-    '  /upgrade           show update commands',
-    '',
-    'Shell and exit',
+    '  Shift+Tab          cycle plan/default/accept-edits modes',
+    '  Tab                complete slash command',
+    '  Ctrl+C             exit',
     '  !<command>         run a LOCAL host shell command after session approval',
-    '  /quit              exit',
+    '',
+    'Advanced commands still work when needed: /status --verbose, /context, /cost, /rewind, /permissions, /tools, /memory, /skills, /upgrade, /detail, /queue.',
   ].join('\n');
 }
 

@@ -63,8 +63,14 @@ export interface DmossCommunityAuthStatus {
 export interface DmossCommunityAuthRuntime {
   getStatus(): DmossCommunityAuthStatus;
   getContext(): DmossCommunityAuthContext | undefined;
-  login(print?: (line: string) => void): Promise<DmossCommunityAuthContext>;
+  login(print?: (line: string) => void, options?: DmossCommunityAuthLoginOptions): Promise<DmossCommunityAuthContext>;
   logout(): boolean;
+}
+
+export interface DmossCommunityAuthLoginOptions {
+  manual?: boolean;
+  openBrowser?: boolean;
+  readLine?: (prompt: string) => Promise<string>;
 }
 
 export class DmossCommunityAuthRequiredError extends Error {
@@ -422,6 +428,58 @@ function buildPortalLoginUrl(ssoBaseUrl: string, callbackUrl: string): string {
   return `${ssoBaseUrl}/?redirectUrl=${encodeURIComponent(callbackUrl)}`;
 }
 
+function buildManualCallbackUrl(state: string): string {
+  return `http://127.0.0.1:9${CALLBACK_PATH}/${encodeURIComponent(state)}`;
+}
+
+function readTokenFromManualInput(input: string, expectedState: string): string {
+  const raw = input.trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    const callbackState = readCallbackState(url);
+    if (callbackState && callbackState !== expectedState) {
+      throw new Error('login state mismatch');
+    }
+    return readTokenFromUrl(url);
+  } catch (err) {
+    if (err instanceof Error && err.message === 'login state mismatch') throw err;
+    return normalizePortalToken(raw);
+  }
+}
+
+async function defaultReadLine(prompt: string): Promise<string> {
+  const readline = await import('node:readline/promises');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stderr,
+  });
+  try {
+    return await rl.question(prompt);
+  } finally {
+    rl.close();
+  }
+}
+
+async function readManualCommunityLoginToken(options: {
+  ssoBaseUrl: string;
+  print: (line: string) => void;
+  readLine?: (prompt: string) => Promise<string>;
+}): Promise<string> {
+  const state = crypto.randomBytes(16).toString('hex');
+  const loginUrl = buildPortalLoginUrl(options.ssoBaseUrl, buildManualCallbackUrl(state));
+  options.print('[auth] Manual login mode for SSH/remote terminals.');
+  options.print(`[auth] Login URL: ${loginUrl}`);
+  options.print('[auth] Open it in any browser. After the browser redirects to 127.0.0.1 and cannot connect, paste the full redirected URL here.');
+  options.print('[auth] You may also paste the token itself if the portal shows one.');
+  const answer = await (options.readLine ?? defaultReadLine)('[auth] Paste redirected URL or token: ');
+  const token = readTokenFromManualInput(answer, state);
+  if (!token) {
+    throw new Error('no token found in pasted login response');
+  }
+  return token;
+}
+
 async function waitForCommunityLoginToken(options: {
   ssoBaseUrl: string;
   print: (line: string) => void;
@@ -507,18 +565,26 @@ export async function runDmossCommunityAuthLogin(options: {
   configDir?: string;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: FetchImpl;
+  manual?: boolean;
   openBrowser?: boolean;
   print?: (line: string) => void;
+  readLine?: (prompt: string) => Promise<string>;
 } = {}): Promise<DmossCommunityAuthContext> {
   const env = options.env ?? process.env;
   const configDir = options.configDir ?? resolveConfigDir(env);
   const ssoBaseUrl = normalizeSsoBaseUrl(env);
   const print = options.print ?? ((line: string) => console.error(line));
-  const { token, server } = await waitForCommunityLoginToken({
-    ssoBaseUrl,
-    print,
-    openBrowser: options.openBrowser ?? true,
-  });
+  let server: http.Server | undefined;
+  const token = options.manual
+    ? await readManualCommunityLoginToken({ ssoBaseUrl, print, readLine: options.readLine })
+    : await waitForCommunityLoginToken({
+        ssoBaseUrl,
+        print,
+        openBrowser: options.openBrowser ?? true,
+      }).then((result) => {
+        server = result.server;
+        return result.token;
+      });
 
   try {
     const verified = await resolveCommunityUserFromToken(token, {
@@ -545,7 +611,7 @@ export async function runDmossCommunityAuthLogin(options: {
       ssoBaseUrl,
     };
   } finally {
-    server.close();
+    server?.close();
   }
 }
 
@@ -554,8 +620,9 @@ export function renderCommunityAuthRequiredMessage(options: { interactive?: bool
     return [
       'D-Moss requires a D-Robotics developer community login before use.',
       '',
-      'Run this inside D-Moss:',
+      'Run this inside Moss:',
       '  /auth login',
+      '  /auth login --manual   # SSH/remote terminal fallback',
       '',
       'Then ask Moss again in this session.',
     ].join(os.EOL);
@@ -564,17 +631,27 @@ export function renderCommunityAuthRequiredMessage(options: { interactive?: bool
     'D-Moss requires a D-Robotics developer community login before use.',
     '',
     'Run:',
-    '  dmoss auth login',
+    '  moss auth login',
+    '  moss auth login --manual   # SSH/remote terminal fallback',
     '',
-    'Then start dmoss again.',
+    'Then start Moss again.',
+  ].join(os.EOL);
+}
+
+export function formatCommunityAuthLoginError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return [
+    `Login failed: ${message}`,
+    'Hint: check network access to the D-Robotics SSO page, then retry `/auth login`.',
+    'If you are running over SSH or on a board, use `/auth login --manual` or `moss auth login --manual` and paste the browser redirect URL.',
   ].join(os.EOL);
 }
 
 export function formatCommunityAuthStatus(status: DmossCommunityAuthStatus): string {
   if (!status.authenticated) {
-    if (status.reason === 'expired') return `expired; run dmoss auth login (${status.sessionPath})`;
-    if (status.reason === 'invalid') return `invalid; run dmoss auth login (${status.sessionPath})`;
-    return `not logged in; run dmoss auth login (${status.sessionPath})`;
+    if (status.reason === 'expired') return `expired; run moss auth login (${status.sessionPath})`;
+    if (status.reason === 'invalid') return `invalid; run moss auth login (${status.sessionPath})`;
+    return `not logged in; run moss auth login (${status.sessionPath})`;
   }
   const user = status.user;
   const name = user ? user.name || user.email || user.id : 'unknown user';

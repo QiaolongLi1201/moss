@@ -140,7 +140,8 @@ function tmpDir() {
 
 {
   const [matches] = completeInteractiveCommand('/up');
-  assert.deepEqual(matches, ['/upgrade']);
+  assert.ok(matches.includes('/status'), 'fallback completion should return the focused default command list');
+  assert.ok(!matches.includes('/upgrade'), '/upgrade remains a hidden command and should not crowd default completion');
 }
 
-console.log('[PASS] CLI update check is cached, quiet on failure, and completer works');
+console.log('[PASS] CLI update check is cached, quiet on failure, and default completion stays focused');

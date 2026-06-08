@@ -3,7 +3,7 @@
 > **An AI agent runtime built for robotics and edge devices.**
 > Pluggable LLMs, LAN-native Agent Mesh, framework-level tool-call self-healing, Chinese-first UX.
 
-**D-Moss Agent is developed by 地瓜机器人 (D-Robotics).** The CLI identifies itself as Moss while the reusable runtime remains host-neutral for embedding.
+**D-Moss Agent is developed by 地瓜机器人 (D-Robotics).** The CLI starts as `moss`; `dmoss` remains a compatible alias while the reusable runtime stays host-neutral for embedding.
 
 <p align="center">
   <a href="#install"><img src="https://img.shields.io/npm/v/@rdk-moss/agent?logo=npm&color=ff6b00" alt="npm" /></a>
@@ -18,8 +18,16 @@
 npx -y @rdk-moss/agent "帮我检查当前目录"
 # or install it globally and open the interactive TUI:
 npm i -g @rdk-moss/agent@latest
-dmoss
+moss
 ```
+
+<p align="center">
+  <img src="./assets/moss-tui-demo.gif" alt="Moss terminal startup demo" width="720" />
+</p>
+
+<p align="center">
+  <img src="./assets/moss-connect-vision.gif" alt="Moss board connection and image attachment demo" width="720" />
+</p>
 
 ## Why D-Moss
 
@@ -46,7 +54,7 @@ Build AI-powered developer tools for any robotics platform with pluggable knowle
 | Contracts, `DmossAgent`, `ToolRegistry`, hooks | HTTP/Socket APIs, desktop UI, SSH |
 | Pruning, compaction, token budgeting | Your own installers, fleet routing, dashboards |
 | `LLMProvider` (host implements; **recommended minimum integration**) | Your model transport (REST, WebSocket, local inference, etc.) |
-| Optional `PiAiLLMProvider` (bridges `@mariozechner/pi-ai` → `LLMProvider`) | Use only if you already build on pi-ai streams; otherwise skip in **your** code |
+| Optional `PiAiLLMProvider` (pi-ai-compatible stream bridge → `LLMProvider`) | Use only if you already build on pi-ai-style streams; otherwise skip in **your** code |
 | Safety helpers, protected paths (host registers paths) | Concrete device tools and deployment scripts |
 | Default robotics/domain prompts from `@rdk-moss/core` (tunable via `DmossAgent` config) | Product-specific prompts wired in `server/dmoss/*` (host) |
 | Goal Mode runtime: goal state, agent methods, prompt injection | CLI slash commands, UI controls, approval policy, background execution |
@@ -60,8 +68,8 @@ The open-source boundary is clean: `packages/dmoss/` + `packages/dmoss-agent/` i
 ### LLM integration: minimal path vs optional `pi-ai`
 
 - **What you must implement:** `LLMProvider` — the only contract `DmossAgent` needs to call a model. **For the smallest integration surface and full control over HTTP/SDKs**, implement it yourself (often with **`fetch()` only**; no Anthropic/OpenAI SDK required). See the `LLMProvider` section in [`API.md`](./API.md) for the interface and a minimal implementation pattern.
-- **What is optional:** **`PiAiLLMProvider`** — a convenience adapter for hosts that already use **`@mariozechner/pi-ai`** streaming. You do **not** need to use it to ship a product on `@rdk-moss/agent`.
-- **npm note:** `@rdk-moss/agent` currently **declares** `@mariozechner/pi-ai` as a runtime dependency so this adapter is always available when installed from npm. Your **application code** can still follow the minimal path by supplying only a custom `LLMProvider` and never importing `PiAiLLMProvider`. (A future optional split into `@rdk-moss/agent-pi-ai` would be a semver/major packaging decision.)
+- **What is optional:** **`PiAiLLMProvider`** — a convenience adapter for hosts that already use pi-ai-compatible streaming. You do **not** need to use it to ship a product on `@rdk-moss/agent`.
+- **npm note:** `@rdk-moss/agent` no longer installs the deprecated pi-ai package family. The adapter keeps local compatibility types, so new installs avoid the old transitive warning chain while hosts can still supply a compatible stream function.
 
 ## Install
 
@@ -74,12 +82,12 @@ Requires **Node ≥ 22.16** (see `engines` in `package.json`). One-off CLI tryou
 ```bash
 npx -y @rdk-moss/agent --help
 npm i -g @rdk-moss/agent@latest
-dmoss
+moss
 ```
 
-`dmoss` uses the built-in D-Robotics model gateway by default when installed
+`moss` uses the built-in D-Robotics model gateway by default when installed
 from npm. A first run requires D-Robotics developer community login, but does
-not require a model API key for the built-in gateway. Run `dmoss setup` only
+not require a model API key for the built-in gateway. Run `moss setup` only
 when you want to use your own provider, account, private gateway, or self-hosted
 OpenAI-compatible model. Community login remains the CLI access gate; the
 community token is only sent to the built-in gateway, not to your private model
@@ -88,9 +96,9 @@ endpoint.
 To use your own model, either run the guided setup:
 
 ```bash
-dmoss auth login
-dmoss setup
-dmoss auth status              # verifies community login and provider/model/key source
+moss auth login
+moss setup
+moss auth status               # verifies community login and provider/model/key source
 ```
 
 Or keep the API key in the environment:
@@ -100,29 +108,29 @@ export DEEPSEEK_API_KEY=...    # DeepSeek
 # or: export OPENAI_API_KEY=...
 # or: export ANTHROPIC_API_KEY=...
 # or: export DASHSCOPE_API_KEY=...    # Aliyun / Qwen
-dmoss
+moss
 ```
 
 For a private gateway or self-hosted OpenAI-compatible model:
 
 ```bash
 export OPENAI_API_KEY=...      # or DMOSS_API_KEY=... if your gateway uses a generic key
-dmoss config set provider openai-compatible
-dmoss config set model <your-model>
-dmoss config set baseUrl https://llm.example.com
-dmoss auth status
-dmoss
+moss config set provider openai-compatible
+moss config set model <your-model>
+moss config set baseUrl https://llm.example.com
+moss auth status
+moss
 ```
 
 `baseUrl` is the API root, not the full chat endpoint: do not include
 `/chat/completions`. Both `https://llm.example.com` and
-`https://llm.example.com/v1` are accepted; `dmoss` calls
+`https://llm.example.com/v1` are accepted; Moss calls
 `/v1/chat/completions` for OpenAI-compatible providers. If multiple provider
 keys are set in your shell, set `DMOSS_PROVIDER` explicitly.
 
-Each plain `dmoss` launch starts a **new saved conversation**. Use
-`dmoss resume --last`, `dmoss resume --session <key>`, or
-`dmoss --session <key>` when you want to continue previous history.
+Each plain `moss` launch starts a **new saved conversation**. Use
+`moss resume --last`, `moss resume --session <key>`, or
+`moss --session <key>` when you want to continue previous history.
 
 ### Path 2 — Local tarballs (maintainers / CI)
 
@@ -164,11 +172,11 @@ node packages/dmoss-agent/dist/cli.js "check disk usage on /"
 `setup` writes `~/.config/dmoss/config.json` with `0600` permissions and supports Aliyun/Qwen, OpenAI, Anthropic, and OpenAI-compatible providers. Your config overrides the built-in gateway. You can inspect or update the stored configuration without printing secrets:
 
 ```bash
-dmoss auth status
-dmoss auth logout
-dmoss config set provider openai-compatible
-dmoss config set model <your-model>
-dmoss config set baseUrl https://llm.example.com
+moss auth status
+moss auth logout
+moss config set provider openai-compatible
+moss config set model <your-model>
+moss config set baseUrl https://llm.example.com
 ```
 
 ### CLI flags recap
@@ -192,13 +200,13 @@ By default the CLI prints a short progress trail to stderr: planning turns, tool
 
 ### First real task / automation
 
-Interactive `dmoss` asks before file writes, commands, and external actions. For
+Interactive `moss` asks before file writes, commands, and external actions. For
 unattended benchmark or CI runs, set an explicit approval policy before launch:
 
 ```bash
-DMOSS_CLI_AUTO_APPROVE=1 dmoss --workspace-write "write and verify the tool"
+DMOSS_CLI_AUTO_APPROVE=1 moss --workspace-write "write and verify the tool"
 # or persist a broader local policy:
-dmoss config set profile autonomous
+moss config set profile autonomous
 ```
 
 `DMOSS_CLI_AUTO_APPROVE=1` only approves tools allowed by the active safety
@@ -220,30 +228,31 @@ unified diff. Multi-file patches are supported, but each operation must be
 inside the documented `*** Begin Patch` / `*** Add File` / `*** Update File` /
 `*** Delete File` / `*** End Patch` blocks.
 
-The interactive REPL starts with an onboarding panel that shows the active
-model, workspace, provider, enabled capability groups, memory/skill counts,
-device status, and mesh status. Slash commands are action-oriented controls:
+The interactive TUI starts with a concise panel that shows model, workspace,
+login state, and next steps. Slash commands are action-oriented controls:
 
 ```
 /status      view model, workspace, device, and tool state
 /model       open the active provider's model list, then choose by number or name
 /goal        show or manage the persistent session goal
 /compact     compress older conversation history into a summary
-/context     show context-window token usage
 /attach      attach an image or text file to the next prompt
+/connect     connect an RDK board for this session
 /sessions    list saved conversations you can resume
 /diff        show git working-tree changes
-/rewind      undo file edits from a checkpoint
-/tools       view available tool groups and selection rules
-/config      show config file and policy commands
-/quick_start configure model, workspace, board, and first tasks
-/help        show the full command reference
+/auth login  log in to the D-Robotics developer community
+/help        show focused command help
 ```
+
+Advanced commands such as `/status --verbose`, `/context`, `/rewind`, `/tools`,
+`/permissions`, and `/memory` still work, but stay out of the default menu so
+the first screen remains usable.
 
 Use `/attach <path>` before your next prompt to add local context. Images
 (`png`, `jpg`, `jpeg`, `gif`, `webp`) are sent as real image blocks to vision
 models; text files are inserted as prompt context. `/attach list` shows pending
-attachments, and `/attach clear` discards them.
+attachments, and `/attach clear` discards them. In the full macOS TUI, copy a
+screenshot and press `Ctrl+V` to attach it without saving a file first.
 
 All flags also available via env vars: `DMOSS_LOG_LEVEL`, `DMOSS_LOG_JSON=1`, `DMOSS_NO_COLOR=1`.
 
@@ -446,7 +455,7 @@ agent.registerKnowledge(jetsonKnowledge);
 
 ## Known Limitations
 
-- **`LLMProvider` vs `pi-ai`:** The harness is built around **`LLMProvider`**. **`PiAiLLMProvider` + `@mariozechner/pi-ai` are optional** — use them only if you want the pre-built pi-ai bridge; otherwise prefer a **self-hosted `LLMProvider`** for minimal behavioral dependency (see [`API.md`](./API.md) for the interface).
+- **`LLMProvider` vs pi-ai-style streams:** The harness is built around **`LLMProvider`**. **`PiAiLLMProvider` is optional** — use it only if you want the pre-built compatibility bridge; otherwise prefer a **self-hosted `LLMProvider`** for minimal behavioral dependency (see [`API.md`](./API.md) for the interface).
 - **Robotics prompt injected by default**: `DmossAgent.buildSystemPrompt()` includes the robotics engineering prompt from `@rdk-moss/core` unless opted out. Non-robotics hosts can set `domainPrompt: false` to skip it, or provide a custom `domainPrompt: () => string` to replace it with domain-specific guidance.
 - **Vendor plugin callbacks**: new hosts should call `agent.extensions.setVendorPluginCallbacks()` before `agent.extensions.apply()` to keep vendor plugins scoped to one agent. Legacy hosts may still use the process-scoped `setVendorPluginCallbacks()` / `applyPlatformExtension()` wrappers during migration.
 - **Publishing**: The Moss stack is prepared as publishable npm workspaces. Before a release, run `npm run verify` from the repo root; it covers OSS boundary checks, workspace hygiene, workspace builds, typechecks, and package tests. Use the release checklist for host consumption validation.

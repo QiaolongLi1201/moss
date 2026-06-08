@@ -325,11 +325,11 @@ interface LLMProvider {
 
 `LLMResponse` may include `incomplete?: { reason: string }` when a provider has usable partial content but no trustworthy terminal response. `DmossAgent` treats that as a failed turn and will not call `AgentHooks.onLLMResponseEnd()` for it.
 
-### Optional built-in adapter (`pi-ai`)
+### Optional built-in adapter (pi-ai-compatible)
 
-`PiAiLLMProvider` is an **optional** bridge for hosts that already integrate **`@mariozechner/pi-ai`**. You do **not** need to import or construct it unless you choose that stack.
+`PiAiLLMProvider` is an **optional** bridge for hosts that already integrate pi-ai-compatible streams. You do **not** need to import or construct it unless you choose that stack.
 
-The `@rdk-moss/agent` package **depends on** `@mariozechner/pi-ai` at install time so this adapter is always resolvable from npm; your application can still use **only** a custom `LLMProvider` and never reference `PiAiLLMProvider`.
+The `@rdk-moss/agent` package does **not** install deprecated pi-ai packages at runtime. It ships local compatibility types for this adapter, so your application can use **only** a custom `LLMProvider` and never reference `PiAiLLMProvider`.
 
 ```ts
 import { PiAiLLMProvider } from '@rdk-moss/agent'

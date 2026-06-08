@@ -88,6 +88,13 @@ import { parseCliArgs } from '../dist/cli/args.js';
 }
 
 {
+  const parsed = parseCliArgs(['--help', '--all']);
+  assert.equal(parsed.help, true);
+  assert.equal(parsed.helpAll, true);
+  assert.equal(parsed.command, 'chat');
+}
+
+{
   const parsed = parseCliArgs(['config']);
   assert.equal(parsed.command, 'config');
   assert.deepEqual(parsed.commandArgs, []);

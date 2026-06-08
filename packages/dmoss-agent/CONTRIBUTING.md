@@ -44,7 +44,7 @@ npm audit
 npm audit fix
 ```
 
-- **Priority**: advisories that affect **`@rdk-moss/agent` runtime `dependencies`** (`@rdk-moss/core`, `@mariozechner/pi-ai`, and any future runtime deps).
+- **Priority**: advisories that affect **`@rdk-moss/agent` runtime `dependencies`** (`@rdk-moss/core` and any future runtime deps).
 - **Lower priority**: devDependencies and transitive packages only used by the desktop shell, icons, or optional integrations — track them, but do not block OSS package releases unless they affect the published tarball.
 - If `npm audit fix` requires `--force`, discuss in a PR before upgrading (may be semver-breaking).
 
@@ -95,7 +95,6 @@ When changing exports:
 `@rdk-moss/agent` may depend on:
 
 - `@rdk-moss/core`
-- `@mariozechner/pi-ai` (bundled so **`PiAiLLMProvider`** is always resolvable from npm — **hosts are not required to use it**; the supported minimal integration is a custom **`LLMProvider`**, see package `README.md` / `API.md` and `create-dmoss-app`)
 - Node.js built-ins
 
 It must **not** import from:

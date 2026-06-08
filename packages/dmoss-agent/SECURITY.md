@@ -34,7 +34,7 @@ Areas of particular concern include:
 
 ## Dependency hygiene (monorepo)
 
-The `@rdk-moss/agent` package itself has a small dependency footprint (`@rdk-moss/core`, `@mariozechner/pi-ai`, `picocolors`). **`pi-ai` backs the optional `PiAiLLMProvider` adapter**; hosts can still integrate with **only** a custom `LLMProvider` and never call pi-ai APIs (see `README.md` / `API.md`). When this package is embedded in a larger host monorepo, run `npm audit` periodically and apply `npm audit fix` where semver allows. Treat production `dependencies` of `@rdk-moss/agent` as the highest priority when triaging. Overrides in the root `package.json` may pin transitive fixes when upstream packages lag.
+The `@rdk-moss/agent` package itself has a small dependency footprint (`@rdk-moss/core`, `picocolors`, and focused CLI/runtime libraries). The optional `PiAiLLMProvider` adapter uses local compatibility types and does **not** install deprecated pi-ai packages; hosts can still integrate with **only** a custom `LLMProvider` (see `README.md` / `API.md`). When this package is embedded in a larger host monorepo, run `npm audit` periodically and apply `npm audit fix` where semver allows. Treat production `dependencies` of `@rdk-moss/agent` as the highest priority when triaging. Overrides in the root `package.json` may pin transitive fixes when upstream packages lag.
 
 ### Triaging a large `npm audit` report
 

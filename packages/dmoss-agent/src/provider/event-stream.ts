@@ -2,7 +2,7 @@ import type {
   AssistantMessage,
   AssistantMessageEvent,
   AssistantMessageEventStream,
-} from '@mariozechner/pi-ai';
+} from './pi-ai-types.js';
 
 export class EventStream<TEvent, TResult> implements AsyncIterable<TEvent> {
   private readonly queue: TEvent[] = [];

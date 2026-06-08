@@ -338,7 +338,7 @@ export function createCliToolApprovalHook(
         approved: false,
         reason:
           `Tool "${tool.name}" requires approval, but stdin is not interactive. ` +
-          'Use `dmoss config set approvalPolicy never` or `dmoss config set trustedTools <tool>` only in a trusted workspace; ' +
+          'Use `moss config set approvalPolicy never` or `moss config set trustedTools <tool>` only in a trusted workspace; ' +
           'DMOSS_CLI_AUTO_APPROVE=1 is also supported for one-off automation.',
       };
     }

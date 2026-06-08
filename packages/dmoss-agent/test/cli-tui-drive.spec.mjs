@@ -127,7 +127,8 @@ test('/status renders cleanly (no squash) and shows the newest lines by default'
   await wait(140);
   const f = await runSlashCommand(stdin, lastFrame, '/status');
   assertNoCrush(f, '/status @24');
-  assert.match(strip(f), /mesh: disabled/, 'newest /status line (mesh) should be visible at the bottom');
+  assert.match(strip(f), /Details: \/status --verbose/, 'default /status should point to verbose details');
+  assert.match(strip(f), /tools: 0/, 'default /status should keep the core runtime summary visible');
   cleanup();
 });
 
@@ -135,8 +136,8 @@ test('a tall output keeps every line — history flows to native scrollback, not
   setRows(24);
   const { stdin, lastFrame } = mount();
   await wait(140);
-  const f = await runSlashCommand(stdin, lastFrame, '/status');
-  // /status is taller than 24 rows. With the <Static> history model every committed
+  const f = await runSlashCommand(stdin, lastFrame, '/status --verbose');
+  // /status --verbose is taller than 24 rows. With the <Static> history model every committed
   // line is written to the terminal (its own scrollback), so the FIRST line and the
   // LAST line are both present at once — the user scrolls natively to read it all,
   // nothing is dropped the way a fixed-height in-place frame would clip it.
@@ -151,7 +152,7 @@ test('a tall command stays readable on a small terminal (header scrolls away)', 
   setRows(16);
   const { stdin, lastFrame } = mount();
   await wait(140);
-  const f = await runSlashCommand(stdin, lastFrame, '/status');
+  const f = await runSlashCommand(stdin, lastFrame, '/status --verbose');
   assertNoCrush(f, '/status @16');
   assert.match(strip(f), /mesh: disabled/, 'small terminal must still show the newest /status content');
   cleanup();
@@ -195,8 +196,8 @@ test('/goal is visible and handled by the TUI', async () => {
   await wait(140);
   stdin.write('/');
   await wait();
-  assert.match(strip(lastFrame()), /\/goal\s+manage session goal/, 'slash menu should list /goal');
-  assert.match(strip(lastFrame()), /\/compact\s+compress old context/, 'slash menu should list /compact');
+  assert.match(strip(lastFrame()), /\/goal\s+show or manage the persistent session goal/, 'slash menu should list /goal');
+  assert.match(strip(lastFrame()), /\/compact\s+compress older conversation history/, 'slash menu should list /compact');
   cleanup();
 
   mounted = mount();
@@ -237,7 +238,7 @@ test('running several commands in a row never garbles, and all output is retaine
   setRows(24);
   const { stdin, lastFrame } = mount();
   await wait(140);
-  for (const cmd of ['/status', '/permissions', '/tools']) {
+  for (const cmd of ['/status --verbose', '/permissions', '/tools']) {
     const f = await runSlashCommand(stdin, lastFrame, cmd);
     assertNoCrush(f, `after ${cmd}`);
   }
@@ -245,7 +246,7 @@ test('running several commands in a row never garbles, and all output is retaine
   // scrollback), so the earliest command is still present after later ones ran — it is
   // never truncated or overwritten in place the way a fixed redraw frame would.
   const s = strip(lastFrame());
-  assert.match(s, /\bStatus\b/, 'the first command (/status) output must still be present');
+  assert.match(s, /\bStatus\b/, 'the first command (/status --verbose) output must still be present');
   assert.match(s, /session: cli/, 'an early /status line must still be present after later commands');
   cleanup();
 });

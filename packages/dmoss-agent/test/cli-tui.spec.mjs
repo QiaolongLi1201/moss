@@ -11,6 +11,7 @@ import path from 'node:path';
 import {
   applyPromptEdit,
   approvalKeyDecision,
+  commandArgumentHint,
   completeSlashCommandInput,
   commandSuggestion,
   dropLastQueuedInput,
@@ -85,21 +86,23 @@ assert.equal(isLocalShellLine('!'), false);
 assert.equal(isLocalShellLine('  !pwd'), false);
 
 assert.equal(commandSuggestion('/staus'), '/status');
-assert.equal(commandSuggestion('/tool'), '/tools');
-assert.equal(commandSuggestion('/quick'), '/quick_start');
-assert.equal(commandSuggestion('/queu'), '/queue');
-assert.equal(commandSuggestion('/queue dr'), '/queue drop');
-assert.equal(commandSuggestion('/queue res'), '/queue resume');
+assert.equal(commandSuggestion('/tool'), null);
+assert.equal(commandSuggestion('/quick'), null);
+assert.equal(commandSuggestion('/queu'), null);
+assert.equal(commandSuggestion('/queue dr'), null);
+assert.equal(commandSuggestion('/queue res'), null);
 assert.equal(commandSuggestion('/sess'), '/sessions');
+assert.equal(commandSuggestion('/attch'), '/attach');
+assert.equal(commandSuggestion('/conect'), '/connect');
 assert.equal(commandSuggestion('status'), null);
 
 assert.deepEqual(
   completeSlashCommandInput('/que', 4),
-  { value: '/queue', cursor: 6 },
+  null,
 );
 assert.deepEqual(
   completeSlashCommandInput('/qui', 4),
-  { value: '/quick_start', cursor: 12 },
+  null,
 );
 assert.deepEqual(
   completeSlashCommandInput('/mo', 3),
@@ -114,6 +117,16 @@ assert.deepEqual(
   null,
 );
 
+assert.equal(commandArgumentHint('/goal'), '[<condition> | clear]');
+assert.equal(commandArgumentHint('/goal set ship it'), null);
+assert.equal(commandArgumentHint('/connect'), '<board-ip> [--user root --port 22]');
+assert.equal(commandArgumentHint('/attach'), '<image-or-text-file>');
+assert.equal(commandArgumentHint('/model'), '<model-name-or-number>');
+assert.equal(commandArgumentHint('/auth'), '[login | status | logout]');
+assert.equal(commandArgumentHint('/auth login'), '[--manual]');
+assert.equal(commandArgumentHint('/status'), '[--verbose]');
+assert.equal(commandArgumentHint('/status --verbose'), null);
+
 assert.equal(promptPlaceholder('ready'), 'Ask Moss for code, board, or ROS help');
 assert.match(promptPlaceholder('running'), /running/);
 assert.match(promptPlaceholder('approval'), /approval/);
@@ -126,7 +139,8 @@ assert.equal(approvalKeyDecision('a', {}), 'allow-always');
 assert.equal(approvalKeyDecision('n', {}), 'deny');
 assert.equal(approvalKeyDecision('', { escape: true }), 'deny');
 assert.equal(approvalKeyDecision('x', {}), null);
-assert.match(footerHint('ready'), /\/quick_start/);
+assert.match(footerHint('ready'), /Ctrl\+V image/);
+assert.match(footerHint('ready'), /\/attach file/);
 assert.match(footerHint('ready'), /Ctrl\+O details/);
 assert.match(footerHint('ready'), /Tab complete/);
 assert.match(footerHint('ready'), /Up\/Down history/);
@@ -137,7 +151,7 @@ assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-
 assert.equal(promptEditorRowBudget('', { placeholder: 'Ask Moss', hint: 'Ctrl+O tools' }), 6);
 // '/' previews a windowed command palette (≤6 rows) so it does not crowd short terminals.
 assert.equal(promptEditorRowBudget('/'), 11);
-assert.equal(promptEditorRowBudget('/que'), 6);
+assert.equal(promptEditorRowBudget('/que'), 4);
 assert.equal(promptEditorRowBudget('/staus'), 5);
 assert.equal(promptEditorRowBudget(Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join('\n')), 11);
 
@@ -278,8 +292,8 @@ assert.equal(transcriptViewportRows({
   assert.match(rendered, /\* current · 2 messages/);
   assert.match(rendered, /newest · 3 messages/);
   assert.doesNotMatch(rendered, /older/);
-  assert.match(rendered, /dmoss resume --last/);
-  assert.match(rendered, /dmoss fork --fork-from <key>/);
+  assert.match(rendered, /moss resume --last/);
+  assert.match(rendered, /moss fork --fork-from <key>/);
 }
 {
   const rendered = formatTuiSessions([], 'cli');

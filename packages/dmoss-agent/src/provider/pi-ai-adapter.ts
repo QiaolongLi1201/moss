@@ -1,6 +1,6 @@
 /**
- * pi-ai LLM Provider adapter — bridges @mariozechner/pi-ai SDK to the
- * D-Moss LLMProvider interface.
+ * pi-ai LLM Provider adapter — bridges pi-ai-compatible stream functions to
+ * the D-Moss LLMProvider interface.
  *
  * This is the slim orchestrator that composes:
  * - `pi-ai-wire-format.ts` — message conversion, model normalisation, helpers
@@ -9,7 +9,7 @@
  *
  * Usage:
  * ```ts
- * import { streamSimple, registerBuiltInApiProviders } from '@mariozechner/pi-ai';
+ * import { streamSimple, registerBuiltInApiProviders } from 'your-pi-ai-compatible-package';
  * registerBuiltInApiProviders();
  *
  * const provider = new PiAiLLMProvider({

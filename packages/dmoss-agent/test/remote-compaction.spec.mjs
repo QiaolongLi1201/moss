@@ -13,6 +13,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { hybridCompact, resolveRemoteCompactUrls } from '../dist/context/index.js';
 
 function makeMessages(n) {
@@ -143,3 +144,58 @@ console.log('[PASS] Remote Compaction: remote-first with local fallback');
 }
 
 console.log('[PASS] Remote Compaction: URL normalization');
+
+// 6. Remote HTTP payload redacts secrets in messages, system prompt, and custom instructions
+{
+  let capturedPayload;
+  const server = createServer((req, res) => {
+    if (req.url === '/compact/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    assert.equal(req.url, '/compact');
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      capturedPayload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ summary: 'remote summary', tokens_saved: 42 }));
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const { port } = server.address();
+    const { HttpRemoteCompactProvider } = await import('../dist/context/index.js');
+    const provider = new HttpRemoteCompactProvider({
+      endpoint: `http://127.0.0.1:${port}`,
+    });
+    const rawKey = ['sk', 'abcdefghijklmnopqrstuvwxyz123456'].join('-');
+    const rawToken = ['ghp', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJ'].join('_');
+    const result = await provider.compact({
+      messages: [{
+        role: 'user',
+        content: `message secret ${rawKey}`,
+        timestamp: 1700000000000,
+      }],
+      systemPrompt: `system prompt has ${rawKey}`,
+      customInstructions: `custom instructions have ${rawToken}`,
+      maxOutputTokens: 256,
+      contextWindowTokens: 8192,
+    });
+
+    assert.equal(result.method, 'remote');
+    assert.ok(capturedPayload, 'server should capture remote compact payload');
+    const serialized = JSON.stringify(capturedPayload);
+    assert.doesNotMatch(serialized, new RegExp(rawKey));
+    assert.doesNotMatch(serialized, new RegExp(rawToken));
+    assert.match(capturedPayload.messages[0].content, /\*\*\*/);
+    assert.match(capturedPayload.system_prompt, /\*\*\*/);
+    assert.match(capturedPayload.custom_instructions, /\*\*\*/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+console.log('[PASS] Remote Compaction: HTTP payload redacts prompt secrets');

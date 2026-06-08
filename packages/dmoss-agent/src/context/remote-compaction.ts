@@ -74,6 +74,10 @@ function redactSecretsInText(text: string): string {
   return sanitizeSecrets(text);
 }
 
+function sanitizeTextForRemote(value: string | undefined): string | undefined {
+  return typeof value === 'string' ? redactSecretsInText(value) : undefined;
+}
+
 function sanitizePayloadForRemote(messages: Message[]): Message[] {
   return messages.map((msg) => {
     if (typeof msg.content === 'string') {
@@ -171,11 +175,11 @@ export class HttpRemoteCompactProvider implements RemoteCompactProvider {
         },
         body: JSON.stringify({
           messages: sanitizePayloadForRemote(request.messages),
-          system_prompt: request.systemPrompt,
+          system_prompt: sanitizeTextForRemote(request.systemPrompt),
           max_output_tokens: request.maxOutputTokens,
           context_window_tokens: request.contextWindowTokens,
           model: request.model,
-          custom_instructions: request.customInstructions,
+          custom_instructions: sanitizeTextForRemote(request.customInstructions),
         }),
       });
 

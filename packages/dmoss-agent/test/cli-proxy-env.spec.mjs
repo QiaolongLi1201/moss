@@ -6,6 +6,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.resolve(__dirname, '../dist/cli.js');
 
+function assertSocksProxyTolerated(result, label) {
+  assert.equal(
+    result.status,
+    0,
+    `${label} should tolerate SOCKS proxy env\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+  );
+  assert.doesNotMatch(result.stderr, /Invalid URL protocol/);
+}
+
 const socksProxyEnv = {
   ...process.env,
   HTTP_PROXY: 'socks5h://127.0.0.1:7890',
@@ -20,11 +29,7 @@ const socksProxyEnv = {
     encoding: 'utf8',
   });
 
-  assert.equal(
-    result.status,
-    0,
-    `dmoss --version should not import-crash under SOCKS proxy env\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
-  );
+  assertSocksProxyTolerated(result, 'dmoss --version');
   assert.match(result.stdout, /dmoss v\d+\.\d+\.\d+/);
 }
 
@@ -41,11 +46,26 @@ const socksProxyEnv = {
     encoding: 'utf8',
   });
 
-  assert.equal(
-    result.status,
-    0,
-    `keep-alive dispatcher should tolerate unsupported proxy env\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
-  );
+  assertSocksProxyTolerated(result, 'keep-alive dispatcher');
+  assert.match(result.stdout, /ok/);
+}
+
+for (const rel of [
+  '../dist/provider/pi-ai-types.js',
+  '../dist/core/llm/llm-provider-stream-adapter.js',
+]) {
+  const moduleUrl = pathToFileURL(path.resolve(__dirname, rel)).href;
+  const code = `
+    await import(${JSON.stringify(moduleUrl)});
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    console.log('ok');
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], {
+    env: socksProxyEnv,
+    encoding: 'utf8',
+  });
+
+  assertSocksProxyTolerated(result, rel);
   assert.match(result.stdout, /ok/);
 }
 

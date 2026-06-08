@@ -3,7 +3,7 @@ import path from 'node:path';
 import { checkForCliUpdate } from './update-check.js';
 import { auditResolvedCliConfig, hasTrustedToolWildcard } from './config.js';
 import type { ResolvedCliConfig } from './config.js';
-import { loadMcpConfig } from '../mcp/index.js';
+import { loadMcpConfigWithDiagnostics } from '../mcp/index.js';
 
 interface DoctorOptions {
   config: ResolvedCliConfig;
@@ -56,8 +56,25 @@ function renderMcpDoctor(config: ResolvedCliConfig): string {
     return fail('mcp', `enabled (${config.mcpEnabledSource}) but config is missing at ${config.mcpConfigPath}`);
   }
 
-  const mcpConfig = loadMcpConfig(config.mcpConfigPath);
+  const mcpLoadResult = loadMcpConfigWithDiagnostics(config.mcpConfigPath);
+  const mcpConfig = mcpLoadResult.config;
   if (!mcpConfig) {
+    const invalidServerNames = mcpLoadResult.diagnostics
+      .map((diagnostic) => diagnostic.serverName)
+      .filter((serverName): serverName is string => Boolean(serverName));
+    if (invalidServerNames.length > 0) {
+      const allNeedCommand = mcpLoadResult.diagnostics.every((diagnostic) =>
+        diagnostic.message.toLowerCase().includes('command'),
+      );
+      const details = allNeedCommand
+        ? 'each server needs a command'
+        : mcpLoadResult.diagnostics
+          .map((diagnostic) => diagnostic.serverName
+            ? `${diagnostic.serverName}: ${diagnostic.message}`
+            : diagnostic.message)
+          .join('; ');
+      return fail('mcp', `invalid server entries (${invalidServerNames.join(', ')}); ${details}`);
+    }
     return fail('mcp', `enabled (${config.mcpEnabledSource}) but config is invalid at ${config.mcpConfigPath}`);
   }
 

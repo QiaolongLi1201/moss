@@ -12,7 +12,11 @@ import { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadMcpConfig, connectMcpServers } from '../dist/mcp/index.js';
+import {
+  loadMcpConfig,
+  connectMcpServers,
+  connectMcpServersWithFailures,
+} from '../dist/mcp/index.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -110,6 +114,22 @@ console.log('  [PASS] loadMcpConfig with missing/invalid mcpServers returns null
 }
 
 console.log('  [PASS] loadMcpConfig with non-existent file returns null');
+
+// ── connectMcpServersWithFailures: malformed server configs become failures ──
+
+{
+  const result = await connectMcpServersWithFailures({
+    mcpServers: {
+      bad: {},
+    },
+  });
+  assert.equal(result.connections.length, 0);
+  assert.equal(result.failures.length, 1);
+  assert.equal(result.failures[0].serverName, 'bad');
+  assert.match(result.failures[0].error.message, /command/i);
+}
+
+console.log('  [PASS] malformed MCP server config is returned as a connection failure');
 
 // ── connectMcpServers: non-existent command ──
 

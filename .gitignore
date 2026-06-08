@@ -14,3 +14,4 @@ tmp/
 # Zero-config gateway default: shipped only in the npm tarball, never committed.
 # (the tracked *.example.json documents the shape)
 packages/dmoss-agent/zero-config-default.json
+packages/dmoss-agent/.zero-config-default.generated

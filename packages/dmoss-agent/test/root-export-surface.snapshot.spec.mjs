@@ -113,6 +113,7 @@ const expectedExports = [
   'listDirectoryTool',
   'llmRequestAttributes',
   'loadMcpConfig',
+  'loadMcpConfigWithDiagnostics',
   'logLLMUsage',
   'matchTextApproval',
   'moveFileTool',

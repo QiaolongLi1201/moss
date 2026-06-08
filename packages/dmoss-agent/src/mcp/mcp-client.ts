@@ -38,6 +38,16 @@ export interface McpConfig {
   mcpServers: Record<string, McpServerConfig>;
 }
 
+export interface McpConfigDiagnostic {
+  serverName?: string;
+  message: string;
+}
+
+export interface McpConfigLoadResult {
+  config: McpConfig | null;
+  diagnostics: McpConfigDiagnostic[];
+}
+
 export interface McpTool {
   name: string;
   description: string;
@@ -91,16 +101,127 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export function loadMcpConfig(configPath: string): McpConfig | null {
-  if (!existsSync(configPath)) return null;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function invalidMcpConfig(serverName: string, message: string): DmossError {
+  return new DmossError({
+    code: ErrorCode.MCP_CONNECTION_FAILED,
+    message: `Invalid MCP server "${serverName}" config: ${message}`,
+  });
+}
+
+function parseOptionalStringArray(
+  serverName: string,
+  value: unknown,
+  field: string,
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw invalidMcpConfig(serverName, `${field} must be an array of strings`);
+  }
+  return value;
+}
+
+function parseOptionalStringRecord(
+  serverName: string,
+  value: unknown,
+  field: string,
+): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw invalidMcpConfig(serverName, `${field} must be an object with string values`);
+  }
+  const parsed: Record<string, string> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (typeof child !== 'string') {
+      throw invalidMcpConfig(serverName, `${field}.${key} must be a string`);
+    }
+    parsed[key] = child;
+  }
+  return parsed;
+}
+
+function validateMcpServerConfig(serverName: string, raw: unknown): McpServerConfig {
+  if (!isRecord(raw)) {
+    throw invalidMcpConfig(serverName, 'server entry must be an object');
+  }
+  if (typeof raw.command !== 'string' || !raw.command.trim()) {
+    throw invalidMcpConfig(serverName, 'command must be a non-empty string');
+  }
+  if (raw.cwd !== undefined && (typeof raw.cwd !== 'string' || !raw.cwd.trim())) {
+    throw invalidMcpConfig(serverName, 'cwd must be a non-empty string when provided');
+  }
+  if (
+    raw.requestTimeoutMs !== undefined &&
+    (
+      typeof raw.requestTimeoutMs !== 'number' ||
+      !Number.isFinite(raw.requestTimeoutMs) ||
+      raw.requestTimeoutMs <= 0
+    )
+  ) {
+    throw invalidMcpConfig(serverName, 'requestTimeoutMs must be a positive number when provided');
+  }
+  return {
+    command: raw.command,
+    ...(raw.args !== undefined ? { args: parseOptionalStringArray(serverName, raw.args, 'args') } : {}),
+    ...(raw.env !== undefined ? { env: parseOptionalStringRecord(serverName, raw.env, 'env') } : {}),
+    ...(raw.cwd !== undefined ? { cwd: raw.cwd } : {}),
+    ...(raw.requestTimeoutMs !== undefined ? { requestTimeoutMs: raw.requestTimeoutMs } : {}),
+  };
+}
+
+function diagnosticMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export function loadMcpConfigWithDiagnostics(configPath: string): McpConfigLoadResult {
+  if (!existsSync(configPath)) {
+    return {
+      config: null,
+      diagnostics: [{ message: 'config file does not exist' }],
+    };
+  }
   try {
     const raw = readFileSync(configPath, 'utf-8');
     const parsed = JSON.parse(raw);
-    if (!parsed.mcpServers || typeof parsed.mcpServers !== 'object') return null;
-    return parsed as McpConfig;
-  } catch {
-    return null;
+    if (!isRecord(parsed)) {
+      return {
+        config: null,
+        diagnostics: [{ message: 'config root must be an object' }],
+      };
+    }
+    if (!isRecord(parsed.mcpServers)) {
+      return {
+        config: null,
+        diagnostics: [{ message: 'mcpServers must be an object' }],
+      };
+    }
+
+    const mcpServers: Record<string, McpServerConfig> = {};
+    const diagnostics: McpConfigDiagnostic[] = [];
+    for (const [serverName, serverConfig] of Object.entries(parsed.mcpServers)) {
+      try {
+        mcpServers[serverName] = validateMcpServerConfig(serverName, serverConfig);
+      } catch (err) {
+        diagnostics.push({ serverName, message: diagnosticMessage(err) });
+      }
+    }
+    if (diagnostics.length > 0) {
+      return { config: null, diagnostics };
+    }
+    return { config: { mcpServers }, diagnostics: [] };
+  } catch (err) {
+    return {
+      config: null,
+      diagnostics: [{ message: diagnosticMessage(err) }],
+    };
   }
+}
+
+export function loadMcpConfig(configPath: string): McpConfig | null {
+  return loadMcpConfigWithDiagnostics(configPath).config;
 }
 
 class McpServerConnection {
@@ -359,18 +480,21 @@ export async function connectMcpServersWithFailures(config: McpConfig): Promise<
   const failures: Array<{ serverName: string; error: Error }> = [];
 
   for (const [serverName, serverConfig] of Object.entries(config.mcpServers)) {
-    const conn = new McpServerConnection(serverName, serverConfig, serverConfig.requestTimeoutMs);
+    let conn: McpServerConnection | undefined;
     try {
+      const validatedConfig = validateMcpServerConfig(serverName, serverConfig);
+      conn = new McpServerConnection(serverName, validatedConfig, validatedConfig.requestTimeoutMs);
       await conn.initialize();
       const mcpTools = await conn.listTools();
-      const tools = mcpTools.map((t) => mcpToolToTool(t, conn, serverName));
+      const activeConn = conn;
+      const tools = mcpTools.map((t) => mcpToolToTool(t, activeConn, serverName));
       connections.push({
         serverName,
         tools,
-        close: () => conn.close(),
+        close: () => activeConn.close(),
       });
     } catch (err) {
-      await conn.close().catch(() => {});
+      await conn?.close().catch(() => {});
       failures.push({
         serverName,
         error: err instanceof Error ? err : new Error(String(err)),

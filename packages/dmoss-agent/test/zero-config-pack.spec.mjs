@@ -31,7 +31,7 @@ try {
   const packConfig = {
     provider: 'openai-compatible',
     model: 'Moss',
-    baseUrl: 'https://gateway.test/v1',
+    baseUrl: 'http://gateway.test/v1',
     apiKey: 'gateway-token-for-test',
   };
 

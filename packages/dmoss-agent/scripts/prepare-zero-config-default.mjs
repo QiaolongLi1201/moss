@@ -37,8 +37,8 @@ function validateConfig(config, source) {
   }
   try {
     const url = new URL(config.baseUrl);
-    if (url.protocol !== 'https:' && url.hostname !== 'localhost' && !/^127\./.test(url.hostname)) {
-      fail(`${source}: baseUrl must use https:// unless it points at localhost`);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      fail(`${source}: baseUrl must use http:// or https://`);
     }
   } catch {
     fail(`${source}: baseUrl must be a valid URL`);

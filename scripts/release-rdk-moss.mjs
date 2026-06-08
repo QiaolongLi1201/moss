@@ -71,13 +71,11 @@ function writePackageJson(file, json) {
 function syncCreateDmossAppFallback(version) {
   const file = path.join(repoRoot, 'packages/create-dmoss-app/index.mjs');
   const source = fs.readFileSync(file, 'utf8');
-  const next = source.replace(
-    /const DEFAULT_MOSS_VERSION_RANGE = '\^[^']+';/,
-    `const DEFAULT_MOSS_VERSION_RANGE = '^${version}';`,
-  );
-  if (next === source) {
+  const pattern = /const DEFAULT_MOSS_VERSION_RANGE = '\^[^']+';/;
+  if (!pattern.test(source)) {
     fail('packages/create-dmoss-app/index.mjs: missing DEFAULT_MOSS_VERSION_RANGE');
   }
+  const next = source.replace(pattern, `const DEFAULT_MOSS_VERSION_RANGE = '^${version}';`);
   fs.writeFileSync(file, next);
 }
 

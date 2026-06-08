@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.resolve(__dirname, '../dist/cli.js');
@@ -29,8 +29,9 @@ const socksProxyEnv = {
 }
 
 {
+  const dispatcherUrl = pathToFileURL(path.resolve(__dirname, '../dist/provider/keep-alive-dispatcher.js')).href;
   const code = `
-    import { ensureKeepAliveDispatcherInstalled, __resetForTest } from ${JSON.stringify(path.resolve(__dirname, '../dist/provider/keep-alive-dispatcher.js'))};
+    import { ensureKeepAliveDispatcherInstalled, __resetForTest } from ${JSON.stringify(dispatcherUrl)};
     __resetForTest();
     await ensureKeepAliveDispatcherInstalled();
     console.log('ok');

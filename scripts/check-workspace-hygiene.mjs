@@ -59,6 +59,20 @@ function findMarkdownLinks(body) {
   return links;
 }
 
+function checkCrossPlatformEsmImports(file) {
+  if (!/\.(?:mjs|js)$/.test(file)) return;
+  const body = fs.readFileSync(file, 'utf8');
+  const rel = path.relative(repoRoot, file);
+  const generatedImportPatterns = [
+    /from\s+\$\{JSON\.stringify\(path\.(?:resolve|join)\(/,
+    /import\(\s*path\.(?:resolve|join)\(/,
+  ];
+  for (const pattern of generatedImportPatterns) {
+    if (!pattern.test(body)) continue;
+    findings.push(`${rel}: convert filesystem paths with pathToFileURL(...).href before ESM import; Windows absolute paths are not module specifiers`);
+  }
+}
+
 const rootPackage = readJson('package.json');
 const expectedNode = rootPackage.engines?.node;
 if (!expectedNode) {
@@ -74,6 +88,19 @@ for (const workspace of rootPackage.workspaces ?? []) {
   if (!pkg.scripts?.test) {
     findings.push(`${packagePath}: missing scripts.test`);
   }
+}
+
+const createDmossApp = fs.readFileSync(
+  path.join(repoRoot, 'packages/create-dmoss-app/index.mjs'),
+  'utf8',
+);
+const createDmossFallback = /const DEFAULT_MOSS_VERSION_RANGE = '([^']+)';/.exec(createDmossApp)?.[1];
+const coreVersion = readJson('packages/dmoss/package.json').version;
+const expectedMossRange = `^${coreVersion}`;
+if (createDmossFallback !== expectedMossRange) {
+  findings.push(
+    `packages/create-dmoss-app/index.mjs: DEFAULT_MOSS_VERSION_RANGE must be ${expectedMossRange} (found ${createDmossFallback ?? 'missing'})`,
+  );
 }
 
 for (const file of walk(repoRoot).filter((abs) => abs.endsWith('.md'))) {
@@ -107,6 +134,10 @@ for (const file of walk(repoRoot).filter((abs) => abs.endsWith('.md'))) {
       }
     }
   }
+}
+
+for (const file of walk(repoRoot)) {
+  checkCrossPlatformEsmImports(file);
 }
 
 if (findings.length > 0) {

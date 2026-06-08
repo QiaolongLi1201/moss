@@ -5,6 +5,14 @@ All notable changes to `create-dmoss-app` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-06-08
+
+### Fixed
+
+- Updated the fallback generated Moss dependency range to `^0.3.16`.
+- Added release and hygiene checks so scaffold dependency ranges stay aligned
+  with the published Moss workspace version.
+
 ## [0.1.2] - 2026-06-08
 
 ### Fixed

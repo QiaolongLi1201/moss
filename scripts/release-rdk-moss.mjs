@@ -68,6 +68,19 @@ function writePackageJson(file, json) {
   fs.writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
 }
 
+function syncCreateDmossAppFallback(version) {
+  const file = path.join(repoRoot, 'packages/create-dmoss-app/index.mjs');
+  const source = fs.readFileSync(file, 'utf8');
+  const next = source.replace(
+    /const DEFAULT_MOSS_VERSION_RANGE = '\^[^']+';/,
+    `const DEFAULT_MOSS_VERSION_RANGE = '^${version}';`,
+  );
+  if (next === source) {
+    fail('packages/create-dmoss-app/index.mjs: missing DEFAULT_MOSS_VERSION_RANGE');
+  }
+  fs.writeFileSync(file, next);
+}
+
 function syncVersions(version) {
   for (const pkg of releasePackages) {
     const { file, json } = readPackageJson(pkg.dir);
@@ -80,6 +93,7 @@ function syncVersions(version) {
     }
     writePackageJson(file, json);
   }
+  syncCreateDmossAppFallback(version);
   run('npm', ['install', '--package-lock-only']);
 }
 

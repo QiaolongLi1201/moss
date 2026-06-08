@@ -4,8 +4,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
-const cli = path.resolve('index.mjs');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const packageRoot = path.resolve(__dirname, '..');
+const packagesRoot = path.resolve(packageRoot, '..');
+const cli = path.join(packageRoot, 'index.mjs');
+
+function packageVersion(packageDir) {
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.join(packagesRoot, packageDir, 'package.json'), 'utf8'),
+  );
+  return packageJson.version;
+}
+
+const expectedMossDependencyRanges = {
+  '@rdk-moss/core': `^${packageVersion('dmoss')}`,
+  '@rdk-moss/agent': `^${packageVersion('dmoss-agent')}`,
+};
 
 test('prints usage', () => {
   const result = spawnSync(process.execPath, [cli, '--help'], {
@@ -30,8 +46,14 @@ test('scaffolds minimal project without installing dependencies', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(target, 'package.json'), 'utf8'));
 
   assert.equal(packageJson.name, 'demo-agent');
-  assert.equal(packageJson.dependencies['@rdk-moss/core'], '^0.3.15');
-  assert.equal(packageJson.dependencies['@rdk-moss/agent'], '^0.3.15');
+  assert.equal(
+    packageJson.dependencies['@rdk-moss/core'],
+    expectedMossDependencyRanges['@rdk-moss/core'],
+  );
+  assert.equal(
+    packageJson.dependencies['@rdk-moss/agent'],
+    expectedMossDependencyRanges['@rdk-moss/agent'],
+  );
   assert.equal(packageJson.scripts.typecheck.includes('tsc --noEmit'), true);
   assert.equal(fs.existsSync(path.join(target, 'index.ts')), true);
   assert.equal(fs.existsSync(path.join(target, 'README.md')), true);

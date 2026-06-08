@@ -5,6 +5,15 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.21] - 2026-06-08
+
+### Fixed
+
+- CLI model selection now behaves like a real picker: `/model` and `/models`
+  list selectable models for the active provider, try the provider's
+  `/v1/models` endpoint when available, fall back to common model names, and
+  support switching with `/model <number>` or `/model <model-name>`.
+
 ## [0.3.20] - 2026-06-08
 
 ### Fixed

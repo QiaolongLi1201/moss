@@ -7,13 +7,13 @@
   "description": "D-Moss: vendor-neutral robotics agent framework. Contracts for KnowledgeModule, PlatformExtension, VendorPlugin, and robotics engineering prompts.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/QiaolongLi1201/moss.git",
+    "url": "git+https://github.com/D-Robotics/moss.git",
     "directory": "packages/dmoss"
   },
   "bugs": {
-    "url": "https://github.com/QiaolongLi1201/moss/issues"
+    "url": "https://github.com/D-Robotics/moss/issues"
   },
-  "homepage": "https://github.com/QiaolongLi1201/moss/tree/main/packages/dmoss#readme",
+  "homepage": "https://github.com/D-Robotics/moss/tree/main/packages/dmoss#readme",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

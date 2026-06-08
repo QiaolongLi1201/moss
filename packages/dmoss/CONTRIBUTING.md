@@ -6,7 +6,7 @@ Thank you for your interest in contributing to D-Moss! This document provides gu
 
 ```bash
 # Clone the repository
-git clone https://github.com/QiaolongLi1201/moss.git
+git clone https://github.com/D-Robotics/moss.git
 cd moss/packages/dmoss
 
 # Install dependencies

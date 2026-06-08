@@ -276,7 +276,7 @@ See the [MCP documentation](https://modelcontextprotocol.io) for available serve
 
 ## Learn More
 
-- [D-Moss Documentation](https://github.com/QiaolongLi1201/moss)
+- [D-Moss Documentation](https://github.com/D-Robotics/moss)
 `;
 
 fs.writeFileSync(path.join(targetDir, 'README.md'), readme);

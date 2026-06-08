@@ -30,7 +30,7 @@ application.
 Run `dmoss` and you get a full interactive coding/ops agent in the terminal:
 
 - **Zero-config start** — works out of the box through the built-in D-Robotics model gateway, with no API key required for first use; point it at your own provider/key (env vars or `dmoss setup`) anytime, and `dmoss` tells you when a new version is out.
-- **Tool loop** — read / write / edit files, run commands, search code, fetch the web, and render real pages in a headless browser.
+- **Tool loop** — read / write / edit files, run commands, search code, fetch the web, and render real pages in a configured Chrome/Chromium headless browser.
 - **Slash commands** — action-oriented controls such as `/status`, `/model`,
   `/goal`, `/compact`, `/context`, `/sessions`, `/cost`, `/diff`, `/rewind`,
   `/memory`, `/skills`, `/permissions`, `/config`, `/tools`, and `/init`
@@ -127,6 +127,38 @@ providers / tools / storage / approval gate / event sink, publish a
 `MossHostRuntimeManifest`, and run `evaluateMossHostCompatibility()` in CI.
 This is useful when you want Moss inside your own app instead of only as the
 `dmoss` terminal command — see [Integrating Moss Into A Host](#integrating-moss-into-a-host).
+
+## First Real Task / Automation
+
+For interactive use, Moss asks before mutating files, running commands, or
+touching external systems. For unattended benchmark or CI runs, choose an
+explicit approval policy before starting:
+
+```bash
+DMOSS_CLI_AUTO_APPROVE=1 dmoss --workspace-write "write and verify the tool"
+# or persist a broader local policy:
+dmoss config set profile autonomous
+```
+
+`DMOSS_CLI_AUTO_APPROVE=1` only approves tools that pass the active safety
+policy. It does not bypass `--read-only`, `deniedTools`, protected paths, or
+workspace sandbox checks. For browser-driven real websites, use `--full-access`
+because `web_browser_control` is classified as an external interaction.
+
+Moss exposes two browser tools when a local Chrome/Chromium executable is
+available: `web_browser_fetch` for read-only JavaScript-rendered pages and
+`web_browser_control` for approved browser workflows. `@rdk-moss/agent` uses
+`puppeteer-core`, so it does not download a browser during install. If
+auto-discovery cannot find one, set:
+
+```bash
+export DMOSS_BROWSER_EXECUTABLE="/path/to/chrome-or-chromium"
+```
+
+`apply_patch` uses Moss' structured patch format, not a raw `git apply` unified
+diff. It supports multi-file patches, but each operation must use the documented
+`*** Begin Patch` / `*** Add File` / `*** Update File` / `*** Delete File` /
+`*** End Patch` blocks.
 
 ## How Moss Compares
 

@@ -20,6 +20,7 @@ import { isCommandDangerous } from '../safety/channel-safety.js';
 import { createSubagentTool, fanOutSubagentsTool, subagentStatusTool, subagentStopTool } from './create-subagent.js';
 import { createWebFetchTool } from './web-fetch.js';
 import { createWebSearchTool } from './web-search.js';
+import { createBrowserTools } from './browser-tools.js';
 import { backgroundExecTools } from './background-exec.js';
 import { codeDiagnosticsTool } from './code-diagnostics.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
@@ -816,6 +817,7 @@ export const builtinTools: Tool[] = [
   searchCodeTool,
   webFetchTool,
   webSearchTool,
+  ...createBrowserTools(),
   applyPatchTool,
   codeDiagnosticsTool,
   createSubagentTool,

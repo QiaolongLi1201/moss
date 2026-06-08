@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { DmossAgent } from '../core/index.js';
 import type { Tool } from '../core/tools/tool-types.js';
 import { auditResolvedCliConfig, BASE_URL, resolveCliConfig, resolveConfigDir, resolveConfigPath, WORKSPACE, type ResolvedCliConfig } from './config.js';
+import { formatInteractiveCommandSections } from './interactive-commands.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
 import { getPackageVersion } from './package-info.js';
 import { compactPath, label, statusDot, ui } from './ui.js';
@@ -187,7 +188,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const auth = rt.config;
 
   const authState = auth.usingBundledDefault
-    ? 'auth built-in (free)'
+    ? 'auth built-in model (no key required)'
     : auth.apiKey ? `auth ${auth.apiKeySource}` : 'auth missing';
   const policyState = `${profileLine(auth)}   ${approvalPolicyLine(auth)}   ${promptCacheLine(auth)}   ${guardrailLine(auth)}`;
   const deviceState = rt.device
@@ -197,12 +198,12 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
 
   return [
     `${ui.bold('D-Moss Agent')} ${ui.dim(`v${getPackageVersion()}`)}`,
-    `${label('model')} ${agent.config.model}   ${label('provider')} ${auth.usingBundledDefault ? 'built-in free' : shortBaseUrl(rt.baseUrl)}   ${label('session')} ${rt.sessionKey}`,
+    `${label('model')} ${agent.config.model}   ${label('provider')} ${auth.usingBundledDefault ? 'built-in D-Robotics model' : shortBaseUrl(rt.baseUrl)}   ${label('session')} ${rt.sessionKey}`,
     `${label('workspace')} ${compactPath(rt.workspace)}   ${label('safety')} ${rt.safetyMode}   ${label('detail')} ${describeDetail(detailMode)}`,
-    `${statusDot(auth.apiKey ? 'ok' : 'warn')} ${authState}   ${statusDot('info')} ${policyState}   ${statusDot('info')} tools ${tools.length}   ${statusDot('info')} memory ${memoryCount}   ${statusDot('info')} skills ${skillCount}`,
+    `${statusDot(auth.usingBundledDefault || auth.apiKey ? 'ok' : 'warn')} ${authState}   ${statusDot('info')} ${policyState}   ${statusDot('info')} tools ${tools.length}   ${statusDot('info')} memory ${memoryCount}   ${statusDot('info')} skills ${skillCount}`,
     `${statusDot(rt.device ? 'ok' : 'warn')} ${deviceState}   ${statusDot(rt.meshEnabled ? 'ok' : 'info')} ${meshState}`,
     groups.length ? `${label('capabilities')} ${formatEnabledGroups(groups)}` : `${label('capabilities')} none`,
-    `${ui.dim('commands')} /quick_start  /status  /model  /help`,
+    `${ui.dim('commands')} /status  /model  /goal  /compact  /context  /help`,
   ].join('\n');
 }
 
@@ -211,7 +212,7 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
   const auth = rt.config;
   const toolNames = new Set(agent.tools.getNames());
   const apiKeyState = auth.usingBundledDefault
-    ? 'built-in (free)'
+    ? 'built-in model (no key required)'
     : auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing';
   const examples = [
     'Analyze this project structure and point out the key entry files and next steps',
@@ -227,9 +228,9 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
   return [
     ui.bold('Quick start'),
     '',
-    `  ${label('1/3 Model')} ${agent.config.model} · provider ${auth.usingBundledDefault ? 'built-in free' : auth.provider} · api key ${apiKeyState}`,
+    `  ${label('1/3 Model')} ${agent.config.model} · provider ${auth.usingBundledDefault ? 'built-in D-Robotics model' : auth.provider} · api key ${apiKeyState}`,
     auth.usingBundledDefault
-      ? '      Using the built-in free model — no setup needed. Run `dmoss setup` (or set DMOSS_API_KEY) to use your own; `/model` switches model.'
+      ? '      Built-in D-Robotics model is ready — no setup or API key needed. Run `dmoss setup` only when you want your own provider, account, or gateway.'
       : auth.apiKey
         ? '      Change it anytime: run `dmoss setup` (interactive), or `/model <name>` to switch model for this session.'
         : '      Configure it: run `dmoss setup` — choose a provider, choose a model, and paste your API key.',
@@ -264,9 +265,9 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
     ui.bold('Status'),
     `  ${label('session')} ${rt.sessionKey}`,
     `  ${label('model')} ${agent.config.model}`,
-    `  ${label('provider')} ${auth.usingBundledDefault ? 'built-in free model' : `${auth.provider} (${auth.providerSource}) via ${shortBaseUrl(rt.baseUrl)}`}`,
+    `  ${label('provider')} ${auth.usingBundledDefault ? 'built-in D-Robotics model' : `${auth.provider} (${auth.providerSource}) via ${shortBaseUrl(rt.baseUrl)}`}`,
     `  ${label('profile')} ${auth.profile ?? 'balanced'} (${auth.profileSource ?? 'default'})`,
-    `  ${label('api key')} ${auth.usingBundledDefault ? 'built-in (free, hidden)' : auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
+    `  ${label('api key')} ${auth.usingBundledDefault ? 'built-in model (hidden)' : auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
     `  ${label('workspace')} ${rt.workspace}`,
     `  ${label('config')} ${rt.configDir}`,
     `  ${label('sessions')} ${sessionDir}`,
@@ -304,8 +305,9 @@ export function renderCliTools(agent: DmossAgent): string {
     '    - check the board resources and ROS topics',
     '',
     '  Useful controls:',
-    '    /quick_start       setup and first tasks',
-    '    /status            current model, workspace, device, and capabilities',
+    '    /quick_start       configure model, workspace, board, and first tasks',
+    '    /status            view model, workspace, device, and capabilities',
+    '    /compact           compress older conversation history into a summary',
     '    /detail verbose    show redacted tool inputs and results',
   ].join('\n');
 }
@@ -412,30 +414,7 @@ export function renderCliExamples(agent: DmossAgent, runtime: CliRuntimeStatus =
 export function renderCliInteractiveHelp(): string {
   return [
     ui.bold('Commands'),
-    '  Start',
-    '    /quick_start         setup model, workspace, board, and first useful prompts',
-    '    /examples            show prompts matched to enabled capabilities',
-    '  Inspect',
-    '    /status              show model, workspace, runtime, device, and tool state',
-    '    /goal                show the current session goal',
-    '    /goal set <objective> set a persistent goal for this session',
-    '    /tools               explain how tools are selected automatically',
-    '    /permissions         show safety, approval, cache, and config-file policy',
-    '    /config              show the active config file and policy commands',
-    '    /memory              show stored long-term memories',
-    '    /skills              list learned SKILL.md files',
-    '  Configure',
-    '    /detail              explain current output detail mode',
-    '    /detail quiet        hide progress and tool lifecycle',
-    '    /detail progress     show thinking markers and tool lifecycle (default)',
-    '    /detail verbose      show redacted/truncated tool inputs and results',
-    '    /model <name>        switch model for this session',
-    '    /models              show model examples',
-    '    /version             show dmoss version',
-    '    /upgrade             show install/update commands',
-    '  Session',
-    '    /help                show this help',
-    '    /quit                exit',
+    ...formatInteractiveCommandSections({ indent: '    ', commandWidth: 24 }),
   ].join('\n');
 }
 

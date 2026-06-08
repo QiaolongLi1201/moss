@@ -1,4 +1,5 @@
 import { resolveConfigPath } from './config.js';
+import { INTERACTIVE_COMMAND_SECTIONS } from './interactive-commands.js';
 import { getPackageVersion } from './package-info.js';
 
 type ColorFn = (s: string) => string;
@@ -17,13 +18,17 @@ interface Colors {
 
 export function displayHelp(c: Colors): void {
   const configPath = resolveConfigPath();
+  const interactiveLines = INTERACTIVE_COMMAND_SECTIONS.flatMap((section) => [
+    `    ${c.bold(section.title)}`,
+    ...section.rows.map((row) => `      ${c.green(row.command.padEnd(24))} ${row.description}`),
+  ]);
   const lines = [
     '',
     `  ${c.bold(c.cyan('dmoss'))}  ${c.dim('— standalone agent for robotics & edge devices')}`,
     '',
     `  ${c.bold('Quick start')}`,
-    `    ${c.cyan('$')} dmoss setup                ${c.dim('# configure provider, model, and API key')}`,
-    `    ${c.cyan('$')} dmoss                      ${c.dim('# interactive TUI; starts a new session')}`,
+    `    ${c.cyan('$')} dmoss                      ${c.dim('# interactive TUI; built-in D-Robotics model, no key required')}`,
+    `    ${c.cyan('$')} dmoss setup                ${c.dim('# optional: use your own provider, model, and API key')}`,
     `    ${c.cyan('$')} dmoss -m deepseek-v4-pro   ${c.dim('# override model for this run')}`,
     `    ${c.cyan('$')} dmoss resume --last        ${c.dim('# continue the latest saved session')}`,
     `    ${c.cyan('$')} dmoss --session work       ${c.dim('# continue or create a named session')}`,
@@ -31,7 +36,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.cyan('$')} echo "list files" | dmoss  ${c.dim('# piped stdin')}`,
     '',
     `  ${c.bold('Setup & auth')}`,
-    `    ${c.green('setup')}                 guided first-run model setup`,
+    `    ${c.green('setup')}                 configure your own provider/model/API key`,
     `    ${c.green('auth status')}           show provider/model/key source without printing secrets`,
     `    ${c.green('auth logout')}           remove stored API key from config`,
     `    ${c.green('doctor')}                inspect config, auth, workspace, runtime, and update state`,
@@ -60,21 +65,7 @@ export function displayHelp(c: Colors): void {
     `    ${c.green('config unset')} ${c.dim('<key>')}   remove a stored user/project override`,
     '',
     `  ${c.bold('Interactive commands')}`,
-    `    ${c.green('/quick_start')}     setup model, workspace, board, and first useful prompts`,
-    `    ${c.green('/help')}            show interactive commands`,
-    `    ${c.green('/status')}          show model, workspace, runtime, device, and tool state`,
-    `    ${c.green('/goal')}            show the current session goal`,
-    `    ${c.green('/goal set')} ${c.dim('<objective>')} set a persistent goal for this session`,
-    `    ${c.green('/examples')}        show prompts matched to enabled capabilities`,
-    `    ${c.green('/tools')}           explain how tools are selected automatically`,
-    `    ${c.green('/model')} ${c.dim('<name>')}    switch LLM model (e.g. /model gpt-4o)`,
-    `    ${c.green('/models')}          list suggested model names`,
-    `    ${c.green('/version')}         show dmoss version`,
-    `    ${c.green('/detail')} ${c.dim('<mode>')}   quiet | progress | verbose tool/thinking display`,
-    `    ${c.green('/memory')}          show stored long-term memories`,
-    `    ${c.green('/skills')}          list learned SKILL.md entries`,
-    `    ${c.green('/upgrade')}         show install/update commands`,
-    `    ${c.green('/quit')}            exit`,
+    ...interactiveLines,
     '',
     `  ${c.bold('Flags')}`,
     `    ${c.yellow('--debug')}              verbose logging (level=debug)`,

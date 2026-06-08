@@ -70,6 +70,14 @@ function makeAgent() {
     async clearGoal() {
       goal = undefined;
     },
+    async compactSession() {
+      return {
+        compacted: false,
+        summaryChars: 0,
+        droppedMessages: 0,
+        tokensAfter: 42,
+      };
+    },
     registerPreToolHook() {},
     registerPostToolHook() {},
     // eslint-disable-next-line require-yield
@@ -187,7 +195,8 @@ test('/goal is visible and handled by the TUI', async () => {
   await wait(140);
   stdin.write('/');
   await wait();
-  assert.match(strip(lastFrame()), /\/goal\s+session goal/, 'slash menu should list /goal');
+  assert.match(strip(lastFrame()), /\/goal\s+manage session goal/, 'slash menu should list /goal');
+  assert.match(strip(lastFrame()), /\/compact\s+compress old context/, 'slash menu should list /compact');
   cleanup();
 
   mounted = mount();
@@ -198,6 +207,16 @@ test('/goal is visible and handled by the TUI', async () => {
   assert.doesNotMatch(strip(f), /Unknown command: \/goal/);
   f = await runSlashCommand(stdin, lastFrame, '/goal set stabilize release');
   assert.match(strip(f), /Goal set: stabilize release|已设置目标：stabilize release/);
+  cleanup();
+});
+
+test('/compact is visible and handled by the TUI', async () => {
+  setRows(24);
+  const { stdin, lastFrame } = mount();
+  await wait(140);
+  const f = await runSlashCommand(stdin, lastFrame, '/compact');
+  assert.match(strip(f), /No compaction needed\./, '/compact should call compactSession');
+  assert.doesNotMatch(strip(f), /Unknown command: \/compact/);
   cleanup();
 });
 

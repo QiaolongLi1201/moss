@@ -3,8 +3,12 @@ import path from 'node:path';
 import * as readline from 'node:readline';
 import type { DmossAgent } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
+import { estimateTokensForText } from '../context/tokens.js';
 import { handleGoalCommand } from '../goal.js';
+import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
 import { setCliApprovalAsker } from './approval.js';
+import { handleCompactCommand } from './compact-command.js';
+import { INTERACTIVE_COMPLETION_COMMANDS } from './interactive-commands.js';
 import { runOneShot } from './oneshot.js';
 import {
   renderCliDetailHelp,
@@ -22,39 +26,11 @@ import { getPackageVersion } from './package-info.js';
 import { createCliSessionKey } from './session.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, label, ui } from './ui.js';
-import { renderSkills, runInkInteractive } from './tui.js';
+import { formatTuiSessions, renderSkills, runInkInteractive, runLocalShellCommand } from './tui.js';
 
 let currentModel = '';
 
-export const INTERACTIVE_COMMANDS = [
-  '/quick_start',
-  '/help',
-  '/tools',
-  '/status',
-  '/goal',
-  '/goal status',
-  '/goal set',
-  '/goal pause',
-  '/goal resume',
-  '/goal complete',
-  '/goal block',
-  '/goal clear',
-  '/permissions',
-  '/config',
-  '/examples',
-  '/model',
-  '/models',
-  '/version',
-  '/detail',
-  '/detail quiet',
-  '/detail progress',
-  '/detail verbose',
-  '/memory',
-  '/skills',
-  '/upgrade',
-  '/quit',
-  '/exit',
-];
+export const INTERACTIVE_COMMANDS = [...INTERACTIVE_COMPLETION_COMMANDS];
 
 function cliLocale(): string | undefined {
   return process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG;
@@ -146,6 +122,16 @@ export async function runInteractive(
       continue;
     }
 
+    if (msg === '/compact') {
+      try {
+        console.error(await handleCompactCommand(agent, sessionKey));
+      } catch (err) {
+        console.error(`[compact] ${err instanceof Error ? err.message : String(err)}`);
+      }
+      rl.prompt();
+      continue;
+    }
+
     if (msg === '/permissions' || msg === '/config') {
       console.error(renderCliPermissions(runtime));
       rl.prompt();
@@ -166,6 +152,83 @@ export async function runInteractive(
 
     if (msg === '/upgrade') {
       console.error(renderCliUpgradeHelp());
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/sessions' || msg === '/session') {
+      try {
+        const sessions = await agent.config.sessionStore.listSessions();
+        console.error(formatTuiSessions(sessions, sessionKey));
+      } catch (err) {
+        console.error(`[sessions] ${err instanceof Error ? err.message : String(err)}`);
+      }
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/context') {
+      try {
+        const msgs = await agent.config.sessionStore.loadMessages(sessionKey);
+        const tokens = msgs.reduce((n, m) => {
+          const content = (m as { content?: unknown }).content;
+          const text = typeof content === 'string' ? content : content ? JSON.stringify(content) : '';
+          return n + estimateTokensForText(text);
+        }, 0);
+        const windowTokens = agent.config.contextTokens ?? 200_000;
+        const pct = Math.min(100, Math.round((tokens / windowTokens) * 100));
+        console.error([
+          'Context window',
+          `  messages   ${msgs.length}`,
+          `  usage      ~${tokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens (${pct}%)`,
+          `  model      ${currentModel}`,
+        ].join('\n'));
+      } catch (err) {
+        console.error(`[context] ${err instanceof Error ? err.message : String(err)}`);
+      }
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/cost') {
+      try {
+        const records = await readUsageLog();
+        console.error(records.length === 0
+          ? 'Session usage\n  No LLM usage recorded yet in this workspace (.dmoss/llm-usage.jsonl).'
+          : formatUsageSummary(summarizeUsage(records)));
+      } catch (err) {
+        console.error(`[cost] ${err instanceof Error ? err.message : String(err)}`);
+      }
+      rl.prompt();
+      continue;
+    }
+
+    if (msg === '/diff' || msg.startsWith('/diff ')) {
+      try {
+        const result = await runLocalShellCommand({
+          command: 'git --no-pager diff --stat && git --no-pager diff',
+          cwd: workspace,
+        });
+        console.error(result.output.trim() || '(no unstaged working-tree changes)');
+      } catch (err) {
+        console.error(`[diff] ${err instanceof Error ? err.message : String(err)}`);
+      }
+      rl.prompt();
+      continue;
+    }
+
+    if (
+      msg === '/rewind'
+      || msg.startsWith('/rewind ')
+      || msg === '/queue'
+      || msg.startsWith('/queue ')
+      || msg === '/stop'
+      || msg === '/abort'
+      || msg === '/thinking'
+      || msg === '/clear'
+      || msg === '/init'
+    ) {
+      console.error('[help] This control is available in the full terminal TUI. Open dmoss in a TTY to use it.');
       rl.prompt();
       continue;
     }
@@ -239,7 +302,7 @@ export async function runInteractive(
 
     if (msg.startsWith('/')) {
       console.error(`[help] Unknown command: ${msg}`);
-      console.error('[help] Available: /help /tools /status /goal /permissions /config /examples /model /models /version /detail /memory /skills /upgrade /quit');
+      console.error(`[help] Available: ${INTERACTIVE_COMMANDS.filter((cmd) => !cmd.includes(' ')).join(' ')}`);
       rl.prompt();
       continue;
     }

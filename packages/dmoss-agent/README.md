@@ -15,8 +15,10 @@
 
 ```bash
 # Try it in 30 seconds
-npx -y @rdk-moss/agent setup
 npx -y @rdk-moss/agent "帮我检查当前目录"
+# or install it globally and open the interactive TUI:
+npm i -g @rdk-moss/agent@latest
+dmoss
 ```
 
 ## Why D-Moss
@@ -75,9 +77,10 @@ npm i -g @rdk-moss/agent@latest
 dmoss
 ```
 
-`dmoss` uses the built-in D-Robotics model gateway by default, so a first run
-does not require an API key. Run `dmoss setup` only when you want to use your
-own provider, account, private gateway, or self-hosted OpenAI-compatible model.
+`dmoss` uses the built-in D-Robotics model gateway by default when installed
+from npm, so a first run does not require an API key. Run `dmoss setup` only
+when you want to use your own provider, account, private gateway, or self-hosted
+OpenAI-compatible model.
 
 To use your own model, either run the guided setup:
 
@@ -145,7 +148,8 @@ git clone <this-repo>
 cd <this-repo>
 npm install                 # links workspace packages (@rdk-moss/core, @rdk-moss/agent, create-dmoss-app)
 npm run build -w @rdk-moss/agent
-# Optional: switch from the built-in gateway to your own model/provider.
+# A source checkout does not include the private npm zero-config gateway file.
+# Configure your own model/provider, or set DMOSS_ZERO_CONFIG_DEFAULT_FILE for packaging tests.
 node packages/dmoss-agent/dist/cli.js setup
 # Run the interactive REPL:
 node packages/dmoss-agent/dist/cli.js
@@ -166,7 +170,7 @@ dmoss config set baseUrl https://llm.example.com
 ### CLI flags recap
 
 ```
-setup                   guided first-run provider/model/API-key setup
+setup                   configure your own provider/model/API key
 auth status             show provider/model/key source without printing secrets
 auth logout             remove stored API key from config
 config set <key> <val>  update provider, model, or baseUrl
@@ -181,16 +185,23 @@ config set <key> <val>  update provider, model, or baseUrl
 
 By default the CLI prints a short progress trail to stderr: planning turns, tool calls, and redacted tool results. The final assistant answer stays on stdout so shell piping still works. Tune this with `DMOSS_CLI_DETAIL=quiet|progress|verbose`; in the interactive REPL you can also run `/detail quiet`, `/detail progress`, or `/detail verbose`.
 
-The interactive REPL starts with an onboarding panel that shows the active model, workspace, provider host, enabled capability groups, memory/skill counts, device status, and mesh status. Useful discovery commands:
+The interactive REPL starts with an onboarding panel that shows the active
+model, workspace, provider, enabled capability groups, memory/skill counts,
+device status, and mesh status. Slash commands are action-oriented controls:
 
 ```
-/quick_start setup model, workspace, board, and first useful prompts
-/status      show model, workspace, runtime, device, and tool state
-/examples    show prompts matched to the currently enabled capabilities
-/tools       explain how tools are selected automatically
-/detail      explain quiet/progress/verbose output modes
-/upgrade     show install/update commands
-/help        show interactive commands
+/status      view model, workspace, device, and tool state
+/model       show or switch the active model
+/goal        show or manage the persistent session goal
+/compact     compress older conversation history into a summary
+/context     show context-window token usage
+/sessions    list saved conversations you can resume
+/diff        show git working-tree changes
+/rewind      undo file edits from a checkpoint
+/tools       view available tool groups and selection rules
+/config      show config file and policy commands
+/quick_start configure model, workspace, board, and first tasks
+/help        show the full command reference
 ```
 
 All flags also available via env vars: `DMOSS_LOG_LEVEL`, `DMOSS_LOG_JSON=1`, `DMOSS_NO_COLOR=1`.

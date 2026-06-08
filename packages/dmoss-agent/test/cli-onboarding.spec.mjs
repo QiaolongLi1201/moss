@@ -124,7 +124,7 @@ const agent = createAgent([
   assert.match(welcome, /approval never/);
   assert.match(welcome, /cache off/);
   assert.match(welcome, /guardrails in 2 out 1/);
-  assert.match(welcome, /commands.*\/quick_start.*\/status.*\/model.*\/help/);
+  assert.match(welcome, /commands.*\/status.*\/model.*\/goal.*\/compact.*\/context.*\/help/);
 }
 
 {
@@ -275,10 +275,11 @@ const agent = createAgent([
 
 {
   const help = renderCliInteractiveHelp();
-  assert.match(help, /Start/);
+  assert.match(help, /Work/);
   assert.match(help, /\/quick_start/);
   assert.match(help, /Inspect/);
   assert.match(help, /Configure/);
+  assert.match(help, /\/compact\s+compress older conversation history into a summary/);
   assert.match(help, /\/permissions/);
   assert.match(help, /\/config/);
   assert.match(help, /\/upgrade/);

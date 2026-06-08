@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Regression for CLI goal-mode discoverability.
+ * Regression for CLI slash-command discoverability.
  *
  * Run:
  *   npm run build -w @rdk-moss/agent
@@ -19,16 +19,24 @@ const cliPath = path.resolve(__dirname, '../dist/cli.js');
 
 assert.ok(INTERACTIVE_COMMANDS.includes('/goal'), 'readline command list should include /goal');
 assert.ok(INTERACTIVE_COMMANDS.includes('/goal set'), 'readline command list should include /goal set');
+assert.ok(INTERACTIVE_COMMANDS.includes('/compact'), 'readline command list should include /compact');
+assert.ok(INTERACTIVE_COMMANDS.includes('/context'), 'readline command list should include /context');
+assert.ok(INTERACTIVE_COMMANDS.includes('/sessions'), 'readline command list should include /sessions');
 assert.ok(INTERACTIVE_COMMANDS.includes('/version'), 'readline command list should include /version');
 assert.ok(completeInteractiveCommand('/go')[0].includes('/goal'), 'readline completion should find /goal');
+assert.ok(completeInteractiveCommand('/com')[0].includes('/compact'), 'readline completion should find /compact');
 
 const interactiveHelp = renderCliInteractiveHelp();
-assert.match(interactiveHelp, /\/goal\s+show the current session goal/);
-assert.match(interactiveHelp, /\/goal set <objective>/);
-assert.match(interactiveHelp, /\/version\s+show dmoss version/);
+assert.match(interactiveHelp, /\/goal\s+show or manage the persistent session goal/);
+assert.match(interactiveHelp, /\/goal set <objective>\s+set the goal Moss should keep in context/);
+assert.match(interactiveHelp, /\/compact\s+compress older conversation history into a summary/);
+assert.match(interactiveHelp, /\/context\s+show current context-window usage/);
+assert.match(interactiveHelp, /\/version\s+show the installed dmoss version/);
 
 assert.equal(commandSuggestion('/goa'), '/goal');
 assert.equal(completeSlashCommandInput('/go', 3)?.value, '/goal');
+assert.equal(commandSuggestion('/compct'), '/compact');
+assert.equal(completeSlashCommandInput('/com', 4)?.value, '/compact');
 
 const help = spawnSync(process.execPath, [cliPath, '--help'], {
   encoding: 'utf8',
@@ -36,8 +44,11 @@ const help = spawnSync(process.execPath, [cliPath, '--help'], {
 });
 assert.equal(help.status, 0, help.stderr);
 const helpText = `${help.stdout}\n${help.stderr}`;
-assert.match(helpText, /\/goal\s+show the current session goal/);
-assert.match(helpText, /\/goal set\s+<objective>/);
-assert.match(helpText, /\/version\s+show dmoss version/);
+assert.match(helpText, /dmoss\s+# interactive TUI; built-in D-Robotics model, no key required/);
+assert.match(helpText, /\/goal\s+show or manage the persistent session goal/);
+assert.match(helpText, /\/goal set <objective>\s+set the goal Moss should keep in context/);
+assert.match(helpText, /\/compact\s+compress older conversation history into a summary/);
+assert.match(helpText, /\/context\s+show current context-window usage/);
+assert.match(helpText, /\/version\s+show the installed dmoss version/);
 
-console.log('[PASS] CLI goal commands are discoverable');
+console.log('[PASS] CLI slash commands are discoverable');

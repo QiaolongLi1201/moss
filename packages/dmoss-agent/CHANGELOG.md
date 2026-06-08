@@ -5,6 +5,23 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.19] - 2026-06-08
+
+### Fixed
+
+- CLI slash-command surface: `/goal`, `/compact`, `/context`, `/sessions`,
+  `/cost`, `/diff`, `/rewind`, `/version`, and related controls are now
+  discoverable from the terminal slash menu, readline completion, `/help`, and
+  `dmoss --help` instead of existing only as hidden runtime capabilities.
+- `/compact` is wired to the public `compactSession()` runtime path so users can
+  manually compress older conversation context from the terminal.
+
+### Changed
+
+- CLI onboarding and docs now describe the built-in D-Robotics model as ready
+  without setup or API keys, and present slash commands as action-oriented
+  controls rather than feature introductions.
+
 ## [0.3.15] - 2026-06-08
 
 ### Fixed

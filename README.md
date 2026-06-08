@@ -29,9 +29,12 @@ application.
 
 Run `dmoss` and you get a full interactive coding/ops agent in the terminal:
 
-- **Zero-config start** — works out of the box through the built-in D-Robotics model gateway; point it at your own provider/key (env vars or `dmoss setup`) anytime, and `dmoss` tells you when a new version is out.
+- **Zero-config start** — works out of the box through the built-in D-Robotics model gateway, with no API key required for first use; point it at your own provider/key (env vars or `dmoss setup`) anytime, and `dmoss` tells you when a new version is out.
 - **Tool loop** — read / write / edit files, run commands, search code, fetch the web, and render real pages in a headless browser.
-- **Slash commands** — `/checkpoint` + rewind, `/compact` context, `/context` and `/cost` budgets, `/diff`, `/memory`, `/model` · `/models`, `/permissions` · `/approval`, `/hooks`, `/init`, `/config`, and more (`/help` lists them all).
+- **Slash commands** — action-oriented controls such as `/status`, `/model`,
+  `/goal`, `/compact`, `/context`, `/sessions`, `/cost`, `/diff`, `/rewind`,
+  `/memory`, `/skills`, `/permissions`, `/config`, `/tools`, and `/init`
+  (`/help` lists the full set).
 - **Parallel sub-agents** — fan independent work out across isolated child agents and aggregate the results.
 - **MCP** — connect Model Context Protocol servers to add tools.
 - **Skills** — progressive-disclosure skills the agent discovers, validates, and reuses.
@@ -127,7 +130,6 @@ Moss matches the core terminal-agent experience of tools like **Claude Code** an
 | | Moss | Claude Code | Codex |
 | --- | --- | --- | --- |
 | Interactive terminal agent | ✅ `dmoss` | ✅ | ✅ |
-| Tool loop · sub-agents · MCP · skills · memory | ✅ | ✅ | ✅ |
 | **Models** | **Any OpenAI-compatible endpoint + Anthropic** — DeepSeek, Qwen, self-hosted, gateways | Anthropic | OpenAI |
 | **Embed into your own product** | ✅ Host Adapter contract — Moss is a runtime, not only an app | — standalone app | — standalone app |
 | **Open & self-hostable** | ✅ open npm packages you vendor and extend, run against your own endpoints | — | — |

@@ -603,11 +603,12 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   assert.match(frame, /> \//);
   // Navigable, windowed menu (≤6 rows): the first page of commands is shown,
   // the selected (first) row highlighted. No static "… N more / type to filter" row.
-  assert.match(frame, /\/quick_start\s+setup and first tasks/);
-  assert.match(frame, /\/model\s+switch model/);
-  assert.match(frame, /\/examples\s+starter tasks/);
-  assert.match(frame, /\/goal\s+session goal/);
-  assert.match(frame, /\/sessions\s+recent sessions/);
+  assert.match(frame, /\/status\s+view runtime state/);
+  assert.match(frame, /\/model\s+switch active model/);
+  assert.match(frame, /\/goal\s+manage session goal/);
+  assert.match(frame, /\/compact\s+compress old context/);
+  assert.match(frame, /\/context\s+show token usage/);
+  assert.match(frame, /\/sessions\s+list saved chats/);
   assert.doesNotMatch(frame, /\/tools\s+tool surface/);
   assert.doesNotMatch(frame, /more commands/);
   assert(frame.split('\n').length <= 12);

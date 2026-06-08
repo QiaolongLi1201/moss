@@ -13,7 +13,9 @@ import type { SkillLearner } from '../core/memory/skill-learner.js';
 import type { SessionMeta } from '../core/session/session.js';
 import { SkillRegistry, type SkillMeta } from '../skills/index.js';
 import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type CliInteractionMode } from './approval.js';
+import { handleCompactCommand } from './compact-command.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
+import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
 import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliQuickStart, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
 import { createCliSessionKey } from './session.js';
@@ -161,49 +163,7 @@ Project memory for D-Moss and coding agents. Auto-loaded at the start of every s
 <!-- Code style, naming, patterns to follow, and things NOT to touch. -->
 `;
 
-const KNOWN_COMMANDS = [
-  '/quick_start',
-  '/help',
-  '/tools',
-  '/status',
-  '/goal',
-  '/goal status',
-  '/goal set',
-  '/goal pause',
-  '/goal resume',
-  '/goal complete',
-  '/goal block',
-  '/goal clear',
-  '/permissions',
-  '/config',
-  '/examples',
-  '/model',
-  '/models',
-  '/version',
-  '/detail',
-  '/queue',
-  '/queue drop',
-  '/queue pop',
-  '/queue resume',
-  '/queue continue',
-  '/clearqueue',
-  '/memory',
-  '/skills',
-  '/init',
-  '/diff',
-  '/sessions',
-  '/context',
-  '/cost',
-  '/rewind',
-  '/session',
-  '/upgrade',
-  '/stop',
-  '/abort',
-  '/clear',
-  '/thinking',
-  '/quit',
-  '/exit',
-] as const;
+const KNOWN_COMMANDS = INTERACTIVE_COMPLETION_COMMANDS;
 
 function cliLocale(): string | undefined {
   return process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG;
@@ -1733,35 +1693,7 @@ export interface PromptEditorProps {
 }
 
 function commandRowsForInput(value: string): Array<[string, string]> {
-  if (!value.startsWith('/')) return [];
-  const normalized = value.trim().toLowerCase();
-  const allRows: Array<[string, string]> = [
-    ['/quick_start', 'setup and first tasks'],
-    ['/model', 'switch model'],
-    ['/examples', 'starter tasks'],
-    ['/status', 'runtime and device'],
-    ['/goal', 'session goal'],
-    ['/sessions', 'recent sessions'],
-    ['/diff', 'git diff'],
-    ['/queue', 'queued prompts'],
-    ['/help', 'all commands'],
-    ['/init', 'create AGENTS.md'],
-    ['/permissions', 'safety and approvals'],
-    ['/config', 'config and policy'],
-    ['/tools', 'how tools work'],
-    ['/context', 'context usage'],
-    ['/detail', 'quiet/progress/verbose'],
-    ['/cost', 'token usage & cost'],
-    ['/rewind', 'undo file changes'],
-    ['/thinking', 'thinking deltas'],
-    ['/clear', 'clear visible transcript'],
-    ['/quit', 'exit D-Moss'],
-  ];
-  // Full filtered list; the visible window (responsive count + selection
-  // centering) is computed at render time so the menu can be navigated/scrolled.
-  return normalized === '/'
-    ? allRows
-    : allRows.filter(([command]) => command.startsWith(normalized));
+  return commandRowsForSlashInput(value);
 }
 
 export function promptEditorRowBudget(
@@ -2438,6 +2370,17 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       addTranscript(result.error ? 'error' : 'system', result.message);
       return true;
     }
+    if (message === '/compact') {
+      setBusyState(true);
+      try {
+        addTranscript('system', await handleCompactCommand(agent, sessionKey));
+      } catch (err) {
+        addTranscript('error', `Could not compact conversation: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setBusyState(false);
+      }
+      return true;
+    }
     if (message === '/permissions' || message === '/config') {
       addTranscript('system', renderCliPermissions(runtime));
       return true;
@@ -2616,7 +2559,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     return false;
-  }, [addTranscript, agent, app, currentModel, requestStop, runtime, setQueuePausedAfterCancel, setQueuedInputs, workspace]);
+  }, [addTranscript, agent, app, currentModel, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, workspace]);
 
   const runLocalShell = useCallback(async (raw: string): Promise<void> => {
     const command = raw.slice(1);
@@ -3007,24 +2950,25 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
 function commandList(): string {
   return [
     'Commands',
-    '  /quick_start      setup model, workspace, board, and first tasks',
-    '  /examples          starter prompts',
-    '  /status            runtime and device context',
-    '  /goal              show current goal',
-    '  /goal set <text>   set a persistent session goal',
-    '  /model [name]      show or switch model',
-    '  /permissions       safety, approval, cache, and config file policy',
-    '  /config            active config file and policy commands',
-    '  /tools             explain how tools are selected automatically',
+    '  /status            view model, workspace, device, and tool state',
+    '  /model [name]      show or switch the active model',
+    '  /goal              show or manage the persistent session goal',
+    '  /goal set <text>   set the goal Moss should keep in context',
+    '  /compact           compress older conversation history into a summary',
+    '  /context           show context-window token usage',
+    '  /sessions          list saved conversations you can resume',
+    '  /cost              show recorded token usage and estimated cost',
+    '  /diff              show git working-tree changes',
+    '  /rewind [seq]      undo file edits from a checkpoint',
+    '  /tools             view available tool groups and selection rules',
+    '  /permissions       show safety, approvals, cache, and config policy',
+    '  /config            show config file and policy commands',
+    '  /quick_start       configure model, workspace, board, and first tasks',
+    '  /examples          show task examples for enabled capabilities',
     '  /stop              stop the active run',
     '  /queue [drop|clear] show, drop last, or discard queued prompts',
-    '  /sessions          show current and recent saved sessions',
-    '  /context           context window token usage',
-    '  /cost              recorded token usage & estimated cost',
-    '  /version           show dmoss version',
-    '  /rewind [seq]      list or undo file changes to a checkpoint',
-    '  /diff              show git working-tree changes',
-    '  /init              scaffold an AGENTS.md project memory file',
+    '  /version           show the installed dmoss version',
+    '  /init              create an AGENTS.md project memory file',
     '',
     'Conversation',
     '  /clear             clear visible transcript',

@@ -52,6 +52,62 @@ function tmpDir() {
 
 {
   const dir = tmpDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'latest-version.json'), JSON.stringify({ checkedAt: 1000, latestVersion: '0.3.1' }));
+  let calls = 0;
+  const notice = await checkForCliUpdate({
+    configDir: dir,
+    currentVersion: '0.3.4',
+    now: 1000 + 60 * 1000,
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ version: '0.3.5' }), { status: 200 });
+    },
+  });
+  assert.equal(calls, 1, 'cache older than current install should not suppress registry checks');
+  assert.equal(notice?.latestVersion, '0.3.5');
+}
+
+{
+  const dir = tmpDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'latest-version.json'), JSON.stringify({ checkedAt: 1000, latestVersion: '0.3.4' }));
+  let calls = 0;
+  const notice = await checkForCliUpdate({
+    configDir: dir,
+    currentVersion: '0.3.4',
+    now: 1000 + 60 * 1000,
+    noUpdateCacheMaxAgeMs: 100,
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ version: '0.3.5' }), { status: 200 });
+    },
+  });
+  assert.equal(calls, 1, 'expired no-update cache should refresh quickly after new releases');
+  assert.equal(notice?.latestVersion, '0.3.5');
+}
+
+{
+  const dir = tmpDir();
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'latest-version.json'), JSON.stringify({ checkedAt: 1000, latestVersion: '0.3.4' }));
+  let calls = 0;
+  const notice = await checkForCliUpdate({
+    configDir: dir,
+    currentVersion: '0.3.4',
+    now: 1000 + 60 * 1000,
+    noUpdateCacheMaxAgeMs: 5 * 60 * 1000,
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ version: '0.3.5' }), { status: 200 });
+    },
+  });
+  assert.equal(calls, 0, 'fresh no-update cache should still avoid registry checks');
+  assert.equal(notice, null);
+}
+
+{
+  const dir = tmpDir();
   const notice = await checkForCliUpdate({
     configDir: dir,
     currentVersion: '0.3.5',

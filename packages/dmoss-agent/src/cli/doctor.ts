@@ -162,6 +162,7 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
     configDir: options.configDir,
     currentVersion: options.currentVersion,
     timeoutMs: 1500,
+    forceRefresh: true,
     fetchImpl: options.updateFetchImpl,
   });
   if (notice) {

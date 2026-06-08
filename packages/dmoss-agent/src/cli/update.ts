@@ -12,6 +12,7 @@ export async function runCliUpdate(options: {
     configDir: options.configDir,
     currentVersion: options.currentVersion,
     timeoutMs: 2500,
+    forceRefresh: true,
   });
 
   if (notice) {

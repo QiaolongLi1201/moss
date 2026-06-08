@@ -4,6 +4,7 @@ import path from 'node:path';
 const PACKAGE_NAME = '@rdk-moss/agent';
 const REGISTRY_URL = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}/latest`;
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const NO_UPDATE_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
 // The npm registry is often 1.5-2s+ on slower networks (e.g. reaching
 // registry.npmjs.org from China); 800ms timed out before the notice could fetch.
 // The check is async and the timer is unref'd, so a longer wait never blocks
@@ -15,6 +16,9 @@ export interface UpdateCheckOptions {
   currentVersion: string;
   now?: number;
   timeoutMs?: number;
+  cacheMaxAgeMs?: number;
+  noUpdateCacheMaxAgeMs?: number;
+  forceRefresh?: boolean;
   fetchImpl?: typeof fetch;
 }
 
@@ -82,12 +86,22 @@ export function formatUpdateNotice(notice: UpdateNotice): string {
 export async function checkForCliUpdate(options: UpdateCheckOptions): Promise<UpdateNotice | null> {
   const now = options.now ?? Date.now();
   const cached = readCache(options.configDir);
+  const cachedAge = cached?.checkedAt ? now - cached.checkedAt : Number.POSITIVE_INFINITY;
   if (
+    !options.forceRefresh &&
     cached?.latestVersion &&
     cached.checkedAt &&
-    now - cached.checkedAt < CACHE_MAX_AGE_MS
+    cachedAge >= 0
   ) {
-    return noticeFor(options.currentVersion, cached.latestVersion);
+    const comparison = options.currentVersion === 'unknown'
+      ? 0
+      : compareVersions(cached.latestVersion, options.currentVersion);
+    if (comparison > 0 && cachedAge < (options.cacheMaxAgeMs ?? CACHE_MAX_AGE_MS)) {
+      return noticeFor(options.currentVersion, cached.latestVersion);
+    }
+    if (comparison === 0 && cachedAge < (options.noUpdateCacheMaxAgeMs ?? NO_UPDATE_CACHE_MAX_AGE_MS)) {
+      return null;
+    }
   }
 
   const controller = new AbortController();

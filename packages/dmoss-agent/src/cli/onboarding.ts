@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DmossAgent } from '../core/index.js';
 import type { Tool } from '../core/tools/tool-types.js';
+import { formatCommunityAuthStatus, type DmossCommunityAuthRuntime } from './community-auth.js';
 import { auditResolvedCliConfig, BASE_URL, resolveCliConfig, resolveConfigDir, resolveConfigPath, WORKSPACE, type ResolvedCliConfig } from './config.js';
 import { formatInteractiveCommandSections } from './interactive-commands.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
@@ -26,6 +27,7 @@ export interface CliRuntimeStatus {
   device?: CliDeviceStatus | null;
   sessionKey?: string;
   config?: ResolvedCliConfig;
+  communityAuth?: DmossCommunityAuthRuntime;
 }
 
 interface ToolGroupSummary {
@@ -43,9 +45,10 @@ function loadDefaultRuntimeConfig(): ResolvedCliConfig {
   }
 }
 
-const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage'>> & {
+const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage' | 'communityAuth'>> & {
   dockerImage?: string;
   device: CliDeviceStatus | null;
+  communityAuth?: DmossCommunityAuthRuntime;
 } = {
   workspace: WORKSPACE,
   runtimeDir: path.join(WORKSPACE, '.dmoss-runtime'),
@@ -57,6 +60,7 @@ const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage'>
   meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || process.argv.includes('--mesh'),
   sessionKey: 'cli',
   config: loadDefaultRuntimeConfig(),
+  communityAuth: undefined,
   device: null,
 };
 
@@ -186,10 +190,14 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
   const memoryCount = countJsonIndex(path.join(rt.runtimeDir, 'memory', 'index.json'));
   const skillCount = countMarkdownFiles(path.join(rt.workspace, 'skills', 'learned'));
   const auth = rt.config;
+  const community = rt.communityAuth?.getStatus();
 
   const authState = auth.usingBundledDefault
-    ? 'auth built-in model (no key required)'
+    ? 'auth built-in model (no model key required)'
     : auth.apiKey ? `auth ${auth.apiKeySource}` : 'auth missing';
+  const communityState = community
+    ? `community ${formatCommunityAuthStatus(community)}`
+    : 'community unknown';
   const policyState = `${profileLine(auth)}   ${approvalPolicyLine(auth)}   ${promptCacheLine(auth)}   ${guardrailLine(auth)}`;
   const deviceState = rt.device
     ? `device ${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`
@@ -201,9 +209,10 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
     `${label('model')} ${agent.config.model}   ${label('provider')} ${auth.usingBundledDefault ? 'built-in D-Robotics model' : shortBaseUrl(rt.baseUrl)}   ${label('session')} ${rt.sessionKey}`,
     `${label('workspace')} ${compactPath(rt.workspace)}   ${label('safety')} ${rt.safetyMode}   ${label('detail')} ${describeDetail(detailMode)}`,
     `${statusDot(auth.usingBundledDefault || auth.apiKey ? 'ok' : 'warn')} ${authState}   ${statusDot('info')} ${policyState}   ${statusDot('info')} tools ${tools.length}   ${statusDot('info')} memory ${memoryCount}   ${statusDot('info')} skills ${skillCount}`,
+    `${statusDot(community?.authenticated ? 'ok' : 'warn')} ${communityState}`,
     `${statusDot(rt.device ? 'ok' : 'warn')} ${deviceState}   ${statusDot(rt.meshEnabled ? 'ok' : 'info')} ${meshState}`,
     groups.length ? `${label('capabilities')} ${formatEnabledGroups(groups)}` : `${label('capabilities')} none`,
-    `${ui.dim('commands')} /status  /model  /goal  /compact  /context  /help`,
+    `${ui.dim('commands')} /auth login  /status  /model  /goal  /compact  /context  /help`,
   ].join('\n');
 }
 
@@ -212,7 +221,7 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
   const auth = rt.config;
   const toolNames = new Set(agent.tools.getNames());
   const apiKeyState = auth.usingBundledDefault
-    ? 'built-in model (no key required)'
+    ? 'built-in model (no model key required)'
     : auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing';
   const examples = [
     'Analyze this project structure and point out the key entry files and next steps',
@@ -230,7 +239,7 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
     '',
     `  ${label('1/3 Model')} ${agent.config.model} · provider ${auth.usingBundledDefault ? 'built-in D-Robotics model' : auth.provider} · api key ${apiKeyState}`,
     auth.usingBundledDefault
-      ? '      Built-in D-Robotics model is ready — no setup or API key needed. Run `dmoss setup` only when you want your own provider, account, or gateway.'
+      ? '      Built-in D-Robotics model needs community login, but no model API key. Run `/auth login` first, or `dmoss setup` when you want your own provider.'
       : auth.apiKey
         ? '      Change it anytime: run `dmoss setup` (interactive), or `/model` to choose a model for this session.'
         : '      Configure it: run `dmoss setup` — choose a provider, choose a model, and paste your API key.',
@@ -260,12 +269,14 @@ export function renderCliStatus(agent: DmossAgent, runtime: CliRuntimeStatus = {
   const detailMode = resolveCliDetailMode();
   const toolGroups = groupTools(agent.tools.getAll()).filter((g) => g.enabled);
   const auth = rt.config;
+  const community = rt.communityAuth?.getStatus();
 
   return [
     ui.bold('Status'),
     `  ${label('session')} ${rt.sessionKey}`,
     `  ${label('model')} ${agent.config.model}`,
     `  ${label('provider')} ${auth.usingBundledDefault ? 'built-in D-Robotics model' : `${auth.provider} (${auth.providerSource}) via ${shortBaseUrl(rt.baseUrl)}`}`,
+    `  ${label('community')} ${community ? formatCommunityAuthStatus(community) : 'unknown'}`,
     `  ${label('profile')} ${auth.profile ?? 'balanced'} (${auth.profileSource ?? 'default'})`,
     `  ${label('api key')} ${auth.usingBundledDefault ? 'built-in model (hidden)' : auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
     `  ${label('workspace')} ${rt.workspace}`,

@@ -14,6 +14,7 @@ import type { SessionMeta } from '../core/session/session.js';
 import { SkillRegistry, type SkillMeta } from '../skills/index.js';
 import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type CliInteractionMode } from './approval.js';
 import { handleCompactCommand } from './compact-command.js';
+import { formatCommunityAuthStatus, renderCommunityAuthRequiredMessage } from './community-auth.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
 import { formatModelChoices, loadModelChoicesForRuntime, resolveModelSelection } from './model-catalog.js';
@@ -866,11 +867,12 @@ export function completeSlashCommandInput(value: string, cursor: number): Prompt
   const currentCursor = clampPromptCursor(value, cursor);
   const beforeCursor = value.slice(0, currentCursor);
   const afterCursor = value.slice(currentCursor);
-  if (!beforeCursor.startsWith('/') || /\s/.test(beforeCursor)) return null;
+  if (!beforeCursor.startsWith('/')) return null;
   if (afterCursor && !/^\s/.test(afterCursor)) return null;
 
   const normalized = beforeCursor.toLowerCase();
   const exactCandidates = KNOWN_COMMANDS.filter((command) => command.startsWith(normalized));
+  if (/\s/.test(beforeCursor) && exactCandidates.length === 0) return null;
   const prefixCompletion = exactCandidates.length > 0 ? commonPrefix(exactCandidates) : '';
   const completion = prefixCompletion && prefixCompletion !== beforeCursor
     ? prefixCompletion
@@ -2355,6 +2357,38 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       addTranscript('system', renderCliStatus(agent, runtime));
       return true;
     }
+    if (message === '/auth' || message.startsWith('/auth ') || message === '/logout') {
+      const auth = runtime?.communityAuth;
+      if (!auth) {
+        addTranscript('error', 'Community auth runtime is unavailable in this session.');
+        return true;
+      }
+      if (message === '/auth' || message === '/auth status') {
+        addTranscript('system', `[auth] ${formatCommunityAuthStatus(auth.getStatus())}`);
+        return true;
+      }
+      if (message === '/auth login') {
+        setBusyState(true);
+        try {
+          const context = await auth.login((line) => addTranscript('system', line));
+          addTranscript('system', `[auth] Ready. Logged in as ${context.user.name || context.user.email || context.user.id}.`);
+        } catch (err) {
+          addTranscript('error', `[auth] Login failed: ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+          setBusyState(false);
+        }
+        return true;
+      }
+      if (message === '/logout' || message === '/auth logout') {
+        const removed = auth.logout();
+        addTranscript('system', removed
+          ? '[auth] Logged out of the D-Robotics developer community.'
+          : '[auth] No D-Robotics developer community session is stored.');
+        return true;
+      }
+      addTranscript('system', 'Usage: /auth <login|status|logout>');
+      return true;
+    }
     if (message === '/goal' || message.startsWith('/goal ')) {
       const result = await handleGoalCommand({ agent, sessionKey, input: message, locale: cliLocale() });
       addTranscript(result.error ? 'error' : 'system', result.message);
@@ -2608,6 +2642,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
 
   const runPrompt = useCallback(async (message: string): Promise<void> => {
     addTranscript('user', message);
+    if (runtime?.communityAuth && !runtime.communityAuth.getStatus().authenticated) {
+      addTranscript('error', renderCommunityAuthRequiredMessage({ interactive: true }));
+      return;
+    }
     checkpointRef.current?.open(message);
     setBusyState(true);
     answerIdRef.current = null;
@@ -2723,7 +2761,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       answerIdRef.current = null;
       currentTurnIdRef.current = null;
     }
-  }, [addTranscript, agent, detailMode, sessionKey, setBusyState, showThinking, skillLearner, updateTranscript]);
+  }, [addTranscript, agent, detailMode, runtime, sessionKey, setBusyState, showThinking, skillLearner, updateTranscript]);
 
   const runInput = useCallback((raw: string): void => {
     const message = raw.trim();
@@ -2970,6 +3008,8 @@ function commandList(): string {
     '  /tools             view available tool groups and selection rules',
     '  /permissions       show safety, approvals, cache, and config policy',
     '  /config            show config file and policy commands',
+    '  /auth login        log in to the D-Robotics developer community',
+    '  /logout            log out of the D-Robotics developer community',
     '  /quick_start       configure model, workspace, board, and first tasks',
     '  /examples          show task examples for enabled capabilities',
     '  /stop              stop the active run',

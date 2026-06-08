@@ -78,15 +78,19 @@ dmoss
 ```
 
 `dmoss` uses the built-in D-Robotics model gateway by default when installed
-from npm, so a first run does not require an API key. Run `dmoss setup` only
+from npm. A first run requires D-Robotics developer community login, but does
+not require a model API key for the built-in gateway. Run `dmoss setup` only
 when you want to use your own provider, account, private gateway, or self-hosted
-OpenAI-compatible model.
+OpenAI-compatible model. Community login remains the CLI access gate; the
+community token is only sent to the built-in gateway, not to your private model
+endpoint.
 
 To use your own model, either run the guided setup:
 
 ```bash
+dmoss auth login
 dmoss setup
-dmoss auth status              # verifies provider/model/key source without printing secrets
+dmoss auth status              # verifies community login and provider/model/key source
 ```
 
 Or keep the API key in the environment:
@@ -171,8 +175,9 @@ dmoss config set baseUrl https://llm.example.com
 
 ```
 setup                   configure your own provider/model/API key
-auth status             show provider/model/key source without printing secrets
-auth logout             remove stored API key from config
+auth login              sign in to the D-Robotics developer community
+auth status             show community login and provider/model/key source
+auth logout             remove stored community login and API key config
 config set <key> <val>  update provider, model, or baseUrl
 --debug                 verbose logging (level=debug)
 --quiet                 only warnings & errors

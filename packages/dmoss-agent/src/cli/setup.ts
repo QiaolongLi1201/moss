@@ -21,6 +21,11 @@ import {
   type CliProviderPreset,
   type ConfigFile,
 } from './config.js';
+import {
+  clearDmossCommunityAuthSession,
+  formatCommunityAuthStatus,
+  getDmossCommunityAuthStatus,
+} from './community-auth.js';
 
 function print(line = ''): void {
   output.write(`${line}\n`);
@@ -263,8 +268,10 @@ export function renderAuthStatus(
 ): string {
   const loaded = config === undefined ? loadCliConfigFile(env, process.argv.slice(2), startDir) : undefined;
   const resolved = resolveCliConfig(env, config ?? loaded?.config, {}, loaded);
+  const communityStatus = getDmossCommunityAuthStatus({ env });
   return [
     '[auth]',
+    `  community: ${formatCommunityAuthStatus(communityStatus)}`,
     `  provider: ${resolved.provider} (${resolved.providerSource})`,
     `  profile: ${resolved.profile} (${resolved.profileSource})`,
     `  model: ${resolved.model} (${resolved.modelSource})`,
@@ -438,9 +445,13 @@ export async function runSetupWizard(): Promise<void> {
 }
 
 export async function runAuthLogout(): Promise<void> {
+  const removedCommunitySession = clearDmossCommunityAuthSession();
+  if (removedCommunitySession) {
+    print('[auth] D-Robotics community session removed.');
+  }
   const current = loadConfigFile();
   if (!current.apiKey) {
-    print('[auth] No API key is stored in the config file.');
+    if (!removedCommunitySession) print('[auth] No API key or D-Robotics community session is stored.');
     return;
   }
   const answer = await question('Remove stored API key from dmoss config? [y/N] ');

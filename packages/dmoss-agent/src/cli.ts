@@ -15,6 +15,16 @@ import { createConfiguredHookCallbacks } from './cli/hooks.js';
 import { DMOSS_CLI_IDENTITY } from './cli/identity.js';
 import type { AgentHooks } from './core/agent/agent-hooks.js';
 import { createCliProvider } from './cli/providers.js';
+import type { CliProviderRuntimeConfig } from './cli/providers.js';
+import {
+  clearDmossCommunityAuthSession,
+  DmossCommunityAuthRequiredError,
+  ensureDmossCommunityAuth,
+  getDmossCommunityAuthStatus,
+  renderCommunityAuthRequiredMessage,
+  runDmossCommunityAuthLogin,
+} from './cli/community-auth.js';
+import type { DmossCommunityAuthContext, DmossCommunityAuthRuntime } from './cli/community-auth.js';
 import { createMemoryTools } from './cli/tools.js';
 import { runOneShot } from './cli/oneshot.js';
 import { runInteractive } from './cli/repl.js';
@@ -126,6 +136,34 @@ async function closeMcpConnections(connections: McpConnection[]): Promise<void> 
   }
 }
 
+async function loadStoredCommunityAuth(configDir: string): Promise<DmossCommunityAuthContext | undefined> {
+  try {
+    return await ensureDmossCommunityAuth({ configDir, interactive: false });
+  } catch (err) {
+    if (err instanceof DmossCommunityAuthRequiredError) return undefined;
+    throw err;
+  }
+}
+
+function createCommunityAuthRuntime(
+  providerConfig: CliProviderRuntimeConfig,
+  configDir: string,
+): DmossCommunityAuthRuntime {
+  return {
+    getStatus: () => getDmossCommunityAuthStatus({ configDir }),
+    getContext: () => providerConfig.communityAuth,
+    login: async (print) => {
+      const auth = await runDmossCommunityAuthLogin({ configDir, print });
+      providerConfig.communityAuth = auth;
+      return auth;
+    },
+    logout: () => {
+      providerConfig.communityAuth = undefined;
+      return clearDmossCommunityAuthSession(configDir);
+    },
+  };
+}
+
 if (process.env.DMOSS_TRACE === 'console' || process.env.DMOSS_TRACE === '1' || process.env.DMOSS_TRACE === 'true') {
   setTracer('console');
 }
@@ -198,8 +236,17 @@ async function main() {
     console.error(renderAuthStatus(undefined, process.env, parsedArgs.configOverrides.workspace || process.env.DMOSS_WORKSPACE || process.cwd()));
     return;
   }
+  if (parsedArgs.command === 'auth' && parsedArgs.commandArgs[0] === 'login') {
+    await runDmossCommunityAuthLogin();
+    return;
+  }
   if (parsedArgs.command === 'auth' && parsedArgs.commandArgs[0] === 'logout') {
     await runAuthLogout();
+    return;
+  }
+  if (parsedArgs.command === 'auth') {
+    console.error('Usage: dmoss auth <login|status|logout>');
+    process.exitCode = 1;
     return;
   }
   if (
@@ -276,6 +323,17 @@ async function main() {
     process.exit(1);
   }
 
+  const configDir = resolveConfigDir();
+  const oneShotOrHeadless = Boolean(oneShotMessage) || !process.stdin.isTTY;
+  const communityAuth = await loadStoredCommunityAuth(configDir);
+  if (oneShotOrHeadless && !communityAuth) {
+    console.error(renderCommunityAuthRequiredMessage());
+    process.exitCode = 1;
+    return;
+  }
+  const providerConfig: CliProviderRuntimeConfig = { ...resolvedConfig, communityAuth };
+  const communityAuthRuntime = createCommunityAuthRuntime(providerConfig, configDir);
+
   const sessionStore = new JsonlSessionStore({ dir: path.join(runtimeDir, 'sessions') });
   const session = await resolveCliSession({
     command: parsedArgs.command === 'resume' || parsedArgs.command === 'fork' ? parsedArgs.command : 'chat',
@@ -316,7 +374,7 @@ async function main() {
   });
 
   const agent = new DmossAgent({
-    llmProvider: createCliProvider(resolvedConfig), sessionStore, model,
+    llmProvider: createCliProvider(providerConfig), sessionStore, model,
     baseSystemPrompt: DMOSS_CLI_IDENTITY,
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
     memoryContextProvider: () => memoryManager.buildDigest(),
@@ -376,7 +434,7 @@ async function main() {
     await runInteractive(agent, skillLearner, {
       workspace,
       runtimeDir,
-      configDir: resolveConfigDir(),
+      configDir,
       baseUrl,
       execBackend: process.env.DMOSS_EXEC_BACKEND || 'local',
       safetyMode,
@@ -384,6 +442,7 @@ async function main() {
       meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || parsedArgs.mesh,
       sessionKey: session.sessionKey,
       config: resolvedConfig,
+      communityAuth: communityAuthRuntime,
       device: deviceConfig
         ? { host: deviceConfig.host, user: deviceConfig.user, port: deviceConfig.port }
         : null,

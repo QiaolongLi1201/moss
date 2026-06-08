@@ -93,6 +93,16 @@ test('CLI process sends the Moss identity in the provider system prompt', async 
   try {
     const { port } = server.address();
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-identity-'));
+    const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-identity-config-'));
+    fs.writeFileSync(path.join(configDir, 'community-auth.json'), JSON.stringify({
+      schema: 'dmoss_community_auth.v1',
+      ssoBaseUrl: 'https://sso.d-robotics.cc',
+      accessToken: 'test-community-token',
+      user: { id: 'test-user', name: 'Test User' },
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }));
     const result = await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, [
         cliPath,
@@ -108,6 +118,7 @@ test('CLI process sends the Moss identity in the provider system prompt', async 
         cwd,
         env: {
           ...process.env,
+          DMOSS_CONFIG_DIR: configDir,
           DMOSS_NO_BUNDLED_DEFAULT: '1',
           DMOSS_API_KEY: 'test-key',
           NO_PROXY: '127.0.0.1,localhost',

@@ -174,6 +174,26 @@ export type {
   CliConfigAuditWarning,
   CliConfigAuditSeverity,
 } from './cli/config.js';
+export {
+  clearDmossCommunityAuthSession,
+  DmossCommunityAuthRequiredError,
+  ensureDmossCommunityAuth,
+  formatCommunityAuthStatus,
+  getDmossCommunityAuthStatus,
+  readDmossCommunityAuthSession,
+  renderCommunityAuthRequiredMessage,
+  resolveCommunityAuthSessionPath,
+  resolveCommunityUserFromToken,
+  runDmossCommunityAuthLogin,
+  writeDmossCommunityAuthSession,
+} from './cli/community-auth.js';
+export type {
+  DmossCommunityAuthContext,
+  DmossCommunityAuthRuntime,
+  DmossCommunityAuthSession,
+  DmossCommunityAuthStatus,
+  DmossCommunityUser,
+} from './cli/community-auth.js';
 
 // --- Utils ---
 export { TextDeltaSmoother } from './utils/index.js';

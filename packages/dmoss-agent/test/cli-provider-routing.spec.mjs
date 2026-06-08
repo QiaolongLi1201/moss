@@ -73,6 +73,70 @@ function runProviderProbe(env) {
 }
 
 {
+  const { createCliProvider } = await import('../dist/cli/providers.js');
+  let seenHeaders = {};
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    seenHeaders = init?.headers ?? {};
+    return new Response(JSON.stringify({
+      choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'ok' } }],
+    }), { status: 200 });
+  };
+  try {
+    const provider = createCliProvider({
+      provider: 'openai-compatible',
+      apiKey: 'gateway-token',
+      model: 'Moss',
+      baseUrl: 'https://gateway.example.test/v1',
+      usingBundledDefault: true,
+      communityAuth: {
+        accessToken: 'community-access-token',
+        user: { id: 'community-user', name: 'Community User' },
+        expiresAt: Date.now() + 3_600_000,
+        sessionPath: '/tmp/community-auth.json',
+        ssoBaseUrl: 'https://sso.example.test',
+      },
+    });
+    await provider.stream({ model: 'Moss', messages: [], tools: [] }, () => {});
+    assert.equal(seenHeaders['x-dmoss-community-access-token'], 'community-access-token');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const { createCliProvider } = await import('../dist/cli/providers.js');
+  let seenHeaders = {};
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    seenHeaders = init?.headers ?? {};
+    return new Response(JSON.stringify({
+      choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'ok' } }],
+    }), { status: 200 });
+  };
+  try {
+    const provider = createCliProvider({
+      provider: 'openai-compatible',
+      apiKey: 'private-key',
+      model: 'private-model',
+      baseUrl: 'https://private.example.test/v1',
+      usingBundledDefault: false,
+      communityAuth: {
+        accessToken: 'community-access-token',
+        user: { id: 'community-user', name: 'Community User' },
+        expiresAt: Date.now() + 3_600_000,
+        sessionPath: '/tmp/community-auth.json',
+        ssoBaseUrl: 'https://sso.example.test',
+      },
+    });
+    await provider.stream({ model: 'private-model', messages: [], tools: [] }, () => {});
+    assert.equal(seenHeaders['x-dmoss-community-access-token'], undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
   const script = `
     globalThis.fetch = async () => new Response('   provider exploded '.repeat(100), { status: 502 });
     const { cliProvider } = await import('./packages/dmoss-agent/dist/cli/providers.js');

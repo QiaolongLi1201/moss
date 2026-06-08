@@ -34,6 +34,8 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
   {
     title: 'Configure',
     rows: [
+      { command: '/auth login', description: 'log in to the D-Robotics developer community' },
+      { command: '/logout', description: 'log out of the D-Robotics developer community' },
       { command: '/quick_start', description: 'configure model, workspace, board, and first tasks' },
       { command: '/examples', description: 'show task examples for enabled capabilities' },
       { command: '/permissions', description: 'show safety, approvals, cache, and config policy' },
@@ -70,6 +72,8 @@ export const SLASH_MENU_ROWS: readonly InteractiveCommandRow[] = [
   { command: '/rewind', description: 'undo file edits' },
   { command: '/queue', description: 'manage queued prompts' },
   { command: '/stop', description: 'stop active run' },
+  { command: '/auth login', description: 'community login' },
+  { command: '/logout', description: 'community logout' },
   { command: '/quick_start', description: 'configure setup' },
   { command: '/examples', description: 'show task examples' },
   { command: '/permissions', description: 'show safety policy' },
@@ -105,6 +109,9 @@ const COMMAND_VARIANTS = [
   '/detail quiet',
   '/detail progress',
   '/detail verbose',
+  '/auth',
+  '/auth status',
+  '/auth logout',
   '/queue drop',
   '/queue pop',
   '/queue clear',

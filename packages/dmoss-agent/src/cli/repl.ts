@@ -8,6 +8,7 @@ import { handleGoalCommand } from '../goal.js';
 import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
 import { setCliApprovalAsker } from './approval.js';
 import { handleCompactCommand } from './compact-command.js';
+import { formatCommunityAuthStatus, renderCommunityAuthRequiredMessage } from './community-auth.js';
 import { INTERACTIVE_COMPLETION_COMMANDS } from './interactive-commands.js';
 import { formatModelChoices, loadModelChoicesForRuntime, resolveModelSelection } from './model-catalog.js';
 import { runOneShot } from './oneshot.js';
@@ -40,6 +41,41 @@ function cliLocale(): string | undefined {
 export function completeInteractiveCommand(line: string): [string[], string] {
   const hits = INTERACTIVE_COMMANDS.filter((cmd) => cmd.startsWith(line));
   return [hits.length ? hits : INTERACTIVE_COMMANDS, line];
+}
+
+async function handleInteractiveAuthCommand(
+  msg: string,
+  runtime: CliRuntimeStatus | undefined,
+  write: (message: string) => void,
+): Promise<boolean> {
+  const auth = runtime?.communityAuth;
+  if (!(msg === '/auth' || msg.startsWith('/auth ') || msg === '/logout')) return false;
+  if (!auth) {
+    write('[auth] Community auth runtime is unavailable in this session.');
+    return true;
+  }
+  if (msg === '/auth' || msg === '/auth status') {
+    write(`[auth] ${formatCommunityAuthStatus(auth.getStatus())}`);
+    return true;
+  }
+  if (msg === '/auth login') {
+    try {
+      const context = await auth.login(write);
+      write(`[auth] Ready. Logged in as ${context.user.name || context.user.email || context.user.id}.`);
+    } catch (err) {
+      write(`[auth] Login failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return true;
+  }
+  if (msg === '/logout' || msg === '/auth logout') {
+    const removed = auth.logout();
+    write(removed
+      ? '[auth] Logged out of the D-Robotics developer community.'
+      : '[auth] No D-Robotics developer community session is stored.');
+    return true;
+  }
+  write('Usage: /auth <login|status|logout>');
+  return true;
 }
 
 export async function runInteractive(
@@ -97,6 +133,11 @@ export async function runInteractive(
       continue;
     }
     if (msg === '/quit' || msg === '/exit') break;
+
+    if (await handleInteractiveAuthCommand(msg, runtime, (message) => console.error(message))) {
+      rl.prompt();
+      continue;
+    }
 
     if (msg === '/help') {
       console.error(renderCliInteractiveHelp());
@@ -312,6 +353,12 @@ export async function runInteractive(
     if (msg.startsWith('/')) {
       console.error(`[help] Unknown command: ${msg}`);
       console.error(`[help] Available: ${INTERACTIVE_COMMANDS.filter((cmd) => !cmd.includes(' ')).join(' ')}`);
+      rl.prompt();
+      continue;
+    }
+
+    if (runtime?.communityAuth && !runtime.communityAuth.getStatus().authenticated) {
+      console.error(renderCommunityAuthRequiredMessage({ interactive: true }));
       rl.prompt();
       continue;
     }

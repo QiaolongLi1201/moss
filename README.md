@@ -1,6 +1,6 @@
 # Moss
 
-**A ready-to-use terminal agent (`dmoss`) and a host-neutral agent runtime you can embed into your own product.** `dmoss` works out of the box with a built-in D-Robotics model gateway, can be switched to your own OpenAI-compatible or Anthropic model, ships as open npm packages, and has first-class robotics / device support.
+**A ready-to-use terminal agent (`dmoss`) and a host-neutral agent runtime you can embed into your own product.** `dmoss` works out of the box after D-Robotics developer community login with a built-in D-Robotics model gateway, can be switched to your own OpenAI-compatible or Anthropic model, ships as open npm packages, and has first-class robotics / device support.
 
 **Moss is an AI Agent developed by 地瓜机器人 (D-Robotics).** The open-source packages stay host-neutral so they can run standalone, inside RDK Studio, or inside another product host.
 
@@ -17,8 +17,8 @@ contract changes or when Moss explicitly requires new host capabilities.
 
 | If you want to... | Start here |
 | --- | --- |
-| Try Moss immediately in a terminal | Install `@rdk-moss/agent` and run `dmoss`. No model key is required for first use. |
-| Use your own model, key, billing, or private gateway | Keep using `dmoss`, then run `dmoss setup` or set provider env vars. Your config always overrides the built-in gateway. |
+| Try Moss immediately in a terminal | Install `@rdk-moss/agent`, run `dmoss auth login`, then run `dmoss`. No model API key is required for the built-in gateway. |
+| Use your own model, key, billing, or private gateway | Log in once, then run `dmoss setup` or set provider env vars. Your model config overrides the built-in gateway. |
 | Build a product that embeds Moss, such as an IDE, robot console, or device platform | Use the Host Adapter path. Your product supplies the UI, model config, tools, storage, approvals, device access, and telemetry; Moss supplies the agent loop and contracts. |
 
 You do **not** need to understand Host Adapter concepts to use `dmoss` as a
@@ -29,7 +29,7 @@ application.
 
 Run `dmoss` and you get a full interactive coding/ops agent in the terminal:
 
-- **Zero-config start** — works out of the box through the built-in D-Robotics model gateway, with no API key required for first use; point it at your own provider/key (env vars or `dmoss setup`) anytime, and `dmoss` tells you when a new version is out.
+- **Community-gated start** — log in with the D-Robotics developer community, then use the built-in D-Robotics model gateway with no model API key required; point it at your own provider/key (env vars or `dmoss setup`) anytime, and `dmoss` tells you when a new version is out.
 - **Tool loop** — read / write / edit files, run commands, search code, fetch the web, and render real pages in a configured Chrome/Chromium headless browser.
 - **Slash commands** — action-oriented controls such as `/status`, `/model`,
   `/goal`, `/compact`, `/context`, `/sessions`, `/cost`, `/diff`, `/rewind`,
@@ -49,18 +49,21 @@ Install and run the terminal agent:
 
 ```bash
 npm i -g @rdk-moss/agent       # installs the `dmoss` command
-dmoss                          # just run it — built-in model gateway, no key required
+dmoss auth login               # sign in to the D-Robotics developer community
+dmoss                          # built-in model gateway, no model API key required
 ```
 
 Each plain `dmoss` launch starts a **new saved conversation**. Continue history
 only when you ask for it: `dmoss resume --last`, `dmoss resume --session <key>`,
 or `dmoss --session <key>`.
 
-`dmoss` ships with a built-in D-Robotics model gateway so new users can try the
-agent before configuring anything. Use your own model when you want your own
-billing/account, a private gateway, data-local deployment, a self-hosted model,
-or a provider/model that is different from the built-in default. Your local
-configuration always overrides the built-in gateway.
+`dmoss` ships with a built-in D-Robotics model gateway so signed-in community
+users can try the agent before configuring a model key. Use your own model when
+you want your own billing/account, a private gateway, data-local deployment, a
+self-hosted model, or a provider/model that is different from the built-in
+default. Community login remains the CLI access gate; your local model
+configuration overrides the built-in gateway, and the community token is only
+sent to the built-in gateway.
 
 To use your own model, choose one of these paths.
 
@@ -69,7 +72,7 @@ To use your own model, choose one of these paths.
 
 ```bash
 dmoss setup
-dmoss auth status              # verifies provider/model/key source without printing secrets
+dmoss auth status              # verifies community login and provider/model/key source
 ```
 
 **Environment variables** keep the API key out of the config file. A single

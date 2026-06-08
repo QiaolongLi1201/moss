@@ -1,4 +1,5 @@
 import { API_KEY, MODEL, BASE_URL, PROVIDER, type CliProviderPreset } from './config.js';
+import type { DmossCommunityAuthContext } from './community-auth.js';
 import type {
   LLMProvider,
   LLMRequestOptions,
@@ -13,6 +14,8 @@ export interface CliProviderRuntimeConfig {
   apiKey: string;
   model: string;
   baseUrl: string;
+  usingBundledDefault?: boolean;
+  communityAuth?: DmossCommunityAuthContext;
 }
 
 interface AnthropicResponse {
@@ -73,6 +76,13 @@ function providerError(provider: string, status: number, text: string): Error {
   return new Error(`${provider} provider returned HTTP ${status}: ${preview || '(empty response body)'}`);
 }
 
+function communityAuthHeaders(config: CliProviderRuntimeConfig): Record<string, string> {
+  if (!config.usingBundledDefault || !config.communityAuth?.accessToken) return {};
+  return {
+    'x-dmoss-community-access-token': config.communityAuth.accessToken,
+  };
+}
+
 async function callAnthropic(
   config: CliProviderRuntimeConfig,
   opts: LLMRequestOptions,
@@ -100,6 +110,7 @@ async function callAnthropic(
       'Content-Type': 'application/json',
       'x-api-key': config.apiKey,
       'anthropic-version': '2023-06-01',
+      ...communityAuthHeaders(config),
     },
     body: JSON.stringify(body),
     signal: opts.abortSignal,
@@ -204,6 +215,7 @@ async function callOpenAI(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
+      ...communityAuthHeaders(config),
     },
     body: JSON.stringify(body),
     signal: opts.abortSignal,

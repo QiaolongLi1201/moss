@@ -21,6 +21,7 @@ import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, ui } from './ui.js';
 import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
 import { estimateTokensForText } from '../context/tokens.js';
+import { handleGoalCommand } from '../goal.js';
 
 type TranscriptKind = 'user' | 'assistant' | 'system' | 'error' | 'shell' | 'tool';
 type TuiRunState = 'ready' | 'running' | 'approval';
@@ -165,11 +166,20 @@ const KNOWN_COMMANDS = [
   '/help',
   '/tools',
   '/status',
+  '/goal',
+  '/goal status',
+  '/goal set',
+  '/goal pause',
+  '/goal resume',
+  '/goal complete',
+  '/goal block',
+  '/goal clear',
   '/permissions',
   '/config',
   '/examples',
   '/model',
   '/models',
+  '/version',
   '/detail',
   '/queue',
   '/queue drop',
@@ -194,6 +204,10 @@ const KNOWN_COMMANDS = [
   '/quit',
   '/exit',
 ] as const;
+
+function cliLocale(): string | undefined {
+  return process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG;
+}
 
 export function sanitizeRenderableText(text: string): string {
   const withoutAnsi = text.includes('\x1B') ? text.replace(ANSI_RE, '') : text;
@@ -1726,6 +1740,7 @@ function commandRowsForInput(value: string): Array<[string, string]> {
     ['/model', 'switch model'],
     ['/examples', 'starter tasks'],
     ['/status', 'runtime and device'],
+    ['/goal', 'session goal'],
     ['/sessions', 'recent sessions'],
     ['/diff', 'git diff'],
     ['/queue', 'queued prompts'],
@@ -2418,6 +2433,11 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       addTranscript('system', renderCliStatus(agent, runtime));
       return true;
     }
+    if (message === '/goal' || message.startsWith('/goal ')) {
+      const result = await handleGoalCommand({ agent, sessionKey, input: message, locale: cliLocale() });
+      addTranscript(result.error ? 'error' : 'system', result.message);
+      return true;
+    }
     if (message === '/permissions' || message === '/config') {
       addTranscript('system', renderCliPermissions(runtime));
       return true;
@@ -2533,6 +2553,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     }
     if (message === '/models') {
       addTranscript('system', modelExamples(currentModel));
+      return true;
+    }
+    if (message === '/version') {
+      addTranscript('system', `dmoss v${getPackageVersion()}`);
       return true;
     }
     if (message === '/model' || message.startsWith('/model ')) {
@@ -2986,6 +3010,8 @@ function commandList(): string {
     '  /quick_start      setup model, workspace, board, and first tasks',
     '  /examples          starter prompts',
     '  /status            runtime and device context',
+    '  /goal              show current goal',
+    '  /goal set <text>   set a persistent session goal',
     '  /model [name]      show or switch model',
     '  /permissions       safety, approval, cache, and config file policy',
     '  /config            active config file and policy commands',
@@ -2995,6 +3021,7 @@ function commandList(): string {
     '  /sessions          show current and recent saved sessions',
     '  /context           context window token usage',
     '  /cost              recorded token usage & estimated cost',
+    '  /version           show dmoss version',
     '  /rewind [seq]      list or undo file changes to a checkpoint',
     '  /diff              show git working-tree changes',
     '  /init              scaffold an AGENTS.md project memory file',

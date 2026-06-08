@@ -606,6 +606,7 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   assert.match(frame, /\/quick_start\s+setup and first tasks/);
   assert.match(frame, /\/model\s+switch model/);
   assert.match(frame, /\/examples\s+starter tasks/);
+  assert.match(frame, /\/goal\s+session goal/);
   assert.match(frame, /\/sessions\s+recent sessions/);
   assert.doesNotMatch(frame, /\/tools\s+tool surface/);
   assert.doesNotMatch(frame, /more commands/);

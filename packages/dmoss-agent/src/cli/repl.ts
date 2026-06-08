@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as readline from 'node:readline';
 import type { DmossAgent } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
+import { handleGoalCommand } from '../goal.js';
 import { setCliApprovalAsker } from './approval.js';
 import { runOneShot } from './oneshot.js';
 import {
@@ -30,11 +31,20 @@ export const INTERACTIVE_COMMANDS = [
   '/help',
   '/tools',
   '/status',
+  '/goal',
+  '/goal status',
+  '/goal set',
+  '/goal pause',
+  '/goal resume',
+  '/goal complete',
+  '/goal block',
+  '/goal clear',
   '/permissions',
   '/config',
   '/examples',
   '/model',
   '/models',
+  '/version',
   '/detail',
   '/detail quiet',
   '/detail progress',
@@ -45,6 +55,10 @@ export const INTERACTIVE_COMMANDS = [
   '/quit',
   '/exit',
 ];
+
+function cliLocale(): string | undefined {
+  return process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG;
+}
 
 export function completeInteractiveCommand(line: string): [string[], string] {
   const hits = INTERACTIVE_COMMANDS.filter((cmd) => cmd.startsWith(line));
@@ -125,6 +139,13 @@ export async function runInteractive(
       continue;
     }
 
+    if (msg === '/goal' || msg.startsWith('/goal ')) {
+      const result = await handleGoalCommand({ agent, sessionKey, input: msg, locale: cliLocale() });
+      console.error(result.message);
+      rl.prompt();
+      continue;
+    }
+
     if (msg === '/permissions' || msg === '/config') {
       console.error(renderCliPermissions(runtime));
       rl.prompt();
@@ -174,6 +195,12 @@ export async function runInteractive(
       continue;
     }
 
+    if (msg === '/version') {
+      console.error(`dmoss v${getPackageVersion()}`);
+      rl.prompt();
+      continue;
+    }
+
     if (msg.startsWith('/detail')) {
       const mode = msg.slice('/detail'.length).trim().toLowerCase();
       if (mode === 'quiet' || mode === 'progress' || mode === 'verbose') {
@@ -212,7 +239,7 @@ export async function runInteractive(
 
     if (msg.startsWith('/')) {
       console.error(`[help] Unknown command: ${msg}`);
-      console.error('[help] Available: /help /tools /status /permissions /config /examples /model /models /detail /memory /skills /upgrade /quit');
+      console.error('[help] Available: /help /tools /status /goal /permissions /config /examples /model /models /version /detail /memory /skills /upgrade /quit');
       rl.prompt();
       continue;
     }

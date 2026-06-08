@@ -34,6 +34,7 @@ const strip = (s) => (s || '').replace(/\x1b\[[0-9;]*m/g, '');
 const wait = (ms = 90) => new Promise((r) => setTimeout(r, ms));
 
 function makeAgent() {
+  let goal;
   return {
     config: {
       model: 'deepseek-v4-pro',
@@ -41,6 +42,34 @@ function makeAgent() {
       sessionStore: { listSessions: async () => [], loadMessages: async () => [] },
     },
     tools: { getAll: () => [], size: 0 },
+    async getGoal() {
+      return goal;
+    },
+    async setGoal(sessionKey, objective) {
+      goal = {
+        sessionKey,
+        objective,
+        status: 'active',
+        createdAt: '2026-06-08T00:00:00.000Z',
+        updatedAt: '2026-06-08T00:00:00.000Z',
+      };
+      return goal;
+    },
+    async pauseGoal() {
+      return goal;
+    },
+    async resumeGoal() {
+      return goal;
+    },
+    async completeGoal() {
+      return goal;
+    },
+    async blockGoal() {
+      return goal;
+    },
+    async clearGoal() {
+      goal = undefined;
+    },
     registerPreToolHook() {},
     registerPostToolHook() {},
     // eslint-disable-next-line require-yield
@@ -148,6 +177,27 @@ test('slash menu: arrow keys move the selection and Tab completes it', async () 
   stdin.write('\t');
   await wait(120);
   assert.ok(inputLine(lastFrame()).includes(s0b), `Tab should complete the input to ${s0b}`);
+  cleanup();
+});
+
+test('/goal is visible and handled by the TUI', async () => {
+  setRows(24);
+  let mounted = mount();
+  let { stdin, lastFrame } = mounted;
+  await wait(140);
+  stdin.write('/');
+  await wait();
+  assert.match(strip(lastFrame()), /\/goal\s+session goal/, 'slash menu should list /goal');
+  cleanup();
+
+  mounted = mount();
+  ({ stdin, lastFrame } = mounted);
+  await wait(140);
+  let f = await runSlashCommand(stdin, lastFrame, '/goal');
+  assert.match(strip(f), /No goal is set|当前会话没有设置目标/, '/goal should be handled, not treated as unknown');
+  assert.doesNotMatch(strip(f), /Unknown command: \/goal/);
+  f = await runSlashCommand(stdin, lastFrame, '/goal set stabilize release');
+  assert.match(strip(f), /Goal set: stabilize release|已设置目标：stabilize release/);
   cleanup();
 });
 

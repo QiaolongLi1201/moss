@@ -17,7 +17,7 @@
     "clean": "npm run clean --workspaces --if-present",
     "build": "npm run clean && npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test -w @rdk-moss/core && npm run test -w @rdk-moss/memory && npm run test -w @rdk-moss/skills && npm run test -w @rdk-moss/agent && npm run test -w @rdk-moss/teaching && npm run test -w create-dmoss-app",
     "lint": "eslint \"packages/*/src/**/*.ts\"",
     "lint:fix": "eslint \"packages/*/src/**/*.ts\" --fix",
     "format": "prettier --write \"packages/*/src/**/*.ts\"",

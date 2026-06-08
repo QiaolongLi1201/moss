@@ -25,7 +25,7 @@ const DEVICE_READ_TOOLS = [
 ];
 
 const WEB_TOOLS = [
-  "web_search", "web_fetch", "web_extract", "web_browser_fetch",
+  "web_search", "web_fetch", "web_extract",
 ];
 
 const ATTACHMENT_TOOLS = [

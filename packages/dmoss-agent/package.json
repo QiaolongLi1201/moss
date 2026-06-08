@@ -139,7 +139,6 @@
     "marked-terminal": "^7.0.0",
     "micromatch": "^4.0.8",
     "picocolors": "^1.1.1",
-    "puppeteer-core": "^25.1.0",
     "react": "^19.2.6",
     "string-width": "^8.2.1",
     "undici": "^7.19.1"

@@ -75,6 +75,10 @@ npm i -g @rdk-moss/agent@latest
 dmoss
 ```
 
+`dmoss` uses the built-in D-Robotics model gateway by default, so a first run
+does not require an API key. Run `dmoss setup` only when you want to use your
+own provider, account, private gateway, or self-hosted OpenAI-compatible model.
+
 Each plain `dmoss` launch starts a **new saved conversation**. Use
 `dmoss resume --last`, `dmoss resume --session <key>`, or
 `dmoss --session <key>` when you want to continue previous history.
@@ -107,15 +111,15 @@ git clone <this-repo>
 cd <this-repo>
 npm install                 # links workspace packages (@rdk-moss/core, @rdk-moss/agent, create-dmoss-app)
 npm run build -w @rdk-moss/agent
-# Configure a model once:
+# Optional: switch from the built-in gateway to your own model/provider.
 node packages/dmoss-agent/dist/cli.js setup
-# Then run the interactive REPL:
+# Run the interactive REPL:
 node packages/dmoss-agent/dist/cli.js
 # Or one-shot mode:
 node packages/dmoss-agent/dist/cli.js "check disk usage on /"
 ```
 
-`setup` writes `~/.config/dmoss/config.json` with `0600` permissions and supports Aliyun/Qwen, OpenAI, Anthropic, and OpenAI-compatible providers. You can inspect or update the stored configuration without printing secrets:
+`setup` writes `~/.config/dmoss/config.json` with `0600` permissions and supports Aliyun/Qwen, OpenAI, Anthropic, and OpenAI-compatible providers. Your config overrides the built-in gateway. You can inspect or update the stored configuration without printing secrets:
 
 ```bash
 dmoss auth status

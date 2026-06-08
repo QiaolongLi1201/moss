@@ -1,6 +1,6 @@
 # Moss
 
-**A host-neutral, model-agnostic agent runtime — and a Claude-Code-class terminal agent (`dmoss`) — that you can run standalone or embed into your own product.** It runs on any OpenAI-compatible model (plus Anthropic), ships as open npm packages, and has first-class robotics / device support.
+**A ready-to-use terminal agent (`dmoss`) and a host-neutral agent runtime you can embed into your own product.** `dmoss` works out of the box with a built-in D-Robotics model gateway, can be switched to your own OpenAI-compatible or Anthropic model, ships as open npm packages, and has first-class robotics / device support.
 
 **Moss is an AI Agent developed by 地瓜机器人 (D-Robotics).** The open-source packages stay host-neutral so they can run standalone, inside RDK Studio, or inside another product host.
 
@@ -13,11 +13,23 @@ conversation experience by updating the Moss packages or the `external/moss`
 submodule. Host code changes should be needed only when the Host Adapter
 contract changes or when Moss explicitly requires new host capabilities.
 
+## Which Path Should I Use?
+
+| If you want to... | Start here |
+| --- | --- |
+| Try Moss immediately in a terminal | Install `@rdk-moss/agent` and run `dmoss`. No model key is required for first use. |
+| Use your own model, key, billing, or private gateway | Keep using `dmoss`, then run `dmoss setup` or set provider env vars. Your config always overrides the built-in gateway. |
+| Build a product that embeds Moss, such as an IDE, robot console, or device platform | Use the Host Adapter path. Your product supplies the UI, model config, tools, storage, approvals, device access, and telemetry; Moss supplies the agent loop and contracts. |
+
+You do **not** need to understand Host Adapter concepts to use `dmoss` as a
+terminal agent. Host Adapter is for product teams embedding Moss into their own
+application.
+
 ## What Moss Can Do
 
 Run `dmoss` and you get a full interactive coding/ops agent in the terminal:
 
-- **Zero-config start** — works out of the box with a built-in model; point it at your own provider/key (env vars or `dmoss setup`) anytime, and `dmoss` tells you when a new version is out.
+- **Zero-config start** — works out of the box through the built-in D-Robotics model gateway; point it at your own provider/key (env vars or `dmoss setup`) anytime, and `dmoss` tells you when a new version is out.
 - **Tool loop** — read / write / edit files, run commands, search code, fetch the web, and render real pages in a headless browser.
 - **Slash commands** — `/checkpoint` + rewind, `/compact` context, `/context` and `/cost` budgets, `/diff`, `/memory`, `/model` · `/models`, `/permissions` · `/approval`, `/hooks`, `/init`, `/config`, and more (`/help` lists them all).
 - **Parallel sub-agents** — fan independent work out across isolated child agents and aggregate the results.
@@ -26,7 +38,7 @@ Run `dmoss` and you get a full interactive coding/ops agent in the terminal:
 - **Cross-session memory** — an always-on digest plus recall that carries what matters across sessions.
 - **Safety** — approval gates, permission boundaries, dangerous-action consent, and host-neutral sandboxing helpers.
 
-The same runtime is **embeddable**: behind a narrow Host Adapter, your product supplies the model keys, UI, storage, tools, and device access — Moss supplies the agent.
+The same runtime is **embeddable**: behind a narrow Host Adapter, your product supplies the model keys, UI, storage, tools, approvals, and device access — Moss supplies the agent loop, memory/skill primitives, and compatibility contracts.
 
 ## Quickstart
 
@@ -34,19 +46,25 @@ Install and run the terminal agent:
 
 ```bash
 npm i -g @rdk-moss/agent       # installs the `dmoss` command
-dmoss                          # just run it — works out of the box with a built-in free model
+dmoss                          # just run it — built-in model gateway, no key required
 ```
 
 Each plain `dmoss` launch starts a **new saved conversation**. Continue history
 only when you ask for it: `dmoss resume --last`, `dmoss resume --session <key>`,
 or `dmoss --session <key>`.
 
-`dmoss` ships ready to use. To run it on **your own** model instead, set a key for any supported
-provider (your config always overrides the built-in default):
+`dmoss` ships with a built-in D-Robotics model gateway so new users can try the
+agent before configuring anything. Use your own model when you want your own
+billing/account, a private gateway, data-local deployment, a self-hosted model,
+or a provider/model that is different from the built-in default. Your local
+configuration always overrides the built-in gateway.
+
+Configure your own provider with `dmoss setup`, or set an environment variable:
 
 ```bash
 export DEEPSEEK_API_KEY=...     # or OPENAI_API_KEY · ANTHROPIC_API_KEY · DASHSCOPE_API_KEY (Qwen)
-#   …or any OpenAI-compatible endpoint — run `dmoss setup`, or `/config` · `/model` inside dmoss.
+# For any OpenAI-compatible endpoint, run `dmoss setup`, then set provider/model/baseUrl.
+# Inside dmoss you can also use `/config`, `/model`, and `/models`.
 ```
 
 **Update** anytime (dmoss also tells you when a newer version is out):
@@ -59,13 +77,17 @@ Config and keys live in `~/.config/dmoss/config.json` (override the dir with `DM
 
 **Customize the agent** per project: drop an `AGENTS.md` in your workspace (or run `/init`) — it is auto-loaded into every session as your project's system prompt (build/test commands, layout, conventions).
 
-Scaffold a host that embeds Moss:
+Only building a product or service that embeds Moss? Scaffold a host project:
 
 ```bash
 npx create-dmoss-app my-host
 ```
 
-Embed into an existing host: install the packages, register your providers / tools / storage / approval gate / event sink, publish a `MossHostRuntimeManifest`, and run `evaluateMossHostCompatibility()` in CI — see [Integrating Moss Into A Host](#integrating-moss-into-a-host).
+Embed into an existing product host: install the packages, register your
+providers / tools / storage / approval gate / event sink, publish a
+`MossHostRuntimeManifest`, and run `evaluateMossHostCompatibility()` in CI.
+This is useful when you want Moss inside your own app instead of only as the
+`dmoss` terminal command — see [Integrating Moss Into A Host](#integrating-moss-into-a-host).
 
 ## How Moss Compares
 
@@ -100,6 +122,9 @@ from a product shell.
 Product hosts are outside this repository.
 
 ## Architecture
+
+If you only use `dmoss`, you can skip this section. It exists for teams that
+embed Moss into a larger product.
 
 Moss is split around a narrow host boundary:
 

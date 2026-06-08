@@ -185,36 +185,6 @@ config set <key> <val>  update provider, model, or baseUrl
 
 By default the CLI prints a short progress trail to stderr: planning turns, tool calls, and redacted tool results. The final assistant answer stays on stdout so shell piping still works. Tune this with `DMOSS_CLI_DETAIL=quiet|progress|verbose`; in the interactive REPL you can also run `/detail quiet`, `/detail progress`, or `/detail verbose`.
 
-### First real task / automation
-
-Interactive `dmoss` asks before file writes, commands, and external actions. For
-unattended benchmark or CI runs, set an explicit approval policy before launch:
-
-```bash
-DMOSS_CLI_AUTO_APPROVE=1 dmoss --workspace-write "write and verify the tool"
-# or persist a broader local policy:
-dmoss config set profile autonomous
-```
-
-`DMOSS_CLI_AUTO_APPROVE=1` only approves tools allowed by the active safety
-policy. It does not bypass `--read-only`, `deniedTools`, protected paths, or
-workspace sandbox checks. Browser workflows such as real checkout/add-to-cart
-testing use `web_browser_control`, which is an external interaction and needs
-`--full-access` plus approval.
-
-`@rdk-moss/agent` includes `web_browser_fetch` and `web_browser_control` through
-`puppeteer-core`. It does not download a browser at install time. If Chrome or
-Chromium is not auto-discovered, configure the executable:
-
-```bash
-export DMOSS_BROWSER_EXECUTABLE="/path/to/chrome-or-chromium"
-```
-
-`apply_patch` accepts Moss' structured patch format, not a raw `git apply`
-unified diff. Multi-file patches are supported, but each operation must be
-inside the documented `*** Begin Patch` / `*** Add File` / `*** Update File` /
-`*** Delete File` / `*** End Patch` blocks.
-
 The interactive REPL starts with an onboarding panel that shows the active
 model, workspace, provider, enabled capability groups, memory/skill counts,
 device status, and mesh status. Slash commands are action-oriented controls:

@@ -101,7 +101,6 @@ export function displayHelp(c: Colors): void {
     `    ${c.magenta('DMOSS_CONFIG_FILE')}       ${c.dim('explicit config JSON path (overrides config dir)')}`,
     `    ${c.magenta('DMOSS_WORKSPACE')}         ${c.dim('working directory (default: cwd)')}`,
     `    ${c.magenta('DMOSS_EXEC_BACKEND')}      ${c.dim('local (default) or docker')}`,
-    `    ${c.magenta('DMOSS_BROWSER_EXECUTABLE')} ${c.dim('Chrome/Chromium executable for browser tools')}`,
     `    ${c.magenta('DMOSS_SAFETY_MODE')}       ${c.dim('read-only | workspace-write | full-access')}`,
     `    ${c.magenta('DMOSS_CLI_AUTO_APPROVE')}  ${c.dim('=1 → approve allowed mutating tools without prompting')}`,
     `    ${c.magenta('DMOSS_DOCKER_IMAGE')}      ${c.dim('docker image (default: node:20-slim)')}`,

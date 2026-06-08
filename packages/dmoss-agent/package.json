@@ -1,6 +1,6 @@
 {
   "name": "@rdk-moss/agent",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -130,9 +130,9 @@
   },
   "dependencies": {
     "@mariozechner/pi-ai": "^0.50.7",
-    "@rdk-moss/core": "^0.3.17",
-    "@rdk-moss/memory": "^0.3.17",
-    "@rdk-moss/skills": "^0.3.17",
+    "@rdk-moss/core": "^0.3.18",
+    "@rdk-moss/memory": "^0.3.18",
+    "@rdk-moss/skills": "^0.3.18",
     "@types/react": "^19.2.0",
     "ink": "^7.0.5",
     "marked": "^5.1.0",

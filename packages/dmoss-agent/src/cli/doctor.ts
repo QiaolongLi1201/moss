@@ -115,6 +115,13 @@ function renderApprovalDoctor(config: ResolvedCliConfig): string[] {
   return lines;
 }
 
+function renderBaseUrlDoctor(config: ResolvedCliConfig): string {
+  if (config.usingBundledDefault) {
+    return ok('baseUrl', 'built-in default (hidden)');
+  }
+  return ok('baseUrl', `${config.baseUrl} (${config.baseUrlSource})`);
+}
+
 export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
   const lines = ['[doctor] dmoss'];
   const nodeMajor = Number.parseInt(process.versions.node.split('.')[0] || '0', 10);
@@ -125,7 +132,7 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
     : fail('auth', 'missing API key; run dmoss setup or set DEEPSEEK_API_KEY'));
   lines.push(ok('provider', `${options.config.provider} (${options.config.providerSource})`));
   lines.push(ok('model', `${options.config.model} (${options.config.modelSource})`));
-  lines.push(ok('baseUrl', `${options.config.baseUrl} (${options.config.baseUrlSource})`));
+  lines.push(renderBaseUrlDoctor(options.config));
   lines.push(canWriteDir(options.config.workspace)
     ? ok('workspace', `${options.config.workspace} (${options.config.workspaceSource})`)
     : fail('workspace', `${options.config.workspace} is not writable`));

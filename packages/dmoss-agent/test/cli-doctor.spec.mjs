@@ -86,6 +86,22 @@ async function doctor(config) {
 
 {
   const fixture = resolvedConfig({
+    usingBundledDefault: true,
+    provider: 'openai-compatible',
+    model: 'Moss',
+    baseUrl: 'http://gateway.example.test/v1',
+  });
+  try {
+    const output = await doctor(fixture.config);
+    assert.match(output, /ok\s+baseUrl: built-in default \(hidden\)/);
+    assert.doesNotMatch(output, /gateway\.example\.test/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+{
+  const fixture = resolvedConfig({
     approvalPolicy: 'never',
     approvalPolicySource: 'config',
     trustedTools: ['filesystem__*', 'read_file'],

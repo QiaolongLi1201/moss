@@ -79,6 +79,10 @@ function noticeFor(currentVersion: string, latestVersion: string): UpdateNotice 
   };
 }
 
+export function shouldSkipCliUpdateCheck(env: NodeJS.ProcessEnv = process.env): boolean {
+  return /^(1|true|yes)$/i.test(env.DMOSS_NO_UPDATE_CHECK ?? '');
+}
+
 export function formatUpdateNotice(notice: UpdateNotice): string {
   return `[update] ${PACKAGE_NAME} ${notice.currentVersion} -> ${notice.latestVersion} available. Run: ${notice.command}`;
 }
@@ -127,6 +131,7 @@ export async function checkForCliUpdate(options: UpdateCheckOptions): Promise<Up
 export function startCliUpdateCheck(options: UpdateCheckOptions & {
   onNotice?: (message: string) => void;
 }): void {
+  if (shouldSkipCliUpdateCheck()) return;
   void checkForCliUpdate(options).then((notice) => {
     if (!notice) return;
     (options.onNotice ?? ((message) => process.stderr.write(`${message}\n`)))(formatUpdateNotice(notice));

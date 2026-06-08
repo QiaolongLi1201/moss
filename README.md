@@ -1,17 +1,8 @@
 # Moss
 
-**A ready-to-use terminal agent (`moss`) and a host-neutral agent runtime you can embed into your own product.** `moss` works out of the box after D-Robotics developer community login with a built-in D-Robotics model gateway, can be switched to your own OpenAI-compatible or Anthropic model, ships as open npm packages, and has first-class robotics / device support. `dmoss` remains a compatible command alias for existing users and scripts.
+**Moss is an open, robotics-aware terminal agent and embeddable agent runtime developed by 地瓜机器人 (D-Robotics).** Install `moss`, log in with the D-Robotics developer community, and start with the built-in D-Robotics model gateway. When you want your own model, billing, data boundary, or private gateway, switch to any OpenAI-compatible endpoint or Anthropic without changing the agent.
 
-**Moss is an AI Agent developed by 地瓜机器人 (D-Robotics).** The open-source packages stay host-neutral so they can run standalone, inside RDK Studio, or inside another product host.
-
-Moss is a host-neutral agent runtime extracted from a robotics product host. It is designed
-to evolve as an open-source package set while product hosts keep their own UI,
-credentials, device integrations, private services, and deployment policy.
-
-The practical goal is simple: a downstream product host should usually get a new
-conversation experience by updating the Moss packages or the `external/moss`
-submodule. Host code changes should be needed only when the Host Adapter
-contract changes or when Moss explicitly requires new host capabilities.
+`moss` is the primary CLI command. `dmoss` remains a compatible alias for existing users and scripts.
 
 <p align="center">
   <img src="packages/dmoss-agent/assets/moss-tui-demo.gif" alt="Moss terminal startup demo" width="720" />
@@ -21,87 +12,122 @@ contract changes or when Moss explicitly requires new host capabilities.
   <img src="packages/dmoss-agent/assets/moss-connect-vision.gif" alt="Moss board connection and image attachment demo" width="720" />
 </p>
 
-## Which Path Should I Use?
+## Why Moss?
 
-| If you want to... | Start here |
-| --- | --- |
-| Try Moss immediately in a terminal | Install `@rdk-moss/agent`, run `moss auth login`, then run `moss`. No model API key is required for the built-in gateway. |
-| Use your own model, key, billing, or private gateway | Log in once, then run `moss setup` or set provider env vars. Your model config overrides the built-in gateway. |
-| Build a product that embeds Moss, such as an IDE, robot console, or device platform | Use the Host Adapter path. Your product supplies the UI, model config, tools, storage, approvals, device access, and telemetry; Moss supplies the agent loop and contracts. |
+Moss gives you the familiar terminal-agent loop from Claude Code and Codex, but with a different ownership model:
 
-You do **not** need to understand Host Adapter concepts to use `moss` as a
-terminal agent. Host Adapter is for product teams embedding Moss into their own
-application.
+- **Bring your own model** - DeepSeek, Qwen, OpenAI-compatible gateways, Anthropic, or self-hosted endpoints.
+- **Use it immediately** - community login unlocks the built-in D-Robotics gateway; no model API key is required for first use.
+- **Work with robots and edge devices** - `/connect <ip>` adds RDK board SSH, diagnostics, and ROS2 tools inside the same session.
+- **Embed it in your own product** - Moss is a runtime with public contracts, not only a closed standalone app.
+- **Keep the first screen usable** - focused slash commands, image/file attachment, goals, compaction, sessions, MCP, skills, and sub-agents stay available without turning `/help` into a wall.
 
-## What Moss Can Do
+If that direction is useful, star the repo to follow the open runtime, fork it to build your own host, and open issues for model providers, board workflows, or host-adapter gaps you want Moss to support.
 
-Run `moss` and you get a full interactive coding/ops agent in the terminal:
+## Moss Vs Claude Code And Codex
 
-- **Community-gated start** — log in with the D-Robotics developer community, then use the built-in D-Robotics model gateway with no model API key required; point it at your own provider/key (env vars or `moss setup`) anytime, and Moss tells you when a new version is out.
-- **Tool loop** — read / write / edit files, run commands, search code, fetch the web, and render real pages in a configured Chrome/Chromium headless browser.
-- **Focused controls** — action-oriented commands such as `/status`, `/model`,
-  `/goal`, `/compact`, `/attach`, `/connect`, `/sessions`, `/diff`, `/auth login`,
-  and `/help`; advanced controls still work but stay out of the first screen.
-- **Images and local context** — attach files with `/attach <path>`; on macOS TUI,
-  copy a screenshot and press `Ctrl+V` to attach it to the next prompt.
-- **Board connection** — run `/connect <board-ip>` inside a live session to enable
-  device SSH, diagnostics, and ROS2 tools without restarting Moss.
-- **Parallel sub-agents** — fan independent work out across isolated child agents and aggregate the results.
-- **MCP** — connect Model Context Protocol servers to add tools.
-- **Skills** — progressive-disclosure skills the agent discovers, validates, and reuses.
-- **Cross-session memory** — an always-on digest plus recall that carries what matters across sessions.
-- **Safety** — approval gates, permission boundaries, dangerous-action consent, and host-neutral sandboxing helpers.
+| Capability | Moss | Claude Code | Codex |
+| --- | --- | --- | --- |
+| Interactive terminal agent | `moss` (`dmoss` alias) | yes | yes |
+| Default first run | Built-in D-Robotics gateway after community login | Anthropic account | OpenAI account |
+| Bring your own model | OpenAI-compatible, Anthropic, private gateways, self-hosted models | limited to Anthropic path | limited to OpenAI path |
+| Robotics / board workflows | First-class RDK board connect, SSH, diagnostics, ROS2 tool path | general developer agent | general developer agent |
+| Embedding model | Public Host Adapter contract and npm packages | standalone product | standalone product |
+| Product control | Host owns UI, tools, storage, approvals, credentials, telemetry | vendor-owned app | vendor-owned app |
 
-The same runtime is **embeddable**: behind a narrow Host Adapter, your product supplies the model keys, UI, storage, tools, approvals, and device access — Moss supplies the agent loop, memory/skill primitives, and compatibility contracts.
+Claude Code and Codex are excellent polished standalone assistants. Moss is for people who want that style of agent while also owning the runtime, model route, device tools, and product integration surface.
 
-## Quickstart
-
-Install and run the terminal agent:
+## Install
 
 ```bash
-npm i -g @rdk-moss/agent       # installs `moss`; `dmoss` remains an alias
-moss auth login                # sign in to the D-Robotics developer community
-moss                           # built-in model gateway, no model API key required
-```
-
-Each plain `moss` launch starts a **new saved conversation**. Continue history
-only when you ask for it: `moss resume --last`, `moss resume --session <key>`,
-or `moss --session <key>`.
-
-`moss` ships with a built-in D-Robotics model gateway so signed-in community
-users can try the agent before configuring a model key. Use your own model when
-you want your own billing/account, a private gateway, data-local deployment, a
-self-hosted model, or a provider/model that is different from the built-in
-default. Community login remains the CLI access gate; your local model
-configuration overrides the built-in gateway, and the community token is only
-sent to the built-in gateway.
-
-To use your own model, choose one of these paths.
-
-**Guided setup** saves provider, model, base URL, and API key into
-`~/.config/dmoss/config.json`:
-
-```bash
-moss setup
-moss auth status               # verifies community login and provider/model/key source
-```
-
-**Environment variables** keep the API key out of the config file. A single
-provider-specific key selects that provider automatically; if you set multiple
-keys, set `DMOSS_PROVIDER` explicitly.
-
-```bash
-export DEEPSEEK_API_KEY=...    # DeepSeek
-# or: export OPENAI_API_KEY=...
-# or: export ANTHROPIC_API_KEY=...
-# or: export DASHSCOPE_API_KEY=...    # Aliyun / Qwen
+npm i -g @rdk-moss/agent@latest
+moss auth login
 moss
 ```
 
-**Private gateway or self-hosted OpenAI-compatible model**:
+The npm package is `@rdk-moss/agent`. The command is `moss`. Existing `dmoss` commands still work.
+
+Every plain `moss` launch starts a **new saved conversation**. Resume only when you ask for it:
 
 ```bash
-export OPENAI_API_KEY=...      # or DMOSS_API_KEY=... if your gateway uses a generic key
+moss resume --last
+moss resume --session <session-key>
+moss --session <session-key>
+```
+
+Update anytime:
+
+```bash
+npm i -g @rdk-moss/agent@latest
+# or from inside Moss:
+/update
+```
+
+## Five-Minute Tutorial
+
+1. Open a project:
+
+   ```bash
+   cd my-project
+   moss
+   ```
+
+2. Ask for a read-only orientation:
+
+   ```text
+   Inspect this repo and tell me the build, test, and release path.
+   ```
+
+3. Check the current runtime state:
+
+   ```text
+   /status
+   /model
+   ```
+
+4. Attach context:
+
+   ```text
+   /attach ./screenshot.png
+   /attach ./notes.txt
+   What is wrong in this UI?
+   ```
+
+   On the full macOS TUI, copy a screenshot and press `Ctrl+V`; Moss attaches it as `[Image #1]` for the next prompt.
+
+5. Give Moss a concrete task:
+
+   ```text
+   Fix the failing test, explain the root cause, and run the narrowest verification.
+   ```
+
+Moss asks before file writes, commands, and external actions unless you explicitly choose a more autonomous approval profile.
+
+## Use Your Own Model
+
+The built-in D-Robotics gateway is for instant first use. Configure your own provider when you need your own account, billing, private gateway, data-local deployment, or a self-hosted model. Your model config overrides the built-in gateway.
+
+Guided setup:
+
+```bash
+moss setup
+moss auth status
+```
+
+Environment variables:
+
+```bash
+export DEEPSEEK_API_KEY=...
+# or: export OPENAI_API_KEY=...
+# or: export ANTHROPIC_API_KEY=...
+# or: export DASHSCOPE_API_KEY=...
+moss
+```
+
+Private OpenAI-compatible gateway:
+
+```bash
+export OPENAI_API_KEY=...      # or DMOSS_API_KEY=... for a generic gateway key
 moss config set provider openai-compatible
 moss config set model <your-model>
 moss config set baseUrl https://llm.example.com
@@ -109,57 +135,50 @@ moss auth status
 moss
 ```
 
-`baseUrl` is the API root, not the full chat endpoint: do not include
-`/chat/completions`. Both `https://llm.example.com` and
-`https://llm.example.com/v1` are accepted; Moss calls
-`/v1/chat/completions` for OpenAI-compatible providers.
+`baseUrl` is the API root, not the full chat endpoint. Do not include `/chat/completions`. Both `https://llm.example.com` and `https://llm.example.com/v1` are accepted; Moss calls `/v1/chat/completions` for OpenAI-compatible providers.
 
-Inside `moss`, use `/model` to open the active provider's model list (it tries
-the provider's `/v1/models` endpoint and falls back to common model names), then
-choose with `/model <number>` or type a custom model name with
-`/model <model-name>`. Use `moss setup` or `moss config set provider/model/baseUrl`
-when you want to change provider, key, or gateway rather than only the model.
+Configuration priority is: CLI flags and `-c key=value` > environment variables > `moss config` / `moss setup` > built-in gateway. If multiple provider keys are set in your shell, set `DMOSS_PROVIDER` explicitly.
 
-Attach local context to the next prompt from the TUI:
+Inside Moss, use `/model` to list models from the active provider when available, choose by number, or type `/model <model-name>` for a custom model.
+
+## Connect An RDK Board
+
+Use `/connect` inside a live session; no restart is required:
+
+```text
+/connect 192.168.1.10 --user root
+/status
+Check camera, ROS2 nodes, disk space, and device health.
+```
+
+After connection, Moss can route board diagnostics through the active device tool group while keeping the conversation context. The host still controls SSH credentials, approval policy, protected paths, and available device tools.
+
+## Attach Images And Files
 
 ```text
 /attach ./screenshot.png
-/attach ./notes.txt
-What is wrong in this UI?
+/attach ./camera-frame.jpg
+/attach ./error.log
+Explain what you see and propose the next debug step.
 ```
 
-Images (`png`, `jpg`, `jpeg`, `gif`, `webp`) are sent as model image blocks when
-the active provider/model supports vision. Text files are inserted as prompt
-context. Use `/attach list` to review pending attachments and `/attach clear` to
-discard them before sending.
+Images (`png`, `jpg`, `jpeg`, `gif`, `webp`) are sent as model image blocks when the active provider/model supports vision. Text files are inserted as prompt context. Use `/attach list` to review pending attachments and `/attach clear` to discard them before sending.
 
-**Update** anytime (Moss also tells you when a newer version is out):
+## Build With Moss
 
-```bash
-npm i -g @rdk-moss/agent@latest   # or run `moss update`
-```
+Only using the CLI? You can stop here.
 
-Config and keys live in `~/.config/dmoss/config.json` (override the dir with `DMOSS_CONFIG_DIR`); keys can also come from the environment variables above, so nothing secret needs to be written to disk.
-
-**Customize the agent** per project: drop an `AGENTS.md` in your workspace (or run `/init`) — it is auto-loaded into every session as your project's system prompt (build/test commands, layout, conventions).
-
-Only building a product or service that embeds Moss? Scaffold a host project:
+Building a product or service that embeds Moss? Scaffold a host project:
 
 ```bash
 npx create-dmoss-app my-host
 ```
 
-Embed into an existing product host: install the packages, register your
-providers / tools / storage / approval gate / event sink, publish a
-`MossHostRuntimeManifest`, and run `evaluateMossHostCompatibility()` in CI.
-This is useful when you want Moss inside your own app instead of only as the
-`moss` terminal command — see [Integrating Moss Into A Host](#integrating-moss-into-a-host).
+Embed into an existing product host by installing the packages, registering providers / tools / storage / approval gates / event sinks, publishing a `MossHostRuntimeManifest`, and running `evaluateMossHostCompatibility()` in CI. This is useful when you want Moss inside your own IDE, robot console, browser app, desktop app, or device platform instead of only as the `moss` terminal command - see [Integrating Moss Into A Host](#integrating-moss-into-a-host).
 
-## First Real Task / Automation
+## Automation And Safety
 
-For interactive use, Moss asks before mutating files, running commands, or
-touching external systems. For unattended benchmark or CI runs, choose an
-explicit approval policy before starting:
+For unattended benchmark or CI runs, choose an explicit approval policy before starting:
 
 ```bash
 DMOSS_CLI_AUTO_APPROVE=1 moss --workspace-write "write and verify the tool"
@@ -167,40 +186,13 @@ DMOSS_CLI_AUTO_APPROVE=1 moss --workspace-write "write and verify the tool"
 moss config set profile autonomous
 ```
 
-`DMOSS_CLI_AUTO_APPROVE=1` only approves tools that pass the active safety
-policy. It does not bypass `--read-only`, `deniedTools`, protected paths, or
-workspace sandbox checks. For browser-driven real websites, use `--full-access`
-because `web_browser_control` is classified as an external interaction.
+`DMOSS_CLI_AUTO_APPROVE=1` only approves tools that pass the active safety policy. It does not bypass `--read-only`, `deniedTools`, protected paths, or workspace sandbox checks. For browser-driven real websites, use `--full-access` because `web_browser_control` is classified as an external interaction.
 
-Moss exposes two browser tools when a local Chrome/Chromium executable is
-available: `web_browser_fetch` for read-only JavaScript-rendered pages and
-`web_browser_control` for approved browser workflows. `@rdk-moss/agent` uses
-`puppeteer-core`, so it does not download a browser during install. If
-auto-discovery cannot find one, set:
+Moss exposes two browser tools when a local Chrome/Chromium executable is available: `web_browser_fetch` for read-only JavaScript-rendered pages and `web_browser_control` for approved browser workflows. `@rdk-moss/agent` uses `puppeteer-core`, so it does not download a browser during install. If auto-discovery cannot find one, set:
 
 ```bash
 export DMOSS_BROWSER_EXECUTABLE="/path/to/chrome-or-chromium"
 ```
-
-`apply_patch` uses Moss' structured patch format, not a raw `git apply` unified
-diff. It supports multi-file patches, but each operation must use the documented
-`*** Begin Patch` / `*** Add File` / `*** Update File` / `*** Delete File` /
-`*** End Patch` blocks.
-
-## How Moss Compares
-
-Moss matches the core terminal-agent experience of tools like **Claude Code** and **Codex** — interactive tool loop, slash commands, sub-agents, MCP, skills, and memory. What sets it apart is **where it can run and who controls it**:
-
-| | Moss | Claude Code | Codex |
-| --- | --- | --- | --- |
-| Interactive terminal agent | ✅ `moss` (`dmoss` alias) | ✅ | ✅ |
-| **Models** | **Any OpenAI-compatible endpoint + Anthropic** — DeepSeek, Qwen, self-hosted, gateways | Anthropic | OpenAI |
-| **Embed into your own product** | ✅ Host Adapter contract — Moss is a runtime, not only an app | — standalone app | — standalone app |
-| **Open & self-hostable** | ✅ open npm packages you vendor and extend, run against your own endpoints | — | — |
-| **Robotics / device / board agent** | ✅ first-class (SSH / ROS / device tools, board-side agent) | general dev | general dev |
-| Polished first-party app & UX | the host supplies the UI | ✅ | ✅ |
-
-In short — if you want a polished **standalone** assistant tied to one vendor's models, Claude Code and Codex are excellent. If you want to **own** the agent — run it on **your** models, **embed** it in **your** product, **extend** it as open code, and reach **robots and devices** — that is Moss.
 
 ## Repository Scope
 
@@ -410,6 +402,7 @@ At minimum, maintainers run:
 
 ```bash
 npm run verify
+npm run smoke:moss-cli
 ```
 
 If the release is intended for a downstream host, update its Moss dependency or

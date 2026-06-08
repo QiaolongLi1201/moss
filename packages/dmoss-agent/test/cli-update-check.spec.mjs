@@ -11,6 +11,8 @@ import path from 'node:path';
 import {
   checkForCliUpdate,
   formatUpdateNotice,
+  shouldSkipCliUpdateCheck,
+  startCliUpdateCheck,
 } from '../dist/cli/update-check.js';
 import { completeInteractiveCommand } from '../dist/cli/repl.js';
 
@@ -142,6 +144,43 @@ function tmpDir() {
   const [matches] = completeInteractiveCommand('/up');
   assert.ok(matches.includes('/status'), 'fallback completion should return the focused default command list');
   assert.ok(!matches.includes('/upgrade'), '/upgrade remains a hidden command and should not crowd default completion');
+}
+
+{
+  assert.equal(shouldSkipCliUpdateCheck({ DMOSS_NO_UPDATE_CHECK: '1' }), true);
+  assert.equal(shouldSkipCliUpdateCheck({ DMOSS_NO_UPDATE_CHECK: 'true' }), true);
+  assert.equal(shouldSkipCliUpdateCheck({ DMOSS_NO_UPDATE_CHECK: 'yes' }), true);
+  assert.equal(shouldSkipCliUpdateCheck({ DMOSS_NO_UPDATE_CHECK: '0' }), false);
+  assert.equal(shouldSkipCliUpdateCheck({}), false);
+}
+
+{
+  const previous = process.env.DMOSS_NO_UPDATE_CHECK;
+  process.env.DMOSS_NO_UPDATE_CHECK = '1';
+  let calls = 0;
+  let notices = 0;
+  try {
+    startCliUpdateCheck({
+      configDir: tmpDir(),
+      currentVersion: '0.3.4',
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ version: '99.0.0' }), { status: 200 });
+      },
+      onNotice: () => {
+        notices += 1;
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(calls, 0, 'DMOSS_NO_UPDATE_CHECK should skip registry fetch at the runtime entry point');
+    assert.equal(notices, 0, 'DMOSS_NO_UPDATE_CHECK should not emit update notices');
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DMOSS_NO_UPDATE_CHECK;
+    } else {
+      process.env.DMOSS_NO_UPDATE_CHECK = previous;
+    }
+  }
 }
 
 console.log('[PASS] CLI update check is cached, quiet on failure, and default completion stays focused');

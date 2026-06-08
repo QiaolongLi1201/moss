@@ -1,9 +1,9 @@
 # @rdk-moss/agent
 
-> **An AI agent runtime built for robotics and edge devices.**
-> Pluggable LLMs, LAN-native Agent Mesh, framework-level tool-call self-healing, Chinese-first UX.
+> **Moss is a ready-to-use terminal agent and embeddable robotics agent runtime developed by 地瓜机器人 (D-Robotics).**
+> Install `moss`, log in with the D-Robotics developer community, and start with the built-in D-Robotics model gateway. Switch to your own OpenAI-compatible, Anthropic, private, or self-hosted model whenever you want.
 
-**D-Moss Agent is developed by 地瓜机器人 (D-Robotics).** The CLI starts as `moss`; `dmoss` remains a compatible alias while the reusable runtime stays host-neutral for embedding.
+The project is **Moss**. The npm package is **`@rdk-moss/agent`**. The primary CLI command is **`moss`**. `dmoss` remains a compatible alias for existing users and scripts.
 
 <p align="center">
   <a href="#install"><img src="https://img.shields.io/npm/v/@rdk-moss/agent?logo=npm&color=ff6b00" alt="npm" /></a>
@@ -14,10 +14,8 @@
 </p>
 
 ```bash
-# Try it in 30 seconds
-npx -y @rdk-moss/agent "帮我检查当前目录"
-# or install it globally and open the interactive TUI:
 npm i -g @rdk-moss/agent@latest
+moss auth login
 moss
 ```
 
@@ -29,21 +27,30 @@ moss
   <img src="./assets/moss-connect-vision.gif" alt="Moss board connection and image attachment demo" width="720" />
 </p>
 
-## Why D-Moss
+## Why Moss?
 
-| D-Moss has | Most agent libs don't |
-|---|---|
-| ✅ **LAN Agent Mesh** — P2P peer discovery over UDP, zero cloud dependency | Relies on a central orchestrator |
-| ✅ **Framework-level tool self-healing** — reconstructs `tool_use` from plan text when LLM stream drops `tool_calls` | Retries the whole turn or just fails |
-| ✅ **Built-in ROS2 / device SSH / device diagnostics tools** | You wire these yourself |
-| ✅ **Context compaction + steering + follow-up guard** out of the box | Single-loop prompt → response |
-| ✅ **Thread Goal Mode** — session-backed goals injected into the system prompt | Untracked objective hidden in chat history |
-| ✅ **Chinese as first-class locale** (prompts, errors, CLI) | English-only |
-| ✅ **Board delegation** — run LLMs on an edge gateway, not the cloud | Cloud API only |
+Moss gives you the familiar terminal-agent workflow of Claude Code and Codex, but keeps the runtime open, provider-flexible, and device-aware:
 
-**D-Moss Agent** — a standalone, vendor-neutral robotics agent runtime.
+- **Built-in first run** - community login unlocks the D-Robotics gateway; no model API key is required to try the CLI.
+- **Bring your own model** - DeepSeek, Qwen, OpenAI-compatible gateways, Anthropic, or self-hosted endpoints.
+- **RDK board workflows** - `/connect <ip>` enables board SSH, diagnostics, and ROS2 tooling inside a live session.
+- **Embeddable runtime** - use the Host Adapter contract to put Moss inside your own IDE, robot console, desktop app, or device platform.
+- **Agent primitives included** - goals, compaction, sessions, attachments, MCP, skills, sub-agents, safety hooks, and tool execution.
 
-Build AI-powered developer tools for any robotics platform with pluggable knowledge modules, tools, and LLM providers.
+If that ownership model matters to you, star the repo, fork it for your host, and open issues for providers, boards, or workflows you want Moss to cover next.
+
+## Moss Vs Claude Code And Codex
+
+| Capability | Moss | Claude Code | Codex |
+| --- | --- | --- | --- |
+| Interactive terminal agent | `moss` (`dmoss` alias) | yes | yes |
+| Default first run | Built-in D-Robotics gateway after community login | Anthropic account | OpenAI account |
+| Bring your own model | OpenAI-compatible, Anthropic, private gateways, self-hosted models | limited to Anthropic path | limited to OpenAI path |
+| Robotics / board workflows | RDK board connect, SSH, diagnostics, ROS2 tool path | general developer agent | general developer agent |
+| Embedding model | Public Host Adapter contract and npm packages | standalone product | standalone product |
+| Product control | Host owns UI, tools, storage, approvals, credentials, telemetry | vendor-owned app | vendor-owned app |
+
+Claude Code and Codex are excellent polished standalone assistants. Moss is for teams who want that style of agent while also owning the model route, device tools, product integration, and extension surface.
 
 ## Open-source scope (the harness)
 
@@ -73,48 +80,99 @@ The open-source boundary is clean: `packages/dmoss/` + `packages/dmoss-agent/` i
 
 ## Install
 
+Requires **Node >= 22.16**.
+
+### Use The CLI
+
+```bash
+npm i -g @rdk-moss/agent@latest
+moss auth login
+moss
+```
+
+`moss` uses the built-in D-Robotics model gateway after community login, so first use does **not** require a model API key. Run `moss setup` only when you want your own provider, account, private gateway, or self-hosted OpenAI-compatible model.
+
+Each plain `moss` launch starts a **new saved conversation**. Continue previous history only when you ask for it:
+
+```bash
+moss resume --last
+moss resume --session <key>
+moss --session <key>
+```
+
+### Embed The Runtime
+
 ```bash
 npm install @rdk-moss/agent@latest @rdk-moss/core@latest
 ```
 
-Requires **Node ≥ 22.16** (see `engines` in `package.json`). One-off CLI tryout:
+Use this path when you are building a product host and want to supply your own UI, providers, tools, storage, approval gates, credentials, device access, and telemetry.
+
+## Five-Minute CLI Tutorial
+
+1. Start in a project:
+
+   ```bash
+   cd my-project
+   moss
+   ```
+
+2. Ask for orientation:
+
+   ```text
+   Inspect this repo and tell me the build, test, and release path.
+   ```
+
+3. Check active state:
+
+   ```text
+   /status
+   /model
+   ```
+
+4. Attach context:
+
+   ```text
+   /attach ./screenshot.png
+   /attach ./error.log
+   What is the likely issue?
+   ```
+
+   In the full macOS TUI, copy a screenshot and press `Ctrl+V`; Moss attaches it as `[Image #1]` for the next prompt.
+
+5. Run a real task:
+
+   ```text
+   Fix the failing test, explain the root cause, and run the narrowest verification.
+   ```
+
+Interactive Moss asks before file writes, commands, and external actions unless you explicitly choose a more autonomous approval profile.
+
+## Use Your Own Model
+
+The built-in gateway is for immediate first use. Configure your own model when you need your own account, billing, private gateway, data-local deployment, or a self-hosted endpoint. Your local model config overrides the built-in gateway.
+
+Guided setup:
 
 ```bash
-npx -y @rdk-moss/agent --help
-npm i -g @rdk-moss/agent@latest
-moss
-```
-
-`moss` uses the built-in D-Robotics model gateway by default when installed
-from npm. A first run requires D-Robotics developer community login, but does
-not require a model API key for the built-in gateway. Run `moss setup` only
-when you want to use your own provider, account, private gateway, or self-hosted
-OpenAI-compatible model. Community login remains the CLI access gate; the
-community token is only sent to the built-in gateway, not to your private model
-endpoint.
-
-To use your own model, either run the guided setup:
-
-```bash
-moss auth login
 moss setup
-moss auth status               # verifies community login and provider/model/key source
+moss auth status
 ```
 
-Or keep the API key in the environment:
+Environment variables:
 
 ```bash
-export DEEPSEEK_API_KEY=...    # DeepSeek
+export DEEPSEEK_API_KEY=...
 # or: export OPENAI_API_KEY=...
 # or: export ANTHROPIC_API_KEY=...
-# or: export DASHSCOPE_API_KEY=...    # Aliyun / Qwen
+# or: export DASHSCOPE_API_KEY=...
 moss
 ```
 
-For a private gateway or self-hosted OpenAI-compatible model:
+Private OpenAI-compatible gateway:
 
 ```bash
-export OPENAI_API_KEY=...      # or DMOSS_API_KEY=... if your gateway uses a generic key
+export OPENAI_API_KEY=...      # or DMOSS_API_KEY=... for a generic gateway key
 moss config set provider openai-compatible
 moss config set model <your-model>
 moss config set baseUrl https://llm.example.com
@@ -122,118 +180,51 @@ moss auth status
 moss
 ```
 
-`baseUrl` is the API root, not the full chat endpoint: do not include
-`/chat/completions`. Both `https://llm.example.com` and
-`https://llm.example.com/v1` are accepted; Moss calls
-`/v1/chat/completions` for OpenAI-compatible providers. If multiple provider
-keys are set in your shell, set `DMOSS_PROVIDER` explicitly.
+`baseUrl` is the API root, not the full chat endpoint. Do not include `/chat/completions`. Both `https://llm.example.com` and `https://llm.example.com/v1` are accepted; Moss calls `/v1/chat/completions` for OpenAI-compatible providers. If multiple provider keys are set in your shell, set `DMOSS_PROVIDER` explicitly.
 
-Each plain `moss` launch starts a **new saved conversation**. Use
-`moss resume --last`, `moss resume --session <key>`, or
-`moss --session <key>` when you want to continue previous history.
+Configuration priority is: CLI flags and `-c key=value` > environment variables > `moss config` / `moss setup` > built-in gateway.
 
-### Path 2 — Local tarballs (maintainers / CI)
+Inside Moss, use `/model` to list models from the active provider when available, choose by number, or type `/model <model-name>` for a custom model.
 
-From the monorepo root:
+## Connect An RDK Board
 
-```bash
-npm pack --workspace=@rdk-moss/core
-npm pack --workspace=@rdk-moss/agent
+```text
+/connect 192.168.1.10 --user root
+/status
+Check camera, ROS2 nodes, disk space, and device health.
 ```
 
-Install the generated `.tgz` files in a downstream project:
+`/connect` is session-scoped and does not require restarting Moss. The host still owns SSH credentials, protected paths, approval policy, and the concrete device tools that are exposed.
 
-```bash
-npm install ./dmoss-core-*.tgz ./dmoss-agent-*.tgz
+## Attach Images And Files
+
+```text
+/attach ./screenshot.png
+/attach ./camera-frame.jpg
+/attach ./notes.txt
+Explain what you see and propose the next debug step.
 ```
 
-Or run the CLI straight from a tarball:
+Images (`png`, `jpg`, `jpeg`, `gif`, `webp`) are sent as model image blocks when the active provider/model supports vision. Text files are inserted as prompt context. Use `/attach list` to review pending attachments and `/attach clear` to discard them before sending.
 
-```bash
-npx -y ./dmoss-agent-*.tgz --help
-```
-
-### Path 3 — From source (contributors)
-
-```bash
-git clone <this-repo>
-cd <this-repo>
-npm install                 # links workspace packages (@rdk-moss/core, @rdk-moss/agent, create-dmoss-app)
-npm run build -w @rdk-moss/agent
-# A source checkout does not include the private npm zero-config gateway file.
-# Configure your own model/provider, or set DMOSS_ZERO_CONFIG_DEFAULT_FILE for packaging tests.
-node packages/dmoss-agent/dist/cli.js setup
-# Run the interactive REPL:
-node packages/dmoss-agent/dist/cli.js
-# Or one-shot mode:
-node packages/dmoss-agent/dist/cli.js "check disk usage on /"
-```
-
-`setup` writes `~/.config/dmoss/config.json` with `0600` permissions and supports Aliyun/Qwen, OpenAI, Anthropic, and OpenAI-compatible providers. Your config overrides the built-in gateway. You can inspect or update the stored configuration without printing secrets:
-
-```bash
-moss auth status
-moss auth logout
-moss config set provider openai-compatible
-moss config set model <your-model>
-moss config set baseUrl https://llm.example.com
-```
-
-### CLI flags recap
+## Useful CLI Commands
 
 ```
-setup                   configure your own provider/model/API key
-auth login              sign in to the D-Robotics developer community
-auth status             show community login and provider/model/key source
-auth logout             remove stored community login and API key config
-config set <key> <val>  update provider, model, or baseUrl
---debug                 verbose logging (level=debug)
---quiet                 only warnings & errors
---log-level=<lv>        debug | info | warn | error
---json                  emit structured JSON log lines
---no-color              disable ANSI colors
---help, -h              show the full usage page
---version, -v           show version
+moss                 open the interactive TUI
+moss "prompt"        run a one-shot prompt
+moss auth login      sign in to the D-Robotics developer community
+moss auth status     show community login and provider/model/key source
+moss setup           configure your own provider/model/API key
+moss config --help   show configuration commands
+moss --help          show the focused CLI help
+moss --help --all    show the complete CLI reference
 ```
 
-By default the CLI prints a short progress trail to stderr: planning turns, tool calls, and redacted tool results. The final assistant answer stays on stdout so shell piping still works. Tune this with `DMOSS_CLI_DETAIL=quiet|progress|verbose`; in the interactive REPL you can also run `/detail quiet`, `/detail progress`, or `/detail verbose`.
-
-### First real task / automation
-
-Interactive `moss` asks before file writes, commands, and external actions. For
-unattended benchmark or CI runs, set an explicit approval policy before launch:
-
-```bash
-DMOSS_CLI_AUTO_APPROVE=1 moss --workspace-write "write and verify the tool"
-# or persist a broader local policy:
-moss config set profile autonomous
-```
-
-`DMOSS_CLI_AUTO_APPROVE=1` only approves tools allowed by the active safety
-policy. It does not bypass `--read-only`, `deniedTools`, protected paths, or
-workspace sandbox checks. Browser workflows such as real checkout/add-to-cart
-testing use `web_browser_control`, which is an external interaction and needs
-`--full-access` plus approval.
-
-`@rdk-moss/agent` includes `web_browser_fetch` and `web_browser_control` through
-`puppeteer-core`. It does not download a browser at install time. If Chrome or
-Chromium is not auto-discovered, configure the executable:
-
-```bash
-export DMOSS_BROWSER_EXECUTABLE="/path/to/chrome-or-chromium"
-```
-
-`apply_patch` accepts Moss' structured patch format, not a raw `git apply`
-unified diff. Multi-file patches are supported, but each operation must be
-inside the documented `*** Begin Patch` / `*** Add File` / `*** Update File` /
-`*** Delete File` / `*** End Patch` blocks.
-
-The interactive TUI starts with a concise panel that shows model, workspace,
-login state, and next steps. Slash commands are action-oriented controls:
+Inside Moss:
 
 ```
 /status      view model, workspace, device, and tool state
-/model       open the active provider's model list, then choose by number or name
+/model       list or choose active models
 /goal        show or manage the persistent session goal
 /compact     compress older conversation history into a summary
 /attach      attach an image or text file to the next prompt
@@ -244,19 +235,55 @@ login state, and next steps. Slash commands are action-oriented controls:
 /help        show focused command help
 ```
 
-Advanced commands such as `/status --verbose`, `/context`, `/rewind`, `/tools`,
-`/permissions`, and `/memory` still work, but stay out of the default menu so
-the first screen remains usable.
+Advanced commands such as `/status --verbose`, `/context`, `/rewind`, `/tools`, `/permissions`, and `/memory` still work, but stay out of the default menu so the first screen remains usable.
 
-Use `/attach <path>` before your next prompt to add local context. Images
-(`png`, `jpg`, `jpeg`, `gif`, `webp`) are sent as real image blocks to vision
-models; text files are inserted as prompt context. `/attach list` shows pending
-attachments, and `/attach clear` discards them. In the full macOS TUI, copy a
-screenshot and press `Ctrl+V` to attach it without saving a file first.
+## Automation And Browser Tools
 
-All flags also available via env vars: `DMOSS_LOG_LEVEL`, `DMOSS_LOG_JSON=1`, `DMOSS_NO_COLOR=1`.
+```bash
+DMOSS_CLI_AUTO_APPROVE=1 moss --workspace-write "write and verify the tool"
+# or persist a broader local policy:
+moss config set profile autonomous
+```
 
-## Quick Start
+`DMOSS_CLI_AUTO_APPROVE=1` only approves tools allowed by the active safety policy. It does not bypass `--read-only`, `deniedTools`, protected paths, or workspace sandbox checks. Browser workflows such as real checkout/add-to-cart testing use `web_browser_control`, which is an external interaction and needs `--full-access` plus approval.
+
+`@rdk-moss/agent` includes `web_browser_fetch` and `web_browser_control` through `puppeteer-core`. It does not download a browser at install time. If Chrome or Chromium is not auto-discovered, configure the executable:
+
+```bash
+export DMOSS_BROWSER_EXECUTABLE="/path/to/chrome-or-chromium"
+```
+
+## Maintainer Tarball Smoke
+
+From the monorepo root:
+
+```bash
+npm run smoke:moss-cli
+```
+
+The smoke script builds the workspace, packs the current `@rdk-moss/core`, `@rdk-moss/memory`, `@rdk-moss/skills`, and `@rdk-moss/agent` tarballs, installs them into a temporary project, checks the `moss` / `dmoss` / `dmoss-agent` bins, verifies packaged GIF and zero-config assets, blocks deprecated install warnings, and opens the TUI through a PTY when available.
+
+## From Source
+
+```bash
+git clone <this-repo>
+cd <this-repo>
+npm install
+npm run build -w @rdk-moss/agent
+# A source checkout does not include the private npm zero-config gateway file.
+# Configure your own model/provider, or set DMOSS_ZERO_CONFIG_DEFAULT_FILE for packaging tests.
+node packages/dmoss-agent/dist/cli.js setup
+node packages/dmoss-agent/dist/cli.js
+node packages/dmoss-agent/dist/cli.js "check disk usage on /"
+```
+
+`setup` writes `~/.config/dmoss/config.json` with `0600` permissions and supports Aliyun/Qwen, OpenAI, Anthropic, and OpenAI-compatible providers. Your config overrides the built-in gateway. Config and keys can also come from environment variables, so secrets do not need to be written to disk.
+
+`apply_patch` accepts Moss' structured patch format, not a raw `git apply` unified diff. Multi-file patches are supported, but each operation must be inside the documented `*** Begin Patch` / `*** Add File` / `*** Update File` / `*** Delete File` / `*** End Patch` blocks.
+
+All flags also have env-var equivalents for logging and color control, including `DMOSS_LOG_LEVEL`, `DMOSS_LOG_JSON=1`, `DMOSS_NO_COLOR=1`, and `DMOSS_NO_UPDATE_CHECK=1`.
+
+## Embed Moss In A Host
 
 ```typescript
 import { DmossAgent, InMemorySessionStore } from '@rdk-moss/agent';

@@ -9,11 +9,16 @@ From the Moss repository root:
 
 ```bash
 npm run verify
+npm run smoke:moss-cli
 ```
 
-This must pass before the release is considered usable. It checks the
-open-source boundary, workspace hygiene, builds all workspaces, typechecks
-source, and runs package tests.
+Both commands must pass before the release is considered usable. `npm run verify`
+checks the open-source boundary, workspace hygiene, workspace builds,
+typechecks, lint, and package tests. `npm run smoke:moss-cli` builds the CLI,
+packs the current workspace tarballs, installs them into a temporary project,
+checks the `moss` / `dmoss` / `dmoss-agent` bins, verifies packaged runtime
+assets, blocks known deprecated install warnings, and opens the TUI through a
+PTY when available.
 
 ## Host Adapter Decision
 
@@ -82,6 +87,7 @@ Summary:
 
 Verification:
 - npm run verify
+- npm run smoke:moss-cli
 
 Host adapter impact:
 - none | required

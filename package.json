@@ -24,6 +24,7 @@
     "format:check": "prettier --check \"packages/*/src/**/*.ts\"",
     "check:boundaries": "node scripts/check-oss-boundaries.mjs",
     "check:hygiene": "node scripts/check-workspace-hygiene.mjs",
+    "smoke:moss-cli": "node scripts/smoke-moss-cli.mjs",
     "release:rdk-moss": "node scripts/release-rdk-moss.mjs",
     "verify": "npm run check:boundaries && npm run check:hygiene && npm run build && npm run typecheck && npm run lint && npm run test"
   },

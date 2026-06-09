@@ -12,11 +12,12 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import React from 'react';
 import { render, cleanup } from 'ink-testing-library';
 import { DmossTui } from '../dist/cli/tui.js';
 
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const inkEntry = require.resolve('ink');
 const { default: CursorContext } = await import(
@@ -92,7 +93,7 @@ function makeAgent(options = {}) {
 }
 const skillLearner = { async maybeLearnFromSession() {} };
 const runtime = {
-  workspace: '/Users/d-robotics/Desktop/RDK_Studio/moss/packages/dmoss-agent',
+  workspace: packageRoot,
   configDir: '/tmp/dmoss-test/config',
   runtimeDir: '/tmp/dmoss-test/runtime',
 };

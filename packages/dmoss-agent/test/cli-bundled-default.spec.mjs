@@ -29,9 +29,14 @@ fs.writeFileSync(
 {
   const r = resolveCliConfig({ DMOSS_BUNDLED_DEFAULT_FILE: gatewayFile }, {});
   assert.equal(r.provider, 'openai-compatible');
+  assert.equal(r.providerSource, 'built-in');
   assert.equal(r.model, 'GatewayModel');
+  assert.equal(r.modelSource, 'built-in');
   assert.equal(r.baseUrl, 'https://gateway.test/v1');
+  assert.equal(r.baseUrlSource, 'built-in');
   assert.equal(r.apiKey, 'gw-token-test');
+  assert.equal(r.apiKeySource, 'built-in');
+  assert.equal(r.usingBundledDefault, true);
   console.log('  [PASS] bundled gateway default applies when nothing is configured');
 }
 
@@ -56,6 +61,20 @@ fs.writeFileSync(
   const r = resolveCliConfig({ DMOSS_BUNDLED_DEFAULT_FILE: path.join(tmp, 'absent.json') }, {});
   assert.ok(r.provider, 'still resolves a provider when the bundled file is absent');
   console.log('  [PASS] missing bundled file falls back gracefully');
+}
+
+// 5) Empty stored keys are treated as missing, not as configured.
+{
+  const r = resolveCliConfig({}, {
+    provider: 'openai-compatible',
+    model: 'UserModel',
+    baseUrl: 'https://gateway.test/v1',
+    apiKey: '',
+  });
+  assert.equal(r.apiKey, '');
+  assert.equal(r.apiKeySource, 'missing');
+  assert.equal(r.usingBundledDefault, false);
+  console.log('  [PASS] empty stored API keys are reported as missing');
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

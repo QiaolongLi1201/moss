@@ -774,12 +774,14 @@ export function resolveCliConfig(
   const defaultLoadedConfig = config === undefined ? loadCliConfigFile(env) : undefined;
   let activeConfig: ConfigFile = config ?? defaultLoadedConfig?.config ?? {};
   let usingBundledDefault = false;
+  let bundledDefaultKeys = new Set<keyof ConfigFile>();
   // Zero-config fallback: when nothing is configured anywhere, use a bundled
   // gateway default if the package ships one (npm only; gitignored in source).
   if (!hasUserModelConfig(activeConfig, env)) {
     const bundled = readBundledZeroConfigDefault(env);
     if (bundled) {
       activeConfig = { ...activeConfig, ...bundled };
+      bundledDefaultKeys = new Set(Object.keys(bundled) as Array<keyof ConfigFile>);
       usingBundledDefault = true;
     }
   }
@@ -810,6 +812,8 @@ export function resolveCliConfig(
       activeConfig.baseUrl,
   );
   const envInferredProvider = inferProviderFromApiKeyEnv(env);
+  const activeConfigSource = (key: keyof ConfigFile): string =>
+    usingBundledDefault && bundledDefaultKeys.has(key) ? 'built-in' : 'config';
   const provider = overrides.provider || providerEnv || activeConfig.provider
     ? normalizeProvider(overrides.provider || providerEnv || activeConfig.provider)
     : inferredProvider || envInferredProvider?.provider || 'deepseek';
@@ -819,7 +823,7 @@ export function resolveCliConfig(
     : providerEnv
       ? 'DMOSS_PROVIDER'
       : activeConfig.provider
-        ? 'config'
+        ? activeConfigSource('provider')
         : inferredProvider
           ? 'baseUrl'
           : envInferredProvider
@@ -1004,12 +1008,12 @@ export function resolveCliConfig(
     provider,
     providerSource,
     apiKey: apiKeyEnv?.value || activeConfig.apiKey || '',
-    apiKeySource: apiKeyEnv?.source || (activeConfig.apiKey ? 'config' : 'missing'),
+    apiKeySource: apiKeyEnv?.source || (activeConfig.apiKey ? activeConfigSource('apiKey') : 'missing'),
     usingBundledDefault,
     model: overrides.model || modelEnv || activeConfig.model || preset.defaultModel,
-    modelSource: overrides.model ? 'cli' : modelEnv ? 'DMOSS_MODEL' : activeConfig.model ? 'config' : 'provider default',
+    modelSource: overrides.model ? 'cli' : modelEnv ? 'DMOSS_MODEL' : activeConfig.model ? activeConfigSource('model') : 'provider default',
     baseUrl: overrides.baseUrl || baseUrlEnv?.value || activeConfig.baseUrl || preset.defaultBaseUrl,
-    baseUrlSource: overrides.baseUrl ? 'cli' : baseUrlEnv?.source || (activeConfig.baseUrl ? 'config' : 'provider default'),
+    baseUrlSource: overrides.baseUrl ? 'cli' : baseUrlEnv?.source || (activeConfig.baseUrl ? activeConfigSource('baseUrl') : 'provider default'),
     workspace: overrides.workspace || workspaceEnv || activeConfig.workspace || process.cwd(),
     workspaceSource: overrides.workspace ? 'cli' : workspaceEnv ? 'DMOSS_WORKSPACE' : activeConfig.workspace ? 'config' : 'cwd',
     safetyMode,

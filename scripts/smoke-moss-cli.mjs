@@ -98,6 +98,39 @@ function assertInstalledLocalWorkspaceTarballs(tempRoot) {
   }
 }
 
+function cleanMossEnv(tempRoot) {
+  const env = {
+    ...process.env,
+    HOME: path.join(tempRoot, 'home'),
+    XDG_CONFIG_HOME: path.join(tempRoot, 'home', '.config'),
+    DMOSS_CONFIG_DIR: path.join(tempRoot, 'home', '.config', 'dmoss'),
+    DMOSS_RUNTIME_DIR: path.join(tempRoot, 'home', '.dmoss-runtime'),
+    DMOSS_NO_UPDATE_CHECK: '1',
+    DMOSS_NO_COLOR: '1',
+  };
+  for (const key of [
+    'DMOSS_API_KEY',
+    'DEEPSEEK_API_KEY',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'DASHSCOPE_API_KEY',
+    'ALIYUN_API_KEY',
+    'DMOSS_PROVIDER',
+    'DMOSS_MODEL',
+    'DMOSS_BASE_URL',
+    'OPENAI_BASE_URL',
+    'ANTHROPIC_BASE_URL',
+    'DASHSCOPE_BASE_URL',
+    'DMOSS_NO_BUNDLED_DEFAULT',
+    'DMOSS_BUNDLED_DEFAULT_FILE',
+    'DMOSS_ZERO_CONFIG_DEFAULT_FILE',
+    'DMOSS_ZERO_CONFIG_DEFAULT_JSON',
+  ]) {
+    delete env[key];
+  }
+  return env;
+}
+
 function runPtyStartup(binPath, tempRoot) {
   const python = process.platform === 'win32' ? null : (spawnSync('python3', ['--version'], { encoding: 'utf8' }).status === 0 ? 'python3' : null);
   if (!python) {
@@ -229,6 +262,23 @@ try {
   const configHelp = run(mossBin, ['config', '--help'], binRunOptions).stdout;
   assertMatch(configHelp, /moss config init/, 'moss config --help');
   assertMatch(configHelp, /Moss reads \.dmoss\/config\.json/, 'moss config --help');
+
+  log('checking installed zero-config source reporting');
+  const installedZeroConfig = path.join(tempRoot, 'node_modules', '@rdk-moss', 'agent', 'zero-config-default.json');
+  if (!fs.existsSync(installedZeroConfig)) {
+    throw new Error('installed @rdk-moss/agent package is missing zero-config-default.json');
+  }
+  const configShow = run(mossBin, ['config', 'show', '--json'], {
+    ...binRunOptions,
+    env: cleanMossEnv(tempRoot),
+  }).stdout;
+  const parsedConfig = JSON.parse(configShow);
+  if (!parsedConfig.apiKeyConfigured) throw new Error('installed zero-config default did not configure an API key');
+  if (parsedConfig.providerSource !== 'built-in') throw new Error(`expected providerSource built-in, got ${parsedConfig.providerSource}`);
+  if (parsedConfig.modelSource !== 'built-in') throw new Error(`expected modelSource built-in, got ${parsedConfig.modelSource}`);
+  if (parsedConfig.baseUrlSource !== 'built-in') throw new Error(`expected baseUrlSource built-in, got ${parsedConfig.baseUrlSource}`);
+  if (parsedConfig.apiKeySource !== 'built-in') throw new Error(`expected apiKeySource built-in, got ${parsedConfig.apiKeySource}`);
+  if (Object.hasOwn(parsedConfig, 'apiKey')) throw new Error('config show --json must not print apiKey');
 
   log('checking interactive TUI startup through a PTY');
   runPtyStartup(mossBin, tempRoot);

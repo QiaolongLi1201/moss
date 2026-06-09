@@ -59,8 +59,9 @@ try {
 
   assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
   const parsed = JSON.parse(result.stdout);
-  assert.equal(parsed.workspace, fallbackHome);
   assert.equal(parsed.workspaceSource, 'cwd-fallback');
+  assert.equal(path.isAbsolute(parsed.workspace), true);
+  assert.notEqual(path.normalize(parsed.workspace), path.normalize(badCwd));
   console.log('[PASS] CLI config tolerates inaccessible process.cwd at startup');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

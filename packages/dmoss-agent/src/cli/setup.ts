@@ -148,6 +148,8 @@ function serializeResolvedConfig(resolved: ReturnType<typeof resolveCliConfig>):
     modelSource: resolved.modelSource,
     baseUrl: withoutSecret(resolved.baseUrl),
     baseUrlSource: resolved.baseUrlSource,
+    imageInput: resolved.imageInput,
+    imageInputSource: resolved.imageInputSource,
     apiKeyConfigured: Boolean(resolved.apiKey),
     apiKeySource: resolved.apiKeySource,
     workspace: resolved.workspace,
@@ -276,6 +278,7 @@ export function renderAuthStatus(
     `  profile: ${resolved.profile} (${resolved.profileSource})`,
     `  model: ${resolved.model} (${resolved.modelSource})`,
     `  baseUrl: ${withoutSecret(resolved.baseUrl)} (${resolved.baseUrlSource})`,
+    `  imageInput: ${resolved.imageInput ? 'enabled' : 'disabled'} (${resolved.imageInputSource})`,
     `  apiKey: ${resolved.apiKey ? `configured via ${resolved.apiKeySource}` : 'missing'}`,
     `  safetyMode: ${resolved.safetyMode} (${resolved.safetyModeSource})`,
     `  approvalPolicy: ${resolved.approvalPolicy} (${resolved.approvalPolicySource})`,
@@ -313,13 +316,13 @@ export function renderConfigUsage(): string {
     '  moss config show',
     '  moss config show --json',
     '  moss config validate [--strict] [--json]',
-    '  moss config set <profile|provider|model|baseUrl|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|guardrails.*|mcp.enabled|mcp.configPath|agent.*> <value>',
+    '  moss config set <profile|provider|model|baseUrl|imageInput|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|guardrails.*|mcp.enabled|mcp.configPath|agent.*> <value>',
     '  moss config set --project <key> <value>',
     '  moss config unset <key>',
     '  moss config unset --project <key>',
     '',
     'Config file:',
-    '  Moss reads .dmoss/config.json from the current workspace as project defaults',
+    '  Moss reads .moss/config.json from the current workspace as project defaults',
     '  moss --config-file /path/to/config.json config show',
     '  set DMOSS_CONFIG_FILE=/path/to/config.json to use an explicit config file',
     '',
@@ -327,12 +330,16 @@ export function renderConfigUsage(): string {
     '  moss config init --project',
     '  moss config validate --strict',
     '  moss config set profile autonomous',
+    '  moss config set provider openai-compatible',
+    '  moss config set model <your-model>',
+    '  moss config set baseUrl https://your-gateway.example/v1',
+    '  moss config set imageInput true',
     '  moss config set --project safetyMode workspace-write',
     '  moss config set approvalPolicy prompt',
     '  moss config set trustedTools exec,filesystem__*',
     '  moss config set deniedTools device_*,write_file',
     '  moss config set mcp.enabled true',
-    '  moss config set mcp.configPath .dmoss/mcp.json',
+    '  moss config set mcp.configPath .moss/mcp.json',
     '  moss config set guardrails.input.redactPatterns SECRET=[^\\\\s]+',
     '  moss config set agent.maxTurns 96',
     '  moss config set agent.contextTokens 200000',
@@ -412,6 +419,7 @@ export async function runSetupWizard(): Promise<void> {
   const model = modelAnswer || defaultModel;
   const baseUrlAnswer = rl ? await questionWith(rl, `Base URL [${defaultBaseUrl}]: `) : nextPipedAnswer();
   const baseUrl = sanitizeBaseUrl(baseUrlAnswer || defaultBaseUrl);
+  const imageInput = current.imageInput ?? preset.defaultImageInput;
   let apiKey: string;
   if (input.isTTY) {
     rl?.close();
@@ -431,6 +439,7 @@ export async function runSetupWizard(): Promise<void> {
     provider,
     model,
     baseUrl,
+    imageInput,
     apiKey,
     promptCache: current.promptCache ?? { enabled: true, debug: false },
   };
@@ -440,6 +449,7 @@ export async function runSetupWizard(): Promise<void> {
   print(`Provider: ${preset.displayName}`);
   print(`Model: ${model}`);
   print(`Base URL: ${withoutSecret(baseUrl)}`);
+  print(`Image input: ${imageInput ? 'enabled' : 'disabled'}${imageInput ? '' : ' (enable with `moss config set imageInput true` for a vision-capable gateway)'}`);
   print('');
   print('Try `dmoss "explain this project and how to run it"` or run `dmoss` for interactive mode.');
 }
@@ -472,7 +482,7 @@ function resolveConfigEditTarget(args: string[], startDir: string): { args: stri
   const root = path.resolve(startDir);
   return {
     args: args.slice(1),
-    configPath: resolveProjectConfigPath(root) ?? path.join(root, '.dmoss', 'config.json'),
+    configPath: resolveProjectConfigPath(root) ?? path.join(root, '.moss', 'config.json'),
     scope: 'project',
   };
 }
@@ -496,7 +506,7 @@ function resolveConfigInitTarget(args: string[], startDir: string): { configPath
     scope,
     force,
     configPath: scope === 'project'
-      ? (resolveProjectConfigPath(root) ?? path.join(root, '.dmoss', 'config.json'))
+      ? (resolveProjectConfigPath(root) ?? path.join(root, '.moss', 'config.json'))
       : resolveConfigPath(),
   };
 }
@@ -508,6 +518,7 @@ function buildUserConfigTemplate(): ConfigFile {
     provider: resolved.provider,
     model: resolved.model,
     baseUrl: resolved.baseUrl,
+    imageInput: resolved.imageInput,
     workspace: resolved.workspaceSource === 'cwd' ? undefined : resolved.workspace,
     safetyMode: resolved.safetyMode,
     approvalPolicy: resolved.approvalPolicy,
@@ -526,6 +537,15 @@ function buildUserConfigTemplate(): ConfigFile {
       contextTokens: resolved.contextTokens,
       compaction: { ...resolved.compactionSettings },
     },
+    _examples: {
+      customModel: {
+        provider: 'openai-compatible',
+        baseUrl: 'https://your-gateway.example/v1',
+        model: 'your-model-name',
+        apiKey: 'paste-your-api-key',
+        imageInput: false,
+      },
+    },
   });
 }
 
@@ -543,7 +563,7 @@ function buildProjectConfigTemplate(): ConfigFile {
     },
     mcp: {
       enabled: resolved.mcpEnabled,
-      configPath: '.dmoss/mcp.json',
+      configPath: '.moss/mcp.json',
     },
     agent: {
       maxTurns: resolved.maxAgentTurns,
@@ -554,7 +574,7 @@ function buildProjectConfigTemplate(): ConfigFile {
 }
 
 function supportedConfigKeys(): string {
-  return 'Supported keys: profile, provider, model, baseUrl, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, guardrails.input.blockPatterns, guardrails.input.redactPatterns, guardrails.output.blockPatterns, guardrails.output.redactPatterns, mcp.enabled, mcp.configPath, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
+  return 'Supported keys: profile, provider, model, baseUrl, imageInput, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, guardrails.input.blockPatterns, guardrails.input.redactPatterns, guardrails.output.blockPatterns, guardrails.output.redactPatterns, mcp.enabled, mcp.configPath, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
 }
 
 function removeEmptyNestedConfig(config: ConfigFile): ConfigFile {
@@ -624,6 +644,15 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
   else if (key === 'provider') next.provider = normalizeProvider(value);
   else if (key === 'model') next.model = value;
   else if (key === 'baseUrl') next.baseUrl = sanitizeBaseUrl(value);
+  else if (key === 'imageInput') {
+    const enabled = parseConfigBoolean(value);
+    if (enabled === null) {
+      print('Supported imageInput values: true, false');
+      process.exitCode = 1;
+      return;
+    }
+    next.imageInput = enabled;
+  }
   else if (key === 'workspace') next.workspace = path.resolve(value);
   else if (key === 'safetyMode') {
     const mode = normalizeSafetyModeConfig(value);
@@ -747,6 +776,7 @@ export function runConfigUnset(args: string[], startDir = process.cwd()): void {
   else if (key === 'provider') delete next.provider;
   else if (key === 'model') delete next.model;
   else if (key === 'baseUrl') delete next.baseUrl;
+  else if (key === 'imageInput') delete next.imageInput;
   else if (key === 'workspace') delete next.workspace;
   else if (key === 'safetyMode') delete next.safetyMode;
   else if (key === 'approvalPolicy') delete next.approvalPolicy;

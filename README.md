@@ -20,6 +20,8 @@ Moss gives you the familiar terminal-agent loop from Claude Code and Codex, but 
 - **Use it immediately** - the built-in D-Robotics gateway works without a model API key or forced community login.
 - **Work with robots and edge devices** - `/connect <ip>` adds RDK board SSH, diagnostics, and ROS2 tools inside the same session.
 - **Embed it in your own product** - Moss is a runtime with public contracts, not only a closed standalone app.
+- **Stay honest about evidence** - Moss is prompted to separate verified facts, reasonable inferences, and unverified assumptions, and to say when CodeGraph, device access, or other evidence is unavailable.
+- **Grow reusable skills** - Moss can install workspace skills into `.moss/skills/<name>/SKILL.md` through the approved `install_skill` tool, then rediscover them in later runs.
 - **Keep the first screen usable** - focused slash commands, image/file attachment, goals, compaction, sessions, MCP, skills, and sub-agents stay available without turning `/help` into a wall.
 
 If that direction is useful, star the repo to follow the open runtime, fork it to build your own host, and open issues for model providers, board workflows, or host-adapter gaps you want Moss to support.
@@ -103,6 +105,26 @@ npm i -g @rdk-moss/agent@latest
    ```
 
 Moss asks before file writes, commands, and external actions unless you explicitly choose a more autonomous approval profile.
+
+## Honest Runtime Capabilities
+
+Moss now tells the model what is actually available in the current run before it starts working:
+
+- The system prompt includes the registered tool names for this run, so Moss should not invent tool names or claim unavailable capabilities.
+- CodeGraph guidance is conditional: if `codegraph_*` MCP tools are registered, Moss can prefer structural navigation; otherwise it must say CodeGraph is unavailable and fall back to listed tools such as `search_code`, `search_files`, `list_directory`, and `read_file`.
+- The behavior contract explicitly asks Moss to be 实事求是: separate verified facts from inference and assumptions, report missing evidence, and avoid filling unknown gaps just to sound confident.
+
+## Skills
+
+Moss discovers `SKILL.md` files under `.moss/skills/`, `.moss/agent/skills/`, legacy `skills/` and `agent/skills/`, and configured extra skill directories. Built-in workflow skills cover methodical building, debugging, test-driven changes, migration safety, and CodeGraph navigation when available.
+
+Moss can also install a new workspace skill itself through the `install_skill` tool. The tool writes a frontmatter-backed `SKILL.md` under `.moss/skills/<name>/SKILL.md`, is treated as a workspace write, and therefore goes through the normal approval policy.
+
+Example prompt:
+
+```text
+Turn the workflow we just used into a reusable Moss skill. Install it as a low-risk skill and include the trigger phrases we used.
+```
 
 ## Use Your Own Model
 

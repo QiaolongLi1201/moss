@@ -1,10 +1,10 @@
 /**
- * Skill promoter — promotes a validated candidate from `skill-candidates/`
- * to a formal skill in `<workspace>/skills/`, then removes the candidate.
+ * Skill promoter — promotes a validated candidate from `.moss/skills/candidates/`
+ * to a formal skill in `<workspace>/.moss/skills/`, then removes the candidate.
  *
  * P0d: the promote path is the only gate through which conversation-learned
  * skills enter the SkillRegistry and become routable. Unpromoted candidates
- * stay in `skill-candidates/` and are excluded from skill matching by
+ * stay in `.moss/skills/candidates/` and are excluded from skill matching by
  * `run-setup.ts` filtering.
  */
 
@@ -53,10 +53,10 @@ export interface PromoteOptions {
  * Read a candidate and promote it into the formal skills directory.
  *
  * Steps:
- * 1. Read candidate.json from `<workspaceDir>/skill-candidates/<candidateId>/`
+ * 1. Read candidate.json from `<workspaceDir>/.moss/skills/candidates/<candidateId>/`
  * 2. Read SKILL.draft.md (or generate one from evidence)
  * 3. Validate the SKILL.md content
- * 4. Write to `<workspaceDir>/skills/<skillId>/SKILL.md`
+ * 4. Write to `<workspaceDir>/.moss/skills/<skillId>/SKILL.md`
  * 5. Write `.moss-skill.json` with `status: "promoted"` + quality metadata
  * 6. Remove the candidate
  */
@@ -108,7 +108,7 @@ export async function promoteSkillCandidate(
   }
 
   const skillId = sanitizeSkillId(candidateId);
-  const skillsDir = path.join(workspaceDir, "skills");
+  const skillsDir = path.join(workspaceDir, ".moss", "skills");
   const skillDir = path.join(skillsDir, skillId);
 
   await fs.promises.mkdir(skillDir, { recursive: true });

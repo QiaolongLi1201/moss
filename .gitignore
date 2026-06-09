@@ -11,6 +11,14 @@ tmp/
 .npmrc
 .codegraph/
 .codex-claude-code/
+.moss/sessions/
+.moss/memory/
+.moss/checkpoints/
+.moss/attachments/
+.moss/subagent/
+.moss/skills/candidates/
+.moss/browser-artifacts/
+.moss/llm-usage.jsonl
 # Zero-config gateway default: shipped only in the npm tarball, never committed.
 # (the tracked *.example.json documents the shape)
 packages/dmoss-agent/zero-config-default.json

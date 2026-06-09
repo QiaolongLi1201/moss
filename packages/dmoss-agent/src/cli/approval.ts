@@ -1,7 +1,9 @@
+import * as path from 'node:path';
 import * as readline from 'node:readline';
 import micromatch from 'micromatch';
 import type { AgentHooks, ToolApprovalRequest } from '../core/agent/agent-hooks.js';
 import type { Tool, ToolSideEffectClass } from '../core/tools/tool-types.js';
+import { isCommandDangerous } from '../safety/channel-safety.js';
 import { sanitizeSecrets } from '../safety/secret-sanitizer.js';
 import { normalizeSafetyModeConfig, type ConfigApprovalPolicy } from './config.js';
 
@@ -25,6 +27,7 @@ export interface CliToolApprovalOptions {
   approvalPolicy?: ConfigApprovalPolicy;
   trustedTools?: readonly string[];
   deniedTools?: readonly string[];
+  workspaceDir?: string;
 }
 
 export interface CliToolApprovalPreview {
@@ -70,6 +73,151 @@ function inferSideEffectClass(tool: Tool): ToolSideEffectClass {
   return 'readonly';
 }
 
+function tokenizeReadonlyShellCommand(command: string): string[] | undefined {
+  const trimmed = command.trim();
+  if (!trimmed) return undefined;
+
+  const tokens: string[] = [];
+  let token = '';
+  let quote: '"' | "'" | null = null;
+  let escaping = false;
+
+  for (const char of trimmed) {
+    if (escaping) {
+      token += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaping = true;
+      continue;
+    }
+
+    if (char === '$') return undefined;
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        token += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (char === ';' || char === '&' || char === '|' || char === '<' || char === '>' || char === '`') {
+      return undefined;
+    }
+
+    if (/\s/.test(char)) {
+      if (token) {
+        tokens.push(token);
+        token = '';
+      }
+      continue;
+    }
+
+    token += char;
+  }
+
+  if (escaping || quote) return undefined;
+  if (token) tokens.push(token);
+  return tokens.length > 0 ? tokens : undefined;
+}
+
+function hasUnsafePathArgument(tokens: readonly string[]): boolean {
+  return tokens.some((token) => {
+    if (!token || token === '--') return false;
+    const normalized = token.replace(/\\/g, '/');
+    if (/^[A-Za-z]:\//.test(normalized)) return true;
+    if (normalized.startsWith('/') || normalized.startsWith('~')) return true;
+    if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) return true;
+    if (token.startsWith('-')) {
+      return /=(?:\/|~|[A-Za-z]:[\\/])/.test(token) || token.includes('../');
+    }
+    return false;
+  });
+}
+
+function isReadonlyTail(tokens: readonly string[]): boolean {
+  return !tokens.some((token) => token === '-f' || token === '--follow' || token.startsWith('--follow='));
+}
+
+function isReadonlySed(tokens: readonly string[]): boolean {
+  if (tokens.some((token) => token === '-i' || token.startsWith('-i') || token === '--in-place' || token.startsWith('--in-place='))) return false;
+  return tokens.some((token) => token === '-n' || token === '--quiet' || token === '--silent' || (/^-[A-Za-z]*n[A-Za-z]*$/.test(token)));
+}
+
+function isReadonlyFind(tokens: readonly string[]): boolean {
+  const mutatingPredicates = new Set(['-delete', '-exec', '-execdir', '-ok', '-okdir']);
+  return tokens.every((token) => !mutatingPredicates.has(token));
+}
+
+function isReadonlyGit(tokens: readonly string[]): boolean {
+  const subcommand = tokens[1];
+  if (!subcommand) return false;
+  if (subcommand === 'branch') {
+    const mutatingOptions = new Set(['-d', '-D', '-m', '-M', '-c', '-C', '--delete', '--move', '--copy', '--set-upstream-to', '--unset-upstream']);
+    return tokens.slice(2).every((token) => token.startsWith('-') && !mutatingOptions.has(token));
+  }
+  if (subcommand === 'remote') {
+    return tokens.length === 2 || (tokens.length === 3 && tokens[2] === '-v');
+  }
+  return new Set([
+    'status',
+    'diff',
+    'log',
+    'show',
+    'rev-parse',
+    'ls-files',
+    'grep',
+    'blame',
+    'describe',
+  ]).has(subcommand);
+}
+
+function isReadonlyExecCommand(command: unknown): boolean {
+  if (typeof command !== 'string') return false;
+  if (isCommandDangerous(command).blocked) return false;
+  const tokens = tokenizeReadonlyShellCommand(command);
+  if (!tokens) return false;
+  const commandName = tokens[0];
+  if (!commandName || commandName.includes('/') || commandName.includes('\\')) return false;
+  if (hasUnsafePathArgument(tokens.slice(1))) return false;
+
+  if (commandName === 'git') return isReadonlyGit(tokens);
+  if (commandName === 'tail') return isReadonlyTail(tokens);
+  if (commandName === 'sed') return isReadonlySed(tokens);
+  if (commandName === 'find') return isReadonlyFind(tokens);
+
+  return new Set([
+    'pwd',
+    'ls',
+    'tree',
+    'cat',
+    'head',
+    'wc',
+    'stat',
+    'file',
+    'du',
+    'rg',
+    'grep',
+  ]).has(commandName);
+}
+
+function inferRequestSideEffectClass(request: ToolApprovalRequest): ToolSideEffectClass {
+  const sideEffect = inferSideEffectClass(request.tool);
+  if (request.tool.name === 'exec' && sideEffect === 'local_write' && isReadonlyExecCommand(request.input.command)) {
+    return 'readonly';
+  }
+  return sideEffect;
+}
+
 function isAllowedInMode(mode: CliSafetyMode, sideEffect: ToolSideEffectClass): boolean {
   if (sideEffect === 'readonly') return true;
   if (mode === 'read-only') return false;
@@ -82,8 +230,18 @@ function isAllowedInMode(mode: CliSafetyMode, sideEffect: ToolSideEffectClass): 
   return true;
 }
 
-function needsApproval(tool: Tool, sideEffect: ToolSideEffectClass): boolean {
-  return sideEffect !== 'readonly' || tool.metadata?.planMode === 'requires_user_confirmation';
+function needsApproval(request: ToolApprovalRequest, sideEffect: ToolSideEffectClass): boolean {
+  if (request.tool.metadata?.requiresApproval !== undefined) return request.tool.metadata.requiresApproval;
+  if (request.tool.name === 'exec' && sideEffect === 'readonly') return false;
+  return sideEffect !== 'readonly' || request.tool.metadata?.planMode === 'requires_user_confirmation';
+}
+
+function workspaceTrustRoot(workspaceDir: string | undefined): string {
+  return path.resolve(workspaceDir || process.cwd());
+}
+
+function isWorkspaceTrustEligible(sideEffect: ToolSideEffectClass): boolean {
+  return sideEffect === 'local_write';
 }
 
 function previewInput(input: Record<string, unknown>): string {
@@ -196,6 +354,11 @@ function approvalScopeSummary(preview: CliToolApprovalPreview, input: Record<str
   }
 }
 
+function approvalAlwaysSummary(preview: CliToolApprovalPreview): string {
+  if (isWorkspaceTrustEligible(preview.sideEffect)) return 'trust this workspace for the session';
+  return 'allow this scope for the session';
+}
+
 export function renderCliApprovalPrompt(
   preview: CliToolApprovalPreview,
   input: Record<string, unknown>,
@@ -206,7 +369,7 @@ export function renderCliApprovalPrompt(
     `Moss wants to ${approvalActionSummary(preview, input)}`,
     target ? `  ${target}` : '',
     `Scope: ${approvalScopeSummary(preview, input)}`,
-    'Allow once, allow this tool for the session, or deny. [y/a/N] ',
+    `Allow once, ${approvalAlwaysSummary(preview)}, or deny. [y/a/N] `,
   ].filter((line) => line !== '');
   return lines.join('\n');
 }
@@ -236,14 +399,14 @@ export function describeCliToolApproval(
   env: NodeJS.ProcessEnv = process.env,
   options: CliToolApprovalOptions = {},
 ): CliToolApprovalPreview {
-  const sideEffect = inferSideEffectClass(request.tool);
+  const sideEffect = inferRequestSideEffectClass(request);
   const deniedPattern = findConfiguredToolPattern(request.tool.name, options.deniedTools ?? []);
   const trustedPattern = findConfiguredToolPattern(request.tool.name, options.trustedTools ?? []);
   const denied = deniedPattern !== undefined;
   const trusted = trustedPattern !== undefined;
   const autoApprovalConfigured = hasAutoApproval(env, options);
   const allowedBySafety = isAllowedInMode(mode, sideEffect);
-  const requiresApproval = needsApproval(request.tool, sideEffect);
+  const requiresApproval = needsApproval(request, sideEffect);
   const autoApproved = !denied && allowedBySafety && requiresApproval && autoApprovalConfigured;
   let decisionContext = 'readonly tool; approval is not required';
 
@@ -293,6 +456,8 @@ export function createCliToolApprovalHook(
   options: CliToolApprovalOptions = {},
 ): NonNullable<AgentHooks['onBeforeToolExec']> {
   const sessionTrustedTools = new Set<string>();
+  const sessionTrustedWorkspaces = new Set<string>();
+  const workspaceRoot = workspaceTrustRoot(options.workspaceDir);
 
   return async (request: ToolApprovalRequest) => {
     const { tool } = request;
@@ -300,6 +465,7 @@ export function createCliToolApprovalHook(
       ...options,
       trustedTools: [...(options.trustedTools ?? []), ...sessionTrustedTools],
     });
+    const trustedWorkspace = isWorkspaceTrustEligible(preview.sideEffect) && sessionTrustedWorkspaces.has(workspaceRoot);
     if (preview.denied) {
       return {
         approved: false,
@@ -325,6 +491,10 @@ export function createCliToolApprovalHook(
       return { approved: true };
     }
 
+    if (trustedWorkspace) {
+      return { approved: true };
+    }
+
     if (preview.autoApproved) {
       return { approved: true };
     }
@@ -346,7 +516,11 @@ export function createCliToolApprovalHook(
     const prompt = renderCliApprovalPrompt(preview, request.input);
     const answer = (await (interactiveAsker ?? defaultAskUser)(prompt)).trim().toLowerCase();
     if (answer === 'a' || answer === 'always') {
-      sessionTrustedTools.add(tool.name);
+      if (isWorkspaceTrustEligible(preview.sideEffect)) {
+        sessionTrustedWorkspaces.add(workspaceRoot);
+      } else {
+        sessionTrustedTools.add(tool.name);
+      }
       return { approved: true };
     }
     if (answer === 'y' || answer === 'yes') {

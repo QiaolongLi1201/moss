@@ -255,4 +255,36 @@ total++;
   passed++;
 }
 
+// Test 12: progress updates are observable through status/list snapshots.
+total++;
+{
+  const registry = createInMemoryMossAsyncTaskRegistry();
+  registry.start(startRequest('task-progress'), async (_request, signal) => {
+    registry.update('task-progress', {
+      progress: {
+        phase: 'tool',
+        message: 'reading docs',
+        currentTurn: 2,
+        maxTurns: 5,
+        toolCalls: 3,
+        lastTool: 'web_fetch',
+      },
+    });
+    await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+    return { success: false, summary: 'cancelled' };
+  });
+  await tick();
+  const snapshot = registry.status('task-progress');
+  assert.equal(snapshot?.progress?.phase, 'tool');
+  assert.equal(snapshot?.progress?.message, 'reading docs');
+  assert.equal(snapshot?.progress?.currentTurn, 2);
+  assert.equal(snapshot?.progress?.toolCalls, 3);
+  assert.equal(snapshot?.progress?.lastTool, 'web_fetch');
+  assert.equal(registry.list()[0]?.progress?.phase, 'tool');
+  registry.stop('task-progress');
+  await registry.wait('task-progress');
+  console.log('  [PASS] progress updates are observable in snapshots');
+  passed++;
+}
+
 console.log(`\n[pass] async-task-registry: ${passed}/${total}`);

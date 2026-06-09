@@ -36,6 +36,17 @@ const logger = getRootLogger();
 const TRANSIENT_RETRY_TOOLS = new Set(['read_file', 'search_code', 'search_files']);
 /** Max additional attempts after the initial failure (3 total including initial call). */
 const MAX_RETRY_ATTEMPTS = 2;
+const MAX_UNKNOWN_TOOL_SUGGESTIONS = 40;
+
+function formatAvailableToolNames(toolsForRun: Tool[]): string {
+  const toolNames = [...new Set(toolsForRun.map((tool) => tool.name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  if (toolNames.length === 0) return '(none registered)';
+  const visible = toolNames.slice(0, MAX_UNKNOWN_TOOL_SUGGESTIONS);
+  const suffix = toolNames.length > visible.length
+    ? ` ... (${toolNames.length - visible.length} more)`
+    : '';
+  return `${visible.join(', ')}${suffix}`;
+}
 
 function resolveMaxMissedHeartbeats(
   toolTimeoutMs: number,
@@ -149,7 +160,10 @@ export async function executeOneToolCall(
   // ── 1. Resolve tool ─────────────────────────────────────────
   const tool = deps.toolsForRun.find((t) => t.name === call.name);
   if (!tool) {
-    return { kind: 'unknown-tool', text: `Unknown tool: ${call.name}` };
+    return {
+      kind: 'unknown-tool',
+      text: `Unknown tool: ${call.name}. Available tools: ${formatAvailableToolNames(deps.toolsForRun)}. Use only registered tool names.`,
+    };
   }
 
   // ── 2. Schema validate ──────────────────────────────────────

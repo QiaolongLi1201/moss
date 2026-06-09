@@ -51,7 +51,7 @@ const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage' 
   communityAuth?: DmossCommunityAuthRuntime;
 } = {
   workspace: WORKSPACE,
-  runtimeDir: path.join(WORKSPACE, '.dmoss-runtime'),
+  runtimeDir: path.join(WORKSPACE, '.moss'),
   configDir: resolveConfigDir(),
   baseUrl: BASE_URL,
   execBackend: process.env.DMOSS_EXEC_BACKEND || 'local',
@@ -183,7 +183,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
     `${label('workspace')} ${compactPath(rt.workspace)}`,
     `${label('login')} ${loginState}`,
     `${label('board')} ${deviceState}`,
-    `${ui.dim('next')} /help or ask Moss directly`,
+    `${ui.dim('next')} /quickstart, /model, or moss setup for your own model`,
   ].join('\n');
 }
 
@@ -214,7 +214,8 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
       : auth.apiKey
         ? '      Change it anytime: run `moss setup` (interactive), or `/model` to choose a model for this session.'
         : '      Configure it: run `moss setup` — choose a provider, choose a model, and paste your API key.',
-    '      Or set env vars: DMOSS_PROVIDER · DMOSS_MODEL · DMOSS_API_KEY (or DEEPSEEK_API_KEY / OPENAI_API_KEY / DASHSCOPE_API_KEY).',
+    '      Or set env vars: DMOSS_PROVIDER · DMOSS_MODEL · DMOSS_API_KEY · DMOSS_BASE_URL (provider keys also work).',
+    '      Image input: OpenAI/Anthropic default on; OpenAI-compatible/DeepSeek/Qwen default off. Set DMOSS_IMAGE_INPUT=true for vision-capable gateways.',
     `      Settings are saved to ${compactPath(auth.configPath)} — inspect them with /config.`,
     '',
     `  ${label('2/3 Workspace')} ${compactPath(rt.workspace)} · safety ${rt.safetyMode}`,
@@ -239,7 +240,7 @@ export function renderCliStatus(
 ): string {
   const rt = runtimeWithDefaults(runtime);
   const memoryCount = countJsonIndex(path.join(rt.runtimeDir, 'memory', 'index.json'));
-  const skillCount = countMarkdownFiles(path.join(rt.workspace, 'skills', 'learned'));
+  const skillCount = countMarkdownFiles(path.join(rt.workspace, '.moss', 'skills', 'learned'));
   const sessionDir = path.join(rt.runtimeDir, 'sessions');
   const detailMode = resolveCliDetailMode();
   const toolGroups = groupTools(agent.tools.getAll()).filter((g) => g.enabled);
@@ -255,6 +256,7 @@ export function renderCliStatus(
       `  ${label('tools')} ${agent.tools.size} (${toolGroups.map((g) => g.title).join(', ') || 'none'})`,
       `  ${label('memory')} ${memoryCount} entries`,
       `  ${label('skills')} ${skillCount}`,
+      `  ${label('setup')} moss setup · /model · /quickstart`,
       '',
       '  Details: /status --verbose',
     ].join('\n');
@@ -268,6 +270,7 @@ export function renderCliStatus(
     `  ${label('community')} ${community ? formatCommunityAuthStatus(community) : 'unknown'}`,
     `  ${label('profile')} ${auth.profile ?? 'balanced'} (${auth.profileSource ?? 'default'})`,
     `  ${label('api key')} ${auth.usingBundledDefault ? 'built-in model (hidden)' : auth.apiKey ? `configured via ${auth.apiKeySource}` : 'missing'}`,
+    `  ${label('image input')} ${auth.imageInput ? 'enabled' : 'disabled'} (${auth.imageInputSource})`,
     `  ${label('workspace')} ${rt.workspace}`,
     `  ${label('config')} ${rt.configDir}`,
     `  ${label('sessions')} ${sessionDir}`,
@@ -307,7 +310,7 @@ export function renderCliTools(agent: DmossAgent): string {
     '  Useful controls:',
     '    /quickstart        configure model, workspace, board, and first tasks',
     '    /status            view model, workspace, device, and capabilities',
-    '    /attach <path>     attach an image or text file to the next prompt',
+    '    Ctrl+V / paste path attach copied images, Finder files, or file paths',
     '    /compact           compress older conversation history into a summary',
     '    /detail verbose    show redacted tool inputs and results',
   ].join('\n');
@@ -324,6 +327,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
   const deniedTools = configuredDeniedTools.length ? configuredDeniedTools.join(', ') : 'none';
   const cache = auth.promptCacheEnabled === false ? 'disabled' : 'enabled';
   const cacheDebug = auth.promptCacheDebug === true ? 'enabled' : 'disabled';
+  const imageInput = auth.imageInput === true ? 'enabled' : 'disabled';
   const mcp = auth.mcpEnabled === true ? 'enabled' : 'disabled';
   const inputGuardrails = auth.guardrails.input.blockPatterns.length + auth.guardrails.input.redactPatterns.length;
   const outputGuardrails = auth.guardrails.output.blockPatterns.length + auth.guardrails.output.redactPatterns.length;
@@ -338,6 +342,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     `  ${label('denied tools')} ${deniedTools} (${auth.deniedToolsSource ?? 'default'})`,
     `  ${label('prompt cache')} ${cache} (${auth.promptCacheSource ?? 'default'})`,
     `  ${label('prompt cache debug')} ${cacheDebug} (${auth.promptCacheDebugSource ?? 'default'})`,
+    `  ${label('image input')} ${imageInput} (${auth.imageInputSource ?? 'provider default'})`,
     `  ${label('mcp')} ${mcp} (${auth.mcpEnabledSource ?? 'default'})`,
     `  ${label('mcp config')} ${auth.mcpConfigPath} (${auth.mcpConfigPathSource ?? 'default'})`,
     `  ${label('guardrails')} input ${inputGuardrails}, output ${outputGuardrails} (${auth.guardrailsSource ?? 'default'})`,
@@ -363,6 +368,11 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '',
     '  Persist changes:',
     '    moss config init --project',
+    '    moss setup',
+    '    moss config set provider deepseek|qwen|openai|anthropic|openai-compatible',
+    '    moss config set model <your-model>',
+    '    moss config set baseUrl https://your-gateway.example/v1',
+    '    moss config set imageInput true|false',
     '    moss config set profile cautious|balanced|autonomous',
     '    moss config set --project safetyMode workspace-write',
     '    moss config set workspace /path/to/workspace',
@@ -373,7 +383,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    moss config set promptCache true|false',
     '    moss config set promptCacheDebug true|false',
     '    moss config set mcp.enabled true|false',
-    '    moss config set mcp.configPath .dmoss/mcp.json',
+    '    moss config set mcp.configPath .moss/mcp.json',
     '    edit guardrails.input/output blockPatterns or redactPatterns in config JSON',
     '    moss config set agent.maxTurns 96',
     '    moss config set agent.contextTokens 200000',
@@ -382,7 +392,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    moss config unset approvalPolicy',
     '',
     '  Environment overrides:',
-    '    DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG, DMOSS_MCP_ENABLED, DMOSS_MCP_CONFIG, DMOSS_MAX_AGENT_TURNS, DMOSS_CONTEXT_TOKENS',
+    '    DMOSS_PROVIDER, DMOSS_MODEL, DMOSS_API_KEY, DMOSS_BASE_URL, DMOSS_IMAGE_INPUT, DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG, DMOSS_MCP_ENABLED, DMOSS_MCP_CONFIG, DMOSS_MAX_AGENT_TURNS, DMOSS_CONTEXT_TOKENS',
   ].join('\n');
 }
 
@@ -418,7 +428,7 @@ export function renderCliInteractiveHelp(): string {
     ...formatInteractiveCommandSections({ indent: '    ', commandWidth: 24 }),
     '',
     '  Shortcuts',
-    '    Ctrl+V                   attach clipboard image in the full TUI on macOS',
+    '    Ctrl+V                   attach a copied image, Finder file, or file path in the full TUI',
     '    Esc                      stop the active run in the full TUI',
     '    Ctrl+O                   expand/collapse tool calls in the full TUI',
     '    Ctrl+C                   exit',

@@ -20,3 +20,5 @@ export {
 } from './apply-patch-core.js';
 export { runProcess, ProcessError } from './run-process.js';
 export type { RunProcessOptions, RunProcessResult } from './run-process.js';
+export { getMossWorkspacePaths, migrateLegacyWorkspacePaths } from './workspace-paths.js';
+export type { MossWorkspacePaths, WorkspacePathMigrationResult } from './workspace-paths.js';

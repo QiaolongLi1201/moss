@@ -5,6 +5,21 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULT_MODEL } from '@rdk-moss/core';
 import { DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from '../context/compaction.js';
 import { resolveDmossMaxAgentTurns } from '../utils/max-agent-turns.js';
+import { getMossWorkspacePaths } from '../utils/workspace-paths.js';
+import {
+  resolvePathFromSafeCwd,
+  resolveSafeCwd,
+  safeProcessCwd,
+  type SafeCwdResult,
+  type SafeCwdSource,
+} from '../utils/safe-cwd.js';
+
+export {
+  resolveSafeCwd,
+  safeProcessCwd,
+  type SafeCwdResult,
+  type SafeCwdSource,
+};
 
 export type CliProviderPreset = 'deepseek' | 'qwen' | 'openai' | 'anthropic' | 'openai-compatible';
 
@@ -14,6 +29,7 @@ export interface ProviderPreset {
   defaultModel: string;
   defaultBaseUrl: string;
   keyEnvVars: string[];
+  defaultImageInput: boolean;
 }
 
 export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
@@ -23,6 +39,7 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     defaultModel: 'deepseek-v4-pro',
     defaultBaseUrl: 'https://api.deepseek.com',
     keyEnvVars: ['DEEPSEEK_API_KEY'],
+    defaultImageInput: false,
   },
   qwen: {
     id: 'qwen',
@@ -30,6 +47,7 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     defaultModel: 'qwen3.7-max',
     defaultBaseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
     keyEnvVars: ['DASHSCOPE_API_KEY', 'ALIYUN_API_KEY'],
+    defaultImageInput: false,
   },
   openai: {
     id: 'openai',
@@ -37,6 +55,7 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     defaultModel: 'gpt-4o-mini',
     defaultBaseUrl: 'https://api.openai.com',
     keyEnvVars: ['OPENAI_API_KEY'],
+    defaultImageInput: true,
   },
   anthropic: {
     id: 'anthropic',
@@ -44,6 +63,7 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     defaultModel: DEFAULT_MODEL,
     defaultBaseUrl: 'https://api.anthropic.com',
     keyEnvVars: ['ANTHROPIC_API_KEY'],
+    defaultImageInput: true,
   },
   'openai-compatible': {
     id: 'openai-compatible',
@@ -51,6 +71,7 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     defaultModel: 'gpt-4o-mini',
     defaultBaseUrl: 'https://api.openai.com',
     keyEnvVars: ['OPENAI_API_KEY'],
+    defaultImageInput: false,
   },
 };
 
@@ -71,13 +92,13 @@ function readArgvValue(argv: string[], index: number): string | null {
   return next && !next.startsWith('-') ? next : null;
 }
 
-function resolveCliConfigFileArg(argv: string[] = process.argv.slice(2)): string | null {
+function resolveCliConfigFileArg(argv: string[] = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): string | null {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--') break;
     if (arg === '--config-file' || arg.startsWith('--config-file=')) {
       const value = readArgvValue(argv, i);
-      return value && value.trim() ? path.resolve(value) : null;
+      return value && value.trim() ? resolvePathFromSafeCwd(value, env) : null;
     }
   }
   return null;
@@ -89,6 +110,7 @@ export interface ConfigFile {
   apiKey?: string;
   model?: string;
   baseUrl?: string;
+  imageInput?: boolean | string;
   workspace?: string;
   safetyMode?: CliSafetyModeConfig | string;
   approvalPolicy?: ConfigApprovalPolicy | string;
@@ -99,6 +121,7 @@ export interface ConfigFile {
   agent?: AgentRuntimeConfig;
   mcp?: McpCliConfig;
   hooks?: HooksConfig;
+  _examples?: Record<string, unknown>;
 }
 
 export interface LoadedCliConfigFile {
@@ -197,6 +220,7 @@ export interface CliConfigOverrides {
   promptCacheDebug?: boolean;
   maxAgentTurns?: number;
   contextTokens?: number;
+  imageInput?: boolean;
 }
 
 export interface CliProfileDefaults {
@@ -235,10 +259,10 @@ function resolveExplicitConfigPath(
   env: NodeJS.ProcessEnv = process.env,
   argv: string[] = process.argv.slice(2),
 ): string | null {
-  const fromArgv = resolveCliConfigFileArg(argv);
+  const fromArgv = resolveCliConfigFileArg(argv, env);
   if (fromArgv) return fromArgv;
   const explicit = env.DMOSS_CONFIG_FILE || env.DMOSS_CONFIG_PATH;
-  return explicit && explicit.trim() ? path.resolve(explicit) : null;
+  return explicit && explicit.trim() ? resolvePathFromSafeCwd(explicit, env) : null;
 }
 
 function hasExplicitConfigPath(
@@ -257,11 +281,12 @@ export function resolveConfigPath(
   return resolveExplicitConfigPath(env, argv) || path.join(resolveConfigDir(env), 'config.json');
 }
 
-export function resolveProjectConfigPath(startDir = process.cwd(), maxHops = 16): string | null {
-  let dir = path.resolve(startDir);
+export function resolveProjectConfigPath(startDir = safeProcessCwd(), maxHops = 16): string | null {
+  let dir = resolvePathFromSafeCwd(startDir);
   for (let i = 0; i < maxHops; i++) {
-    const candidate = path.join(dir, '.dmoss', 'config.json');
-    if (fs.existsSync(candidate)) return candidate;
+    const paths = getMossWorkspacePaths(dir);
+    if (fs.existsSync(paths.projectConfigPath)) return paths.projectConfigPath;
+    if (fs.existsSync(paths.legacyProjectConfigPath)) return paths.legacyProjectConfigPath;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
@@ -379,7 +404,7 @@ export function mergeConfigFiles(projectConfig: ConfigFile, userConfig: ConfigFi
 export function loadCliConfigFile(
   env: NodeJS.ProcessEnv = process.env,
   argv: string[] = process.argv.slice(2),
-  startDir = process.cwd(),
+  startDir = safeProcessCwd(env),
 ): LoadedCliConfigFile {
   const configPath = resolveConfigPath(undefined, env, argv);
   const userConfig = loadConfigFile(configPath);
@@ -530,6 +555,16 @@ function parsePositiveInteger(value: unknown, source: string): number | undefine
   return value;
 }
 
+function parseOptionalBooleanConfig(value: unknown, source: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const parsed = parseConfigBoolean(value);
+    if (parsed !== null) return parsed;
+  }
+  throw new Error(`Unsupported ${source}; expected true or false`);
+}
+
 function parsePositiveIntegerEnv(value: string | undefined): number | undefined {
   if (value === undefined || value.trim() === '') return undefined;
   const parsed = Number(value.trim());
@@ -572,7 +607,7 @@ function resolveMcpConfigPath(
   env: NodeJS.ProcessEnv,
 ): string {
   if (mcpPath && path.isAbsolute(mcpPath)) return mcpPath;
-  if (source === 'env' && mcpPath) return path.resolve(mcpPath);
+  if (source === 'env' && mcpPath) return resolvePathFromSafeCwd(mcpPath, env);
 
   const configPath = configPaths?.configPath ?? resolveConfigPath(undefined, env);
   if (source === 'config' && mcpPath) {
@@ -624,6 +659,8 @@ export interface ResolvedCliConfig {
   mcpEnabledSource: string;
   mcpConfigPath: string;
   mcpConfigPathSource: string;
+  imageInput: boolean;
+  imageInputSource: string;
   configPath: string;
   projectConfigPath?: string;
 }
@@ -771,6 +808,7 @@ export function resolveCliConfig(
   overrides: CliConfigOverrides = {},
   loadedConfig?: Pick<LoadedCliConfigFile, 'configPath' | 'projectConfigPath'>,
 ): ResolvedCliConfig {
+  const safeCwd = resolveSafeCwd(env);
   const defaultLoadedConfig = config === undefined ? loadCliConfigFile(env) : undefined;
   let activeConfig: ConfigFile = config ?? defaultLoadedConfig?.config ?? {};
   let usingBundledDefault = false;
@@ -1001,6 +1039,23 @@ export function resolveCliConfig(
     configPaths,
     env,
   );
+  const imageInputEnvName = env.DMOSS_IMAGE_INPUT !== undefined
+    ? 'DMOSS_IMAGE_INPUT'
+    : env.DMOSS_VISION_INPUT !== undefined
+      ? 'DMOSS_VISION_INPUT'
+      : env.DMOSS_ENABLE_IMAGE_INPUT !== undefined
+        ? 'DMOSS_ENABLE_IMAGE_INPUT'
+        : undefined;
+  const envImageInput = parseConfigBoolean(imageInputEnvName ? env[imageInputEnvName] : undefined);
+  const configImageInput = parseOptionalBooleanConfig(activeConfig.imageInput, 'imageInput');
+  const imageInput = overrides.imageInput ?? envImageInput ?? configImageInput ?? preset.defaultImageInput;
+  const imageInputSource = overrides.imageInput !== undefined
+    ? 'cli'
+    : envImageInput !== null && imageInputEnvName
+      ? imageInputEnvName
+      : configImageInput !== undefined
+        ? activeConfigSource('imageInput')
+        : 'provider default';
 
   return {
     profile,
@@ -1014,8 +1069,8 @@ export function resolveCliConfig(
     modelSource: overrides.model ? 'cli' : modelEnv ? 'DMOSS_MODEL' : activeConfig.model ? activeConfigSource('model') : 'provider default',
     baseUrl: overrides.baseUrl || baseUrlEnv?.value || activeConfig.baseUrl || preset.defaultBaseUrl,
     baseUrlSource: overrides.baseUrl ? 'cli' : baseUrlEnv?.source || (activeConfig.baseUrl ? activeConfigSource('baseUrl') : 'provider default'),
-    workspace: overrides.workspace || workspaceEnv || activeConfig.workspace || process.cwd(),
-    workspaceSource: overrides.workspace ? 'cli' : workspaceEnv ? 'DMOSS_WORKSPACE' : activeConfig.workspace ? 'config' : 'cwd',
+    workspace: overrides.workspace || workspaceEnv || activeConfig.workspace || safeCwd.cwd,
+    workspaceSource: overrides.workspace ? 'cli' : workspaceEnv ? 'DMOSS_WORKSPACE' : activeConfig.workspace ? 'config' : safeCwd.source,
     safetyMode,
     safetyModeSource,
     approvalPolicy,
@@ -1040,6 +1095,8 @@ export function resolveCliConfig(
     mcpEnabledSource,
     mcpConfigPath,
     mcpConfigPathSource,
+    imageInput,
+    imageInputSource,
     configPath: configPaths?.configPath ?? resolveConfigPath(undefined, env),
     projectConfigPath: configPaths?.projectConfigPath,
   };
@@ -1067,7 +1124,7 @@ export function loadEnvFile(envPath: string): void {
 }
 
 export function loadEnvFromAncestors(startDir: string, maxHops = 16): void {
-  let dir = path.resolve(startDir);
+  let dir = resolvePathFromSafeCwd(startDir);
   for (let i = 0; i < maxHops; i++) {
     loadEnvFile(path.join(dir, '.env'));
     const parent = path.dirname(dir);
@@ -1076,7 +1133,7 @@ export function loadEnvFromAncestors(startDir: string, maxHops = 16): void {
   }
 }
 
-loadEnvFromAncestors(process.cwd());
+loadEnvFromAncestors(safeProcessCwd());
 loadEnvFromAncestors(path.dirname(fileURLToPath(import.meta.url)));
 
 function loadResolvedConfigForModuleDefaults(): ResolvedCliConfig {
@@ -1095,6 +1152,7 @@ export const PROVIDER = resolvedConfig.provider;
 export const API_KEY = resolvedConfig.apiKey;
 export const MODEL = resolvedConfig.model;
 export const BASE_URL = resolvedConfig.baseUrl;
+export const IMAGE_INPUT = resolvedConfig.imageInput;
 export const WORKSPACE = resolvedConfig.workspace;
 export const CONFIG_PATH = resolvedConfig.configPath;
 export const CONFIG_SOURCE = resolvedConfig;

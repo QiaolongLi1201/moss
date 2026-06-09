@@ -137,6 +137,83 @@ function runProviderProbe(env) {
 }
 
 {
+  const { createCliProvider } = await import('../dist/cli/providers.js');
+  let seenBody = {};
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    seenBody = JSON.parse(init?.body ?? '{}');
+    return new Response(JSON.stringify({
+      choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'ok' } }],
+    }), { status: 200 });
+  };
+  try {
+    const provider = createCliProvider({
+      provider: 'openai-compatible',
+      apiKey: 'private-key',
+      model: 'private-model',
+      baseUrl: 'https://private.example.test/v1',
+      imageInput: false,
+    });
+    await provider.stream({
+      model: 'private-model',
+      systemPrompt: '',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Please inspect this image.' },
+          { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=', filename: 'screen.png' },
+        ],
+      }],
+      tools: [],
+    }, () => {});
+
+    const bodyJson = JSON.stringify(seenBody);
+    assert.doesNotMatch(bodyJson, /image_url/, 'OpenAI-compatible providers must not receive image_url unless image input is enabled');
+    assert.equal(seenBody.messages[0].content, 'Please inspect this image.\n[Image attachment not sent: screen.png; imageInput=false for this provider, so the assistant cannot inspect the image content.]');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const { createCliProvider } = await import('../dist/cli/providers.js');
+  let seenBody = {};
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    seenBody = JSON.parse(init?.body ?? '{}');
+    return new Response(JSON.stringify({
+      choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'ok' } }],
+    }), { status: 200 });
+  };
+  try {
+    const provider = createCliProvider({
+      provider: 'openai-compatible',
+      apiKey: 'private-key',
+      model: 'vision-model',
+      baseUrl: 'https://private.example.test/v1',
+      imageInput: true,
+    });
+    await provider.stream({
+      model: 'vision-model',
+      systemPrompt: '',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Please inspect this image.' },
+          { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=', filename: 'screen.png' },
+        ],
+      }],
+      tools: [],
+    }, () => {});
+
+    assert.equal(seenBody.messages[0].content[1].type, 'image_url');
+    assert.equal(seenBody.messages[0].content[1].image_url.url, 'data:image/png;base64,iVBORw0KGgo=');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
   const script = `
     globalThis.fetch = async () => new Response('   provider exploded '.repeat(100), { status: 502 });
     const { cliProvider } = await import('./packages/dmoss-agent/dist/cli/providers.js');

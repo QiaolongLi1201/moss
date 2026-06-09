@@ -4,6 +4,11 @@ import { spawn } from 'node:child_process';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useCursor, measureElement, Static, type DOMElement } from 'ink';
 import stringWidth from 'string-width';
+import type {
+  MossAsyncTaskCompletion,
+  MossAsyncTaskRegistry,
+  MossAsyncTaskSnapshot,
+} from '@rdk-moss/core/contracts/async-task';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { StreamingSpinner } from './components/StreamingSpinner.js';
 import { marked } from 'marked';
@@ -20,13 +25,22 @@ import {
   type PreparedPromptAttachment,
   type PromptAttachmentBlock,
 } from './attachments.js';
-import { prepareClipboardImageAttachment } from './clipboard-image.js';
+import { prepareClipboardAttachment } from './clipboard-image.js';
 import { handleCompactCommand } from './compact-command.js';
 import { formatCommunityAuthLoginError, formatCommunityAuthStatus } from './community-auth.js';
 import { connectDeviceForSession, parseDeviceConnectArgs } from './device-connect.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
-import { formatModelChoices, loadModelChoicesForRuntime, resolveModelSelection } from './model-catalog.js';
+import {
+  formatCustomModelConfigInstructions,
+  formatModelChoices,
+  loadModelChoicesForRuntime,
+  parseCustomModelConfigInput,
+  resolveModelSelection,
+  type ModelChoiceList,
+} from './model-catalog.js';
+import { loadConfigFile, resolveConfigPath, saveConfigFileAtPath } from './config.js';
+import { createCliProvider } from './providers.js';
 import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliQuickStart, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
 import { createCliSessionKey } from './session.js';
@@ -35,6 +49,7 @@ import { compactPath, ui } from './ui.js';
 import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
 import { estimateTokensForText } from '../context/tokens.js';
 import { handleGoalCommand } from '../goal.js';
+import { getMossWorkspacePaths } from '../utils/workspace-paths.js';
 
 type TranscriptKind = 'user' | 'assistant' | 'system' | 'error' | 'shell' | 'tool';
 type TuiRunState = 'ready' | 'running' | 'approval';
@@ -69,8 +84,14 @@ interface ActivityItem {
   result?: string;
 }
 
+interface ModelPickerState {
+  list: ModelChoiceList;
+  selectedIndex: number;
+}
+
 interface ApprovalState {
   question: string;
+  selectedIndex: number;
   resolve: (answer: string) => void;
 }
 
@@ -182,7 +203,7 @@ function cliLocale(): string | undefined {
   return process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG;
 }
 
-export function sanitizeRenderableText(text: string): string {
+function sanitizeTextForTerminal(text: string, options: { breakLongTokens: boolean }): string {
   const withoutAnsi = text.includes('\x1B') ? text.replace(ANSI_RE, '') : text;
   const withoutControls = CONTROL_CHAR_RE.test(withoutAnsi)
     ? withoutAnsi.replace(CONTROL_CHAR_RE, '')
@@ -196,14 +217,24 @@ export function sanitizeRenderableText(text: string): string {
         : line;
     })
     .join('\n');
-  const tokenSafe = binarySafe.replace(LONG_TOKEN_RE, (token) => {
-    if (COPY_SENSITIVE_TOKEN_RE.test(token)) return token;
-    return token.replace(/(.{24})/g, '$1 ');
-  });
+  const tokenSafe = options.breakLongTokens
+    ? binarySafe.replace(LONG_TOKEN_RE, (token) => {
+        if (COPY_SENSITIVE_TOKEN_RE.test(token)) return token;
+        return token.replace(/(.{24})/g, '$1 ');
+      })
+    : binarySafe;
   return tokenSafe
     .split('\n')
     .map((line) => (RTL_RE.test(line) ? `\u2067${line}\u2069` : line))
     .join('\n');
+}
+
+export function sanitizeRenderableText(text: string): string {
+  return sanitizeTextForTerminal(text, { breakLongTokens: true });
+}
+
+function sanitizePromptEditorText(text: string): string {
+  return sanitizeTextForTerminal(text, { breakLongTokens: false });
 }
 
 export function isLocalShellLine(raw: string): boolean {
@@ -416,6 +447,49 @@ export function extractAttachmentRefs(text: string): AttachmentRef[] {
     });
   }
   return refs;
+}
+
+function attachmentRefIndexes(text: string): Set<number> {
+  return new Set(extractAttachmentRefs(text).map((ref) => ref.index));
+}
+
+function removeAttachmentRefsFromInput(value: string): string {
+  return value
+    .replace(/\s*\[(?:Image|File)(?: #\d*)?\]?/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trimEnd();
+}
+
+function inputWithAttachmentRefs(value: string, attachments: PreparedPromptAttachment[]): string {
+  const refs = attachments.map((item) => `[${item.kind === 'image' ? 'Image' : 'File'} #${item.index}]`).join(' ');
+  if (!refs) return value;
+  const trimmed = value.trimEnd();
+  return `${trimmed ? `${trimmed} ` : ''}${refs} `;
+}
+
+function blockCountForAttachment(item: PreparedPromptAttachment): number {
+  return item.kind === 'image' ? 2 : 1;
+}
+
+function selectReferencedPromptAttachments(
+  text: string,
+  attachments: PreparedPromptAttachment[],
+  blocks: PromptAttachmentBlock[],
+): { attachments: PreparedPromptAttachment[]; blocks: PromptAttachmentBlock[] } {
+  const keep = attachmentRefIndexes(text);
+  if (keep.size === 0) return { attachments: [], blocks: [] };
+  const nextAttachments: PreparedPromptAttachment[] = [];
+  const nextBlocks: PromptAttachmentBlock[] = [];
+  let blockOffset = 0;
+  for (const item of attachments) {
+    const blockCount = blockCountForAttachment(item);
+    const itemBlocks = blocks.slice(blockOffset, blockOffset + blockCount);
+    blockOffset += blockCount;
+    if (!keep.has(item.index)) continue;
+    nextAttachments.push(item);
+    nextBlocks.push(...itemBlocks);
+  }
+  return { attachments: nextAttachments, blocks: nextBlocks };
 }
 
 export function formatAttachmentChip(ref: AttachmentRef): string {
@@ -692,9 +766,9 @@ function compactWelcomeTip(tip: string): string {
 }
 
 export function footerHint(state: TuiRunState): string {
-  if (state === 'approval') return 'y approve · a always this session · n/Esc deny';
+  if (state === 'approval') return '←/→ choose · Enter submit · y approve · a trust scope · n/Esc deny';
   if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
-  return 'Ctrl+V image · /attach file · Tab complete · Up/Down history · Ctrl+O details · Ctrl+C exit';
+  return 'Ctrl+V attach · paste file path + Enter · Tab complete · Up/Down history · Ctrl+O details · Ctrl+C exit';
 }
 
 export function editorPreviewLines(value: string, placeholder: string, maxLines = 8): string[] {
@@ -730,26 +804,58 @@ function clampPromptCursor(value: string, cursor: number): number {
   return Math.max(0, Math.min(value.length, Math.trunc(cursor)));
 }
 
-function previousCodePointStart(value: string, cursor: number): number {
-  const index = clampPromptCursor(value, cursor);
-  if (index <= 0) return 0;
-  const previous = value.charCodeAt(index - 1);
-  const beforePrevious = index > 1 ? value.charCodeAt(index - 2) : 0;
-  if (previous >= 0xdc00 && previous <= 0xdfff && beforePrevious >= 0xd800 && beforePrevious <= 0xdbff) {
-    return index - 2;
-  }
-  return index - 1;
+interface GraphemeSegment {
+  index: number;
+  segment: string;
 }
 
-function nextCodePointEnd(value: string, cursor: number): number {
+type GraphemeSegmenter = {
+  segment(input: string): Iterable<GraphemeSegment>;
+};
+
+type GraphemeSegmenterConstructor = new (
+  locales?: string | string[],
+  options?: { granularity: 'grapheme' },
+) => GraphemeSegmenter;
+
+const NativeSegmenter = (Intl as typeof Intl & { Segmenter?: GraphemeSegmenterConstructor }).Segmenter;
+const graphemeSegmenter = NativeSegmenter ? new NativeSegmenter(undefined, { granularity: 'grapheme' }) : null;
+
+function codePointSegments(value: string): GraphemeSegment[] {
+  const segments: GraphemeSegment[] = [];
+  for (let index = 0; index < value.length;) {
+    const codePoint = value.codePointAt(index);
+    const length = codePoint && codePoint > 0xffff ? 2 : 1;
+    segments.push({ index, segment: value.slice(index, index + length) });
+    index += length;
+  }
+  return segments;
+}
+
+function graphemeSegments(value: string): GraphemeSegment[] {
+  if (!value) return [];
+  return graphemeSegmenter ? Array.from(graphemeSegmenter.segment(value)) : codePointSegments(value);
+}
+
+function previousGraphemeStart(value: string, cursor: number): number {
+  const index = clampPromptCursor(value, cursor);
+  if (index <= 0) return 0;
+  let previous = 0;
+  for (const segment of graphemeSegments(value)) {
+    if (segment.index >= index) break;
+    previous = segment.index;
+  }
+  return previous;
+}
+
+function nextGraphemeEnd(value: string, cursor: number): number {
   const index = clampPromptCursor(value, cursor);
   if (index >= value.length) return value.length;
-  const current = value.charCodeAt(index);
-  const next = index + 1 < value.length ? value.charCodeAt(index + 1) : 0;
-  if (current >= 0xd800 && current <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
-    return index + 2;
+  for (const segment of graphemeSegments(value)) {
+    const end = segment.index + segment.segment.length;
+    if (end > index) return end;
   }
-  return index + 1;
+  return value.length;
 }
 
 function previousWordStart(value: string, cursor: number): number {
@@ -771,9 +877,9 @@ export function applyPromptEdit(state: PromptEditState, intent: PromptEditIntent
       };
     }
     case 'left':
-      return { value, cursor: previousCodePointStart(value, cursor) };
+      return { value, cursor: previousGraphemeStart(value, cursor) };
     case 'right':
-      return { value, cursor: nextCodePointEnd(value, cursor) };
+      return { value, cursor: nextGraphemeEnd(value, cursor) };
     case 'home':
       return { value, cursor: 0 };
     case 'end':
@@ -781,12 +887,12 @@ export function applyPromptEdit(state: PromptEditState, intent: PromptEditIntent
     case 'backspace':
       if (cursor === 0) return { value, cursor };
       {
-        const start = previousCodePointStart(value, cursor);
+        const start = previousGraphemeStart(value, cursor);
         return { value: `${value.slice(0, start)}${value.slice(cursor)}`, cursor: start };
       }
     case 'delete':
       if (cursor >= value.length) return { value, cursor };
-      return { value: `${value.slice(0, cursor)}${value.slice(nextCodePointEnd(value, cursor))}`, cursor };
+      return { value: `${value.slice(0, cursor)}${value.slice(nextGraphemeEnd(value, cursor))}`, cursor };
     case 'killBefore':
       return { value: value.slice(cursor), cursor: 0 };
     case 'killAfter':
@@ -804,7 +910,58 @@ export function shouldPromptReturnInsertNewline(key: { shift?: boolean; ctrl?: b
 
 interface EditorPreviewLine {
   text: string;
+  /** Terminal display cells from line start to cursor, not a UTF-16 index. */
   cursorColumn: number | null;
+}
+
+interface LineViewportResult {
+  text: string;
+  cursorColumn: number;
+}
+
+interface DisplaySegment {
+  segment: string;
+  startColumn: number;
+  endColumn: number;
+}
+
+function displaySegments(value: string): DisplaySegment[] {
+  const segments: DisplaySegment[] = [];
+  let column = 0;
+  for (const { segment } of graphemeSegments(value)) {
+    const width = stringWidth(segment);
+    segments.push({ segment, startColumn: column, endColumn: column + width });
+    column += width;
+  }
+  return segments;
+}
+
+function lineViewportAroundCursor(text: string, cursorColumn: number, maxWidth?: number): LineViewportResult {
+  if (!maxWidth || !Number.isFinite(maxWidth)) return { text, cursorColumn };
+  const width = Math.max(1, Math.trunc(maxWidth));
+  const lineWidth = stringWidth(text);
+  const safeCursor = Math.max(0, Math.min(lineWidth, cursorColumn));
+  if (lineWidth <= width) return { text, cursorColumn: safeCursor };
+
+  const startTarget = safeCursor > width ? safeCursor - width : 0;
+  const segments = displaySegments(text);
+  let startIndex = segments.findIndex((segment) => segment.startColumn >= startTarget);
+  if (startIndex < 0) startIndex = Math.max(0, segments.length - 1);
+  const visibleStart = segments[startIndex]?.startColumn ?? 0;
+  let visibleWidth = 0;
+  let visibleText = '';
+  for (const segment of segments.slice(startIndex)) {
+    const segmentWidth = segment.endColumn - segment.startColumn;
+    if (visibleText && visibleWidth + segmentWidth > width) break;
+    if (!visibleText && segmentWidth > width) break;
+    visibleText += segment.segment;
+    visibleWidth += segmentWidth;
+  }
+
+  return {
+    text: visibleText,
+    cursorColumn: Math.max(0, Math.min(width, safeCursor - visibleStart)),
+  };
 }
 
 function editorPreviewLinesWithCursor(
@@ -812,29 +969,35 @@ function editorPreviewLinesWithCursor(
   _placeholder: string,
   cursor: number,
   maxLines = 8,
+  maxLineWidth?: number,
 ): EditorPreviewLine[] {
   if (!value) return [{ text: '', cursorColumn: 0 }];
-  const normalized = sanitizeRenderableText(value).replace(/\r\n?/g, '\n');
+  const normalized = sanitizePromptEditorText(value).replace(/\r\n?/g, '\n');
   const lines = normalized.split('\n');
-  const normalizedCursor = clampPromptCursor(normalized, cursor);
-  const beforeCursor = normalized.slice(0, normalizedCursor);
-  const cursorLineIndex = beforeCursor.split('\n').length - 1;
-  const cursorColumn = beforeCursor.slice(beforeCursor.lastIndexOf('\n') + 1).length;
+  const normalizedCursor = clampPromptCursor(value, cursor);
+  const normalizedBeforeCursor = sanitizePromptEditorText(value.slice(0, normalizedCursor)).replace(/\r\n?/g, '\n');
+  const cursorLineIndex = normalizedBeforeCursor.split('\n').length - 1;
+  const cursorColumn = stringWidth(normalizedBeforeCursor.slice(normalizedBeforeCursor.lastIndexOf('\n') + 1));
+  const fitLine = (line: string, lineCursorColumn: number | null): EditorPreviewLine => {
+    const viewport = lineViewportAroundCursor(
+      line,
+      lineCursorColumn ?? stringWidth(line),
+      maxLineWidth,
+    );
+    return {
+      text: viewport.text,
+      cursorColumn: lineCursorColumn === null ? null : viewport.cursorColumn,
+    };
+  };
   if (lines.length <= maxLines) {
-    return lines.map((line, index) => ({
-      text: line,
-      cursorColumn: index === cursorLineIndex ? cursorColumn : null,
-    }));
+    return lines.map((line, index) => fitLine(line, index === cursorLineIndex ? cursorColumn : null));
   }
   const hiddenCount = lines.length - maxLines;
   return [
     { text: `... ${hiddenCount} earlier input lines ...`, cursorColumn: null },
     ...lines.slice(-maxLines).map((line, index) => {
       const originalIndex = hiddenCount + index;
-      return {
-        text: line,
-        cursorColumn: originalIndex === cursorLineIndex ? cursorColumn : null,
-      };
+      return fitLine(line, originalIndex === cursorLineIndex ? cursorColumn : null);
     }),
   ];
 }
@@ -848,8 +1011,12 @@ export function commandSuggestion(command: string): string | null {
     .map((known, index) => {
       const prefixMatch = known.startsWith(normalized) || normalized.startsWith(known);
       if (prefixMatch) return { known, score: 0, prefixMatch, index };
-      const knownFirstChar = known.replace(/^\//, '')[0] ?? '';
-      if (!firstMeaningfulChar || knownFirstChar !== firstMeaningfulChar) {
+      const knownToken = known.replace(/^\//, '');
+      const inputToken = normalized.replace(/^\//, '');
+      const knownFirstChar = knownToken[0] ?? '';
+      const knownPrefix = knownToken.slice(0, Math.min(2, knownToken.length, inputToken.length));
+      const inputPrefix = inputToken.slice(0, knownPrefix.length);
+      if (!firstMeaningfulChar || knownFirstChar !== firstMeaningfulChar || (knownPrefix.length >= 2 && knownPrefix !== inputPrefix)) {
         return { known, score: Number.POSITIVE_INFINITY, prefixMatch, index };
       }
       const score = editDistance(known, normalized);
@@ -933,7 +1100,7 @@ export function commandArgumentHint(value: string): string | null {
 }
 
 export function promptPlaceholder(state: TuiRunState): string {
-  if (state === 'approval') return 'answer approval with y, a, n, or Esc';
+  if (state === 'approval') return 'choose approval with arrows, Enter, y, a, n, or Esc';
   if (state === 'running') return 'running... /stop to cancel';
   return 'Ask Moss for code, board, or ROS help';
 }
@@ -953,7 +1120,8 @@ export function approvalKeyDecision(inputChar: string, key: { escape?: boolean }
 }
 
 function renderMemory(workspace: string): string {
-  const memDir = path.join(workspace, '.dmoss-runtime', 'memory');
+  const paths = getMossWorkspacePaths(workspace);
+  const memDir = fs.existsSync(paths.memoryDir) ? paths.memoryDir : paths.legacyMemoryDir;
   try {
     const entries = JSON.parse(fs.readFileSync(path.join(memDir, 'index.json'), 'utf-8')) as Array<{ id: string; content: string }>;
     const shown = entries.slice(0, 5).map((entry) => `  • [${entry.id}] ${entry.content.slice(0, 80)}...`);
@@ -970,15 +1138,24 @@ function formatSkillLine(skill: SkillMeta): string {
   return `  • ${skill.name} · ${skill.risk}${disabled}${tags} - ${description}`;
 }
 
-function listLearnedSkillFiles(workspace: string): string[] {
-  const learnedDir = path.join(workspace, 'skills', 'learned');
+function listMarkdownFilenames(dir: string): string[] {
   try {
-    return fs.readdirSync(learnedDir)
+    return fs.readdirSync(dir)
       .filter((file) => file.endsWith('.md'))
       .sort((left, right) => left.localeCompare(right));
   } catch {
     return [];
   }
+}
+
+function listLearnedSkillFiles(workspace: string): string[] {
+  const paths = getMossWorkspacePaths(workspace);
+  return [
+    ...new Set([
+      ...listMarkdownFilenames(paths.learnedSkillsDir),
+      ...listMarkdownFilenames(paths.legacyLearnedSkillsDir),
+    ]),
+  ].sort((left, right) => left.localeCompare(right));
 }
 
 export function renderSkills(workspace: string): string {
@@ -997,7 +1174,7 @@ export function renderSkills(workspace: string): string {
     lines.push(...registered.slice(0, 8).map(formatSkillLine));
     if (registered.length > 8) lines.push(`  ... ${registered.length - 8} more available skill${registered.length - 8 === 1 ? '' : 's'}`);
   } else {
-    lines.push('Available SKILL.md entries: none found in skills/ or agent/skills/.');
+    lines.push('Available SKILL.md entries: none found in .moss/skills/.');
   }
   if (learned.length > 0) {
     lines.push('Learned skills:');
@@ -1555,16 +1732,75 @@ export function ActivityItemLine({ item, expanded }: ActivityItemLineProps): Rea
 
 export interface ApprovalPromptLineProps {
   question: string;
+  selectedIndex?: number;
+}
+
+interface ApprovalChoice {
+  label: string;
+  shortcut: string;
+  decision: 'allow-once' | 'allow-always' | 'deny';
+  description: string;
+}
+
+const APPROVAL_CHOICES: ApprovalChoice[] = [
+  {
+    label: 'Approve once',
+    shortcut: 'y',
+    decision: 'allow-once',
+    description: 'Allow only this tool call.',
+  },
+  {
+    label: 'Always this scope',
+    shortcut: 'a',
+    decision: 'allow-always',
+    description: 'Trust this scope for the current Moss session.',
+  },
+  {
+    label: 'Deny',
+    shortcut: 'n',
+    decision: 'deny',
+    description: 'Block the request and return control to the conversation.',
+  },
+];
+
+function clampApprovalChoiceIndex(index: number): number {
+  return Math.max(0, Math.min(APPROVAL_CHOICES.length - 1, index));
+}
+
+function approvalAnswerFromDecision(decision: 'allow-once' | 'allow-always' | 'deny'): string {
+  if (decision === 'allow-once') return 'y';
+  if (decision === 'allow-always') return 'a';
+  return '';
+}
+
+function approvalAnswerForIndex(index: number): string {
+  return approvalAnswerFromDecision(APPROVAL_CHOICES[clampApprovalChoiceIndex(index)].decision);
+}
+
+function approvalChoicesForQuestion(question: string): ApprovalChoice[] {
+  const workspaceScoped = /Scope:\s+workspace\b/i.test(question);
+  return APPROVAL_CHOICES.map((choice) => {
+    if (choice.decision !== 'allow-always') return choice;
+    return workspaceScoped
+      ? {
+          ...choice,
+          label: 'Always this workspace',
+          description: 'Trust local operations in this workspace for the current Moss session.',
+        }
+      : choice;
+  });
 }
 
 function approvalPromptBodyLines(question: string): string[] {
   return visibleText(question, 8)
     .split('\n')
     .map((line) => line.trimEnd())
-    .filter((line) => line.trim() && !/^\s*Allow once, allow this tool for the session, or deny\./.test(line));
+    .filter((line) => line.trim() && !/^\s*Allow once, (?:allow this tool|trust this workspace|allow this scope) for the session, or deny\./.test(line));
 }
 
-export function ApprovalPromptLine({ question }: ApprovalPromptLineProps): React.ReactElement {
+export function ApprovalPromptLine({ question, selectedIndex = 0 }: ApprovalPromptLineProps): React.ReactElement {
+  const selected = clampApprovalChoiceIndex(selectedIndex);
+  const choices = approvalChoicesForQuestion(question);
   return React.createElement(
     Box,
     {
@@ -1581,7 +1817,21 @@ export function ApprovalPromptLine({ question }: ApprovalPromptLineProps): React
     ...approvalPromptBodyLines(question).map((line, idx) => (
       React.createElement(Text, { key: idx, color: theme.text }, line)
     )),
-    React.createElement(Text, { color: theme.textMuted }, 'y approve · a always this session · n/Esc deny'),
+    React.createElement(
+      Text,
+      { color: theme.textDim },
+      '←/→ or ↑/↓ choose · Enter submit · y approve · a trust scope · n/Esc deny',
+    ),
+    ...choices.map((choice, index) => {
+      const isSelected = index === selected;
+      return React.createElement(Text, {
+        key: choice.decision,
+        color: isSelected ? theme.permission : theme.textMuted,
+        bold: isSelected,
+      },
+      `${isSelected ? '› ' : '  '}${index + 1}. [${isSelected ? 'x' : ' '}] ${choice.label} (${choice.shortcut})`,
+      React.createElement(Text, { color: isSelected ? theme.text : theme.textDim }, ` — ${choice.description}`));
+    }),
   );
 }
 
@@ -1725,7 +1975,7 @@ export interface PromptEditorProps {
   onHistoryPrevious?: () => void;
   onHistoryNext?: () => void;
   onShiftEnter?: () => void;
-  onPasteImageShortcut?: () => void;
+  onPasteAttachmentShortcut?: () => void;
   hint?: string;
   model?: string;
   mode?: string;
@@ -1772,7 +2022,7 @@ export function PromptEditor({
   onHistoryPrevious,
   onHistoryNext,
   onShiftEnter,
-  onPasteImageShortcut,
+  onPasteAttachmentShortcut,
   hint,
   model: _model,
   mode,
@@ -1871,7 +2121,7 @@ export function PromptEditor({
       return;
     }
     if (key.ctrl && (normalizedInput === 'v' || inputChar === '\u0016')) {
-      onPasteImageShortcut?.();
+      onPasteAttachmentShortcut?.();
       return;
     }
     if (key.return) {
@@ -1905,7 +2155,8 @@ export function PromptEditor({
   const lastCursorRef = useRef<{ x: number; y: number } | null>(null);
   const [, bumpLayout] = useState(0);
 
-  const lines = editorPreviewLinesWithCursor(value, placeholder, currentCursor, 6);
+  const maxLineTextWidth = Math.max(2, termColumns - 8);
+  const lines = editorPreviewLinesWithCursor(value, placeholder, currentCursor, 6, maxLineTextWidth);
   const suggestion = value.startsWith('/') ? commandSuggestion(value) : null;
   const argumentHint = commandArgumentHint(value);
   // Border reflects the active interaction mode (compact agent style).
@@ -1921,7 +2172,7 @@ export function PromptEditor({
     if (idx >= 0) {
       caretLineIndex = idx;
       const prefixWidth = idx === 0 ? stringWidth('> ') : 2;
-      caretCol = prefixWidth + stringWidth(lines[idx].text.slice(0, lines[idx].cursorColumn ?? 0));
+      caretCol = prefixWidth + (lines[idx].cursorColumn ?? 0);
     }
   }
 
@@ -1988,7 +2239,7 @@ export function PromptEditor({
         const isSel = (menuStart + i) === clampedMenuIndex;
         const descMax = Math.max(8, termColumns - 20);
         const desc = description.length > descMax ? `${description.slice(0, descMax - 1)}…` : description;
-        const marker = emojiEnabled() ? '❯ ' : '> ';
+        const marker = '› ';
         return React.createElement(Text, { key: command, wrap: 'truncate' },
           React.createElement(Text, { color: theme.accent, bold: true }, isSel ? marker : '  '),
           React.createElement(Text, { color: isSel ? theme.permission : theme.textMuted, bold: isSel }, command.padEnd(14)),
@@ -2033,18 +2284,205 @@ export function QueuePreview({ items, paused = false, now = Date.now() }: QueueP
   );
 }
 
+type SubagentTaskSnapshot = MossAsyncTaskSnapshot<Record<string, unknown>>;
+
+function taskPayloadValue(snapshot: MossAsyncTaskSnapshot, key: string): unknown {
+  const payload = snapshot.payload;
+  return payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)[key]
+    : undefined;
+}
+
+function taskLabel(snapshot: MossAsyncTaskSnapshot): string {
+  const label = snapshot.label || String(taskPayloadValue(snapshot, 'task') ?? snapshot.taskId);
+  return visibleText(label, 1);
+}
+
+function taskElapsed(snapshot: MossAsyncTaskSnapshot, now: number): string {
+  const start = snapshot.startedAt ?? snapshot.createdAt;
+  const end = snapshot.completedAt ?? now;
+  const seconds = Math.max(0, Math.round((end - start) / 1000));
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, '0')}s`;
+}
+
+function statusIcon(status: MossAsyncTaskSnapshot['status']): string {
+  if (status === 'running') return emojiEnabled() ? '⏺' : '*';
+  if (status === 'queued') return '·';
+  if (status === 'completed') return '✓';
+  if (status === 'failed' || status === 'timed_out') return '×';
+  return '!';
+}
+
+function statusColor(status: MossAsyncTaskSnapshot['status']): string {
+  if (status === 'running' || status === 'queued') return theme.accent;
+  if (status === 'completed') return theme.success;
+  return theme.error;
+}
+
+function completionSummary(
+  snapshot: MossAsyncTaskSnapshot,
+  completion?: MossAsyncTaskCompletion,
+): string | undefined {
+  const text = completion?.summary || completion?.error || snapshot.error || snapshot.progress?.lastError;
+  if (!text) return undefined;
+  const oneLine = visibleText(text, 1);
+  return oneLine.length > 120 ? `${oneLine.slice(0, 119)}…` : oneLine;
+}
+
+function taskMeta(snapshot: MossAsyncTaskSnapshot, now: number): string {
+  const progress = snapshot.progress;
+  const maxTurns = progress?.maxTurns ?? Number(taskPayloadValue(snapshot, 'maxTurns') ?? 0);
+  const parts = [
+    snapshot.status,
+    taskElapsed(snapshot, now),
+    progress?.currentTurn ? `turn ${progress.currentTurn}${maxTurns ? `/${maxTurns}` : ''}` : '',
+    progress?.toolCalls !== undefined ? `${progress.toolCalls} tools` : '',
+    progress?.lastTool ? `last ${progress.lastTool}` : '',
+    typeof taskPayloadValue(snapshot, 'scope') === 'string' ? String(taskPayloadValue(snapshot, 'scope')) : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+export interface SubagentTaskPanelProps {
+  tasks: MossAsyncTaskSnapshot[];
+  completions?: Map<string, MossAsyncTaskCompletion>;
+  now?: number;
+}
+
+export function SubagentTaskPanel({
+  tasks,
+  completions = new Map(),
+  now = Date.now(),
+}: SubagentTaskPanelProps): React.ReactElement | null {
+  if (tasks.length === 0) return null;
+  const visible = [...tasks]
+    .sort((left, right) => (right.startedAt ?? right.createdAt) - (left.startedAt ?? left.createdAt))
+    .slice(0, 6);
+  const running = tasks.filter((task) => task.status === 'running').length;
+  const queued = tasks.filter((task) => task.status === 'queued').length;
+  const failed = tasks.filter((task) => task.status === 'failed' || task.status === 'timed_out').length;
+  const completed = tasks.filter((task) => task.status === 'completed').length;
+  const summary = [
+    running ? `${running} running` : '',
+    queued ? `${queued} queued` : '',
+    completed ? `${completed} done` : '',
+    failed ? `${failed} failed` : '',
+  ].filter(Boolean).join(' · ') || `${tasks.length} task${tasks.length === 1 ? '' : 's'}`;
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', marginTop: 1, paddingX: 1 },
+    React.createElement(Text, null,
+      React.createElement(Text, { color: theme.accent, bold: true }, 'Sub-agents '),
+      React.createElement(Text, { color: theme.textDim }, `${summary} · /subagents`),
+    ),
+    ...visible.map((task) => {
+      const completion = completions.get(task.taskId);
+      const summaryLine = completionSummary(task, completion);
+      return React.createElement(Text, { key: task.taskId, wrap: 'truncate' },
+        React.createElement(Text, { color: statusColor(task.status), bold: true }, `${statusIcon(task.status)} `),
+        React.createElement(Text, { color: theme.text, bold: task.status === 'running' }, taskLabel(task)),
+        React.createElement(Text, { color: theme.textDim }, ` · ${taskMeta(task, now)}`),
+        summaryLine ? React.createElement(Text, { color: task.status === 'completed' ? theme.textDim : theme.error }, ` · ${summaryLine}`) : null,
+      );
+    }),
+    tasks.length > visible.length
+      ? React.createElement(Text, { color: theme.textDim }, `  ... ${tasks.length - visible.length} more sub-agent task${tasks.length - visible.length === 1 ? '' : 's'}`)
+      : null,
+  );
+}
+
+function formatSubagentTaskList(
+  tasks: MossAsyncTaskSnapshot[],
+  completions: Map<string, MossAsyncTaskCompletion>,
+  now = Date.now(),
+): string {
+  if (tasks.length === 0) return 'No background sub-agents in this session.';
+  return [
+    `Sub-agents (${tasks.length})`,
+    ...[...tasks]
+      .sort((left, right) => (right.startedAt ?? right.createdAt) - (left.startedAt ?? left.createdAt))
+      .map((task) => {
+        const completion = completions.get(task.taskId);
+        const summary = completionSummary(task, completion);
+        return [
+          `  ${statusIcon(task.status)} ${taskLabel(task)} · ${taskMeta(task, now)}`,
+          `    id: ${task.taskId}`,
+          summary ? `    ${summary}` : '',
+        ].filter(Boolean).join('\n');
+      }),
+    '',
+    'Use subagent_status with a task id for the raw completion, or subagent_stop to cancel a running task.',
+  ].join('\n');
+}
+
+function ModelPicker({ state }: { state: ModelPickerState }): React.ReactElement {
+  const maxVisible = 7;
+  const choices = state.list.choices;
+  const selected = Math.max(0, Math.min(choices.length - 1, state.selectedIndex));
+  const start = Math.min(
+    Math.max(0, selected - Math.floor(maxVisible / 2)),
+    Math.max(0, choices.length - maxVisible),
+  );
+  const visible = choices.slice(start, start + maxVisible);
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', paddingX: 1, marginBottom: 1 },
+    React.createElement(Text, { color: theme.accent, bold: true }, 'Select model'),
+    React.createElement(Text, { color: theme.textMuted },
+      `${state.list.providerLabel} (${state.list.provider}) · config ${state.list.configPath || '(default user config)'}`),
+    React.createElement(Text, { color: theme.textMuted }, 'Choose for this session:'),
+    ...visible.map((choice, offset) => {
+      const index = start + offset;
+      const isSelected = index === selected;
+      const current = choice.model === state.list.currentModel ? ' current' : '';
+      const modelLabel = choice.label ? ` - ${choice.label}` : '';
+      return React.createElement(Text, {
+        key: `${choice.provider}-${choice.model}-${index}`,
+        color: isSelected ? theme.permission : theme.text,
+        bold: isSelected,
+      }, `${isSelected ? '› ' : '  '}${String(index + 1).padStart(2, ' ')}. ${choice.model}${modelLabel}${current}`);
+    }),
+    React.createElement(Text, { color: theme.textDim },
+      'Enter choose · Up/Down move · Esc cancel · /model <number> · /model config base_url=<url> key=<api-key> model_name=<model>'),
+  );
+}
+
 function formatPromptEcho(message: string, attachments: PreparedPromptAttachment[]): string {
   if (attachments.length === 0) return message;
   return `${message}\n${renderPendingAttachmentSummary(attachments)}`;
 }
 
-function PendingAttachmentPreview({ items }: { items: PreparedPromptAttachment[] }): React.ReactElement | null {
+function hasImageAttachment(items: PreparedPromptAttachment[]): boolean {
+  return items.some((item) => item.kind === 'image');
+}
+
+const IMAGE_INPUT_DISABLED_NOTICE_LINES = [
+  'Image input is disabled; image content will not be sent.',
+  'Enable image_input=true only for a vision-capable gateway.',
+];
+
+function imageInputDisabledNotice(): string {
+  return IMAGE_INPUT_DISABLED_NOTICE_LINES.join('\n');
+}
+
+function PendingAttachmentPreview({
+  items,
+  imageInputEnabled,
+}: {
+  items: PreparedPromptAttachment[];
+  imageInputEnabled?: boolean;
+}): React.ReactElement | null {
   if (items.length === 0) return null;
   return React.createElement(
     Box,
     { flexDirection: 'column', marginTop: 1 },
     React.createElement(Text, { color: theme.textMuted },
-      `  attached ${items.length} for next prompt · /attach list · /attach clear`),
+      `  attached ${items.length} for next prompt · Esc clears`),
+    imageInputEnabled === false && hasImageAttachment(items)
+      ? IMAGE_INPUT_DISABLED_NOTICE_LINES.map((line) =>
+          React.createElement(Text, { key: line, color: theme.warn }, `  ${line}`),
+        )
+      : null,
     ...items.slice(0, 3).map((item) => React.createElement(Text, {
       key: `${item.index}-${item.path}`,
       color: item.kind === 'image' ? theme.primary : theme.warn,
@@ -2096,8 +2534,9 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const workspace = runtime?.workspace || process.cwd();
   const checkpointRef = useRef<FileCheckpointStore | null>(null);
   if (!checkpointRef.current) {
+    const paths = getMossWorkspacePaths(workspace);
     checkpointRef.current = new FileCheckpointStore({
-      runtimeDir: runtime?.runtimeDir || `${workspace}/.dmoss-runtime`,
+      runtimeDir: runtime?.runtimeDir || paths.runtimeDir,
       sessionKey,
     });
   }
@@ -2105,6 +2544,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const [inputCursor, setInputCursor] = useState(0);
   const [busy, setBusy] = useState(false);
   const [currentModel, setCurrentModel] = useState(agent.config.model || '');
+  const [modelPicker, setModelPicker] = useState<ModelPickerState | null>(null);
   const [detailMode, setDetailMode] = useState(process.env.DMOSS_CLI_DETAIL || 'quiet');
   const [showThinking, setShowThinking] = useState(process.env.DMOSS_SHOW_THINKING === 'true');
   const [notice, setNotice] = useState('');
@@ -2136,8 +2576,11 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const [ctxUsage, setCtxUsage] = useState<{ used: number; total: number } | undefined>(undefined);
   const [pendingAttachments, setPendingAttachments] = useState<PreparedPromptAttachment[]>([]);
   const [pendingAttachmentBlocks, setPendingAttachmentBlocks] = useState<PromptAttachmentBlock[]>([]);
+  const suppressedAutoAttachInputRef = useRef<string | null>(null);
   const [queuedInputs, setQueuedInputsState] = useState<QueuedInput[]>([]);
   const [queuePausedAfterCancel, setQueuePausedAfterCancelState] = useState(false);
+  const [subagentTasks, setSubagentTasks] = useState<SubagentTaskSnapshot[]>([]);
+  const [subagentCompletions, setSubagentCompletions] = useState<Map<string, MossAsyncTaskCompletion>>(new Map());
   const answerIdRef = useRef<number | null>(null);
   const currentTurnIdRef = useRef<number | null>(null);
   const activeRunControllerRef = useRef<AbortController | null>(null);
@@ -2165,6 +2608,30 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     setQueuePausedAfterCancelState(next);
   }, []);
 
+  const refreshSubagentTasks = useCallback((): void => {
+    const registry = (agent as unknown as { asyncTasks?: MossAsyncTaskRegistry }).asyncTasks;
+    if (!registry) {
+      setSubagentTasks([]);
+      setSubagentCompletions(new Map());
+      return;
+    }
+    const tasks = registry
+      .list()
+      .filter((task): task is SubagentTaskSnapshot => task.kind === 'subagent');
+    setSubagentTasks(tasks);
+    setSubagentCompletions(new Map(
+      tasks
+        .map((task) => [task.taskId, registry.readCompletion(task.taskId)] as const)
+        .filter((entry): entry is readonly [string, MossAsyncTaskCompletion] => entry[1] !== undefined),
+    ));
+  }, [agent]);
+
+  useEffect(() => {
+    refreshSubagentTasks();
+    const interval = setInterval(refreshSubagentTasks, busy ? 500 : 2_000);
+    return () => clearInterval(interval);
+  }, [busy, refreshSubagentTasks]);
+
   const rememberInput = useCallback((message: string): void => {
     const trimmed = message.trim();
     if (!trimmed) return;
@@ -2176,9 +2643,26 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const setInputFromTyping = useCallback((next: string): void => {
     historyIndexRef.current = null;
     historyDraftRef.current = '';
+    const normalizedNext = next.trim();
+    const suppressedAutoAttachInput = suppressedAutoAttachInputRef.current;
+    if (
+      suppressedAutoAttachInput
+      && suppressedAutoAttachInput !== normalizedNext
+      && !normalizedNext.startsWith(suppressedAutoAttachInput)
+    ) {
+      suppressedAutoAttachInputRef.current = null;
+    }
+    if (pendingAttachments.length > 0) {
+      const selected = selectReferencedPromptAttachments(next, pendingAttachments, pendingAttachmentBlocks);
+      if (selected.attachments.length !== pendingAttachments.length) {
+        suppressedAutoAttachInputRef.current = removeAttachmentRefsFromInput(next).trim() || null;
+        setPendingAttachments(selected.attachments);
+        setPendingAttachmentBlocks(selected.blocks);
+      }
+    }
     setInput(next);
     setInputCursor((cursor) => clampPromptCursor(next, cursor));
-  }, []);
+  }, [pendingAttachmentBlocks, pendingAttachments]);
 
   const recallHistoryPrevious = useCallback((): void => {
     const history = inputHistoryRef.current;
@@ -2233,19 +2717,95 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     flashTimerRef.current = setTimeout(() => setFlashHint(''), 2000);
   }, []);
 
+  const switchModelForSession = useCallback((model: string, provider: string, custom = false): void => {
+    agent.config.model = model;
+    (agent.config as { provider?: string }).provider = provider;
+    if (runtime?.config) {
+      runtime.config.model = model;
+      runtime.config.modelSource = 'cli';
+    }
+    setCurrentModel(model);
+    addTranscript('system', custom
+      ? `Model switched to custom model ${model} (${provider})`
+      : `Model switched to ${model} (${provider})`);
+  }, [addTranscript, agent, runtime]);
+
+  const applyCustomModelConfig = useCallback((rawConfig: string): void => {
+    const configPath = runtime?.config?.configPath ?? resolveConfigPath();
+    const parsed = parseCustomModelConfigInput(rawConfig);
+    if (!parsed.ok) {
+      addTranscript('system', `${parsed.message}\n\n${formatCustomModelConfigInstructions(configPath)}`);
+      return;
+    }
+
+    const nextConfig = parsed.config;
+    try {
+      const currentConfig = loadConfigFile(configPath);
+      saveConfigFileAtPath({
+        ...currentConfig,
+        provider: nextConfig.provider,
+        model: nextConfig.model,
+        baseUrl: nextConfig.baseUrl,
+        apiKey: nextConfig.apiKey,
+        ...(nextConfig.imageInput === undefined ? {} : { imageInput: nextConfig.imageInput }),
+      }, configPath);
+    } catch (err) {
+      addTranscript('error', `Could not save model config: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+
+    if (runtime?.config) {
+      runtime.config.provider = nextConfig.provider;
+      runtime.config.providerSource = 'config';
+      runtime.config.model = nextConfig.model;
+      runtime.config.modelSource = 'config';
+      runtime.config.baseUrl = nextConfig.baseUrl;
+      runtime.config.baseUrlSource = 'config';
+      runtime.config.apiKey = nextConfig.apiKey;
+      runtime.config.apiKeySource = 'config';
+      runtime.config.usingBundledDefault = false;
+      if (nextConfig.imageInput !== undefined) {
+        runtime.config.imageInput = nextConfig.imageInput;
+        runtime.config.imageInputSource = 'config';
+      }
+    }
+
+    agent.config.model = nextConfig.model;
+    (agent.config as { provider?: string; baseUrl?: string }).provider = nextConfig.provider;
+    (agent.config as { provider?: string; baseUrl?: string }).baseUrl = nextConfig.baseUrl;
+    agent.config.llmProvider = createCliProvider({
+      provider: nextConfig.provider,
+      apiKey: nextConfig.apiKey,
+      model: nextConfig.model,
+      baseUrl: nextConfig.baseUrl,
+      imageInput: nextConfig.imageInput,
+    });
+    setCurrentModel(nextConfig.model);
+    setModelPicker(null);
+    addTranscript('system', [
+      `Custom model configured: ${nextConfig.model} (${nextConfig.provider})`,
+      `Saved to ${configPath}`,
+      nextConfig.imageInput === true
+        ? 'Image input enabled for this provider.'
+        : 'Image input disabled unless you set image_input=true for a vision-capable gateway.',
+    ].join('\n'));
+  }, [addTranscript, agent, runtime]);
+
   const appendPreparedAttachments = useCallback((prepared: {
     attachments: PreparedPromptAttachment[];
     blocks: PromptAttachmentBlock[];
     warnings: string[];
-  }): void => {
+  }, options: { appendRefsToInput?: boolean; inputPrefix?: string } = {}): void => {
     if (prepared.attachments.length > 0) {
+      suppressedAutoAttachInputRef.current = null;
       const nextAttachments = [...pendingAttachments, ...prepared.attachments];
       setPendingAttachments(nextAttachments);
       setPendingAttachmentBlocks([...pendingAttachmentBlocks, ...prepared.blocks]);
-      const refs = prepared.attachments.map((item) => `[${item.kind === 'image' ? 'Image' : 'File'} #${item.index}]`).join(' ');
-      const nextInput = input.trim() ? `${input.trimEnd()} ${refs}` : refs;
-      setInput(nextInput);
-      setInputCursor(nextInput.length);
+      if (options.appendRefsToInput !== false) {
+        const nextInput = inputWithAttachmentRefs(options.inputPrefix ?? input, prepared.attachments);
+        setInput(nextInput);
+        setInputCursor(nextInput.length);
+      }
       addTranscript('system', renderPendingAttachmentSummary(nextAttachments));
     }
     for (const warning of prepared.warnings) {
@@ -2256,19 +2816,41 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     }
   }, [addTranscript, input, pendingAttachmentBlocks, pendingAttachments]);
 
-  const pasteClipboardImage = useCallback(async (): Promise<void> => {
+  const prepareStandaloneAttachmentInput = useCallback((message: string): {
+    attachments: PreparedPromptAttachment[];
+    blocks: PromptAttachmentBlock[];
+    warnings: string[];
+  } | null => {
+    const trimmed = message.trim();
+    const singlePath = preparePromptAttachments([trimmed], {
+      cwd: workspace,
+      startIndex: pendingAttachments.length + 1,
+    });
+    if (singlePath.attachments.length > 0 && singlePath.warnings.length === 0) return singlePath;
+
+    const values = parseAttachArgs(trimmed);
+    if (values.length === 0) return null;
+    const prepared = preparePromptAttachments(values, {
+      cwd: workspace,
+      startIndex: pendingAttachments.length + 1,
+    });
+    if (prepared.attachments.length === 0 || prepared.warnings.length > 0) return null;
+    return prepared;
+  }, [pendingAttachments.length, workspace]);
+
+  const pasteClipboardAttachment = useCallback(async (): Promise<void> => {
     try {
-      const prepared = await prepareClipboardImageAttachment({
-        runtimeDir: runtime?.runtimeDir || path.join(workspace, '.dmoss-runtime'),
+      const prepared = await prepareClipboardAttachment({
+        runtimeDir: runtime?.runtimeDir || getMossWorkspacePaths(workspace).runtimeDir,
         cwd: workspace,
         startIndex: pendingAttachments.length + 1,
       });
       appendPreparedAttachments(prepared);
-      if (prepared.attachments.length > 0) showFlash(`attached ${prepared.attachments.length} clipboard image${prepared.attachments.length === 1 ? '' : 's'}`);
+      if (prepared.attachments.length > 0) showFlash(`attached ${prepared.attachments.length} clipboard item${prepared.attachments.length === 1 ? '' : 's'}`);
     } catch (err) {
       addTranscript('error', [
-        `Could not paste clipboard image: ${err instanceof Error ? err.message : String(err)}`,
-        'Try /attach <image-file> instead. On macOS, copy a screenshot/image to the clipboard, then run /paste or press Ctrl+V inside Moss.',
+        `Could not paste clipboard attachment: ${err instanceof Error ? err.message : String(err)}`,
+        'Copy an image, a file in Finder, or a file path, then press Ctrl+V again. You can also paste a file path and press Enter.',
       ].join('\n'));
     }
   }, [addTranscript, appendPreparedAttachments, pendingAttachments.length, runtime?.runtimeDir, showFlash, workspace]);
@@ -2291,12 +2873,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   }, [localShellApproved]);
 
   const askApproval = useCallback((question: string): Promise<string> => new Promise((resolve) => {
-    setApproval({ question, resolve });
+    setApproval({ question, selectedIndex: 0, resolve });
   }), []);
 
   useEffect(() => {
     setCliApprovalAsker((question) => new Promise((resolve) => {
-      setApproval({ question, resolve });
+      setApproval({ question, selectedIndex: 0, resolve });
     }));
     return () => setCliApprovalAsker(null);
   }, []);
@@ -2349,20 +2931,89 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     // mouse-report bytes Ink surfaces here so they never fire keys (e.g. a stray
     // Esc from a wheel event must not cancel the run).
     if (isLikelyMouseInput(inputChar)) return;
+    if (modelPicker) {
+      const choices = modelPicker.list.choices;
+      if (key.escape) {
+        setModelPicker(null);
+        showFlash('model selection cancelled');
+        return;
+      }
+      if (key.upArrow || (key.ctrl && inputChar.toLowerCase() === 'p')) {
+        setModelPicker((picker) => picker ? {
+          ...picker,
+          selectedIndex: picker.selectedIndex <= 0 ? picker.list.choices.length - 1 : picker.selectedIndex - 1,
+        } : picker);
+        return;
+      }
+      if (key.downArrow || (key.ctrl && inputChar.toLowerCase() === 'n')) {
+        setModelPicker((picker) => picker ? {
+          ...picker,
+          selectedIndex: picker.selectedIndex >= picker.list.choices.length - 1 ? 0 : picker.selectedIndex + 1,
+        } : picker);
+        return;
+      }
+      if (/^\d$/.test(inputChar)) {
+        const selected = Number.parseInt(inputChar, 10) - 1;
+        const choice = choices[selected];
+        if (choice) {
+          setModelPicker(null);
+          switchModelForSession(choice.model, modelPicker.list.provider);
+        }
+        return;
+      }
+      if (key.return) {
+        const choice = choices[Math.max(0, Math.min(choices.length - 1, modelPicker.selectedIndex))];
+        if (choice) {
+          setModelPicker(null);
+          switchModelForSession(choice.model, modelPicker.list.provider);
+        }
+        return;
+      }
+      return;
+    }
     if (approval) {
-      const decision = approvalKeyDecision(inputChar, key);
-      if (decision === 'deny') {
+      if (key.escape) {
         approval.resolve('');
         setApproval(null);
         return;
       }
+      if (key.upArrow || key.leftArrow || (key.ctrl && inputChar.toLowerCase() === 'p')) {
+        setApproval((current) => current ? {
+          ...current,
+          selectedIndex: current.selectedIndex <= 0 ? APPROVAL_CHOICES.length - 1 : current.selectedIndex - 1,
+        } : current);
+        return;
+      }
+      if (key.downArrow || key.rightArrow || (key.ctrl && inputChar.toLowerCase() === 'n')) {
+        setApproval((current) => current ? {
+          ...current,
+          selectedIndex: current.selectedIndex >= APPROVAL_CHOICES.length - 1 ? 0 : current.selectedIndex + 1,
+        } : current);
+        return;
+      }
+      if (key.return) {
+        approval.resolve(approvalAnswerForIndex(approval.selectedIndex));
+        setApproval(null);
+        return;
+      }
+      if (/^[1-3]$/.test(inputChar)) {
+        approval.resolve(approvalAnswerForIndex(Number.parseInt(inputChar, 10) - 1));
+        setApproval(null);
+        return;
+      }
+      const decision = approvalKeyDecision(inputChar, key);
+      if (decision === 'deny') {
+        approval.resolve(approvalAnswerFromDecision(decision));
+        setApproval(null);
+        return;
+      }
       if (decision === 'allow-once') {
-        approval.resolve('y');
+        approval.resolve(approvalAnswerFromDecision(decision));
         setApproval(null);
         return;
       }
       if (decision === 'allow-always') {
-        approval.resolve('a');
+        approval.resolve(approvalAnswerFromDecision(decision));
         setApproval(null);
         return;
       }
@@ -2387,9 +3038,20 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     }
     // History scrollback is the terminal's job now (native wheel/trackbar over the
     // <Static> output) — no in-app PageUp/PageDown, so those keys stay free and the
-    // view matches normal terminal usage. Esc still interrupts the active run.
+    // view matches normal terminal usage. Esc still interrupts the active run,
+    // and clears accidental pending attachments while idle.
     if (key.escape && activeRunControllerRef.current) {
       requestStop();
+    } else if (key.escape && pendingAttachments.length > 0) {
+      const count = pendingAttachments.length;
+      setPendingAttachments([]);
+      setPendingAttachmentBlocks([]);
+      const nextInput = removeAttachmentRefsFromInput(input);
+      suppressedAutoAttachInputRef.current = nextInput.trim() || null;
+      setInput(nextInput);
+      setInputCursor((cursor) => clampPromptCursor(nextInput, cursor));
+      addTranscript('system', `Cleared ${count} pending attachment${count === 1 ? '' : 's'}.`);
+      showFlash('attachments cleared');
     }
   });
 
@@ -2407,7 +3069,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     if (message === '/paste') {
-      await pasteClipboardImage();
+      await pasteClipboardAttachment();
       return true;
     }
     if (message === '/clear') {
@@ -2477,6 +3139,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
         const count = pendingAttachments.length;
         setPendingAttachments([]);
         setPendingAttachmentBlocks([]);
+        const nextInput = removeAttachmentRefsFromInput(input);
+        suppressedAutoAttachInputRef.current = nextInput.trim() || null;
+        setInput(nextInput);
+        setInputCursor((cursor) => clampPromptCursor(nextInput, cursor));
         addTranscript('system', count === 0 ? 'No pending attachments.' : `Cleared ${count} pending attachment${count === 1 ? '' : 's'}.`);
         return true;
       }
@@ -2489,7 +3155,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
         cwd: workspace,
         startIndex: pendingAttachments.length + 1,
       });
-      appendPreparedAttachments(prepared);
+      appendPreparedAttachments(prepared, { inputPrefix: '' });
       return true;
     }
     if (message === '/stop' || message === '/abort') {
@@ -2508,6 +3174,23 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     }
     if (message === '/status' || message === '/status --verbose') {
       addTranscript('system', renderCliStatus(agent, runtime, { verbose: message.includes('--verbose') }));
+      return true;
+    }
+    if (message === '/subagents' || message === '/agents') {
+      const registry = (agent as unknown as { asyncTasks?: MossAsyncTaskRegistry }).asyncTasks;
+      if (!registry) {
+        addTranscript('system', 'Background sub-agent registry is unavailable in this session.');
+        return true;
+      }
+      const tasks = registry.list().filter((task) => task.kind === 'subagent');
+      const completions = new Map(
+        tasks
+          .map((task) => [task.taskId, registry.readCompletion(task.taskId)] as const)
+          .filter((entry): entry is readonly [string, MossAsyncTaskCompletion] => entry[1] !== undefined),
+      );
+      setSubagentTasks(tasks as SubagentTaskSnapshot[]);
+      setSubagentCompletions(completions);
+      addTranscript('system', formatSubagentTaskList(tasks, completions));
       return true;
     }
     if (message === '/connect' || message.startsWith('/connect ')) {
@@ -2627,13 +3310,13 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     }
     if (message === '/cost') {
       try {
-        // Real recorded spend from .dmoss/llm-usage.jsonl (logged per LLM
+        // Real recorded spend from .moss/llm-usage.jsonl (logged per LLM
         // request in the agent loop), not a chars/4 guess.
         const records = await readUsageLog();
         if (records.length === 0) {
           addTranscript('system', [
             'Session usage',
-            '  No LLM usage recorded yet in this workspace (.dmoss/llm-usage.jsonl).',
+            '  No LLM usage recorded yet in this workspace (.moss/llm-usage.jsonl).',
             '  Token counts and cost are logged once the agent makes an LLM call.',
           ].join('\n'));
         } else {
@@ -2693,26 +3376,23 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     }
     if (message === '/model' || message.startsWith('/model ')) {
       const nextModel = message === '/model' ? '' : message.slice(7).trim();
+      if (nextModel === 'config' || nextModel.startsWith('config ')) {
+        const rawConfig = nextModel === 'config' ? '' : nextModel.slice('config'.length).trim();
+        applyCustomModelConfig(rawConfig);
+        return true;
+      }
       if (!nextModel) {
         const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
           fallbackProvider: (agent.config as { provider?: string }).provider,
         });
-        addTranscript('system', formatModelChoices(modelChoices));
+        setModelPicker({ list: modelChoices, selectedIndex: 0 });
       } else {
         const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
           fallbackProvider: (agent.config as { provider?: string }).provider,
         });
         const selected = resolveModelSelection(nextModel, modelChoices.choices);
         const model = selected?.model ?? nextModel;
-        agent.config.model = model;
-        if (runtime?.config) {
-          runtime.config.model = model;
-          runtime.config.modelSource = 'cli';
-        }
-        setCurrentModel(model);
-        addTranscript('system', selected
-          ? `Model switched to ${model} (${modelChoices.provider})`
-          : `Model switched to custom model ${model} (${modelChoices.provider})`);
+        switchModelForSession(model, modelChoices.provider, !selected);
       }
       return true;
     }
@@ -2762,7 +3442,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     return false;
-  }, [addTranscript, agent, app, currentModel, pasteClipboardImage, pendingAttachmentBlocks, pendingAttachments, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, workspace]);
+  }, [addTranscript, agent, app, applyCustomModelConfig, currentModel, input, pasteClipboardAttachment, pendingAttachmentBlocks, pendingAttachments, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, switchModelForSession, workspace]);
 
   const runLocalShell = useCallback(async (raw: string): Promise<void> => {
     const command = raw.slice(1);
@@ -2808,6 +3488,9 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     attachmentBlocks: PromptAttachmentBlock[] = [],
   ): Promise<void> => {
     addTranscript('user', formatPromptEcho(message, attachments));
+    if (runtime?.config?.imageInput === false && hasImageAttachment(attachments)) {
+      addTranscript('system', imageInputDisabledNotice());
+    }
     checkpointRef.current?.open(message);
     setBusyState(true);
     answerIdRef.current = null;
@@ -2963,7 +3646,6 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     setInput('');
     setInputCursor(0);
     if (!message || approval) return;
-    rememberInput(message);
     historyIndexRef.current = null;
     historyDraftRef.current = '';
     const queuePaused = queuePausedAfterCancelRef.current;
@@ -2974,11 +3656,28 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       || message === '/session'
       || queueControlCommand;
     const attachesToPrompt = !message.startsWith('/') && !isLocalShellLine(raw);
-    const attachmentsForSubmit = attachesToPrompt ? pendingAttachments : [];
-    const attachmentBlocksForSubmit = attachesToPrompt ? pendingAttachmentBlocks : [];
+    if (
+      attachesToPrompt
+      && pendingAttachments.length === 0
+      && suppressedAutoAttachInputRef.current !== message
+    ) {
+      const pastedAttachment = prepareStandaloneAttachmentInput(message);
+      if (pastedAttachment) {
+        appendPreparedAttachments(pastedAttachment, { inputPrefix: message });
+        return;
+      }
+    }
+    if (suppressedAutoAttachInputRef.current === message) suppressedAutoAttachInputRef.current = null;
+    if (attachesToPrompt) rememberInput(message);
+    const selectedAttachments = attachesToPrompt
+      ? selectReferencedPromptAttachments(message, pendingAttachments, pendingAttachmentBlocks)
+      : { attachments: [], blocks: [] };
+    const attachmentsForSubmit = selectedAttachments.attachments;
+    const attachmentBlocksForSubmit = selectedAttachments.blocks;
     if (attachesToPrompt && pendingAttachments.length > 0) {
       setPendingAttachments([]);
       setPendingAttachmentBlocks([]);
+      suppressedAutoAttachInputRef.current = null;
     }
     if (queuePaused && !queueControlCommand && !message.startsWith('/')) {
       const nextQueue = [...queuedInputsRef.current, {
@@ -3010,7 +3709,18 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return;
     }
     runInput(raw, attachmentsForSubmit, attachmentBlocksForSubmit);
-  }, [addTranscript, approval, pendingAttachmentBlocks, pendingAttachments, runInput, setQueuePausedAfterCancel, setQueuedInputs]);
+  }, [
+    addTranscript,
+    appendPreparedAttachments,
+    approval,
+    pendingAttachmentBlocks,
+    pendingAttachments,
+    prepareStandaloneAttachmentInput,
+    rememberInput,
+    runInput,
+    setQueuePausedAfterCancel,
+    setQueuedInputs,
+  ]);
 
   const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
   const cacheMode = promptCacheModeLabel(runtime);
@@ -3022,10 +3732,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     placeholder: promptPlaceholder(runState),
     hint: footerHint(runState),
   });
+  const modelPickerRows = modelPicker ? Math.min(10, modelPicker.list.choices.length + 5) : 0;
   const queueRows = queuedInputs.length > 0 ? Math.min(5, queuedInputs.length + 2) : 0;
+  const subagentRows = subagentTasks.length > 0 ? Math.min(8, subagentTasks.length + 2) : 0;
   const footerRows = approval ? 0 : 1;
   const headerRows = 5;
-  const approvalRows = approval ? Math.min(10, approval.question.split('\n').length + 4) : 0;
+  const approvalRows = approval ? Math.min(12, approvalPromptBodyLines(approval.question).length + 7) : 0;
   const noticeRows = notice ? 1 : 0;
   const viewportOptions = {
     transcriptLength: transcript.length,
@@ -3105,6 +3817,8 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const liveChromeRows =
     1 /* paddingTop */
     + (busy && !approval ? 1 : 0) /* working indicator */
+    + modelPickerRows
+    + subagentRows
     + queueRows
     + noticeRows
     + (flashHint ? 1 : 0)
@@ -3144,12 +3858,20 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       // Live activity line: a self-animating spinner + elapsed seconds while busy, so it
       // is always clear the agent is alive (not frozen) even between visible output.
       busy && !approval ? React.createElement(WorkingIndicator, { key: 'working' }) : null,
+      modelPicker ? React.createElement(ModelPicker, { state: modelPicker }) : null,
+      React.createElement(SubagentTaskPanel, {
+        tasks: subagentTasks,
+        completions: subagentCompletions,
+      }),
       React.createElement(QueuePreview, { items: queuedInputs, paused: queuePausedAfterCancel }),
-      React.createElement(PendingAttachmentPreview, { items: pendingAttachments }),
+      React.createElement(PendingAttachmentPreview, {
+        items: pendingAttachments,
+        imageInputEnabled: runtime?.config?.imageInput !== false,
+      }),
       notice ? React.createElement(Text, { color: theme.warn }, notice) : null,
       flashHint ? React.createElement(Text, { color: theme.warn }, flashHint) : null,
       approval
-        ? React.createElement(ApprovalPromptLine, { question: approval.question })
+        ? React.createElement(ApprovalPromptLine, { question: approval.question, selectedIndex: approval.selectedIndex })
         : React.createElement(PromptEditor, {
             value: input,
             cursor: inputCursor,
@@ -3157,12 +3879,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
             onCursorChange: setInputCursor,
             onSubmit: submit,
             placeholder: promptPlaceholder(runState),
-            disabled: false,
+            disabled: modelPicker !== null,
             mode: interactionMode,
             onHistoryPrevious: recallHistoryPrevious,
             onHistoryNext: recallHistoryNext,
             onShiftEnter: () => undefined,
-            onPasteImageShortcut: () => { void pasteClipboardImage(); },
+            onPasteAttachmentShortcut: () => { void pasteClipboardAttachment(); },
           }),
       // One compact agent-style line under the input: the active non-default mode, else
       // the key hints — plus a subtle context-used %.
@@ -3186,17 +3908,19 @@ function commandList(): string {
   return [
     'Core commands',
     '  /status            view model, workspace, device, and tool state',
+    '  /subagents         show background sub-agent status and progress',
     '  /model [name|#]    choose or switch the active model',
-    '  /goal set <text>   set what Moss should keep working toward',
+    '  /model config ...  save base_url/key/model_name and use it now',
+    '  /goal <text>       set what Moss should keep working toward',
     '  /compact           compress older conversation history into a summary',
     '  /auth login        optional: link a D-Robotics developer community account',
-    '  /attach <path>     attach an image or text file to the next prompt',
     '  /connect <ip>      connect an RDK board for this session',
     '  /sessions          list saved conversations you can resume',
     '  /diff              show git working-tree changes',
     '',
     'Shortcuts',
-    '  Ctrl+V             attach a screenshot/image from the clipboard on macOS',
+    '  Ctrl+V             attach a copied image, Finder file, or file path',
+    '  paste path + Enter attach a local image or text file path',
     '  Esc                stop the active run',
     '  Ctrl+O             expand/collapse tool calls',
     '  Shift+Tab          cycle plan/default/accept-edits modes',

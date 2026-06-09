@@ -26,6 +26,7 @@ import { codeDiagnosticsTool } from './code-diagnostics.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
 import { applyUpdateHunk, extractAddContent, parsePatch } from '../utils/apply-patch-core.js';
 import { atomicWriteFile } from '../utils/atomic-write.js';
+import { getMossWorkspacePaths } from '../utils/workspace-paths.js';
 import micromatch from 'micromatch';
 
 const IS_WIN = process.platform === 'win32';
@@ -86,6 +87,10 @@ async function staleWriteError(resolvedPath: string, displayPath: string): Promi
 }
 
 const LINE_NUMBER_WIDTH = 6;
+const SKILL_BODY_MAX_CHARS = 80_000;
+const ALLOWED_SKILL_RISKS = new Set(['low', 'medium', 'high']);
+const ALLOWED_SKILL_PERMISSIONS = new Set(['workspace_read', 'workspace_write', 'device_exec', 'network']);
+const ALLOWED_SKILL_APPROVAL_LEVELS = new Set(['none', 'confirm', 'strict']);
 
 /** Prefix each line with a right-aligned line number + tab, like `cat -n`. */
 function withLineNumbers(text: string, startLine = 1): string {
@@ -109,6 +114,71 @@ function countOccurrences(haystack: string, needle: string): number {
  */
 function normalizeEditQuotes(s: string): string {
   return s.replace(/[‘’‚‛]/g, "'").replace(/[“”„‟]/g, '"');
+}
+
+function oneLine(input: unknown, fallback = ''): string {
+  const value = typeof input === 'string' ? input : fallback;
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function stringList(input: unknown): string[] {
+  if (Array.isArray(input)) {
+    return input
+      .map((item) => oneLine(item))
+      .filter(Boolean)
+      .map((item) => item.replace(/[;,]/g, ' '));
+  }
+  if (typeof input === 'string') {
+    return input
+      .split(/[;,]/)
+      .map((item) => oneLine(item))
+      .filter(Boolean)
+      .map((item) => item.replace(/[;,]/g, ' '));
+  }
+  return [];
+}
+
+function normalizeSkillSlug(input: unknown): string | null {
+  const raw = oneLine(input);
+  if (!raw || raw.includes('/') || raw.includes('\\') || raw.includes('..')) return null;
+  const slug = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  if (!slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)) return null;
+  return slug;
+}
+
+function frontmatterListLine(key: string, values: string[]): string[] {
+  return values.length > 0 ? [`${key}: ${values.join(', ')}`] : [];
+}
+
+function buildSkillMarkdown(input: Record<string, unknown>, skillName: string): string | null {
+  const description = oneLine(input.description);
+  const body = typeof input.body === 'string' ? input.body.trim() : '';
+  if (!description || !body || body.length > SKILL_BODY_MAX_CHARS) return null;
+  const risk = oneLine(input.risk, 'medium').toLowerCase();
+  const approvalLevel = oneLine(input.approval_level, 'confirm').toLowerCase();
+  if (!ALLOWED_SKILL_RISKS.has(risk) || !ALLOWED_SKILL_APPROVAL_LEVELS.has(approvalLevel)) return null;
+  const permissions = stringList(input.permissions).filter((permission) => ALLOWED_SKILL_PERMISSIONS.has(permission));
+  const tags = stringList(input.tags);
+  const trigger = stringList(input.trigger ?? input.triggers);
+  return [
+    '---',
+    `name: ${skillName}`,
+    `description: ${description}`,
+    `version: ${oneLine(input.version, '0.1.0') || '0.1.0'}`,
+    ...frontmatterListLine('tags', tags),
+    ...frontmatterListLine('trigger', trigger),
+    `risk: ${risk}`,
+    ...frontmatterListLine('permissions', permissions),
+    `approval_level: ${approvalLevel}`,
+    '---',
+    '',
+    body,
+    '',
+  ].join('\n');
 }
 
 export const readFileTool: Tool = {
@@ -743,6 +813,94 @@ export const webFetchTool: Tool = createWebFetchTool();
 
 export const webSearchTool: Tool = createWebSearchTool();
 
+export const installSkillTool: Tool = {
+  name: 'install_skill',
+  description:
+    'Install or update a Moss SKILL.md in the current workspace .moss/skills directory. ' +
+    'Use this when a reusable workflow should become an explicit skill that future Moss runs can discover.',
+  metadata: {
+    sideEffectClass: 'local_write',
+    planMode: 'requires_user_confirmation',
+  },
+  inputSchema: {
+    type: 'object',
+    properties: {
+      name: {
+        type: 'string',
+        description: 'Skill id. It is normalized to a lowercase slug and must not contain path separators.',
+      },
+      description: {
+        type: 'string',
+        description: 'One-line description used by the skill registry.',
+      },
+      body: {
+        type: 'string',
+        description: 'Markdown body of SKILL.md after the frontmatter.',
+      },
+      tags: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional skill tags.',
+      },
+      trigger: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional phrases that should trigger the skill.',
+      },
+      risk: {
+        type: 'string',
+        enum: ['low', 'medium', 'high'],
+        description: 'Skill risk level (default medium).',
+      },
+      permissions: {
+        type: 'array',
+        items: { type: 'string', enum: ['workspace_read', 'workspace_write', 'device_exec', 'network'] },
+        description: 'Optional permissions requested by the skill.',
+      },
+      approval_level: {
+        type: 'string',
+        enum: ['none', 'confirm', 'strict'],
+        description: 'Runtime approval level (default confirm).',
+      },
+      version: {
+        type: 'string',
+        description: 'Optional skill version (default 0.1.0).',
+      },
+      overwrite: {
+        type: 'boolean',
+        description: 'Overwrite an existing skill with the same normalized name (default false).',
+      },
+    },
+    required: ['name', 'description', 'body'],
+  },
+  async execute(input, ctx) {
+    try {
+      const skillName = normalizeSkillSlug(input.name);
+      if (!skillName) return 'Error: invalid skill name. Use letters, numbers, spaces, underscores, or hyphens; path separators are not allowed.';
+      const markdown = buildSkillMarkdown(input, skillName);
+      if (!markdown) {
+        return 'Error: invalid skill content. Provide a non-empty description and body, valid risk/approval_level values, and keep body under 80000 characters.';
+      }
+      const paths = getMossWorkspacePaths(ctx.workspaceDir);
+      const skillDir = path.join(paths.skillsDir, skillName);
+      const skillPath = path.join(skillDir, 'SKILL.md');
+      const overwrite = input.overwrite === true;
+      try {
+        await fs.stat(skillPath);
+        if (!overwrite) {
+          return `Error: skill ${skillName} already exists at .moss/skills/${skillName}/SKILL.md. Set overwrite=true to replace it.`;
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+      await atomicWriteFile(skillPath, markdown);
+      return `Installed skill ${skillName} at .moss/skills/${skillName}/SKILL.md`;
+    } catch (err) {
+      return `Error installing skill: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  },
+};
+
 /**
  * Recursively walk directories and grep file contents for a regex pattern.
  * Respects extension filter, file size limit, result limit, and timeout.
@@ -817,6 +975,7 @@ export const builtinTools: Tool[] = [
   searchCodeTool,
   webFetchTool,
   webSearchTool,
+  installSkillTool,
   ...createBrowserTools(),
   applyPatchTool,
   codeDiagnosticsTool,

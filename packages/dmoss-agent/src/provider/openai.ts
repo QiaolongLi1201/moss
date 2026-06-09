@@ -51,7 +51,7 @@ interface OpenAIChunk {
 export class OpenAILLMProvider implements LLMProvider {
   readonly id = 'openai';
   readonly displayName = 'OpenAI';
-  readonly capabilities = { streaming: true };
+  readonly capabilities = { streaming: true, imageInput: true };
 
   private readonly apiKey: string;
   private readonly baseUrl: string;

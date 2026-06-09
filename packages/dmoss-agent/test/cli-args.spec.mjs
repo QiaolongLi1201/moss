@@ -38,6 +38,8 @@ import { parseCliArgs } from '../dist/cli/args.js';
     '-c',
     'promptCacheDebug=true',
     '-c',
+    'imageInput=true',
+    '-c',
     'maxTurns=17',
     '-c',
     'contextTokens=96000',
@@ -54,6 +56,7 @@ import { parseCliArgs } from '../dist/cli/args.js';
   assert.deepEqual(parsed.configOverrides.deniedTools, ['device_*']);
   assert.equal(parsed.configOverrides.promptCacheEnabled, false);
   assert.equal(parsed.configOverrides.promptCacheDebug, true);
+  assert.equal(parsed.configOverrides.imageInput, true);
   assert.equal(parsed.configOverrides.maxAgentTurns, 17);
   assert.equal(parsed.configOverrides.contextTokens, 96000);
   assert.equal(parsed.prompt, 'run diff -r');

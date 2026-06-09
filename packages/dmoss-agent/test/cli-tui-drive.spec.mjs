@@ -33,13 +33,17 @@ const setRows = (r) => Object.defineProperty(process.stdout, 'rows', { value: r,
 const strip = (s) => (s || '').replace(/\x1b\[[0-9;]*m/g, '');
 const wait = (ms = 90) => new Promise((r) => setTimeout(r, ms));
 
-function makeAgent() {
+function makeAgent(options = {}) {
   let goal;
   return {
     config: {
       model: 'deepseek-v4-pro',
       provider: 'openai-compatible',
       sessionStore: { listSessions: async () => [], loadMessages: async () => [] },
+    },
+    asyncTasks: {
+      list: () => [],
+      readCompletion: () => undefined,
     },
     tools: { getAll: () => [], size: 0 },
     async getGoal() {
@@ -81,7 +85,9 @@ function makeAgent() {
     registerPreToolHook() {},
     registerPostToolHook() {},
     // eslint-disable-next-line require-yield
-    async *streamChat() {},
+    async *streamChat(sessionKey, message, chatOptions) {
+      options.onStreamChat?.({ sessionKey, message, options: chatOptions });
+    },
   };
 }
 const skillLearner = { async maybeLearnFromSession() {} };
@@ -90,10 +96,10 @@ const runtime = {
   configDir: '/tmp/dmoss-test/config',
   runtimeDir: '/tmp/dmoss-test/runtime',
 };
-const mount = () => render(React.createElement(
+const mount = (agent = makeAgent(), runtimeOverride = runtime) => render(React.createElement(
   CursorContext.Provider,
   { value: { setCursorPosition() {} } },
-  React.createElement(DmossTui, { agent: makeAgent(), skillLearner, runtime, sessionKey: 'cli' }),
+  React.createElement(DmossTui, { agent, skillLearner, runtime: runtimeOverride, sessionKey: 'cli' }),
 ));
 
 // A garbled frame from the flexShrink-squash bug looks like "deepseek-v4-pro" or the
@@ -106,7 +112,7 @@ function assertNoCrush(frame, ctx) {
 const inputLine = (frame) =>
   strip(frame).split('\n').filter((l) => /│\s+>/.test(l) && !/\bMoss\b/.test(l)).pop() || '';
 const selectedCmd = (frame) => {
-  const row = strip(frame).split('\n').find((l) => /^\s*[❯>]\s+\/[a-z]/.test(l));
+  const row = strip(frame).split('\n').find((l) => /^\s*[›❯>]\s+\/[a-z]/.test(l));
   const m = row && row.match(/(\/[a-z]+)/);
   return m ? m[1] : null;
 };
@@ -168,16 +174,57 @@ test('Chinese/CJK text is typed inline into the input box', async () => {
   cleanup();
 });
 
+test('prompt box Up/Down cycles previous chat prompts, not slash commands', async () => {
+  setRows(24);
+  const { stdin, lastFrame } = mount();
+  await wait(140);
+  stdin.write('first chat prompt');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  await runSlashCommand(stdin, lastFrame, '/status');
+
+  stdin.write(UP);
+  await wait(120);
+  assert.match(inputLine(lastFrame()), /first chat prompt/, 'Up should recall the last submitted chat prompt');
+  assert.doesNotMatch(inputLine(lastFrame()), /\/status/, 'slash commands should not replace chat prompt history');
+
+  stdin.write('\u0015');
+  await wait();
+  stdin.write('second chat prompt');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  stdin.write(UP);
+  await wait(120);
+  assert.match(inputLine(lastFrame()), /second chat prompt/, 'Up should recall the newest submitted chat prompt');
+  stdin.write(UP);
+  await wait(120);
+  {
+    const line = inputLine(lastFrame());
+    assert.match(line, /first chat prompt/, `Up again should move to the older chat prompt; got ${JSON.stringify(line)}`);
+  }
+  stdin.write(DOWN);
+  await wait(120);
+  assert.match(inputLine(lastFrame()), /second chat prompt/, 'Down should move toward newer chat prompts');
+  stdin.write(DOWN);
+  await wait(120);
+  assert.doesNotMatch(inputLine(lastFrame()), /first chat prompt/, 'Down at the newest entry should restore the empty draft');
+  cleanup();
+});
+
 test('slash menu: arrow keys move the selection and Tab completes it', async () => {
   setRows(24);
   const { stdin, lastFrame } = mount();
   await wait(140);
   stdin.write('/');
   await wait();
+  assert.match(strip(lastFrame()), /›\s+\/[a-z]+/, 'slash menu should visibly mark the selected command');
   const s0 = selectedCmd(lastFrame());
   stdin.write(DOWN);
   await wait();
   const s1 = selectedCmd(lastFrame());
+  assert.match(strip(lastFrame()), /›\s+\/[a-z]+/, 'Down should keep a visible selected-command marker');
   stdin.write(UP);
   await wait();
   const s0b = selectedCmd(lastFrame());
@@ -200,7 +247,8 @@ test('/goal is visible and handled by the TUI', async () => {
   assert.match(strip(lastFrame()), /\/compact\s+compress older conversation history/, 'slash menu should list /compact');
   cleanup();
 
-  mounted = mount();
+  const agent = makeAgent();
+  mounted = mount(agent);
   ({ stdin, lastFrame } = mounted);
   await wait(140);
   let f = await runSlashCommand(stdin, lastFrame, '/goal');
@@ -208,6 +256,9 @@ test('/goal is visible and handled by the TUI', async () => {
   assert.doesNotMatch(strip(f), /Unknown command: \/goal/);
   f = await runSlashCommand(stdin, lastFrame, '/goal set stabilize release');
   assert.match(strip(f), /Goal set: stabilize release|已设置目标：stabilize release/);
+  f = await runSlashCommand(stdin, lastFrame, '/goal 请你帮我拉一下https://github.com/copyleft/slark.git');
+  assert.equal((await agent.getGoal('cli'))?.objective, '请你帮我拉一下https://github.com/copyleft/slark.git');
+  assert.doesNotMatch(strip(f), /Unknown goal command/);
   cleanup();
 });
 
@@ -221,13 +272,163 @@ test('/compact is visible and handled by the TUI', async () => {
   cleanup();
 });
 
-test('/model opens a selectable model list and accepts a number', async () => {
+test('/subagents is visible and handled by the TUI', async () => {
   setRows(24);
   const { stdin, lastFrame } = mount();
+  await wait(140);
+  const f = await runSlashCommand(stdin, lastFrame, '/subagents');
+  assert.match(strip(f), /No background sub-agents in this session\./, '/subagents should show a clear empty state');
+  assert.doesNotMatch(strip(f), /Unknown command: \/subagents/);
+  cleanup();
+});
+
+test('/attach adds an image for the next prompt without leaving the slash command in the editor', async () => {
+  setRows(24);
+  const { stdin, lastFrame } = mount();
+  await wait(140);
+  const f = await runSlashCommand(stdin, lastFrame, '/attach assets/moss-tui-demo.gif');
+  const afterAttach = strip(f);
+  assert.match(afterAttach, /Pending attachments \(1\)/, '/attach should add a pending attachment');
+  assert.match(afterAttach, /\[Image #1\] assets\/moss-tui-demo\.gif/, 'pending image should be visible');
+  assert.doesNotMatch(inputLine(lastFrame()), /\/attach/, '/attach command should not remain in the prompt editor');
+  assert.match(inputLine(lastFrame()), /\[Image #1\]/, 'attachment ref should be deletable in the prompt editor');
+
+  stdin.write('please inspect the attached image');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  const sent = strip(lastFrame());
+  assert.match(sent, /please inspect the attached image/, 'the next ordinary prompt should be submitted');
+  assert.match(sent, /Pending attachments \(1\)/, 'submitted user prompt should include the attachment summary');
+  assert.match(sent, /\[Image #1\] assets\/moss-tui-demo\.gif/, 'submitted prompt should carry the pending image');
+  cleanup();
+});
+
+test('pasting a standalone file path and pressing Enter attaches it for the next prompt', async () => {
+  setRows(24);
+  const sentPrompts = [];
+  const agent = makeAgent({ onStreamChat: (call) => sentPrompts.push(call) });
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+
+  stdin.write('assets/moss-tui-demo.gif');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+
+  const afterPastePath = strip(lastFrame());
+  assert.match(afterPastePath, /Pending attachments \(1\)/, 'pasted file path should become a pending attachment');
+  assert.match(afterPastePath, /\[Image #1\] assets\/moss-tui-demo\.gif/, 'pending image should be visible');
+  assert.doesNotMatch(afterPastePath, /assets\/moss-tui-demo\.gif\s+deepseek-v4-pro/, 'path should not be sent as a chat prompt');
+  assert.match(inputLine(lastFrame()), /assets\/moss-tui-demo\.gif.*\[Image #1\]/, 'pasted path should stay editable with a removable attachment token');
+
+  stdin.write('please inspect the pasted image');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+
+  const sent = strip(lastFrame());
+  assert.match(sent, /please inspect the pasted image/, 'the next ordinary prompt should be submitted');
+  assert.match(sent, /Pending attachments \(1\)/, 'submitted user prompt should include the attachment summary');
+  assert.match(sent, /\[Image #1\] assets\/moss-tui-demo\.gif/, 'submitted prompt should carry the pasted image');
+  assert.equal(sentPrompts.length, 1);
+  assert.equal(sentPrompts[0].options.attachments.length, 2, 'image prompt should include text marker + image block');
+  cleanup();
+});
+
+test('image attachments warn when the active provider cannot receive image content', async () => {
+  setRows(24);
+  const sentPrompts = [];
+  const agent = makeAgent({ onStreamChat: (call) => sentPrompts.push(call) });
+  const { stdin, lastFrame } = mount(agent, {
+    ...runtime,
+    config: { imageInput: false },
+  });
+  await wait(140);
+
+  stdin.write('assets/moss-tui-demo.gif');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.match(strip(lastFrame()), /Image input is disabled/, 'pending image should disclose that vision input is disabled');
+
+  stdin.write('please inspect the pasted image');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  const sent = strip(lastFrame());
+  assert.match(sent, /Image input is disabled/, 'submitted image prompt should keep the disabled-vision notice visible');
+  assert.equal(sentPrompts.length, 1);
+  assert.equal(sentPrompts[0].options.attachments.length, 2);
+  cleanup();
+});
+
+test('deleting an inline attachment token removes it from the submitted prompt', async () => {
+  setRows(24);
+  const sentPrompts = [];
+  const agent = makeAgent({ onStreamChat: (call) => sentPrompts.push(call) });
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+
+  stdin.write('assets/moss-tui-demo.gif');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.match(inputLine(lastFrame()), /assets\/moss-tui-demo\.gif.*\[Image #1\]/);
+
+  for (let i = 0; i < '[Image #1] '.length; i += 1) {
+    stdin.write('\b');
+    await wait(20);
+  }
+  const afterDelete = inputLine(lastFrame());
+  assert.match(afterDelete, /assets\/moss-tui-demo\.gif/);
+  assert.doesNotMatch(afterDelete, /\[Image #1\]/);
+
+  stdin.write('\r');
+  await wait(180);
+  assert.equal(sentPrompts.length, 1);
+  assert.equal(sentPrompts[0].message, 'assets/moss-tui-demo.gif');
+  assert.equal(sentPrompts[0].options.attachments, undefined, 'deleted inline token should remove the pending attachment');
+  cleanup();
+});
+
+test('Esc clears an accidental pending attachment while idle', async () => {
+  setRows(24);
+  const { stdin, lastFrame } = mount();
+  await wait(140);
+
+  stdin.write('assets/moss-tui-demo.gif');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.match(strip(lastFrame()), /Pending attachments \(1\)/);
+
+  stdin.write(ESC);
+  await wait(180);
+  const afterEsc = strip(lastFrame());
+  assert.match(afterEsc, /Cleared 1 pending attachment\./);
+  assert.doesNotMatch(afterEsc.slice(afterEsc.lastIndexOf('Cleared 1 pending attachment.')), /Pending attachments \(1\)/);
+  cleanup();
+});
+
+test('/model opens a selectable model list and accepts a number', async () => {
+  setRows(24);
+  let mounted = mount();
+  let { stdin, lastFrame } = mounted;
   await wait(140);
   let f = await runSlashCommand(stdin, lastFrame, '/model');
   assert.match(strip(f), /Choose for this session:/, '/model should show a selector, not only echo the current model');
   assert.match(strip(f), /\/model <number>/, '/model selector should document numeric selection');
+  stdin.write(DOWN);
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.match(strip(lastFrame()), /Model switched to gpt-4o-mini/, 'Down + Enter should choose the highlighted model');
+  cleanup();
+
+  mounted = mount();
+  ({ stdin, lastFrame } = mounted);
+  await wait(140);
   f = await runSlashCommand(stdin, lastFrame, '/model 2');
   assert.match(strip(f), /Model switched to gpt-4o-mini/, '/model 2 should switch to the second listed model');
   assert.doesNotMatch(strip(f), /Unknown command: \/model/);

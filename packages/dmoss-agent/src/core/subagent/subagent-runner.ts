@@ -14,6 +14,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Tool } from '../tools/tool-types.js';
+import type { SubagentRunProgress } from '../tools/tool-types.js';
 import type { Model, StreamFunction, ThinkingLevel } from '../../provider/pi-ai-types.js';
 import type { AgentLoopPlatformConfig } from '../loop/agent-loop-types.js';
 import type { Message } from '../session/session-jsonl.js';
@@ -23,6 +24,7 @@ import { resolveSpawnToolSet, buildSubagentPromptAddon } from './spawn-profile.j
 import type { SpawnProfileRegistry, SpawnToolScope } from './spawn-profile.js';
 import { runAgentLoop } from '../loop/agent-loop.js';
 import { getRootLogger } from '../../logger.js';
+import { getMossWorkspacePaths } from '../../utils/workspace-paths.js';
 
 const log = getRootLogger().child('subagent-runner');
 
@@ -35,14 +37,15 @@ function scopeNeedsIsolation(scope: SpawnToolScope): boolean {
 }
 
 async function prepareWorkspaceDir(
+  parentWorkspaceDir: string,
   scope: SpawnToolScope,
   runId: string,
 ): Promise<{ workspaceDir: string; isolated: boolean }> {
-  const cwd = process.cwd();
+  const workspaceDir = path.resolve(parentWorkspaceDir);
   if (!scopeNeedsIsolation(scope)) {
-    return { workspaceDir: cwd, isolated: false };
+    return { workspaceDir, isolated: false };
   }
-  const isolatedDir = path.join(cwd, '.dmoss-subagent', runId);
+  const isolatedDir = path.join(getMossWorkspacePaths(workspaceDir).runtimeDir, 'subagent', runId);
   await fs.mkdir(isolatedDir, { recursive: true });
   log.info('created isolated workspace for child agent', {
     runId,
@@ -90,6 +93,8 @@ export interface SubAgentRunnerDeps {
   toolHooks?: import('../tools/tool-hooks.js').ToolHookRegistry;
   /** Per-agent spawn scope registry. Defaults to deprecated global compatibility registry. */
   spawnRegistry?: SpawnProfileRegistry;
+  /** Parent workspace root used for read-only scopes and child isolation. Defaults to process.cwd(). */
+  workspaceDir?: string;
 }
 
 /**
@@ -139,8 +144,24 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
     const inMemoryMessages: Message[] = [...childMessages];
     let toolResultCount = 0;
     let turnCount = 0;
+    let lastTool: string | undefined;
+    let partialText = '';
+    const emitProgress = (partial: Partial<SubagentRunProgress>): void => {
+      config.onProgress?.({
+        runId: childRunId,
+        scope: config.scope,
+        task: config.task,
+        status: 'running',
+        maxTurns: config.maxTurns ?? 10,
+        turn: turnCount || undefined,
+        toolResults: toolResultCount,
+        ...(lastTool ? { lastTool } : {}),
+        elapsedMs: Date.now() - startedAt,
+        ...partial,
+      });
+    };
 
-    const { workspaceDir, isolated } = await prepareWorkspaceDir(config.scope, childRunId);
+    const { workspaceDir, isolated } = await prepareWorkspaceDir(deps.workspaceDir ?? process.cwd(), config.scope, childRunId);
 
     log.info('starting child agent', {
       runId: childRunId,
@@ -150,6 +171,7 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
       parentRunId: config.parentRunId,
       isolatedWorkspace: isolated,
     });
+    emitProgress({ status: 'started', phase: 'starting' });
 
     try {
       // 5. Launch the child agent loop
@@ -191,23 +213,71 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
 
       // 6. Consume the event stream, collecting metrics
       for await (const event of childStream) {
-        if (event.type === 'tool_execution_end') toolResultCount++;
-        if (event.type === 'turn_end') turnCount = event.turn;
+        if (event.type === 'message_delta') {
+          partialText = `${partialText}${event.delta}`.slice(-400);
+        }
+        if (event.type === 'turn_start') {
+          turnCount = event.turn;
+          emitProgress({ phase: 'turn', turn: event.turn });
+        }
+        if (event.type === 'tool_execution_start') {
+          lastTool = event.toolName;
+          emitProgress({ phase: 'tool', lastTool });
+        }
+        if (event.type === 'tool_execution_end') {
+          toolResultCount++;
+          lastTool = event.toolName;
+          emitProgress({ phase: 'tool', lastTool, toolResults: toolResultCount });
+        }
+        if (event.type === 'turn_end') {
+          turnCount = event.turn;
+          emitProgress({ phase: 'turn', turn: event.turn });
+        }
       }
 
       const miniResult = await childStream.result();
+      const finalSummary = miniResult.finalText.trim();
+      if (!finalSummary) {
+        const message = `Sub-agent completed without a final response (${turnCount} turn${turnCount === 1 ? '' : 's'}, ${toolResultCount} tool result${toolResultCount === 1 ? '' : 's'}).`;
+        log.warn('child agent completed without final text', {
+          runId: childRunId,
+          turns: turnCount,
+          toolResults: toolResultCount,
+          durationMs: Date.now() - startedAt,
+        });
+        emitProgress({
+          status: 'failed',
+          phase: 'failed',
+          error: message,
+          ...(partialText ? { summaryPreview: partialText.trim().slice(0, 240) } : {}),
+        });
+        return {
+          runId: childRunId,
+          summary: message,
+          toolResults: toolResultCount,
+          turns: turnCount,
+          durationMs: Date.now() - startedAt,
+          success: false,
+          error: message,
+        };
+      }
 
       log.info('child agent completed', {
         runId: childRunId,
         turns: turnCount,
         toolResults: toolResultCount,
         durationMs: Date.now() - startedAt,
-        finalTextLength: miniResult.finalText.length,
+        finalTextLength: finalSummary.length,
+      });
+      emitProgress({
+        status: 'completed',
+        phase: 'completed',
+        summaryPreview: finalSummary.slice(0, 240),
       });
 
       return {
         runId: childRunId,
-        summary: miniResult.finalText,
+        summary: finalSummary,
         toolResults: toolResultCount,
         turns: turnCount,
         durationMs: Date.now() - startedAt,
@@ -215,15 +285,22 @@ export function createSubAgentRunner(deps: SubAgentRunnerDeps): SubAgentRunner {
       };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+      const summary = `Sub-agent failed: ${errorMsg}`;
       log.warn('child agent failed', {
         runId: childRunId,
         error: errorMsg,
         durationMs: Date.now() - startedAt,
       });
+      emitProgress({
+        status: 'failed',
+        phase: 'failed',
+        error: errorMsg,
+        ...(partialText ? { summaryPreview: partialText.trim().slice(0, 240) } : {}),
+      });
 
       return {
         runId: childRunId,
-        summary: '',
+        summary,
         toolResults: toolResultCount,
         turns: turnCount,
         durationMs: Date.now() - startedAt,

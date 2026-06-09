@@ -377,9 +377,39 @@ async function runSoftFailureLoopScenario() {
   }
 }
 
+async function runMaxToolCallsScenario() {
+  const provider = new ScriptedProvider([
+    { name: 'read_file', input: { value: 'one' } },
+    { name: 'read_file', input: { value: 'two' } },
+  ]);
+  const store = new InMemorySessionStore();
+  const calls = [];
+  const agent = new DmossAgent({
+    llmProvider: provider,
+    sessionStore: store,
+    domainPrompt: false,
+    enableContextPruning: false,
+    enableCompaction: false,
+    maxAgentTurns: 8,
+  });
+  agent.tools.register(makeTool('read_file', calls));
+
+  for await (const _event of agent.streamChat('test-max-tool-calls', 'start', {
+    maxToolCalls: 1,
+    maxTurns: 4,
+  })) {
+    // drain
+  }
+  const messages = await store.loadMessages('test-max-tool-calls');
+  assert.equal(calls.length, 1, 'per-call maxToolCalls should prevent the second tool from executing');
+  assert.match(lastToolResultText(messages), /Tool budget reached \(1\)/, 'the skipped tool result should tell the model to answer with gathered evidence');
+  console.log('  [PASS] per-call maxToolCalls blocks further tool execution after the budget');
+}
+
 await runStreamScenario();
 await runFailureLoopScenario();
 await runSoftFailureLoopScenario();
+await runMaxToolCallsScenario();
 runSteeringTests();
 
-console.log('\n[pass] tool-loop-guard self-test: 8/8');
+console.log('\n[pass] tool-loop-guard self-test: 9/9');

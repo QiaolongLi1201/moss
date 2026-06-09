@@ -56,7 +56,7 @@ export interface HandleGoalCommandParams extends GoalCommandOptions {
   input: string;
 }
 
-const GOAL_COMMAND_RE = /^\/goal(?:\s|$)/i;
+const GOAL_COMMAND_RE = /^\/goal(?::|：|\s|$)/i;
 const EMPTY_MESSAGE = '';
 
 function startsWithZh(locale?: string): boolean {
@@ -177,7 +177,7 @@ export function parseGoalCommand(input: string): ParsedGoalCommand {
   const trimmed = String(input ?? '').trim();
   if (!isGoalCommand(trimmed)) return { handled: false };
 
-  const rest = trimmed.replace(/^\/goal/i, '').trim();
+  const rest = trimmed.replace(/^\/goal(?::|：)?/i, '').trim();
   if (!rest) return { handled: true, action: 'status' };
 
   const [rawAction = '', ...parts] = rest.split(/\s+/);
@@ -207,10 +207,7 @@ export function parseGoalCommand(input: string): ParsedGoalCommand {
     case 'clear':
       return parseNoArgAction('clear', tail);
     default:
-      return {
-        handled: true,
-        error: `Unknown goal command: ${rawAction}`,
-      };
+      return { handled: true, action: 'set', objective: rest };
   }
 }
 

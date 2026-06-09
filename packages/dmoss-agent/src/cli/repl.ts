@@ -11,7 +11,15 @@ import { handleCompactCommand } from './compact-command.js';
 import { formatCommunityAuthLoginError, formatCommunityAuthStatus } from './community-auth.js';
 import { connectDeviceForSession, parseDeviceConnectArgs } from './device-connect.js';
 import { INTERACTIVE_COMPLETION_COMMANDS } from './interactive-commands.js';
-import { formatModelChoices, loadModelChoicesForRuntime, resolveModelSelection } from './model-catalog.js';
+import {
+  formatCustomModelConfigInstructions,
+  formatModelChoices,
+  loadModelChoicesForRuntime,
+  parseCustomModelConfigInput,
+  resolveModelSelection,
+} from './model-catalog.js';
+import { loadConfigFile, resolveConfigPath, saveConfigFileAtPath } from './config.js';
+import { createCliProvider } from './providers.js';
 import { runOneShot } from './oneshot.js';
 import {
   renderCliDetailHelp,
@@ -30,10 +38,60 @@ import { createCliSessionKey } from './session.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, label, ui } from './ui.js';
 import { formatTuiSessions, renderSkills, runInkInteractive, runLocalShellCommand } from './tui.js';
+import { getMossWorkspacePaths } from '../utils/workspace-paths.js';
 
 let currentModel = '';
 
 export const INTERACTIVE_COMMANDS = [...INTERACTIVE_COMPLETION_COMMANDS];
+
+function applyCustomModelConfigForRepl(agent: DmossAgent, runtime: CliRuntimeStatus | undefined, rawConfig: string): string {
+  const configPath = runtime?.config?.configPath ?? resolveConfigPath();
+  const parsed = parseCustomModelConfigInput(rawConfig);
+  if (!parsed.ok) return `${parsed.message}\n\n${formatCustomModelConfigInstructions(configPath)}`;
+  const nextConfig = parsed.config;
+  const currentConfig = loadConfigFile(configPath);
+  saveConfigFileAtPath({
+    ...currentConfig,
+    provider: nextConfig.provider,
+    model: nextConfig.model,
+    baseUrl: nextConfig.baseUrl,
+    apiKey: nextConfig.apiKey,
+    ...(nextConfig.imageInput === undefined ? {} : { imageInput: nextConfig.imageInput }),
+  }, configPath);
+
+  if (runtime?.config) {
+    runtime.config.provider = nextConfig.provider;
+    runtime.config.providerSource = 'config';
+    runtime.config.model = nextConfig.model;
+    runtime.config.modelSource = 'config';
+    runtime.config.baseUrl = nextConfig.baseUrl;
+    runtime.config.baseUrlSource = 'config';
+    runtime.config.apiKey = nextConfig.apiKey;
+    runtime.config.apiKeySource = 'config';
+    runtime.config.usingBundledDefault = false;
+    if (nextConfig.imageInput !== undefined) {
+      runtime.config.imageInput = nextConfig.imageInput;
+      runtime.config.imageInputSource = 'config';
+    }
+  }
+
+  currentModel = nextConfig.model;
+  agent.config.model = nextConfig.model;
+  (agent.config as { provider?: string; baseUrl?: string }).provider = nextConfig.provider;
+  (agent.config as { provider?: string; baseUrl?: string }).baseUrl = nextConfig.baseUrl;
+  agent.config.llmProvider = createCliProvider({
+    provider: nextConfig.provider,
+    apiKey: nextConfig.apiKey,
+    model: nextConfig.model,
+    baseUrl: nextConfig.baseUrl,
+    imageInput: nextConfig.imageInput,
+  });
+
+  return [
+    `[config] Custom model configured: ${nextConfig.model} (${nextConfig.provider})`,
+    `[config] Saved to ${configPath}`,
+  ].join('\n');
+}
 
 function cliLocale(): string | undefined {
   return process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG;
@@ -257,7 +315,7 @@ export async function runInteractive(
       try {
         const records = await readUsageLog();
         console.error(records.length === 0
-          ? 'Session usage\n  No LLM usage recorded yet in this workspace (.dmoss/llm-usage.jsonl).'
+          ? 'Session usage\n  No LLM usage recorded yet in this workspace (.moss/llm-usage.jsonl).'
           : formatUsageSummary(summarizeUsage(records)));
       } catch (err) {
         console.error(`[cost] ${err instanceof Error ? err.message : String(err)}`);
@@ -298,6 +356,16 @@ export async function runInteractive(
 
     if (msg === '/model' || msg.startsWith('/model ')) {
       const newModel = msg === '/model' ? '' : msg.slice(7).trim();
+      if (newModel === 'config' || newModel.startsWith('config ')) {
+        const rawConfig = newModel === 'config' ? '' : newModel.slice('config'.length).trim();
+        try {
+          console.error(applyCustomModelConfigForRepl(agent, runtime, rawConfig));
+        } catch (err) {
+          console.error(`[config] Could not save model config: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        rl.prompt();
+        continue;
+      }
       const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
         fallbackProvider: (agent.config as { provider?: string }).provider,
       });
@@ -348,7 +416,8 @@ export async function runInteractive(
     }
 
     if (msg === '/memory') {
-      const memDir = path.join(workspace, '.dmoss-runtime', 'memory');
+      const paths = getMossWorkspacePaths(workspace);
+      const memDir = fs.existsSync(paths.memoryDir) ? paths.memoryDir : paths.legacyMemoryDir;
       try {
         const indexPath = path.join(memDir, 'index.json');
         const raw = fs.readFileSync(indexPath, 'utf-8');

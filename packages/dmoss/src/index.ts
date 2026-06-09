@@ -100,6 +100,7 @@ export type {
   MossAsyncTaskCompletion,
   MossAsyncTaskHandle,
   MossAsyncTaskKind,
+  MossAsyncTaskProgress,
   MossAsyncTaskRegistry,
   MossAsyncTaskResult,
   MossAsyncTaskRunner,
@@ -107,6 +108,7 @@ export type {
   MossAsyncTaskStartRequest,
   MossAsyncTaskStatus,
   MossAsyncTaskStopReason,
+  MossAsyncTaskUpdate,
 } from './contracts/async-task.js';
 
 // --- Constants ---

@@ -103,6 +103,8 @@ const runtime = {
     contextTokensSource: 'config',
     compactionSettings: { reserveTokens: 8000, keepRecentTokens: 9000 },
     compactionSettingsSource: 'config',
+    imageInput: false,
+    imageInputSource: 'provider default',
     configPath,
   },
 };
@@ -129,7 +131,7 @@ const agent = createAgent([
   assert.match(welcome, literalPattern(`workspace: ${workspacePath}`));
   assert.match(welcome, /login: own provider configured/);
   assert.match(welcome, /board: root@10\.64\.1\.10:22/);
-  assert.match(welcome, /next \/help or ask Moss directly/);
+  assert.match(welcome, /next \/quickstart, \/model, or moss setup for your own model/);
   assert.doesNotMatch(welcome, /profile autonomous/);
   assert.doesNotMatch(welcome, /approval never/);
   assert(welcome.split('\n').length <= 6);
@@ -148,6 +150,7 @@ const agent = createAgent([
   assert.match(quickStart, /api key.*configured/);
   assert.match(quickStart, /moss setup/);
   assert.match(quickStart, /\/model` to choose a model/);
+  assert.match(quickStart, /DMOSS_IMAGE_INPUT/);
   assert.match(quickStart, /2\/3.*Workspace/);
   assert.match(quickStart, /\/status/);
   assert.match(quickStart, /3\/3.*Try/);
@@ -167,6 +170,8 @@ const agent = createAgent([
   assert.match(tools, /Tools run automatically/);
   assert.match(tools, /Ask for the outcome/);
   assert.match(tools, /\/quickstart/);
+  assert.match(tools, /Ctrl\+V \/ paste path/);
+  assert.doesNotMatch(tools, /\/attach <path>/);
   assert.match(tools, /\/detail verbose/);
   assert.doesNotMatch(tools, /read_file Read a file/);
 }
@@ -178,6 +183,7 @@ const agent = createAgent([
   assert.match(status, literalPattern(`workspace: ${workspacePath}`));
   assert.match(status, /board: root@10\.64\.1\.10:22/);
   assert.match(status, /tools: 7/);
+  assert.match(status, /setup: moss setup · \/model · \/quickstart/);
   assert.match(status, /Details: \/status --verbose/);
   assert.doesNotMatch(status, /profile: autonomous \(config\)/);
   assert.doesNotMatch(status, /token-plan\.cn-beijing\.maas\.aliyuncs\.com/);
@@ -200,6 +206,7 @@ const agent = createAgent([
   assert.match(status, /max turns: 18 \(config\)/);
   assert.match(status, /context tokens: 96000 \(config\)/);
   assert.match(status, /compaction: reserve 8000, keepRecent 9000 \(config\)/);
+  assert.match(status, /image input: disabled \(provider default\)/);
   assert.match(status, /tools: 7/);
 }
 
@@ -220,6 +227,7 @@ const agent = createAgent([
   assert.match(permissions, /max turns: 18 \(config\)/);
   assert.match(permissions, /context tokens: 96000 \(config\)/);
   assert.match(permissions, /compaction: reserve 8000, keepRecent 9000 \(config\)/);
+  assert.match(permissions, /image input: disabled \(provider default\)/);
   assert.match(permissions, /config warnings: 1/);
   assert.match(permissions, /approval\.auto_approval: auto-approval is enabled via config/);
   assert.match(permissions, /edit guardrails\.input\/output/);
@@ -234,12 +242,21 @@ const agent = createAgent([
   assert.match(permissions, /moss config set trustedTools/);
   assert.match(permissions, /moss config set deniedTools/);
   assert.match(permissions, /moss config set promptCacheDebug/);
+  assert.match(permissions, /moss config set provider/);
+  assert.match(permissions, /moss config set model/);
+  assert.match(permissions, /moss config set baseUrl/);
+  assert.match(permissions, /moss config set imageInput/);
   assert.match(permissions, /moss config set mcp\.enabled/);
   assert.match(permissions, /moss config set mcp\.configPath/);
   assert.match(permissions, /moss config unset --project safetyMode/);
   assert.match(permissions, /moss config unset approvalPolicy/);
   assert.match(permissions, /trust the approved tool for the current session/);
   assert.match(permissions, /DMOSS_PROFILE/);
+  assert.match(permissions, /DMOSS_PROVIDER/);
+  assert.match(permissions, /DMOSS_MODEL/);
+  assert.match(permissions, /DMOSS_API_KEY/);
+  assert.match(permissions, /DMOSS_BASE_URL/);
+  assert.match(permissions, /DMOSS_IMAGE_INPUT/);
   assert.match(permissions, /DMOSS_SAFETY_MODE/);
   assert.match(permissions, /DMOSS_TRUSTED_TOOLS/);
   assert.match(permissions, /DMOSS_PROMPT_CACHE_DEBUG/);
@@ -302,7 +319,8 @@ const agent = createAgent([
   assert.match(help, /Configure/);
   assert.match(help, /\/compact\s+compress older conversation history into a summary/);
   assert.match(help, /Shortcuts/);
-  assert.match(help, /Ctrl\+V\s+attach clipboard image/);
+  assert.match(help, /Ctrl\+V\s+attach a copied image/);
+  assert.doesNotMatch(help, /\/attach <path>/);
   assert.match(help, /Advanced commands still work/);
   assert.doesNotMatch(help, /\/permissions\s+show safety/);
   assert.doesNotMatch(help, /\/config\s+show config file/);

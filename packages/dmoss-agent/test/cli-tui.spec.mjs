@@ -92,7 +92,7 @@ assert.equal(commandSuggestion('/queu'), null);
 assert.equal(commandSuggestion('/queue dr'), null);
 assert.equal(commandSuggestion('/queue res'), null);
 assert.equal(commandSuggestion('/sess'), '/sessions');
-assert.equal(commandSuggestion('/attch'), '/attach');
+assert.equal(commandSuggestion('/attch'), null);
 assert.equal(commandSuggestion('/conect'), '/connect');
 assert.equal(commandSuggestion('status'), null);
 
@@ -139,12 +139,12 @@ assert.equal(approvalKeyDecision('a', {}), 'allow-always');
 assert.equal(approvalKeyDecision('n', {}), 'deny');
 assert.equal(approvalKeyDecision('', { escape: true }), 'deny');
 assert.equal(approvalKeyDecision('x', {}), null);
-assert.match(footerHint('ready'), /Ctrl\+V image/);
-assert.match(footerHint('ready'), /\/attach file/);
+assert.match(footerHint('ready'), /Ctrl\+V attach/);
+assert.match(footerHint('ready'), /paste file path \+ Enter/);
 assert.match(footerHint('ready'), /Ctrl\+O details/);
 assert.match(footerHint('ready'), /Tab complete/);
 assert.match(footerHint('ready'), /Up\/Down history/);
-assert.match(footerHint('approval'), /a always this session/);
+assert.match(footerHint('approval'), /a trust scope/);
 assert.match(footerHint('running'), /Esc cancel/);
 assert.match(footerHint('running'), /Enter queue/);
 assert.equal(promptEditorRowBudget('', { hint: 'Ctrl+O tools', model: 'deepseek-v4-pro' }), 5);
@@ -336,10 +336,14 @@ assert.equal(transcriptViewportRows({
 {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-tui-skills-'));
   try {
-    const availableDir = path.join(workspace, 'skills', 'rdk-camera');
-    const learnedDir = path.join(workspace, 'skills', 'learned');
+    const availableDir = path.join(workspace, '.moss', 'skills', 'rdk-camera');
+    const legacyAvailableDir = path.join(workspace, 'agent', 'skills', 'legacy-agent');
+    const learnedDir = path.join(workspace, '.moss', 'skills', 'learned');
+    const legacyLearnedDir = path.join(workspace, 'skills', 'learned');
     fs.mkdirSync(availableDir, { recursive: true });
+    fs.mkdirSync(legacyAvailableDir, { recursive: true });
     fs.mkdirSync(learnedDir, { recursive: true });
+    fs.mkdirSync(legacyLearnedDir, { recursive: true });
     fs.writeFileSync(path.join(availableDir, 'SKILL.md'), [
       '---',
       'name: rdk-camera',
@@ -352,13 +356,29 @@ assert.equal(transcriptViewportRows({
       '# RDK Camera',
       '',
     ].join('\n'));
+    fs.writeFileSync(path.join(legacyAvailableDir, 'SKILL.md'), [
+      '---',
+      'name: legacy-agent',
+      'description: Legacy agent skill.',
+      'risk: low',
+      '---',
+      '',
+      '# Legacy Agent',
+      '',
+    ].join('\n'));
     fs.writeFileSync(path.join(learnedDir, 'recover-usb.md'), '# Recover USB\n');
+    fs.writeFileSync(path.join(legacyLearnedDir, 'legacy-recovery.md'), '# Legacy Recovery\n');
     const rendered = renderSkills(workspace);
-    assert.match(rendered, /Skills: 1 available, 1 learned/);
+    assert.match(rendered, /Skills: 7 available, 2 learned/);
     assert.match(rendered, /Available SKILL\.md entries:/);
     assert.match(rendered, /rdk-camera · low · disabled · rdk, camera .*Diagnose RDK camera pipelines/);
+    assert.match(rendered, /legacy-agent · low .*Legacy agent skill/);
+    assert.match(rendered, /superpower-methodical-builder · low/);
+    assert.match(rendered, /moss-upgrade-and-migration-contract · medium/);
+    assert.match(rendered, /codegraph-structural-navigation · low/);
     assert.match(rendered, /Learned skills:/);
     assert.match(rendered, /recover-usb\.md/);
+    assert.match(rendered, /legacy-recovery\.md/);
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }

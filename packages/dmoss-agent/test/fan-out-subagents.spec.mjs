@@ -16,7 +16,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fanOutSubagentsTool } from '../dist/tools/create-subagent.js';
 
 assert.equal(fanOutSubagentsTool?.name, 'fan_out_subagents', '应导出 fan_out_subagents 工具');
+assert.equal(fanOutSubagentsTool.metadata?.requiresApproval, false, 'fan-out dispatch should not ask for approval');
 assert.equal(fanOutSubagentsTool.metadata?.sideEffectClass, 'subagent', '应是 subagent 类（单次审批、走串行审批闸）');
+assert.match(fanOutSubagentsTool.description, /Do not use for quick usage\/config\/help questions/, '工具描述应约束短答/用法问题不要 fan-out');
 
 // ── 1. 真并发 + 聚合 + 默认只读 scope ──
 {
@@ -57,6 +59,7 @@ assert.equal(fanOutSubagentsTool.metadata?.sideEffectClass, 'subagent', '应是 
   );
   assert.ok(out.includes('已审查'), '应包含各子代理摘要');
   assert.ok(calls.every((c) => c.scope === 'explore'), '默认 scope 应为 explore（只读，审查不改动）');
+  assert.ok(calls.every((c) => c.maxTurns === 4), 'fan-out 默认应浅层探索，避免误触发后长时间工具循环');
 }
 
 // ── 2. 失败 / 异常逐项归并，不互相污染 ──

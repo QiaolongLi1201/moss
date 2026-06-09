@@ -84,6 +84,7 @@ export interface ProcessLlmResponseParams {
   parallelSafeTools: Set<string>;
   loadToolsMetaName?: string;
   toolLoopGuard: ToolLoopGuardState;
+  maxToolCalls?: number;
   checkToolApproval?: (call: {
     id: string;
     name: string;
@@ -156,6 +157,7 @@ export async function processLlmResponse(
     parallelSafeTools,
     loadToolsMetaName,
     toolLoopGuard,
+    maxToolCalls,
     checkToolApproval,
     guardAssistantOutput,
     toolAbortSignalFor,
@@ -411,6 +413,7 @@ export async function processLlmResponse(
     parallelSafeTools,
     loadToolsMetaName,
     toolLoopGuard,
+    maxToolCalls,
     metrics: state.toolExecutionMetrics,
     evaluateSteering,
     appendMessage,

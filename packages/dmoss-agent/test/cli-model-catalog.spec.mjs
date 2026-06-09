@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {
   formatModelChoices,
   loadModelChoicesForRuntime,
+  parseCustomModelConfigInput,
   resolveModelSelection,
 } from '../dist/cli/model-catalog.js';
 
@@ -17,10 +18,13 @@ const builtIn = await loadModelChoicesForRuntime({
   provider: 'openai-compatible',
   model: 'Moss',
   usingBundledDefault: true,
+  configPath: '/tmp/dmoss/config.json',
 }, 'Moss');
 assert.equal(builtIn.source, 'built-in');
 assert.equal(builtIn.choices[0].model, 'Moss');
 assert.match(formatModelChoices(builtIn), /\/model <number>/);
+assert.match(formatModelChoices(builtIn), /\/model config base_url=/);
+assert.match(formatModelChoices(builtIn), /config file\s+\/tmp\/dmoss\/config\.json/);
 assert.match(formatModelChoices(builtIn), /moss setup\s+change provider, base URL, or API key/);
 
 const selectedByNumber = resolveModelSelection('1', builtIn.choices);
@@ -49,5 +53,17 @@ const fallback = await loadModelChoicesForRuntime({
 }, 'qwen3.7-max');
 assert.equal(fallback.source, 'common');
 assert.ok(fallback.choices.some((choice) => choice.model === 'qwen-plus'));
+
+const customConfig = parseCustomModelConfigInput('base_url=https://gateway.example/v1 key=sk-test model_name=custom-coder image_input=true');
+assert.equal(customConfig.ok, true);
+assert.equal(customConfig.config.provider, 'openai-compatible');
+assert.equal(customConfig.config.baseUrl, 'https://gateway.example');
+assert.equal(customConfig.config.apiKey, 'sk-test');
+assert.equal(customConfig.config.model, 'custom-coder');
+assert.equal(customConfig.config.imageInput, true);
+
+const invalidCustomConfig = parseCustomModelConfigInput('base_url=https://gateway.example/v1 model_name=custom-coder');
+assert.equal(invalidCustomConfig.ok, false);
+assert.match(invalidCustomConfig.message, /api key/i);
 
 console.log('[PASS] CLI model catalog supports selectable model lists');

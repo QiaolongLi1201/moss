@@ -1,4 +1,4 @@
-import { API_KEY, MODEL, BASE_URL, PROVIDER, type CliProviderPreset } from './config.js';
+import { API_KEY, IMAGE_INPUT, MODEL, BASE_URL, PROVIDER, type CliProviderPreset } from './config.js';
 import type { DmossCommunityAuthContext } from './community-auth.js';
 import type {
   LLMProvider,
@@ -14,6 +14,7 @@ export interface CliProviderRuntimeConfig {
   apiKey: string;
   model: string;
   baseUrl: string;
+  imageInput?: boolean;
   usingBundledDefault?: boolean;
   communityAuth?: DmossCommunityAuthContext;
 }
@@ -47,13 +48,29 @@ type AnthropicCliContentBlock =
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
 
-function convertAnthropicCliContent(content: LLMRequestOptions['messages'][number]['content']) {
+function defaultImageInputForProvider(provider: CliProviderPreset): boolean {
+  return provider === 'openai' || provider === 'anthropic';
+}
+
+function resolveRuntimeImageInput(config: CliProviderRuntimeConfig): boolean {
+  return config.imageInput ?? defaultImageInputForProvider(config.provider);
+}
+
+function imageOmittedText(block: Extract<LLMContentBlock, { type: 'image' }>): string {
+  const label = block.filename || block.mimeType || 'image attachment';
+  return `[Image attachment not sent: ${label}; imageInput=false for this provider, so the assistant cannot inspect the image content.]`;
+}
+
+function convertAnthropicCliContent(
+  content: LLMRequestOptions['messages'][number]['content'],
+  imageInput: boolean,
+) {
   if (typeof content === 'string') return content;
   const out: AnthropicCliContentBlock[] = [];
   for (const block of content) {
     if (block.type === 'text') {
       out.push({ type: 'text', text: block.text });
-    } else if (block.type === 'image') {
+    } else if (block.type === 'image' && imageInput) {
       out.push({
         type: 'image',
         source: {
@@ -62,6 +79,8 @@ function convertAnthropicCliContent(content: LLMRequestOptions['messages'][numbe
           data: block.data,
         },
       });
+    } else if (block.type === 'image') {
+      out.push({ type: 'text', text: imageOmittedText(block) });
     } else if (block.type === 'tool_use') {
       out.push({
         type: 'tool_use',
@@ -82,10 +101,11 @@ function convertAnthropicCliContent(content: LLMRequestOptions['messages'][numbe
 }
 
 export function createCliProvider(config: CliProviderRuntimeConfig): LLMProvider {
+  const imageInput = resolveRuntimeImageInput(config);
   return {
     id: 'cli-provider',
     displayName: 'CLI LLM Provider',
-    capabilities: { streaming: false },
+    capabilities: { streaming: false, imageInput },
 
     async complete(opts: LLMRequestOptions): Promise<LLMResponse> {
       return this.stream(opts, () => {});
@@ -108,6 +128,7 @@ export const cliProvider: LLMProvider = createCliProvider({
   apiKey: API_KEY,
   model: MODEL,
   baseUrl: BASE_URL,
+  imageInput: IMAGE_INPUT,
 });
 
 function providerError(provider: string, status: number, text: string): Error {
@@ -134,7 +155,7 @@ async function callAnthropic(
     system: opts.systemPrompt,
     messages: opts.messages.map((m) => ({
       role: m.role,
-      content: convertAnthropicCliContent(m.content),
+      content: convertAnthropicCliContent(m.content, resolveRuntimeImageInput(config)),
     })),
     tools: opts.tools?.map((t) => ({
       name: t.name,
@@ -207,10 +228,16 @@ async function callOpenAI(
           textParts.push(block.text);
           contentParts.push({ type: 'text', text: block.text });
         } else if (block.type === 'image') {
-          contentParts.push({
-            type: 'image_url',
-            image_url: { url: `data:${block.mimeType};base64,${block.data}` },
-          });
+          if (resolveRuntimeImageInput(config)) {
+            contentParts.push({
+              type: 'image_url',
+              image_url: { url: `data:${block.mimeType};base64,${block.data}` },
+            });
+          } else {
+            const text = imageOmittedText(block);
+            textParts.push(text);
+            contentParts.push({ type: 'text', text });
+          }
         } else if (block.type === 'tool_use') {
           toolCalls.push({
             id: block.id,

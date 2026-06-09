@@ -17,7 +17,7 @@ import {
   formatHeadlessStreamEvent,
   formatHeadlessThrownError,
 } from '../dist/cli/print.js';
-import { runOneShot } from '../dist/cli/oneshot.js';
+import { isBriefOneShotRequest, runOneShot } from '../dist/cli/oneshot.js';
 
 function createCapture() {
   let text = '';
@@ -34,7 +34,7 @@ function createCapture() {
   };
 }
 
-function makeFakeAgent(events) {
+function makeFakeAgent(events, onStreamChat) {
   return {
     config: {
       model: 'fake-model',
@@ -49,7 +49,8 @@ function makeFakeAgent(events) {
         return [{ name: 'read_file' }, { name: 'exec' }];
       },
     },
-    async *streamChat() {
+    async *streamChat(sessionKey, message, options) {
+      onStreamChat?.({ sessionKey, message, options });
       for (const event of events) {
         if (event instanceof Error) throw event;
         yield event;
@@ -57,6 +58,11 @@ function makeFakeAgent(events) {
     },
   };
 }
+
+assert.equal(isBriefOneShotRequest('请简短回答'), true);
+assert.equal(isBriefOneShotRequest('控制在 5 行以内'), true);
+assert.equal(isBriefOneShotRequest('please answer within 5 lines'), true);
+assert.equal(isBriefOneShotRequest('请完整审查这个项目'), false);
 
 const init = formatHeadlessInitEvent({
   cwd: '/tmp/work',
@@ -249,6 +255,32 @@ assert.deepEqual(init, {
   }
   assert.equal(process.exitCode, 1);
   process.exitCode = originalExitCode;
+}
+
+// ── brief one-shot requests get a tighter per-call turn budget ──
+{
+  const calls = [];
+  const stdout = createCapture();
+  const agent = makeFakeAgent([
+    {
+      type: 'done',
+      result: {
+        response: 'brief',
+        toolCalls: [],
+        toolResults: [],
+        stopReason: 'end_turn',
+      },
+    },
+  ], (call) => calls.push(call));
+  await runOneShot(agent, '请用中文回答，控制在 5 行以内', undefined, {
+    sessionKey: 'brief-one-shot',
+    outputFormat: 'json',
+    stdout: stdout.writer,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.maxTurns, 6);
+  assert.equal(calls[0].options.maxToolCalls, 4);
+  assert.match(calls[0].options.extraContext, /Do not use create_subagent/);
 }
 
 // ── full stream-json conversation: tool_use in assistant, tool_result in user, ordering ──

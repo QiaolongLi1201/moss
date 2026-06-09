@@ -23,6 +23,7 @@ import {
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-llm-usage-test-'));
 const origEnv = process.env.DMOSS_LLM_USAGE_LOG;
+const origWorkspaceDir = process.env.DMOSS_WORKSPACE_DIR;
 process.env.DMOSS_LLM_USAGE_LOG = path.join(tmpDir, 'llm-usage.jsonl');
 
 function cleanup() {
@@ -31,6 +32,11 @@ function cleanup() {
     process.env.DMOSS_LLM_USAGE_LOG = origEnv;
   } else {
     delete process.env.DMOSS_LLM_USAGE_LOG;
+  }
+  if (origWorkspaceDir) {
+    process.env.DMOSS_WORKSPACE_DIR = origWorkspaceDir;
+  } else {
+    delete process.env.DMOSS_WORKSPACE_DIR;
   }
 }
 
@@ -194,7 +200,40 @@ function cleanup() {
   console.log('  [PASS] empty log returns empty results');
 }
 
+// ── Test: default workspace log path uses .moss ──────────────────
+
+{
+  const workspace = path.join(tmpDir, 'workspace-default-log');
+  fs.mkdirSync(workspace, { recursive: true });
+  delete process.env.DMOSS_LLM_USAGE_LOG;
+  process.env.DMOSS_WORKSPACE_DIR = workspace;
+
+  await logLLMUsage({
+    runId: 'run-default',
+    providerId: 'test',
+    model: 'unknown-model',
+    inputTokens: 1,
+    outputTokens: 1,
+    durationMs: 1,
+    success: true,
+  });
+
+  assert.ok(
+    fs.existsSync(path.join(workspace, '.moss', 'llm-usage.jsonl')),
+    'default usage log should be written under .moss',
+  );
+  assert.equal(
+    fs.existsSync(path.join(workspace, '.dmoss', 'llm-usage.jsonl')),
+    false,
+    'default usage log should not recreate legacy .dmoss',
+  );
+  const records = await readUsageLog();
+  assert.equal(records.length, 1);
+
+  console.log('  [PASS] default workspace log path uses .moss');
+}
+
 // ── Cleanup ──────────────────────────────────────────────────────
 
 cleanup();
-console.log('\n[pass] llm-usage: 6/6');
+console.log('\n[pass] llm-usage: 7/7');

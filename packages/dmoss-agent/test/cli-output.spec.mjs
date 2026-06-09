@@ -72,8 +72,9 @@ assert.doesNotMatch(summary, /secret/);
 
   assert.equal(stdout.read(), 'Done\n');
   assert.match(stderr.read(), /- thinking turn 1/);
-  assert.match(stderr.read(), /- device_exec running/);
-  assert.match(stderr.read(), /ok device_exec ok \d+ms/);
+  assert.match(stderr.read(), /- device command running/);
+  assert.match(stderr.read(), /ok device command ok \d+ms/);
+  assert.doesNotMatch(stderr.read(), /device_exec/);
   assert.doesNotMatch(stderr.read(), /hostname/);
   assert.doesNotMatch(stderr.read(), /rdk-x5/);
   assert.doesNotMatch(stderr.read(), /secret/);
@@ -100,6 +101,7 @@ assert.doesNotMatch(summary, /secret/);
     result: 'rdk-x5\n',
     isError: false,
   });
+  assert.match(stderr.read(), /device_exec/);
   assert.match(stderr.read(), /hostname/);
   assert.match(stderr.read(), /rdk-x5/);
   assert.match(stderr.read(), /\[REDACTED\]/);

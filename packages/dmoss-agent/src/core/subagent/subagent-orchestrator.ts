@@ -10,6 +10,7 @@
 import type { SpawnToolScope } from './spawn-profile.js';
 import { resolveSpawnToolSet } from './spawn-profile.js';
 import type { MeshEventBus } from '../../mesh/mesh-events.js';
+import type { SubagentRunProgress } from '../tools/tool-types.js';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -32,6 +33,8 @@ export interface SubAgentConfig {
     summary: string;
     success: boolean;
   };
+  /** Optional live progress sink for parent task surfaces. */
+  onProgress?: (progress: SubagentRunProgress) => void;
 }
 
 export interface SubAgentResult {

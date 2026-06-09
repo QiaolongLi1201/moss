@@ -5,7 +5,7 @@
  * can monitor LLM spend without external observability infrastructure.
  *
  * Set DMOSS_LLM_USAGE_LOG to configure the output path.
- * Default: .dmoss/llm-usage.jsonl (relative to cwd)
+ * Default: .moss/llm-usage.jsonl (relative to cwd)
  */
 
 import fs from 'node:fs';
@@ -84,7 +84,7 @@ function getUsageLogPath(): string {
   const envPath = process.env.DMOSS_LLM_USAGE_LOG;
   if (envPath) return envPath;
   const cwd = process.env.DMOSS_WORKSPACE_DIR ?? process.cwd();
-  return path.join(cwd, '.dmoss', 'llm-usage.jsonl');
+  return path.join(cwd, '.moss', 'llm-usage.jsonl');
 }
 
 // ── Write record ─────────────────────────────────────────────────

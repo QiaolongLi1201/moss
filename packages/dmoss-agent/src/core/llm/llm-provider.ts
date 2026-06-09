@@ -143,6 +143,8 @@ export interface LLMResponse {
 export interface LLMProviderCapabilities {
   /** Whether `stream()` emits incremental events or replays a complete response. Default: true. */
   streaming?: boolean;
+  /** Whether image content blocks are sent to the upstream provider as native multimodal input. Default: true. */
+  imageInput?: boolean;
 }
 
 /**

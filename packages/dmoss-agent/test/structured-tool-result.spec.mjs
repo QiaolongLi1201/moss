@@ -180,6 +180,49 @@ describe('Tool Approval Denial', () => {
   });
 });
 
+describe('Unknown Tool Correction', () => {
+  it('returns available tool names so the model can self-correct', async () => {
+    const events = [];
+    const outcome = await executeOneToolCall(
+      { id: 'call-unknown', name: 'search_everything', input: {} },
+      {
+        toolsForRun: [
+          {
+            name: 'read_file',
+            description: 'Read a file',
+            inputSchema: { type: 'object', properties: {} },
+            async execute() {
+              assert.fail('unknown tool path must not execute any registered tool');
+            },
+          },
+          {
+            name: 'search_code',
+            description: 'Search code',
+            inputSchema: { type: 'object', properties: {} },
+            async execute() {
+              assert.fail('unknown tool path must not execute any registered tool');
+            },
+          },
+        ],
+        toolCtx: { workspaceDir: process.cwd(), sessionKey: 'unknown-tool-session' },
+        sessionKey: 'unknown-tool-session',
+        abortSignal: new AbortController().signal,
+        toolTimeoutMs: 1_000,
+        enableHeartbeat: false,
+        heartbeatIntervalMs: 1_000,
+        skipHeartbeatToolNames: new Set(),
+        push: (event) => events.push(event),
+      },
+    );
+
+    assert.equal(outcome.kind, 'unknown-tool');
+    assert.match(outcome.text, /Unknown tool: search_everything/);
+    assert.match(outcome.text, /Available tools: read_file, search_code/);
+    assert.match(outcome.text, /Use only registered tool names/);
+    assert.equal(events.length, 0);
+  });
+});
+
 describe('Tool Abort Classification Snapshot', () => {
   it('keeps the public aborted.by domain stable', async () => {
     const events = [];

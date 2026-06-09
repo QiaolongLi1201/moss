@@ -8,12 +8,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SkillMeta, SkillPermission } from './types.js';
 import { getRootLogger } from '../logger.js';
+import { getMossWorkspacePaths } from '../utils/workspace-paths.js';
+import { listBuiltinSkills } from './builtin.js';
 
 const log = getRootLogger().child('agent:skill-registry');
 
 export interface SkillRegistryOptions {
   workspaceDir: string;
   extraDirs?: string[];
+  includeBuiltin?: boolean;
 }
 
 function parseFrontmatter(content: string): Record<string, string> {
@@ -68,12 +71,14 @@ function collectSkillFiles(dir: string): string[] {
 export class SkillRegistry {
   private workspaceDir: string;
   private extraDirs: string[];
+  private includeBuiltin: boolean;
   private cache: SkillMeta[] = [];
   private lastLoadedAt = 0;
 
   constructor(opts: SkillRegistryOptions) {
     this.workspaceDir = opts.workspaceDir;
     this.extraDirs = opts.extraDirs ?? [];
+    this.includeBuiltin = opts.includeBuiltin ?? true;
   }
 
   addExtraDir(dir: string): void {
@@ -88,13 +93,16 @@ export class SkillRegistry {
     if (!force && now - this.lastLoadedAt < 3000 && this.cache.length > 0) {
       return this.cache;
     }
+    const paths = getMossWorkspacePaths(this.workspaceDir);
     const sources = [
-      path.join(this.workspaceDir, 'skills'),
-      path.join(this.workspaceDir, 'agent', 'skills'),
+      paths.skillsDir,
+      paths.agentSkillsDir,
+      paths.legacySkillsDir,
+      paths.legacyAgentSkillsDir,
       ...this.extraDirs,
     ];
     const files = sources.flatMap((d) => collectSkillFiles(d));
-    const metas: SkillMeta[] = [];
+    const metas: SkillMeta[] = this.includeBuiltin ? listBuiltinSkills() : [];
     for (const file of files) {
       try {
         const raw = fs.readFileSync(file, 'utf-8');

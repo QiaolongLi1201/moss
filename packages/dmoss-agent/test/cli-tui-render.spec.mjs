@@ -19,7 +19,9 @@ import {
   ApprovalPromptLine,
   TranscriptMessage,
   PromptEditor,
+  applyPromptEdit,
   QueuePreview,
+  SubagentTaskPanel,
   renderMarkdown,
   boardSurfaceLabel,
   boardTip,
@@ -400,7 +402,7 @@ test('ActivityItemLine renders expanded tool results under the response connecto
 
 // ───── ApprovalPromptLine ─────
 
-test('ApprovalPromptLine renders the question and y/n hint', () => {
+test('ApprovalPromptLine renders the question and selectable choices', () => {
   const { lastFrame } = render(
     React.createElement(ApprovalPromptLine, {
       question: [
@@ -408,6 +410,7 @@ test('ApprovalPromptLine renders the question and y/n hint', () => {
         '  npm test',
         'Scope: workspace command',
       ].join('\n'),
+      selectedIndex: 1,
     }),
   );
   const frame = lastFrame();
@@ -416,8 +419,14 @@ test('ApprovalPromptLine renders the question and y/n hint', () => {
   assert.match(frame, /Scope: workspace command/);
   assert.doesNotMatch(frame, /side effect/);
   assert.doesNotMatch(frame, /policy:/);
+  assert.match(frame, /1\. \[ \] Approve once/);
+  assert.match(frame, /› 2\. \[x\] Always this workspace/);
+  assert.match(frame, /Trust local operations in this workspace/);
+  assert.match(frame, /3\. \[ \] Deny/);
+  assert.match(frame, /Enter submit/);
+  assert.match(frame, /←\/→ or ↑\/↓ choose/);
   assert.match(frame, /y approve/);
-  assert.match(frame, /a always this session/);
+  assert.match(frame, /a trust scope/);
   assert.match(frame, /n.*Esc deny/);
   cleanup();
 });
@@ -602,13 +611,16 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   const frame = lastFrame();
   assert.match(frame, /> \//);
   // Navigable, windowed menu (≤6 rows): the first page of commands is shown,
-  // the selected (first) row highlighted. No static "… N more / type to filter" row.
+  // the selected (first) row highlighted and marked with a chevron. No static
+  // "… N more / type to filter" row.
+  assert.match(frame, /›\s+\/status\s+view model, workspace, device, and tool state/);
   assert.match(frame, /\/status\s+view model, workspace, device, and tool state/);
+  assert.match(frame, /\/subagents\s+show background sub-agent status and progress/);
   assert.match(frame, /\/model\s+choose or switch the active model/);
   assert.match(frame, /\/goal\s+show or manage the persistent session goal/);
   assert.match(frame, /\/compact\s+compress older conversation history/);
-  assert.match(frame, /\/attach\s+attach an image or text file/);
   assert.match(frame, /\/connect\s+connect an RDK board/);
+  assert.doesNotMatch(frame, /\/attach\s+attach an image or text file/);
   assert.doesNotMatch(frame, /\/sessions\s+list saved chats/);
   assert.doesNotMatch(frame, /\/context\s+show token usage/);
   assert.doesNotMatch(frame, /\/tools\s+tool surface/);
@@ -766,6 +778,20 @@ test('PromptEditor lets the terminal cursor anchor IME at the end of input', () 
   cleanup();
 });
 
+test('PromptEditor cursor movement treats an emoji grapheme cluster as one stop', () => {
+  const flag = '🇨🇳';
+  const value = `a${flag}b`;
+  const afterB = applyPromptEdit({ value, cursor: value.length }, { type: 'left' });
+  assert.equal(afterB.cursor, `a${flag}`.length);
+
+  const beforeFlag = applyPromptEdit({ value, cursor: afterB.cursor }, { type: 'left' });
+  assert.equal(beforeFlag.cursor, 'a'.length);
+
+  const removedFlag = applyPromptEdit({ value: `a${flag}`, cursor: `a${flag}`.length }, { type: 'backspace' });
+  assert.equal(removedFlag.value, 'a');
+  assert.equal(removedFlag.cursor, 'a'.length);
+});
+
 test('PromptEditor commits the current cursor position during the same render', async () => {
   const previousIsTty = process.stdout.isTTY;
   Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
@@ -812,6 +838,83 @@ test('PromptEditor commits the current cursor position during the same render', 
   }
 });
 
+test('PromptEditor keeps long single-line text in sync with the terminal cursor', async () => {
+  const previousIsTty = process.stdout.isTTY;
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+  const committed = [];
+  const value = '我有一个问题是为什么当前的moss在某个文件夹启动后就会创建出那么多';
+
+  try {
+    const { lastFrame } = render(
+      React.createElement(
+        CursorContext.Provider,
+        {
+          value: {
+            setCursorPosition(position) {
+              if (position?.x !== undefined) committed.push({ x: position.x, y: position.y });
+            },
+          },
+        },
+        React.createElement(PromptEditor, {
+          value,
+          cursor: value.length,
+          onChange: () => undefined,
+          onSubmit: () => undefined,
+          placeholder: '',
+          disabled: false,
+        }),
+      ),
+    );
+    for (let i = 0; i < 10 && committed.length === 0; i += 1) await wait(10);
+    const last = committed.at(-1);
+    assert.ok(last, 'expected PromptEditor to commit a cursor position for long input');
+    const promptLine = lastFrame().split('\n').find((line) => line.includes('> '));
+    assert.ok(promptLine, 'expected prompt input line to render');
+    assert.ok(promptLine.includes(value), 'long input should render without inserted wrapping spaces');
+    assert.equal(last.x, stringWidth(promptLine.slice(0, promptLine.indexOf(value) + value.length)));
+  } finally {
+    cleanup();
+    Object.defineProperty(process.stdout, 'isTTY', { value: previousIsTty, configurable: true });
+  }
+});
+
+test('PromptEditor pans very long single-line input so the cursor stays visible', async () => {
+  const previousIsTty = process.stdout.isTTY;
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+  const committed = [];
+  const value = 'a'.repeat(140);
+
+  try {
+    render(
+      React.createElement(
+        CursorContext.Provider,
+        {
+          value: {
+            setCursorPosition(position) {
+              if (position?.x !== undefined) committed.push({ x: position.x, y: position.y });
+            },
+          },
+        },
+        React.createElement(PromptEditor, {
+          value,
+          cursor: value.length,
+          onChange: () => undefined,
+          onSubmit: () => undefined,
+          placeholder: '',
+          disabled: false,
+        }),
+      ),
+    );
+    for (let i = 0; i < 10 && committed.length === 0; i += 1) await wait(10);
+    const last = committed.at(-1);
+    assert.ok(last, 'expected PromptEditor to commit a cursor position for very long input');
+    assert.ok(last.x < 100, `cursor x ${last.x} should stay inside the test terminal`);
+  } finally {
+    cleanup();
+    Object.defineProperty(process.stdout, 'isTTY', { value: previousIsTty, configurable: true });
+  }
+});
+
 test('QueuePreview renders queued prompts and overflow count', () => {
   const { lastFrame } = render(
     React.createElement(QueuePreview, {
@@ -851,6 +954,69 @@ test('QueuePreview renders paused queue resume controls', () => {
   assert.match(frame, /\/queue resume/);
   assert.match(frame, /send a prompt to resume/);
   assert.match(frame, /\/queue drop last/);
+  cleanup();
+});
+
+test('SubagentTaskPanel renders live sub-agent progress and failed completions', () => {
+  const now = 1_000;
+  const { lastFrame } = render(
+    React.createElement(SubagentTaskPanel, {
+      now,
+      tasks: [
+        {
+          taskId: 'parent/sub-live',
+          kind: 'subagent',
+          label: '调研：公司概况',
+          status: 'running',
+          createdAt: 0,
+          updatedAt: 600,
+          startedAt: 100,
+          timeoutMs: 120_000,
+          payload: { task: '调研 D-Robotics 公司概况', scope: 'explore', maxTurns: 5 },
+          progress: {
+            phase: 'tool',
+            currentTurn: 2,
+            maxTurns: 5,
+            toolCalls: 4,
+            lastTool: 'web_fetch',
+          },
+        },
+        {
+          taskId: 'parent/sub-fail',
+          kind: 'subagent',
+          label: '调研：产品线',
+          status: 'failed',
+          createdAt: 0,
+          updatedAt: 900,
+          startedAt: 100,
+          completedAt: 900,
+          payload: { task: '调研产品线', scope: 'explore' },
+          error: 'API Error: socket closed',
+        },
+      ],
+      completions: new Map([
+        ['parent/sub-fail', {
+          taskId: 'parent/sub-fail',
+          status: 'failed',
+          success: false,
+          summary: 'Sub-agent failed: API Error: socket closed',
+          error: 'API Error: socket closed',
+          startedAt: 100,
+          completedAt: 900,
+          durationMs: 800,
+        }],
+      ]),
+    }),
+  );
+  const frame = lastFrame();
+  assert.match(frame, /Sub-agents/);
+  assert.match(frame, /1 running/);
+  assert.match(frame, /调研：公司概况/);
+  assert.match(frame, /turn 2\/5/);
+  assert.match(frame, /4 tools/);
+  assert.match(frame, /last web_fetch/);
+  assert.match(frame, /调研：产品线/);
+  assert.match(frame, /API Error: socket closed/);
   cleanup();
 });
 

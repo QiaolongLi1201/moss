@@ -16,6 +16,9 @@
 
 import assert from 'node:assert/strict';
 import { createInMemoryMossAsyncTaskRegistry } from '@rdk-moss/core/contracts/async-task';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createSubagentTool, subagentStatusTool, subagentStopTool } from '../dist/tools/create-subagent.js';
 import {
   createModelDefFromDmossConfig,
@@ -115,6 +118,7 @@ import { createSubAgentRunner } from '../dist/core/subagent/subagent-runner.js';
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   let capturedParams = null;
+  let progressSeen = false;
   const ctx = {
     workspaceDir: '/tmp',
     runId: 'parent-run',
@@ -122,12 +126,28 @@ import { createSubAgentRunner } from '../dist/core/subagent/subagent-runner.js';
     asyncTaskRegistry: registry,
     spawnSubagent: async (params) => {
       capturedParams = params;
+      params.onProgress?.({
+        runId: 'child-run',
+        scope: 'explore',
+        task: params.task,
+        status: 'running',
+        phase: 'tool',
+        turn: 2,
+        maxTurns: params.maxTurns,
+        toolResults: 4,
+        lastTool: 'web_fetch',
+        elapsedMs: 50,
+      });
+      progressSeen = true;
       await gate;
       return {
         runId: 'child-run',
         sessionKey: 'subagent:child-run',
         summary: 'background complete',
         success: true,
+        turns: 3,
+        toolResults: 5,
+        durationMs: 80,
       };
     },
   };
@@ -146,6 +166,12 @@ import { createSubAgentRunner } from '../dist/core/subagent/subagent-runner.js';
   assert.equal(capturedParams.maxTurns, 3);
   assert.equal(capturedParams.timeoutMs, 2_000);
   assert.ok(capturedParams.abortSignal instanceof AbortSignal);
+  assert.equal(typeof capturedParams.onProgress, 'function');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(progressSeen, true, 'background sub-agent should report live progress');
+  assert.equal(registry.status(taskId)?.progress?.phase, 'tool');
+  assert.equal(registry.status(taskId)?.progress?.currentTurn, 2);
+  assert.equal(registry.status(taskId)?.progress?.lastTool, 'web_fetch');
   release();
   const completion = await registry.wait(taskId);
   assert.equal(completion.status, 'completed');
@@ -153,6 +179,9 @@ import { createSubAgentRunner } from '../dist/core/subagent/subagent-runner.js';
   assert.deepEqual(completion.data, {
     runId: 'child-run',
     sessionKey: 'subagent:child-run',
+    turns: 3,
+    toolResults: 5,
+    durationMs: 80,
   });
   console.log('  [PASS] background mode returns a handle and records final completion');
 }
@@ -482,6 +511,80 @@ import { createSubAgentRunner } from '../dist/core/subagent/subagent-runner.js';
 
 // ── Test 16: Tool defaults scope, maxTurns, and timeoutMs ──
 {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'moss-subagent-workspace-'));
+  const parentWorkspace = path.join(tmpRoot, 'configured-workspace');
+  fs.mkdirSync(parentWorkspace, { recursive: true });
+  const capturedWorkspaces = [];
+  let calls = 0;
+  const provider = {
+    id: 'fake-provider',
+    displayName: 'Fake Provider',
+    capabilities: { streaming: true },
+    async complete() {
+      throw new Error('unused');
+    },
+    async stream() {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          stopReason: 'tool_use',
+          content: [{ type: 'tool_use', id: 'workspace-call', name: 'workspace_probe', input: {} }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      }
+      return {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: 'done' }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    },
+  };
+  const streamFn = createStreamFunctionFromLlmProvider({ provider });
+  const modelDef = createModelDefFromDmossConfig({
+    llmProvider: provider,
+    model: 'fake-model',
+    maxTokens: 128,
+    contextTokens: 4096,
+  });
+  const runner = createSubAgentRunner({
+    parentTools: [{
+      name: 'workspace_probe',
+      description: 'Capture workspace dir.',
+      inputSchema: { type: 'object', properties: {} },
+      metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
+      async execute(_input, ctx) {
+        capturedWorkspaces.push(ctx.workspaceDir);
+        return 'ok';
+      },
+    }],
+    streamFn,
+    modelDef,
+    systemPrompt: 'parent prompt',
+    maxOutputTokens: 128,
+    contextTokens: 4096,
+    workspaceDir: parentWorkspace,
+  });
+
+  const result = await runner(
+    {
+      runId: 'workspace-child',
+      parentRunId: 'parent',
+      scope: 'full',
+      task: 'capture workspace',
+      maxTurns: 3,
+    },
+    new AbortController().signal,
+  );
+
+  assert.equal(result.success, true);
+  assert.deepEqual(capturedWorkspaces, [path.join(parentWorkspace, '.moss', 'subagent', 'workspace-child')]);
+  assert.equal(fs.existsSync(path.join(process.cwd(), '.moss', 'subagent', 'workspace-child')), false);
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('  [PASS] sub-agent runner uses configured workspace root');
+}
+
+// ── Test 17: Tool defaults scope, maxTurns, and timeoutMs ──
+{
   let capturedParams = null;
   const ctx = {
     workspaceDir: '/tmp',
@@ -499,11 +602,12 @@ import { createSubAgentRunner } from '../dist/core/subagent/subagent-runner.js';
   console.log('  [PASS] tool defaults scope, maxTurns, and timeoutMs');
 }
 
-// ── Test 17: Tool metadata is correct ──
+// ── Test 18: Tool metadata is correct ──
 {
   assert.equal(createSubagentTool.name, 'create_subagent');
   assert.equal(createSubagentTool.metadata?.sideEffectClass, 'subagent');
   assert.equal(createSubagentTool.metadata?.planMode, 'allow');
+  assert.equal(createSubagentTool.metadata?.requiresApproval, false);
   assert.equal(subagentStatusTool.name, 'subagent_status');
   assert.equal(subagentStatusTool.metadata?.sideEffectClass, 'readonly');
   assert.equal(subagentStatusTool.metadata?.planMode, 'allow');
@@ -523,7 +627,54 @@ import { createSubAgentRunner } from '../dist/core/subagent/subagent-runner.js';
   console.log('  [PASS] tool metadata and schema are correct');
 }
 
-// ── Test 18: Scope filtering prevents recursion ──
+// ── Test 19: Runner reports progress and never returns an empty failure summary ──
+{
+  const provider = {
+    id: 'fake-provider',
+    displayName: 'Fake Provider',
+    capabilities: { streaming: true },
+    async complete() {
+      return { stopReason: 'end_turn', content: [], usage: { inputTokens: 1, outputTokens: 0 } };
+    },
+    async stream() {
+      return { stopReason: 'end_turn', content: [], usage: { inputTokens: 1, outputTokens: 0 } };
+    },
+  };
+  const streamFn = createStreamFunctionFromLlmProvider({ provider });
+  const modelDef = createModelDefFromDmossConfig({
+    llmProvider: provider,
+    model: 'fake-model',
+    maxTokens: 128,
+    contextTokens: 4096,
+  });
+  const runner = createSubAgentRunner({
+    parentTools: [],
+    streamFn,
+    modelDef,
+    systemPrompt: 'parent prompt',
+    maxOutputTokens: 128,
+    contextTokens: 4096,
+  });
+  const progress = [];
+  const result = await runner(
+    {
+      runId: 'empty-child',
+      parentRunId: 'parent',
+      scope: 'explore',
+      task: 'return no text',
+      maxTurns: 1,
+      onProgress: (event) => progress.push(event),
+    },
+    new AbortController().signal,
+  );
+  assert.equal(result.success, false, 'empty final text should be observable as a failed sub-agent result');
+  assert.match(result.summary, /completed without a final response/i);
+  assert.ok(progress.some((event) => event.status === 'running' && event.phase === 'turn'));
+  assert.ok(progress.some((event) => event.status === 'failed' && /without a final response/i.test(event.error || '')));
+  console.log('  [PASS] runner reports progress and empty final output clearly');
+}
+
+// ── Test 20: Scope filtering prevents recursion ──
 {
   // Simulate what the runner does: filter out create_subagent from any scope
   const allToolNames = ['read', 'write', 'exec', 'create_subagent', 'grep'];
@@ -546,4 +697,4 @@ import { createSubAgentRunner } from '../dist/core/subagent/subagent-runner.js';
   console.log('  [PASS] recursion prevention: create_subagent filtered from all scopes');
 }
 
-console.log('\n[pass] create-subagent: 18/18');
+console.log('\n[pass] create-subagent: 20/20');

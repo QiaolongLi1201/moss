@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { normalizeApprovalPolicyConfig, normalizeConfigProfile, normalizeSafetyModeConfig, parseConfigBoolean, parseTrustedTools, type CliConfigOverrides } from './config.js';
+import { normalizeApprovalPolicyConfig, normalizeConfigProfile, normalizeSafetyModeConfig, parseConfigBoolean, parseTrustedTools, safeProcessCwd, type CliConfigOverrides } from './config.js';
 import type { CliSafetyMode } from './approval.js';
 
 export type CliCommand = 'chat' | 'setup' | 'auth' | 'config' | 'doctor' | 'update' | 'resume' | 'fork';
@@ -50,6 +50,7 @@ function normalizeConfigKey(key: string): keyof CliConfigOverrides | null {
   if (raw === 'deniedtools' || raw === 'denytools') return 'deniedTools';
   if (raw === 'promptcache' || raw === 'promptcacheenabled') return 'promptCacheEnabled';
   if (raw === 'promptcachedebug' || raw === 'promptprefixdebug') return 'promptCacheDebug';
+  if (raw === 'imageinput' || raw === 'vision' || raw === 'visioninput') return 'imageInput';
   if (raw === 'maxagentturns' || raw === 'maxturns') return 'maxAgentTurns';
   if (raw === 'contexttokens' || raw === 'contextwindow') return 'contextTokens';
   return null;
@@ -103,6 +104,12 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
     target.promptCacheDebug = parsed;
     return;
   }
+  if (key === 'imageInput') {
+    const parsed = parseConfigBoolean(value);
+    if (parsed === null) throw new Error(`Unsupported imageInput value "${value}"`);
+    target.imageInput = parsed;
+    return;
+  }
   if (key === 'maxAgentTurns' || key === 'contextTokens') {
     const parsed = Number(value.trim());
     if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`Unsupported ${key} value "${value}"`);
@@ -116,6 +123,10 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
 
 function normalizeSafetyMode(value: string): CliSafetyMode | null {
   return normalizeSafetyModeConfig(value);
+}
+
+function resolveWorkspaceArg(value: string): string {
+  return path.isAbsolute(value) ? path.normalize(value) : path.resolve(safeProcessCwd(), value);
 }
 
 function normalizeDetail(value: string): ParsedCliArgs['detailMode'] {
@@ -277,7 +288,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     }
     if (arg === '-C' || arg === '--cd' || arg.startsWith('--cd=')) {
       const parsed = readValue(argv, i, arg);
-      configOverrides.workspace = path.resolve(parsed.value);
+      configOverrides.workspace = resolveWorkspaceArg(parsed.value);
       i = parsed.nextIndex;
       continue;
     }

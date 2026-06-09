@@ -8,13 +8,14 @@ import {
   setCliApprovalAsker,
 } from '../dist/cli/approval.js';
 
-function tool(name, sideEffectClass, planMode) {
+function tool(name, sideEffectClass, planMode, extraMetadata = {}) {
   return {
     name,
     description: 'test tool',
     metadata: {
       ...(sideEffectClass ? { sideEffectClass } : {}),
       ...(planMode ? { planMode } : {}),
+      ...extraMetadata,
     },
     inputSchema: { type: 'object', properties: {} },
     async execute() {
@@ -45,6 +46,56 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
 }
 
 {
+  const subagentTool = tool('create_subagent', 'subagent', 'allow', { requiresApproval: false });
+  const preview = describeCliToolApproval(
+    {
+      tool: subagentTool,
+      input: { task: 'parallel research' },
+      sessionKey: 's',
+    },
+    'workspace-write',
+  );
+  assert.equal(preview.requiresApproval, false, 'sub-agent dispatch should not ask for approval by default');
+  assert.match(preview.decisionContext, /approval is not required/);
+
+  const approve = createCliToolApprovalHook('workspace-write', {});
+  assert.deepEqual(
+    await approve({ tool: subagentTool, input: { task: 'parallel research' }, sessionKey: 's' }),
+    { approved: true },
+    'create_subagent should run without an interactive prompt',
+  );
+}
+
+{
+  const preview = describeCliToolApproval(
+    {
+      tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+      input: { command: 'git status --short' },
+      sessionKey: 's',
+    },
+    'read-only',
+    {},
+  );
+  assert.equal(preview.toolName, 'exec');
+  assert.equal(preview.sideEffect, 'readonly');
+  assert.equal(preview.safetyMode, 'read-only');
+  assert.equal(preview.requiresApproval, false);
+  assert.equal(preview.autoApproved, false);
+  assert.match(preview.decisionContext, /approval is not required/);
+
+  const approve = createCliToolApprovalHook('read-only', {});
+  assert.deepEqual(
+    await approve({
+      tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+      input: { command: 'git status --short' },
+      sessionKey: 's',
+    }),
+    { approved: true },
+    'obvious read-only exec commands should not require interactive approval',
+  );
+}
+
+{
   const preview = describeCliToolApproval(
     {
       tool: tool('exec', 'local_write', 'requires_user_confirmation'),
@@ -63,6 +114,39 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
   assert.equal(preview.autoApproved, false);
   assert.match(preview.decisionContext, /workspace-write safety mode allows local_write/);
   assert.match(preview.inputPreview, /npm test/);
+}
+
+{
+  const riskyCommands = [
+    'cat /etc/passwd',
+    'sed -i.bak -n "1,2p" notes.md',
+    'find . -delete',
+    'git branch feature-from-approval-test',
+  ];
+  for (const command of riskyCommands) {
+    const preview = describeCliToolApproval(
+      {
+        tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+        input: { command },
+        sessionKey: 's',
+      },
+      'workspace-write',
+      {},
+    );
+    assert.equal(preview.sideEffect, 'local_write', `${command} should not be treated as read-only`);
+    assert.equal(preview.requiresApproval, true, `${command} should still require approval`);
+  }
+}
+
+{
+  const approve = createCliToolApprovalHook('read-only', {}, { deniedTools: ['exec'] });
+  const denied = await approve({
+    tool: tool('exec', 'local_write', 'requires_user_confirmation'),
+    input: { command: 'git status --short' },
+    sessionKey: 's',
+  });
+  assert.equal(denied.approved, false, 'deniedTools must override read-only exec fast path');
+  assert.match(denied.reason, /deniedTools/);
 }
 
 {
@@ -323,7 +407,7 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     assert.match(prompt, /Moss wants to run a local command/);
     assert.match(prompt, /echo sk-t\*\*\*00/);
     assert.match(prompt, /Scope: workspace command/);
-    assert.match(prompt, /Allow once, allow this tool for the session, or deny/);
+    assert.match(prompt, /Allow once, trust this workspace for the session, or deny/);
     assert.doesNotMatch(prompt, /side effect:/);
     assert.doesNotMatch(prompt, /policy:/);
     assert.doesNotMatch(prompt, /input:/);
@@ -370,7 +454,7 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     return answers.shift() ?? '';
   });
   try {
-    const approve = createCliToolApprovalHook('workspace-write', {});
+    const approve = createCliToolApprovalHook('workspace-write', {}, { workspaceDir: '/tmp/moss-trusted-project' });
     assert.deepEqual(
       await approve({
         tool: tool('exec', 'local_write', 'requires_user_confirmation'),
@@ -382,20 +466,29 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
     );
     assert.deepEqual(
       await approve({
-        tool: tool('exec', 'local_write', 'requires_user_confirmation'),
-        input: { command: 'npm run build' },
+        tool: tool('write_file', 'local_write', 'requires_user_confirmation'),
+        input: { path: 'a.txt', content: 'x' },
         sessionKey: 's',
       }),
       { approved: true },
-      'a should trust the same tool for the rest of the session',
+      'a should trust other workspace-local tools for the rest of the session',
     );
-    const deniedOtherTool = await approve({
-      tool: tool('write_file', 'local_write', 'requires_user_confirmation'),
-      input: { path: 'a.txt', content: 'x' },
+    assert.deepEqual(
+      await approve({
+        tool: tool('apply_patch', 'local_write', 'requires_user_confirmation'),
+        input: { patch: '*** Begin Patch\n*** Update File: a.txt\n@@\n-old\n+new\n*** End Patch' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'workspace trust should cover apply_patch too',
+    );
+    const deniedMemoryTool = await approve({
+      tool: tool('remember_fact', 'memory_write', 'requires_user_confirmation'),
+      input: { text: 'remember this' },
       sessionKey: 's',
     });
-    assert.equal(deniedOtherTool.approved, false, 'trusting one tool must not trust other tools');
-    assert.equal(promptCount, 2, 'session-trusted tools should not prompt again, but other tools should');
+    assert.equal(deniedMemoryTool.approved, false, 'workspace trust must not trust non-workspace scopes');
+    assert.equal(promptCount, 2, 'trusted workspace tools should not prompt again, but non-workspace scopes should');
   } finally {
     setCliApprovalAsker(null);
     Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });

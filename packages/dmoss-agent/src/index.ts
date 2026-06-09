@@ -65,7 +65,7 @@ export {
 export type { ChannelSource, ChannelSafetyResult, TextApprovalResult } from './safety/index.js';
 
 // --- Skills ---
-export { SkillRegistry, type SkillRegistryOptions } from './skills/index.js';
+export { BUILTIN_SKILLS, SkillRegistry, listBuiltinSkills, type SkillRegistryOptions } from './skills/index.js';
 export type { SkillMeta, SkillPermission, SkillRuntimePolicy } from './skills/types.js';
 
 // --- Prompts ---
@@ -76,6 +76,12 @@ export {
   hashSystemPromptLayers,
   hashStableDynamicSystemPrompt,
 } from './prompts/index.js';
+export {
+  buildMossDefaultWorkflowPrompt,
+  buildRuntimeCapabilitiesPrompt,
+  isCodeGraphToolName,
+} from './context/index.js';
+export type { RuntimeCapabilitiesPromptOptions, RuntimeCapabilityTool } from './context/index.js';
 
 // --- Core: Agent, Tools, LLM, Session ---
 export { DmossAgent } from './core/index.js';
@@ -297,6 +303,7 @@ export {
   webFetchTool,
   webSearchTool,
   applyPatchTool,
+  installSkillTool,
 } from './tools/builtin.js';
 
 // --- Code intelligence (type/lint diagnostics; go-to-def/refs via MCP-LSP) ---

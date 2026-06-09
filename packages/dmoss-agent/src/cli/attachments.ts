@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { ChatOptions } from '../core/agent/dmoss-agent-types.js';
 
 export type PromptAttachmentBlock = NonNullable<ChatOptions['attachments']>[number];
@@ -77,6 +78,7 @@ function expandHome(value: string): string {
 
 function resolveAttachmentPath(value: string, cwd: string): string {
   const expanded = expandHome(value.trim());
+  if (/^file:\/\//i.test(expanded)) return path.resolve(fileURLToPath(expanded));
   return path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(cwd, expanded);
 }
 

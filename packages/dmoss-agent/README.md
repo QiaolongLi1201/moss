@@ -34,6 +34,8 @@ Moss gives you the familiar terminal-agent workflow of Claude Code and Codex, bu
 - **Bring your own model** - DeepSeek, Qwen, OpenAI-compatible gateways, Anthropic, or self-hosted endpoints.
 - **RDK board workflows** - `/connect <ip>` enables board SSH, diagnostics, and ROS2 tooling inside a live session.
 - **Embeddable runtime** - use the Host Adapter contract to put Moss inside your own IDE, robot console, desktop app, or device platform.
+- **Evidence-first behavior** - Moss is instructed to separate verified facts, inferences, and assumptions, and to say when evidence or runtime capabilities are unavailable.
+- **Self-installing workspace skills** - Moss can use the approved `install_skill` tool to write reusable `SKILL.md` workflows into `.moss/skills/`.
 - **Agent primitives included** - goals, compaction, sessions, attachments, MCP, skills, sub-agents, safety hooks, and tool execution.
 
 If that ownership model matters to you, star the repo, fork it for your host, and open issues for providers, boards, or workflows you want Moss to cover next.
@@ -145,6 +147,26 @@ Use this path when you are building a product host and want to supply your own U
    ```
 
 Interactive Moss asks before file writes, commands, and external actions unless you explicitly choose a more autonomous approval profile.
+
+## Honest Runtime Capabilities
+
+Each CLI run injects a compact runtime capability layer into the system prompt:
+
+- Registered tool names for this run, so the model can use real tool names instead of guessing.
+- MCP and CodeGraph status based on the tools that actually registered. CodeGraph is only recommended when `codegraph_*` tools are present; otherwise Moss must report it as unavailable and use available fallbacks like `search_code`, `search_files`, `list_directory`, and `read_file`.
+- An explicit 实事求是 behavior contract: separate verified facts, reasonable inferences, and unverified assumptions; say when evidence is missing; do not fill unknown gaps just to sound confident.
+
+## Skills
+
+Moss scans `SKILL.md` files from `.moss/skills/`, `.moss/agent/skills/`, legacy `skills/` and `agent/skills/`, and configured extra directories. Built-in skills cover methodical building, systematic debugging, test-driven changes, migration safety, and CodeGraph navigation when available.
+
+Moss can install a workspace skill through the `install_skill` tool. It writes `.moss/skills/<name>/SKILL.md`, refuses path traversal, does not overwrite by default, and is classified as a workspace write so normal approval rules apply.
+
+Example:
+
+```text
+Install the workflow we just used as a reusable Moss skill named truth-check.
+```
 
 ## Use Your Own Model
 

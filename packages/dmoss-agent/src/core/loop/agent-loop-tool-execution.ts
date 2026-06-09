@@ -58,6 +58,7 @@ export interface ExecuteAgentLoopToolCallsParams {
   parallelSafeTools: Set<string>;
   loadToolsMetaName?: string;
   toolLoopGuard: ToolLoopGuardState;
+  maxToolCalls?: number;
   metrics: AgentLoopToolExecutionMetrics;
   evaluateSteering: () => Message[];
   appendMessage: (sessionKey: string, msg: Message) => Promise<void>;
@@ -85,6 +86,7 @@ export async function executeAgentLoopToolCalls(
     parallelSafeTools,
     loadToolsMetaName,
     toolLoopGuard,
+    maxToolCalls,
     metrics,
     evaluateSteering,
     appendMessage,
@@ -99,6 +101,16 @@ export async function executeAgentLoopToolCalls(
   const preflightToolCall = (
     call: { id: string; name: string; input: Record<string, unknown> },
   ): ExecuteToolCallOutcome | null => {
+    if (maxToolCalls !== undefined && metrics.totalToolCalls >= maxToolCalls) {
+      return {
+        kind: 'completed',
+        text: `Tool budget reached (${maxToolCalls}); answer with the evidence already gathered instead of calling more tools.`,
+        isError: false,
+        durationMs: 0,
+        outcome: 'suppressed',
+      };
+    }
+
     const loopReason = shouldShortCircuitToolCall(toolLoopGuard, call.name, call.input);
     if (loopReason) {
       log.warn('tool loop guard short-circuited tool call', {
@@ -288,7 +300,7 @@ export async function executeAgentLoopToolCalls(
     // parallel branch can safely run without an approval gate. Every
     // state-mutating tool lands in its own serial group below, where
     // checkToolApproval is invoked per-call.
-    if (group.parallel && group.calls.length > 1) {
+    if (group.parallel && group.calls.length > 1 && maxToolCalls === undefined) {
       const settled = await Promise.allSettled(
         group.calls.map((call) => {
           const execCall = {

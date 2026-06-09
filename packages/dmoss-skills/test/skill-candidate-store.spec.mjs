@@ -25,7 +25,7 @@ const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmoss-candidate-store-')
 
 {
   const root = getCandidatesRoot(tmpDir);
-  assert.equal(root, path.join(tmpDir, 'skill-candidates'));
+  assert.equal(root, path.join(tmpDir, '.moss', 'skills', 'candidates'));
   console.log('  [PASS] getCandidatesRoot returns correct path');
 }
 

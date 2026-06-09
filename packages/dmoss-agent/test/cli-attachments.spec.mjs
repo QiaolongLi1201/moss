@@ -8,12 +8,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   parseAttachArgs,
   preparePromptAttachments,
   renderPendingAttachmentSummary,
 } from '../dist/cli/attachments.js';
-import { prepareClipboardImageAttachment } from '../dist/cli/clipboard-image.js';
+import { prepareClipboardAttachment, prepareClipboardImageAttachment } from '../dist/cli/clipboard-image.js';
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-attachments-'));
 try {
@@ -50,6 +51,11 @@ try {
   assert.match(renderPendingAttachmentSummary(result.attachments), /Image #1/);
   assert.match(renderPendingAttachmentSummary(result.attachments), /File #2/);
 
+  const fileUrlResult = preparePromptAttachments([pathToFileURL(imagePath).href], { cwd: tempDir, startIndex: 7 });
+  assert.equal(fileUrlResult.attachments.length, 1);
+  assert.equal(fileUrlResult.attachments[0].kind, 'image');
+  assert.equal(fileUrlResult.attachments[0].index, 7);
+
   const unsupported = path.join(tempDir, 'archive.bin');
   fs.writeFileSync(unsupported, Buffer.from([0, 1, 2, 3]));
   const unsupportedResult = preparePromptAttachments([unsupported], { cwd: tempDir });
@@ -71,6 +77,20 @@ try {
   assert.equal(clipboardResult.attachments[0].index, 3);
   assert.equal(clipboardResult.blocks[0].type, 'text');
   assert.match(clipboardResult.blocks[0].text, /\[Image #3:/);
+
+  const clipboardFileResult = await prepareClipboardAttachment({
+    runtimeDir,
+    cwd: tempDir,
+    startIndex: 4,
+    saveClipboardImage: async () => {
+      throw new Error('clipboard does not contain an image');
+    },
+    readClipboardPaths: async () => [textPath],
+  });
+  assert.equal(clipboardFileResult.attachments.length, 1);
+  assert.equal(clipboardFileResult.attachments[0].kind, 'file');
+  assert.equal(clipboardFileResult.attachments[0].index, 4);
+  assert.match(clipboardFileResult.blocks[0].text, /\[File #4: notes\.txt\]/);
 
   console.log('[PASS] CLI attachment preparation');
 } finally {

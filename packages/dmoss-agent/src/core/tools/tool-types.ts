@@ -11,6 +11,21 @@
  */
 import type { MossAsyncTaskRegistry } from '@rdk-moss/core/contracts/async-task';
 
+export interface SubagentRunProgress {
+  runId: string;
+  scope: string;
+  task: string;
+  status: 'started' | 'running' | 'completed' | 'failed';
+  phase?: 'starting' | 'turn' | 'tool' | 'completed' | 'failed';
+  turn?: number;
+  maxTurns?: number;
+  toolResults?: number;
+  lastTool?: string;
+  error?: string;
+  summaryPreview?: string;
+  elapsedMs?: number;
+}
+
 export interface ToolContext {
   workspaceDir: string;
   bootstrapDir?: string;
@@ -32,11 +47,16 @@ export interface ToolContext {
     mode?: 'single' | 'fan-out' | 'pipeline';
     tasks?: Array<{ task: string; scope?: string }>;
     abortSignal?: AbortSignal;
+    onProgress?: (progress: SubagentRunProgress) => void;
   }) => Promise<{
     runId: string;
     sessionKey: string;
     summary: string;
     success: boolean;
+    turns?: number;
+    toolResults?: number;
+    durationMs?: number;
+    error?: string;
   }>;
   maxSpawnDepth?: number;
   currentSpawnDepth?: number;
@@ -64,6 +84,11 @@ export interface ToolMetadata {
   permissionBoundary?: string;
   sideEffectClass?: ToolSideEffectClass;
   planMode?: ToolPlanMode;
+  /**
+   * Explicit approval override for tools whose side-effect class is not enough
+   * to decide whether an interactive prompt is useful.
+   */
+  requiresApproval?: boolean;
   ui?: {
     surface?: 'timeline' | 'block' | 'silent';
   };

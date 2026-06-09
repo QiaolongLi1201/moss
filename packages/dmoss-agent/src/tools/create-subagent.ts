@@ -10,8 +10,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { MossAsyncTaskStartRequest } from '@rdk-moss/core/contracts/async-task';
-import type { Tool, ToolContext } from '../core/tools/tool-types.js';
+import type { MossAsyncTaskSnapshot, MossAsyncTaskStartRequest } from '@rdk-moss/core/contracts/async-task';
+import type { SubagentRunProgress, Tool, ToolContext } from '../core/tools/tool-types.js';
 
 interface CreateSubagentInput {
   task: string;
@@ -31,6 +31,7 @@ interface SubagentStopInput {
 }
 
 const DEFAULT_SUBAGENT_TIMEOUT_MS = 120_000;
+const DEFAULT_FAN_OUT_MAX_TURNS = 4;
 const MIN_SUBAGENT_TIMEOUT_MS = 100;
 const MAX_SUBAGENT_TIMEOUT_MS = 30 * 60_000;
 const TERMINAL_SUBAGENT_TASK_STATUSES = new Set([
@@ -39,6 +40,28 @@ const TERMINAL_SUBAGENT_TASK_STATUSES = new Set([
   'cancelled',
   'timed_out',
 ]);
+
+function completionMetricLines(data: unknown): string[] {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return [];
+  const record = data as Record<string, unknown>;
+  return [
+    typeof record.runId === 'string' ? `runId: ${record.runId}` : '',
+    typeof record.turns === 'number' ? `turns: ${record.turns}` : '',
+    typeof record.toolResults === 'number' ? `toolResults: ${record.toolResults}` : '',
+  ].filter(Boolean);
+}
+
+function snapshotProgressLines(snapshot: MossAsyncTaskSnapshot | undefined): string[] {
+  if (!snapshot?.progress) return [];
+  const progress = snapshot.progress;
+  const parts = [
+    progress.phase ? `phase: ${progress.phase}` : '',
+    progress.currentTurn ? `turn: ${progress.currentTurn}${progress.maxTurns ? `/${progress.maxTurns}` : ''}` : '',
+    progress.toolCalls !== undefined ? `toolCalls: ${progress.toolCalls}` : '',
+    progress.lastTool ? `lastTool: ${progress.lastTool}` : '',
+  ].filter(Boolean);
+  return parts.length > 0 ? [`progress: ${parts.join(' · ')}`] : [];
+}
 
 function resolveSubagentTimeoutMs(timeoutMs: number | undefined): number {
   if (timeoutMs === undefined || !Number.isFinite(timeoutMs)) {
@@ -56,12 +79,14 @@ export const createSubagentTool: Tool<CreateSubagentInput> = {
     'Spawn a sub-agent to perform a task independently.',
     'Sub-agents have their own tool scope and context window.',
     'Use for parallel exploration, planning, or verification tasks.',
+    'Do not use for quick usage/config/help questions, short-answer requests, or simple read-only summaries.',
     '',
     'Scopes: "explore" (read-only), "plan" (read + plan), "verify" (read + exec for testing), "full" (all tools).',
   ].join(' '),
   metadata: {
     sideEffectClass: 'subagent',
     planMode: 'allow',
+    requiresApproval: false,
   },
   inputSchema: {
     type: 'object',
@@ -113,6 +138,26 @@ export const createSubagentTool: Tool<CreateSubagentInput> = {
       const scope = input.scope ?? 'full';
       const maxTurns = input.maxTurns ?? 10;
       const timeoutMs = resolveSubagentTimeoutMs(input.timeoutMs);
+      const updateProgress = (progress: SubagentRunProgress) => {
+        ctx.asyncTaskRegistry?.update(taskId, {
+          progress: {
+            phase: progress.phase ?? progress.status,
+            message: progress.status,
+            ...(progress.turn !== undefined ? { currentTurn: progress.turn } : {}),
+            ...(progress.maxTurns !== undefined ? { maxTurns: progress.maxTurns } : {}),
+            ...(progress.toolResults !== undefined ? { toolCalls: progress.toolResults } : {}),
+            ...(progress.lastTool ? { lastTool: progress.lastTool } : {}),
+            ...(progress.error ? { lastError: progress.error } : {}),
+            ...(progress.summaryPreview ? { summaryPreview: progress.summaryPreview } : {}),
+            details: {
+              runId: progress.runId,
+              scope: progress.scope,
+              elapsedMs: progress.elapsedMs,
+            },
+          },
+          ...(progress.error ? { error: progress.error } : {}),
+        });
+      };
       const handle = ctx.asyncTaskRegistry.start(
         {
           taskId,
@@ -134,6 +179,7 @@ export const createSubagentTool: Tool<CreateSubagentInput> = {
             maxTurns,
             timeoutMs,
             abortSignal: signal,
+            onProgress: updateProgress,
           });
           if (!result) {
             return {
@@ -147,6 +193,10 @@ export const createSubagentTool: Tool<CreateSubagentInput> = {
             data: {
               runId: result.runId,
               sessionKey: result.sessionKey,
+              ...(result.turns !== undefined ? { turns: result.turns } : {}),
+              ...(result.toolResults !== undefined ? { toolResults: result.toolResults } : {}),
+              ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+              ...(result.error ? { error: result.error } : {}),
             },
           };
         },
@@ -202,10 +252,13 @@ export const fanOutSubagentsTool: Tool<FanOutSubagentsInput> = {
     'Use for breadth + speed when independent facets can be tackled in parallel — e.g. multi-angle code review',
     '(correctness / security / perf), multi-source exploration, or cross-checking a finding. Each child is',
     'isolated and read-only by default. For a single task, use create_subagent instead.',
+    'Do not use for quick usage/config/help questions, "answer in N lines" requests, or simple UX impressions;',
+    'answer directly or do at most one targeted file read in those cases.',
   ].join(' '),
   metadata: {
     sideEffectClass: 'subagent',
     planMode: 'allow',
+    requiresApproval: false,
   },
   inputSchema: {
     type: 'object',
@@ -229,7 +282,7 @@ export const fanOutSubagentsTool: Tool<FanOutSubagentsInput> = {
           required: ['task'],
         },
       },
-      maxTurns: { type: 'number', description: 'Max turns per sub-agent (default: 10)' },
+      maxTurns: { type: 'number', description: `Max turns per sub-agent (default: ${DEFAULT_FAN_OUT_MAX_TURNS}; keep shallow unless the user explicitly asks for deep multi-agent research)` },
       timeoutMs: {
         type: 'number',
         minimum: MIN_SUBAGENT_TIMEOUT_MS,
@@ -259,7 +312,7 @@ export const fanOutSubagentsTool: Tool<FanOutSubagentsInput> = {
       return 'Error: fan_out_subagents needs at least 2 tasks; use create_subagent for a single task.';
     }
 
-    const maxTurns = input.maxTurns ?? 10;
+    const maxTurns = input.maxTurns ?? DEFAULT_FAN_OUT_MAX_TURNS;
     const timeoutMs = resolveSubagentTimeoutMs(input.timeoutMs);
     const labelFor = (i: number) => String(tasks[i].label ?? `task ${i + 1}`).slice(0, 40);
 
@@ -350,6 +403,7 @@ export const subagentStatusTool: Tool<SubagentStatusInput> = {
         `[Sub-agent task ${taskId}] ${status}`,
         `status: ${completion.status}`,
         `durationMs: ${completion.durationMs}`,
+        ...completionMetricLines(completion.data),
         '',
         summary,
       ].join('\n');
@@ -360,6 +414,7 @@ export const subagentStatusTool: Tool<SubagentStatusInput> = {
       `kind: ${snapshot.kind}`,
       ...(snapshot.label ? [`label: ${snapshot.label}`] : []),
       ...(snapshot.startedAt ? [`startedAt: ${snapshot.startedAt}`] : []),
+      ...snapshotProgressLines(snapshot),
       `updatedAt: ${snapshot.updatedAt}`,
     ].join('\n');
   },

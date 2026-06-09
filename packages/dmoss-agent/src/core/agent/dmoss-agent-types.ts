@@ -128,6 +128,8 @@ export interface DmossAgentConfig
     ToolExecutionConfig,
     PromptConfig {
   sessionStore: SessionStore;
+  /** Workspace root used for tool execution and child-agent isolation. Defaults to process.cwd(). */
+  workspaceDir?: string;
   maxAgentTurns?: number;
   /** Lifecycle hooks for host customization */
   hooks?: AgentHooks;
@@ -210,6 +212,10 @@ export interface ChatOptions {
   >;
   /** Override temperature for this chat turn */
   temperature?: number;
+  /** Override the agent turn budget for this chat turn. */
+  maxTurns?: number;
+  /** Override the maximum number of tool calls that may execute for this chat turn. */
+  maxToolCalls?: number;
   /** Run ID for tracing (auto-generated if omitted) */
   runId?: string;
 }

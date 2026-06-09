@@ -12,7 +12,7 @@
  * 4. Deduplication: checks existing skills before creating new ones
  * 5. Skill quality signals: tracks usage count and success rate
  *
- * Storage: `<workspace>/skills/learned/<slug>.md`
+ * Storage: `<workspace>/.moss/skills/learned/<slug>.md`
  */
 
 import fs from 'node:fs/promises';

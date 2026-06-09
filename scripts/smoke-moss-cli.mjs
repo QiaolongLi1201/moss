@@ -261,7 +261,7 @@ try {
 
   const configHelp = run(mossBin, ['config', '--help'], binRunOptions).stdout;
   assertMatch(configHelp, /moss config init/, 'moss config --help');
-  assertMatch(configHelp, /Moss reads \.dmoss\/config\.json/, 'moss config --help');
+  assertMatch(configHelp, /Moss reads \.moss\/config\.json/, 'moss config --help');
 
   log('checking installed zero-config source reporting');
   const installedZeroConfig = path.join(tempRoot, 'node_modules', '@rdk-moss', 'agent', 'zero-config-default.json');

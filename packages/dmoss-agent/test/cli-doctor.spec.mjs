@@ -64,7 +64,7 @@ async function doctor(config) {
   return renderCliDoctor({
     config,
     configDir: path.dirname(config.configPath),
-    runtimeDir: path.join(config.workspace, '.dmoss-runtime'),
+    runtimeDir: path.join(config.workspace, '.moss'),
     currentVersion: '0.3.7',
     safetyMode: config.safetyMode,
     detailMode: 'progress',

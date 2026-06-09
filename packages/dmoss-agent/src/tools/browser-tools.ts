@@ -7,7 +7,7 @@ import { isPrivateHost } from './web-fetch.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_TEXT_CHARS = 20_000;
-const DEFAULT_ARTIFACT_DIR = '.dmoss/browser-artifacts';
+const DEFAULT_ARTIFACT_DIR = '.moss/browser-artifacts';
 const BROWSER_ENV_VARS = [
   'DMOSS_BROWSER_EXECUTABLE',
   'DMOSS_CHROMIUM_PATH',

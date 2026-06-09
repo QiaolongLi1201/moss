@@ -70,6 +70,8 @@ function assertStructuredResult(result, { handled, action, goal = false, error =
 
 assert.equal(isGoalCommand('/goal'), true);
 assert.equal(isGoalCommand('  /goal set stabilize command routing'), true);
+assert.equal(isGoalCommand('/goal: stabilize command routing'), true);
+assert.equal(isGoalCommand('/goal：稳定发布'), true);
 assert.equal(isGoalCommand('/goals'), false);
 assert.equal(isGoalCommand('please /goal status'), false);
 
@@ -80,6 +82,26 @@ assert.deepEqual(parseGoalCommand('/goal set ship host integration'), {
   handled: true,
   action: 'set',
   objective: 'ship host integration',
+});
+assert.deepEqual(parseGoalCommand('/goal ship host integration'), {
+  handled: true,
+  action: 'set',
+  objective: 'ship host integration',
+});
+assert.deepEqual(parseGoalCommand('/goal 请你帮我拉一下https://github.com/copyleft/slark.git'), {
+  handled: true,
+  action: 'set',
+  objective: '请你帮我拉一下https://github.com/copyleft/slark.git',
+});
+assert.deepEqual(parseGoalCommand('/goal: ship host integration'), {
+  handled: true,
+  action: 'set',
+  objective: 'ship host integration',
+});
+assert.deepEqual(parseGoalCommand('/goal：稳定发布'), {
+  handled: true,
+  action: 'set',
+  objective: '稳定发布',
 });
 assert.deepEqual(parseGoalCommand('/goal pause waiting for review'), {
   handled: true,
@@ -103,10 +125,7 @@ assert.deepEqual(parseGoalCommand('/goal set    '), {
   action: 'set',
   error: 'Goal objective must not be empty.',
 });
-assert.deepEqual(parseGoalCommand('/goal wat'), {
-  handled: true,
-  error: 'Unknown goal command: wat',
-});
+assert.deepEqual(parseGoalCommand('/goal wat'), { handled: true, action: 'set', objective: 'wat' });
 
 const sessionKey = 'goal-command-session';
 const store = new InMemorySessionStore();
@@ -171,10 +190,19 @@ assert.equal(secondSet.replaced, true);
 assert.match(secondSet.message, /Goal replaced/);
 assert.match(formatGoalCommandResult(secondSet), /Goal replaced/);
 
+const naturalSet = await handleGoalCommand({
+  agent,
+  sessionKey,
+  input: '/goal 请你帮我拉一下https://github.com/copyleft/slark.git',
+});
+assertStructuredResult(naturalSet, { handled: true, action: 'set', goal: true });
+assert.equal(naturalSet.goal?.objective, '请你帮我拉一下https://github.com/copyleft/slark.git');
+assert.equal(naturalSet.replaced, true);
+
 const status = await handleGoalCommand({ agent, sessionKey, input: '/goal status' });
 assertStructuredResult(status, { handled: true, action: 'status', goal: true });
 assert.equal(status.action, 'status');
-assert.equal(status.goal?.objective, 'finish host adapter');
+assert.equal(status.goal?.objective, '请你帮我拉一下https://github.com/copyleft/slark.git');
 assert.match(status.message, /Current goal/);
 
 const paused = await handleGoalCommand({

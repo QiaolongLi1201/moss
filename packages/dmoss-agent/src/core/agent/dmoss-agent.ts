@@ -13,6 +13,7 @@
  *  - Steering: rule-based conversation guidance injection
  */
 
+import path from 'node:path';
 import type { LLMMessage } from '../llm/llm-provider.js';
 import type { ToolContext, ToolCall, ToolResult } from '../tools/tool-types.js';
 import { getRootLogger } from '../../logger.js';
@@ -577,7 +578,9 @@ export class DmossAgent {
     const store = this.config.sessionStore;
     const provider = this.config.llmProvider;
     const hooks = this.config.hooks;
-    const maxTurns = this.config.maxAgentTurns
+    const maxTurns = options?.maxTurns !== undefined
+      ? resolveDmossMaxAgentTurns(String(options.maxTurns))
+      : this.config.maxAgentTurns
       ? resolveDmossMaxAgentTurns(String(this.config.maxAgentTurns))
       : resolveDmossMaxAgentTurns();
     const contextTokens = this.config.contextTokens ?? 200_000;
@@ -656,8 +659,9 @@ export class DmossAgent {
         : undefined;
     const allTools = [...this.tools.getAll(), ...(options?.ephemeralTools ?? [])];
 
+    const workspaceDir = path.resolve(this.config.workspaceDir ?? process.cwd());
     const toolCtx: ToolContext = {
-      workspaceDir: process.cwd(),
+      workspaceDir,
       runId,
       sessionKey,
       abortSignal,
@@ -706,6 +710,7 @@ export class DmossAgent {
       reasoning: this.config.reasoning || undefined,
       toolHooks: this.toolHooks,
       spawnRegistry: this.spawnRegistry,
+      workspaceDir,
       systemPromptParts,
     });
 
@@ -731,6 +736,7 @@ export class DmossAgent {
           task: params.task,
           maxTurns: params.maxTurns ?? 10,
           timeoutMs: params.timeoutMs ?? 120_000,
+          onProgress: params.onProgress,
         },
         params.abortSignal ?? abortSignal,
       );
@@ -739,6 +745,10 @@ export class DmossAgent {
         sessionKey: `subagent:${result.runId}`,
         summary: result.summary,
         success: result.success,
+        ...(result.turns !== undefined ? { turns: result.turns } : {}),
+        ...(result.toolResults !== undefined ? { toolResults: result.toolResults } : {}),
+        ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+        ...(result.error ? { error: result.error } : {}),
       };
     };
 
@@ -760,6 +770,7 @@ export class DmossAgent {
       temperature,
       reasoning: this.config.reasoning || undefined,
       maxTurns,
+      ...(options?.maxToolCalls !== undefined ? { maxToolCalls: options.maxToolCalls } : {}),
       contextTokens,
       steeringEngine: this.steeringEngine ?? undefined,
       appendMessage: async (key, msg) => {

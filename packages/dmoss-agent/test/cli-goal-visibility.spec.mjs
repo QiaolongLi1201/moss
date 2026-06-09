@@ -37,7 +37,7 @@ assert.ok(completeInteractiveCommand('/con')[0].includes('/connect'), 'readline 
 const interactiveHelp = renderCliInteractiveHelp();
 assert.match(interactiveHelp, /\/goal\s+show or manage the persistent session goal/);
 assert.match(interactiveHelp, /\/model\s+choose or switch the active model for this session/);
-assert.match(interactiveHelp, /\/goal set <objective>\s+set the goal Moss should keep in context/);
+assert.match(interactiveHelp, /\/goal <objective>\s+set the goal Moss should keep in context/);
 assert.match(interactiveHelp, /\/compact\s+compress older conversation history into a summary/);
 assert.match(interactiveHelp, /\/auth login\s+optional: link a D-Robotics developer community account/);
 assert.match(interactiveHelp, /\/connect <ip>\s+connect an RDK board/);
@@ -66,7 +66,7 @@ assert.match(helpText, /\/connect <ip>\s+connect an RDK board/);
 assert.match(helpText, /Model configuration/);
 assert.match(helpText, /Built-in: no model API key or community login is required/);
 assert.match(helpText, /OpenAI-compatible example/);
-assert.match(helpText, /Priority: CLI flags\/-c > environment variables > project \.dmoss\/config\.json > user config > built-in default/);
+assert.match(helpText, /Priority: CLI flags\/-c > environment variables > project \.moss\/config\.json > user config > built-in default/);
 assert.match(helpText, /moss --help --all/);
 assert.doesNotMatch(helpText, /\/context\s+show current context-window usage/);
 

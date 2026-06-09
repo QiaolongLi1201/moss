@@ -8,7 +8,7 @@
  *
  * Usage:
  * ```ts
- * const store = new JsonlSessionStore({ dir: '~/.dmoss/sessions' });
+ * const store = new JsonlSessionStore({ dir: '~/.moss/sessions' });
  * const agent = new DmossAgent({ llmProvider: myProvider, sessionStore: store });
  * ```
  */

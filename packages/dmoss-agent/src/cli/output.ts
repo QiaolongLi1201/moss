@@ -53,6 +53,30 @@ export function summarizeForCli(value: unknown, maxChars = 280): string {
   return `${oneLine.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
+function progressToolLabel(toolName: string): string {
+  if (toolName === 'read_file') return 'file read';
+  if (
+    toolName === 'write_file' ||
+    toolName === 'edit_file' ||
+    toolName === 'move_file' ||
+    toolName === 'apply_patch'
+  ) {
+    return 'file update';
+  }
+  if (toolName === 'search_code' || toolName === 'search_files' || toolName === 'list_directory') {
+    return 'workspace search';
+  }
+  if (toolName === 'exec' || toolName === 'exec_background') return 'command';
+  if (toolName.startsWith('device_') || toolName.startsWith('ros2_')) return 'device command';
+  if (toolName.startsWith('web_search')) return 'web search';
+  if (toolName.startsWith('web_fetch')) return 'web fetch';
+  if (toolName.startsWith('memory_read')) return 'memory read';
+  if (toolName.startsWith('memory_write')) return 'memory write';
+  if (toolName.includes('subagent')) return 'subagent';
+  if (toolName.startsWith('browser_')) return 'browser';
+  return 'tool';
+}
+
 export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
@@ -133,7 +157,7 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
             const input = summarizeForCli(event.input);
             stderrLine(input ? `${mark()} ${ui.bold(event.toolName)} ${ui.dim('input')} ${input}` : `${mark()} ${ui.bold(event.toolName)} ${ui.dim('running')}`);
           } else {
-            stderrLine(`${mark()} ${ui.bold(event.toolName)} ${ui.dim('running')}`);
+            stderrLine(`${mark()} ${ui.bold(progressToolLabel(event.toolName))} ${ui.dim('running')}`);
           }
         }
         break;
@@ -153,7 +177,7 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
             const result = summarizeForCli(event.result);
             stderrLine(result ? `${mark(statusKind)} ${ui.bold(event.toolName)} ${status}${ui.dim(elapsed)} ${result}` : `${mark(statusKind)} ${ui.bold(event.toolName)} ${status}${ui.dim(elapsed)}`);
           } else {
-            stderrLine(`${mark(statusKind)} ${ui.bold(event.toolName)} ${status}${ui.dim(elapsed)}`);
+            stderrLine(`${mark(statusKind)} ${ui.bold(progressToolLabel(event.toolName))} ${status}${ui.dim(elapsed)}`);
           }
         }
         break;

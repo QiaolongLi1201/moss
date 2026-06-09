@@ -65,7 +65,7 @@ export interface CandidateStoreResult {
   dedupedFrom?: string;
 }
 
-const CANDIDATES_DIR = "skill-candidates";
+const CANDIDATES_DIR = path.join(".moss", "skills", "candidates");
 const CANDIDATE_FILE = "candidate.json";
 
 async function atomicWriteFile(

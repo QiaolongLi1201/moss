@@ -41,6 +41,25 @@ export interface MossAsyncTaskResult<TData = unknown> {
   data?: TData;
 }
 
+export interface MossAsyncTaskProgress {
+  phase?: string;
+  message?: string;
+  currentTurn?: number;
+  maxTurns?: number;
+  toolCalls?: number;
+  lastTool?: string;
+  lastError?: string;
+  summaryPreview?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface MossAsyncTaskUpdate<TPayload = unknown> {
+  label?: string;
+  progress?: MossAsyncTaskProgress;
+  error?: string;
+  payload?: TPayload;
+}
+
 export interface MossAsyncTaskSnapshot<TPayload = unknown> {
   taskId: string;
   kind: MossAsyncTaskKind;
@@ -55,6 +74,7 @@ export interface MossAsyncTaskSnapshot<TPayload = unknown> {
   timeoutMs?: number;
   payload: TPayload;
   error?: string;
+  progress?: MossAsyncTaskProgress;
 }
 
 export interface MossAsyncTaskCompletion<TData = unknown> {
@@ -85,6 +105,10 @@ export interface MossAsyncTaskRegistry {
     runner: MossAsyncTaskRunner<TPayload, TData>,
     options?: { parentSignal?: AbortSignal },
   ): MossAsyncTaskHandle;
+  update<TPayload = unknown>(
+    taskId: string,
+    patch: MossAsyncTaskUpdate<TPayload>,
+  ): MossAsyncTaskSnapshot | undefined;
   status(taskId: string): MossAsyncTaskSnapshot | undefined;
   list(filter?: { parentTaskId?: string; status?: MossAsyncTaskStatus }): MossAsyncTaskSnapshot[];
   stop(taskId: string, reason?: Exclude<MossAsyncTaskStopReason, 'timeout'>): boolean;
@@ -168,6 +192,26 @@ export class InMemoryMossAsyncTaskRegistry implements MossAsyncTaskRegistry {
   status(taskId: string): MossAsyncTaskSnapshot | undefined {
     const record = this.records.get(taskId);
     return record ? { ...record.snapshot } : undefined;
+  }
+
+  update<TPayload = unknown>(
+    taskId: string,
+    patch: MossAsyncTaskUpdate<TPayload>,
+  ): MossAsyncTaskSnapshot | undefined {
+    const record = this.records.get(taskId);
+    if (!record) return undefined;
+    const updatedAt = this.now();
+    record.snapshot = {
+      ...record.snapshot,
+      ...(patch.label !== undefined ? { label: patch.label } : {}),
+      ...(patch.payload !== undefined ? { payload: patch.payload } : {}),
+      ...(patch.error !== undefined ? { error: patch.error } : {}),
+      ...(patch.progress
+        ? { progress: { ...(record.snapshot.progress ?? {}), ...patch.progress } }
+        : {}),
+      updatedAt,
+    };
+    return { ...record.snapshot };
   }
 
   list(filter: { parentTaskId?: string; status?: MossAsyncTaskStatus } = {}): MossAsyncTaskSnapshot[] {

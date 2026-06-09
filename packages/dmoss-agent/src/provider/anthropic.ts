@@ -128,7 +128,7 @@ function buildAnthropicTools(
 export class AnthropicLLMProvider implements LLMProvider {
   readonly id = 'anthropic';
   readonly displayName = 'Anthropic';
-  readonly capabilities = { streaming: true };
+  readonly capabilities = { streaming: true, imageInput: true };
 
   private readonly apiKey: string;
   private readonly baseUrl: string;

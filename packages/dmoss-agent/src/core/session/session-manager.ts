@@ -58,7 +58,7 @@ export class SessionManager {
   private sessionApproxBytes = new Map<string, number>();
   private loadingPromises = new Map<string, Promise<SessionState>>();
 
-  constructor(baseDir: string = "./.dmoss/sessions") {
+  constructor(baseDir: string = "./.moss/sessions") {
     this.baseDir = baseDir;
   }
 

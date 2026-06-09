@@ -78,6 +78,8 @@ try {
   assert.equal(resolved.contextTokensSource, 'default');
   assert.deepEqual(resolved.compactionSettings, { reserveTokens: 20000, keepRecentTokens: 20000 });
   assert.equal(resolved.compactionSettingsSource, 'default');
+  assert.equal(resolved.imageInput, false);
+  assert.equal(resolved.imageInputSource, 'provider default');
 
   const envResolved = resolveCliConfig({
     DMOSS_PROFILE: 'autonomous',
@@ -95,6 +97,7 @@ try {
     DMOSS_MCP_CONFIG: '/tmp/dmoss-mcp-env.json',
     DMOSS_MAX_AGENT_TURNS: '12',
     DMOSS_CONTEXT_TOKENS: '64000',
+    DMOSS_IMAGE_INPUT: 'true',
   }, loadConfigFile());
   assert.equal(envResolved.provider, 'openai');
   assert.equal(envResolved.profile, 'autonomous');
@@ -122,6 +125,8 @@ try {
   assert.equal(envResolved.maxAgentTurnsSource, 'DMOSS_MAX_AGENT_TURNS');
   assert.equal(envResolved.contextTokens, 64000);
   assert.equal(envResolved.contextTokensSource, 'DMOSS_CONTEXT_TOKENS');
+  assert.equal(envResolved.imageInput, true);
+  assert.equal(envResolved.imageInputSource, 'DMOSS_IMAGE_INPUT');
 
   const deepseekEnvResolved = resolveCliConfig({
     DEEPSEEK_API_KEY: 'deepseek-env-secret',
@@ -132,6 +137,8 @@ try {
   assert.equal(deepseekEnvResolved.apiKeySource, 'DEEPSEEK_API_KEY');
   assert.equal(deepseekEnvResolved.model, 'deepseek-v4-pro');
   assert.equal(deepseekEnvResolved.baseUrl, 'https://api.deepseek.com');
+  assert.equal(deepseekEnvResolved.imageInput, false);
+  assert.equal(deepseekEnvResolved.imageInputSource, 'provider default');
 
   const qwenEnvResolved = resolveCliConfig({
     DASHSCOPE_API_KEY: 'qwen-env-secret',
@@ -142,6 +149,8 @@ try {
   assert.equal(qwenEnvResolved.apiKeySource, 'DASHSCOPE_API_KEY');
   assert.equal(qwenEnvResolved.model, 'qwen3.7-max');
   assert.equal(qwenEnvResolved.baseUrl, 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode');
+  assert.equal(qwenEnvResolved.imageInput, false);
+  assert.equal(qwenEnvResolved.imageInputSource, 'provider default');
 
   const openaiEnvResolved = resolveCliConfig({
     OPENAI_API_KEY: 'openai-env-secret',
@@ -152,6 +161,8 @@ try {
   assert.equal(openaiEnvResolved.apiKeySource, 'OPENAI_API_KEY');
   assert.equal(openaiEnvResolved.model, 'gpt-4o-mini');
   assert.equal(openaiEnvResolved.baseUrl, 'https://api.openai.com');
+  assert.equal(openaiEnvResolved.imageInput, true);
+  assert.equal(openaiEnvResolved.imageInputSource, 'provider default');
 
   const anthropicEnvResolved = resolveCliConfig({
     ANTHROPIC_API_KEY: 'anthropic-env-secret',
@@ -161,6 +172,8 @@ try {
   assert.equal(anthropicEnvResolved.apiKey, 'anthropic-env-secret');
   assert.equal(anthropicEnvResolved.apiKeySource, 'ANTHROPIC_API_KEY');
   assert.equal(anthropicEnvResolved.baseUrl, 'https://api.anthropic.com');
+  assert.equal(anthropicEnvResolved.imageInput, true);
+  assert.equal(anthropicEnvResolved.imageInputSource, 'provider default');
 
   const invalidEnvResolved = resolveCliConfig({
     DMOSS_MAX_AGENT_TURNS: '1.5',
@@ -224,6 +237,7 @@ try {
   assert.match(status, /promptCacheDebug: disabled/);
   assert.match(status, /mcp: disabled \(default\)/);
   assert.match(status, /mcpConfig: .*mcp\.json \(default\)/);
+  assert.match(status, /imageInput: disabled \(provider default\)/);
   assert.match(status, /guardrails: none \(default\)/);
   assert.match(status, /maxAgentTurns: 64 \(default\)/);
   assert.match(status, /contextTokens: 200000 \(default\)/);
@@ -248,6 +262,7 @@ try {
     trustedTools: ['exec'],
     deniedTools: ['device_exec'],
     agent: { maxTurns: 42 },
+    imageInput: true,
   }, {}));
   assert.equal(redactedJson.schema, 'dmoss_cli_config.v1');
   assert.equal(redactedJson.apiKeyConfigured, true);
@@ -255,6 +270,8 @@ try {
   assert.equal(Object.hasOwn(redactedJson, 'apiKey'), false);
   assert.equal(redactedJson.baseUrl, 'https://example.com/compatible-mode/v1');
   assert.equal(redactedJson.maxAgentTurns, 42);
+  assert.equal(redactedJson.imageInput, true);
+  assert.equal(redactedJson.imageInputSource, 'config');
   assert.deepEqual(redactedJson.trustedTools, ['exec']);
   assert.deepEqual(redactedJson.deniedTools, ['device_exec']);
   assert.deepEqual(redactedJson.configWarnings, []);
@@ -298,9 +315,10 @@ try {
   assert.match(usage, /moss config set --project safetyMode workspace-write/);
   assert.match(usage, /moss config set deniedTools device_\*,write_file/);
   assert.match(usage, /moss config set guardrails\.input\.redactPatterns/);
+  assert.match(usage, /moss config set imageInput true/);
   assert.match(usage, /moss config unset <key>/);
   assert.match(usage, /moss config unset --project <key>/);
-  assert.match(usage, /\.dmoss\/config\.json/);
+  assert.match(usage, /\.moss\/config\.json/);
   assert.match(usage, /DMOSS_CONFIG_FILE/);
   assert.match(usage, /promptCacheDebug/);
 
@@ -326,6 +344,7 @@ try {
     DMOSS_MCP_ENABLED: '',
     DMOSS_MCP_CONFIG: '',
     DMOSS_MCP_CONFIG_FILE: '',
+    DMOSS_IMAGE_INPUT: '',
 	    NO_COLOR: '1',
 	  };
 	  {
@@ -369,6 +388,8 @@ try {
     assert.deepEqual(parsed.configWarnings, []);
     assert.equal(parsed.promptCacheEnabled, true);
     assert.equal(parsed.maxAgentTurns, 64);
+    assert.equal(parsed.imageInput, false);
+    assert.equal(parsed.imageInputSource, 'provider default');
     assert.deepEqual(parsed.compactionSettings, { reserveTokens: 20000, keepRecentTokens: 20000 });
     assert.match(parsed.configPath, /config\.json$/);
     assert.equal(parsed.projectConfigPath, null);
@@ -435,6 +456,7 @@ try {
     'DMOSS_MCP_CONFIG_FILE',
     'DMOSS_MAX_AGENT_TURNS',
     'DMOSS_CONTEXT_TOKENS',
+    'DMOSS_IMAGE_INPUT',
   ];
   const oldInitEnv = new Map(initEnvNames.map((name) => [name, process.env[name]]));
   try {
@@ -455,6 +477,11 @@ try {
     assert.equal(initialized.agent.maxTurns, 64);
     assert.equal(initialized.agent.contextTokens, 200000);
     assert.deepEqual(initialized.agent.compaction, { reserveTokens: 20000, keepRecentTokens: 20000 });
+    assert.equal(initialized.imageInput, false);
+    assert.equal(initialized._examples.customModel.provider, 'openai-compatible');
+    assert.equal(initialized._examples.customModel.model, 'your-model-name');
+    assert.equal(initialized._examples.customModel.baseUrl, 'https://your-gateway.example/v1');
+    assert.equal(initialized._examples.customModel.apiKey, 'paste-your-api-key');
     assert.equal(Object.hasOwn(initialized, 'apiKey'), false, 'config init must not persist env or placeholder API keys');
     runConfigInit([]);
     assert.equal(process.exitCode, 1, 'config init should not overwrite by default');
@@ -488,7 +515,7 @@ try {
   }
 
   const initProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-init-project-'));
-  const initProjectConfigPath = path.join(initProjectRoot, '.dmoss', 'config.json');
+  const initProjectConfigPath = path.join(initProjectRoot, '.moss', 'config.json');
   const oldProjectInitEnv = new Map(initEnvNames.map((name) => [name, process.env[name]]));
   try {
     for (const name of initEnvNames) delete process.env[name];
@@ -498,7 +525,7 @@ try {
     assert.equal(initializedProject.safetyMode, 'workspace-write');
     assert.equal(initializedProject.approvalPolicy, 'prompt');
     assert.deepEqual(initializedProject.promptCache, { enabled: true, debug: false });
-    assert.deepEqual(initializedProject.mcp, { enabled: false, configPath: '.dmoss/mcp.json' });
+    assert.deepEqual(initializedProject.mcp, { enabled: false, configPath: '.moss/mcp.json' });
     assert.equal(Object.hasOwn(initializedProject, 'provider'), false, 'project init should not persist user provider');
     assert.equal(Object.hasOwn(initializedProject, 'model'), false, 'project init should not persist user model');
     assert.equal(Object.hasOwn(initializedProject, 'baseUrl'), false, 'project init should not persist user baseUrl');
@@ -533,7 +560,7 @@ try {
     promptCache: { debug: true },
     mcp: {
       enabled: true,
-      configPath: '.dmoss/mcp.json',
+      configPath: '.moss/mcp.json',
     },
     guardrails: {
       input: { redactPatterns: ['PROJECT_SECRET=[^\\s]+'] },
@@ -557,7 +584,7 @@ try {
     assert.equal(loadedProject.config.provider, 'qwen');
     assert.equal(loadedProject.config.model, 'qwen3.7-max');
     assert.deepEqual(loadedProject.config.promptCache, { debug: true });
-    assert.deepEqual(loadedProject.config.mcp, { enabled: true, configPath: '.dmoss/mcp.json' });
+    assert.deepEqual(loadedProject.config.mcp, { enabled: true, configPath: '.moss/mcp.json' });
     assert.deepEqual(loadedProject.config.guardrails, {
       input: { redactPatterns: ['PROJECT_SECRET=[^\\s]+'] },
       output: { blockPatterns: ['project leak'] },
@@ -583,7 +610,7 @@ try {
     assert.equal(projectResolved.promptCacheDebugSource, 'config');
     assert.equal(projectResolved.mcpEnabled, true);
     assert.equal(projectResolved.mcpEnabledSource, 'config');
-    assert.equal(projectResolved.mcpConfigPath, path.join(projectRoot, '.dmoss', 'mcp.json'));
+    assert.equal(projectResolved.mcpConfigPath, path.join(projectRoot, '.moss', 'mcp.json'));
     assert.equal(projectResolved.mcpConfigPathSource, 'config');
     assert.deepEqual(projectResolved.guardrails.input.redactPatterns, ['PROJECT_SECRET=[^\\s]+']);
     assert.deepEqual(projectResolved.guardrails.output.blockPatterns, ['project leak']);
@@ -594,6 +621,8 @@ try {
     assert.equal(projectResolved.contextTokensSource, 'config');
     assert.deepEqual(projectResolved.compactionSettings, { reserveTokens: 10000, keepRecentTokens: 20000 });
     assert.equal(projectResolved.compactionSettingsSource, 'config');
+    assert.equal(projectResolved.imageInput, false);
+    assert.equal(projectResolved.imageInputSource, 'provider default');
 
     const projectShow = spawnSync(process.execPath, [
       cliPath,
@@ -629,7 +658,7 @@ try {
     assert.equal(projectJson.projectConfigPath, projectConfigPath);
     assert.deepEqual(projectJson.deniedTools, ['device_exec']);
     assert.equal(projectJson.mcpEnabled, true);
-    assert.equal(projectJson.mcpConfigPath, path.join(projectRoot, '.dmoss', 'mcp.json'));
+    assert.equal(projectJson.mcpConfigPath, path.join(projectRoot, '.moss', 'mcp.json'));
     assert.equal(projectJson.guardrails.input.redactPatterns[0], 'PROJECT_SECRET=[^\\s]+');
     assert.equal(projectJson.maxAgentTurns, 24);
     assert.deepEqual(projectJson.compactionSettings, { reserveTokens: 10000, keepRecentTokens: 20000 });
@@ -662,7 +691,7 @@ try {
 
   const newProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-new-project-config-'));
   try {
-    const newProjectConfigPath = path.join(newProjectRoot, '.dmoss', 'config.json');
+    const newProjectConfigPath = path.join(newProjectRoot, '.moss', 'config.json');
     runConfigSet(['--project', 'profile', 'cautious'], newProjectRoot);
     assert.deepEqual(JSON.parse(fs.readFileSync(newProjectConfigPath, 'utf8')), { profile: 'cautious' });
   } finally {
@@ -993,6 +1022,8 @@ try {
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
   runConfigSet(['promptCacheDebug', 'true']);
   assert.deepEqual(loadConfigFile().promptCache, { enabled: false, debug: true });
+  runConfigSet(['imageInput', 'true']);
+  assert.equal(loadConfigFile().imageInput, true);
   runConfigSet(['guardrails.input.blockPatterns', 'delete\\s+repo,rm\\s+-rf']);
   assert.deepEqual(loadConfigFile().guardrails.input.blockPatterns, ['delete\\s+repo', 'rm\\s+-rf']);
   runConfigSet(['guardrails.input.redactPatterns', 'TOKEN=[^\\s]+,TOKEN=[^\\s]+']);
@@ -1015,8 +1046,8 @@ try {
   }
   runConfigSet(['mcp.enabled', 'true']);
   assert.deepEqual(loadConfigFile().mcp, { enabled: true, configPath: '/tmp/dmoss-mcp.json' });
-  runConfigSet(['mcp.configPath', '.dmoss/mcp.json']);
-  assert.deepEqual(loadConfigFile().mcp, { enabled: true, configPath: '.dmoss/mcp.json' });
+  runConfigSet(['mcp.configPath', '.moss/mcp.json']);
+  assert.deepEqual(loadConfigFile().mcp, { enabled: true, configPath: '.moss/mcp.json' });
   runConfigSet(['agent.maxTurns', '96']);
   assert.equal(loadConfigFile().agent.maxTurns, 96);
   runConfigSet(['agent.contextTokens', '160000']);
@@ -1041,7 +1072,9 @@ try {
   assert.deepEqual(configSetResolved.compactionSettings, { reserveTokens: 24000, keepRecentTokens: 12000 });
   assert.equal(configSetResolved.compactionSettingsSource, 'config');
   assert.equal(configSetResolved.mcpEnabled, true);
-  assert.equal(configSetResolved.mcpConfigPath, path.join(tmp, '.dmoss', 'mcp.json'));
+  assert.equal(configSetResolved.mcpConfigPath, path.join(tmp, '.moss', 'mcp.json'));
+  assert.equal(configSetResolved.imageInput, true);
+  assert.equal(configSetResolved.imageInputSource, 'config');
   assert.deepEqual(configSetResolved.guardrails.input.blockPatterns, ['delete\\s+repo', 'rm\\s+-rf']);
   assert.deepEqual(configSetResolved.guardrails.input.redactPatterns, ['TOKEN=[^\\s]+']);
   assert.deepEqual(configSetResolved.guardrails.output.blockPatterns, ['private token']);
@@ -1062,6 +1095,8 @@ try {
   assert.equal(resolveCliConfig({}, loadConfigFile()).promptCacheSource, 'profile:autonomous');
   runConfigUnset(['promptCacheDebug']);
   assert.equal(Object.hasOwn(loadConfigFile(), 'promptCache'), false);
+  runConfigUnset(['imageInput']);
+  assert.equal(Object.hasOwn(loadConfigFile(), 'imageInput'), false);
   runConfigUnset(['guardrails.input.blockPatterns']);
   assert.equal(Object.hasOwn(loadConfigFile().guardrails.input, 'blockPatterns'), false);
   runConfigUnset(['guardrails.input.redactPatterns']);
@@ -1071,7 +1106,7 @@ try {
   runConfigUnset(['guardrails.output.redactPatterns']);
   assert.equal(Object.hasOwn(loadConfigFile(), 'guardrails'), false);
   runConfigUnset(['mcp.enabled']);
-  assert.deepEqual(loadConfigFile().mcp, { configPath: '.dmoss/mcp.json' });
+  assert.deepEqual(loadConfigFile().mcp, { configPath: '.moss/mcp.json' });
   runConfigUnset(['mcp.configPath']);
   assert.equal(Object.hasOwn(loadConfigFile(), 'mcp'), false);
   runConfigUnset(['agent.compaction.reserveTokens']);

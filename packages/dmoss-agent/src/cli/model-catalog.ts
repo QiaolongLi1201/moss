@@ -1,6 +1,7 @@
 import { buildApiV1Url } from '../provider/api-v1-url.js';
 import {
   normalizeProvider,
+  parseConfigBoolean,
   PROVIDER_PRESETS,
   type CliProviderPreset,
   type ResolvedCliConfig,
@@ -19,8 +20,21 @@ export interface ModelChoiceList {
   currentModel: string;
   choices: ModelChoice[];
   source: 'live' | 'built-in' | 'common';
+  configPath?: string;
   warning?: string;
 }
+
+export interface CustomModelConfig {
+  provider: CliProviderPreset;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  imageInput?: boolean;
+}
+
+export type CustomModelConfigParseResult =
+  | { ok: true; config: CustomModelConfig }
+  | { ok: false; message: string };
 
 const COMMON_MODELS: Record<CliProviderPreset, string[]> = {
   deepseek: ['deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'],
@@ -40,6 +54,101 @@ function uniqueModels(models: readonly string[]): string[] {
     out.push(model);
   }
   return out;
+}
+
+function sanitizeModelBaseUrl(value: string): string {
+  const trimmed = value.trim();
+  try {
+    const url = new URL(trimmed);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/+$/, '').replace(/\/v1$/, '');
+  } catch {
+    return trimmed.replace(/\/+$/, '').replace(/\/v1$/, '');
+  }
+}
+
+function tokenizeConfigInput(input: string): string[] {
+  const tokens: string[] = [];
+  const pattern = /"((?:\\"|[^"])*)"|'((?:\\'|[^'])*)'|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(input)) !== null) {
+    const value = match[1] ?? match[2] ?? match[3] ?? '';
+    tokens.push(value.replace(/\\(["'])/g, '$1'));
+  }
+  return tokens;
+}
+
+function normalizeConfigInputKey(raw: string): 'provider' | 'model' | 'baseUrl' | 'apiKey' | 'imageInput' | null {
+  const key = raw.trim().replace(/[-_]/g, '').toLowerCase();
+  if (key === 'provider') return 'provider';
+  if (key === 'model' || key === 'modelname' || key === 'name') return 'model';
+  if (key === 'baseurl' || key === 'url' || key === 'endpoint') return 'baseUrl';
+  if (key === 'key' || key === 'apikey' || key === 'token') return 'apiKey';
+  if (key === 'imageinput' || key === 'vision' || key === 'visioninput') return 'imageInput';
+  return null;
+}
+
+export function parseCustomModelConfigInput(input: string): CustomModelConfigParseResult {
+  const values: Partial<Record<keyof CustomModelConfig, string>> = {};
+  const tokens = tokenizeConfigInput(input);
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i] ?? '';
+    const eqIdx = token.indexOf('=');
+    if (eqIdx !== -1) {
+      const key = normalizeConfigInputKey(token.slice(0, eqIdx));
+      if (key) values[key] = token.slice(eqIdx + 1);
+      continue;
+    }
+    const key = normalizeConfigInputKey(token);
+    if (key && tokens[i + 1] && !tokens[i + 1]!.includes('=')) {
+      values[key] = tokens[i + 1];
+      i += 1;
+    }
+  }
+
+  const missing: string[] = [];
+  if (!values.baseUrl) missing.push('base_url');
+  if (!values.apiKey) missing.push('api key');
+  if (!values.model) missing.push('model_name');
+  if (missing.length > 0) {
+    return { ok: false, message: `Missing ${missing.join(', ')}. Provide: base_url=<url> key=<api-key> model_name=<model>.` };
+  }
+  const baseUrl = values.baseUrl;
+  const apiKey = values.apiKey;
+  const model = values.model;
+  if (!baseUrl || !apiKey || !model) {
+    return { ok: false, message: 'Missing base_url, api key, or model_name.' };
+  }
+
+  const imageInput = values.imageInput === undefined ? undefined : parseConfigBoolean(values.imageInput);
+  if (values.imageInput !== undefined && imageInput === null) {
+    return { ok: false, message: 'image_input must be true or false.' };
+  }
+
+  return {
+    ok: true,
+    config: {
+      provider: normalizeProvider(values.provider || 'openai-compatible'),
+      baseUrl: sanitizeModelBaseUrl(baseUrl),
+      apiKey,
+      model,
+      ...(imageInput === undefined || imageInput === null ? {} : { imageInput }),
+    },
+  };
+}
+
+export function formatCustomModelConfigInstructions(configPath?: string): string {
+  return [
+    'Configure a custom model',
+    `  config file  ${configPath || '(default user config)'}`,
+    '  command      /model config base_url=<url> key=<api-key> model_name=<model> [image_input=true]',
+    '',
+    'Example:',
+    '  /model config base_url=https://your-gateway.example/v1 key=sk-... model_name=your-model-name',
+  ].join('\n');
 }
 
 function providerFromRuntime(config?: Partial<ResolvedCliConfig>, fallbackProvider?: string): CliProviderPreset {
@@ -126,6 +235,7 @@ export async function loadModelChoicesForRuntime(
       currentModel,
       choices,
       source: config?.usingBundledDefault ? 'built-in' : 'live',
+      configPath: config?.configPath,
     };
   }
   return {
@@ -136,6 +246,7 @@ export async function loadModelChoicesForRuntime(
       usingBundledDefault: config?.usingBundledDefault,
     }),
     source: config?.usingBundledDefault ? 'built-in' : 'common',
+    configPath: config?.configPath,
     warning: canFetchLive ? 'Live model list was unavailable; showing common model names for this provider.' : undefined,
   };
 }
@@ -158,6 +269,7 @@ export function formatModelChoices(list: ModelChoiceList): string {
     'Models',
     `  active provider  ${list.providerLabel} (${list.provider})`,
     `  current model    ${list.currentModel || '(not set)'}`,
+    `  config file      ${list.configPath || '(default user config)'}`,
     `  source           ${list.source === 'live' ? 'provider /v1/models' : list.source === 'built-in' ? 'built-in default' : 'common examples'}`,
   ];
   if (list.warning) lines.push(`  note             ${list.warning}`);
@@ -172,6 +284,7 @@ export function formatModelChoices(list: ModelChoiceList): string {
     'Use:',
     '  /model <number>        choose one of the models above',
     '  /model <model-name>    use a custom model name for this session',
+    '  /model config base_url=<url> key=<api-key> model_name=<model> [image_input=true]',
     '  moss setup             change provider, base URL, or API key',
   );
   return lines.join('\n');

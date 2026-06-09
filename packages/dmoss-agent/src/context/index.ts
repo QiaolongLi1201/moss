@@ -1,4 +1,11 @@
 export { ContextLoader, type ContextFile } from "./loader.js";
+export { buildMossDefaultWorkflowPrompt } from "./default-workflow.js";
+export {
+  buildRuntimeCapabilitiesPrompt,
+  isCodeGraphToolName,
+  type RuntimeCapabilitiesPromptOptions,
+  type RuntimeCapabilityTool,
+} from "./runtime-capabilities.js";
 export {
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_SOUL_FILENAME,

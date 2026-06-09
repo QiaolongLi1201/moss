@@ -18,6 +18,10 @@ import { render, cleanup } from 'ink-testing-library';
 import { DmossTui } from '../dist/cli/tui.js';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const demoAttachmentPath = 'assets/moss-tui-demo.gif';
+const demoAttachmentPathRe = /assets[\\/]moss-tui-demo\.gif/;
+const demoImageAttachmentRe = /\[Image #1\] assets[\\/]moss-tui-demo\.gif/;
+const demoInputWithAttachmentRe = /assets[\\/]moss-tui-demo\.gif.*\[Image #1\]/;
 const require = createRequire(import.meta.url);
 const inkEntry = require.resolve('ink');
 const { default: CursorContext } = await import(
@@ -287,10 +291,10 @@ test('/attach adds an image for the next prompt without leaving the slash comman
   setRows(24);
   const { stdin, lastFrame } = mount();
   await wait(140);
-  const f = await runSlashCommand(stdin, lastFrame, '/attach assets/moss-tui-demo.gif');
+  const f = await runSlashCommand(stdin, lastFrame, `/attach ${demoAttachmentPath}`);
   const afterAttach = strip(f);
   assert.match(afterAttach, /Pending attachments \(1\)/, '/attach should add a pending attachment');
-  assert.match(afterAttach, /\[Image #1\] assets\/moss-tui-demo\.gif/, 'pending image should be visible');
+  assert.match(afterAttach, demoImageAttachmentRe, 'pending image should be visible');
   assert.doesNotMatch(inputLine(lastFrame()), /\/attach/, '/attach command should not remain in the prompt editor');
   assert.match(inputLine(lastFrame()), /\[Image #1\]/, 'attachment ref should be deletable in the prompt editor');
 
@@ -301,7 +305,7 @@ test('/attach adds an image for the next prompt without leaving the slash comman
   const sent = strip(lastFrame());
   assert.match(sent, /please inspect the attached image/, 'the next ordinary prompt should be submitted');
   assert.match(sent, /Pending attachments \(1\)/, 'submitted user prompt should include the attachment summary');
-  assert.match(sent, /\[Image #1\] assets\/moss-tui-demo\.gif/, 'submitted prompt should carry the pending image');
+  assert.match(sent, demoImageAttachmentRe, 'submitted prompt should carry the pending image');
   cleanup();
 });
 
@@ -312,16 +316,16 @@ test('pasting a standalone file path and pressing Enter attaches it for the next
   const { stdin, lastFrame } = mount(agent);
   await wait(140);
 
-  stdin.write('assets/moss-tui-demo.gif');
+  stdin.write(demoAttachmentPath);
   await wait();
   stdin.write('\r');
   await wait(180);
 
   const afterPastePath = strip(lastFrame());
   assert.match(afterPastePath, /Pending attachments \(1\)/, 'pasted file path should become a pending attachment');
-  assert.match(afterPastePath, /\[Image #1\] assets\/moss-tui-demo\.gif/, 'pending image should be visible');
-  assert.doesNotMatch(afterPastePath, /assets\/moss-tui-demo\.gif\s+deepseek-v4-pro/, 'path should not be sent as a chat prompt');
-  assert.match(inputLine(lastFrame()), /assets\/moss-tui-demo\.gif.*\[Image #1\]/, 'pasted path should stay editable with a removable attachment token');
+  assert.match(afterPastePath, demoImageAttachmentRe, 'pending image should be visible');
+  assert.doesNotMatch(afterPastePath, /assets[\\/]moss-tui-demo\.gif\s+deepseek-v4-pro/, 'path should not be sent as a chat prompt');
+  assert.match(inputLine(lastFrame()), demoInputWithAttachmentRe, 'pasted path should stay editable with a removable attachment token');
 
   stdin.write('please inspect the pasted image');
   await wait();
@@ -331,7 +335,7 @@ test('pasting a standalone file path and pressing Enter attaches it for the next
   const sent = strip(lastFrame());
   assert.match(sent, /please inspect the pasted image/, 'the next ordinary prompt should be submitted');
   assert.match(sent, /Pending attachments \(1\)/, 'submitted user prompt should include the attachment summary');
-  assert.match(sent, /\[Image #1\] assets\/moss-tui-demo\.gif/, 'submitted prompt should carry the pasted image');
+  assert.match(sent, demoImageAttachmentRe, 'submitted prompt should carry the pasted image');
   assert.equal(sentPrompts.length, 1);
   assert.equal(sentPrompts[0].options.attachments.length, 2, 'image prompt should include text marker + image block');
   cleanup();
@@ -347,7 +351,7 @@ test('image attachments warn when the active provider cannot receive image conte
   });
   await wait(140);
 
-  stdin.write('assets/moss-tui-demo.gif');
+  stdin.write(demoAttachmentPath);
   await wait();
   stdin.write('\r');
   await wait(180);
@@ -371,24 +375,24 @@ test('deleting an inline attachment token removes it from the submitted prompt',
   const { stdin, lastFrame } = mount(agent);
   await wait(140);
 
-  stdin.write('assets/moss-tui-demo.gif');
+  stdin.write(demoAttachmentPath);
   await wait();
   stdin.write('\r');
   await wait(180);
-  assert.match(inputLine(lastFrame()), /assets\/moss-tui-demo\.gif.*\[Image #1\]/);
+  assert.match(inputLine(lastFrame()), demoInputWithAttachmentRe);
 
   for (let i = 0; i < '[Image #1] '.length; i += 1) {
     stdin.write('\b');
     await wait(20);
   }
   const afterDelete = inputLine(lastFrame());
-  assert.match(afterDelete, /assets\/moss-tui-demo\.gif/);
+  assert.match(afterDelete, demoAttachmentPathRe);
   assert.doesNotMatch(afterDelete, /\[Image #1\]/);
 
   stdin.write('\r');
   await wait(180);
   assert.equal(sentPrompts.length, 1);
-  assert.equal(sentPrompts[0].message, 'assets/moss-tui-demo.gif');
+  assert.equal(sentPrompts[0].message, demoAttachmentPath);
   assert.equal(sentPrompts[0].options.attachments, undefined, 'deleted inline token should remove the pending attachment');
   cleanup();
 });
@@ -398,7 +402,7 @@ test('Esc clears an accidental pending attachment while idle', async () => {
   const { stdin, lastFrame } = mount();
   await wait(140);
 
-  stdin.write('assets/moss-tui-demo.gif');
+  stdin.write(demoAttachmentPath);
   await wait();
   stdin.write('\r');
   await wait(180);

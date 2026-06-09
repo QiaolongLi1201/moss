@@ -17,19 +17,20 @@ fs.mkdirSync(badCwd);
 
 fs.writeFileSync(wrapper, `
 import { fileURLToPath } from 'node:url';
-import fs from 'node:fs';
 
 const badCwd = process.argv[2];
 const cliUrl = process.argv[3];
 const cliPath = fileURLToPath(cliUrl);
 process.chdir(badCwd);
-fs.chmodSync(badCwd, 0o000);
+const err = new Error('operation not permitted, uv_cwd');
+err.code = 'EPERM';
+err.syscall = 'uv_cwd';
+Object.defineProperty(process, 'cwd', {
+  configurable: true,
+  value: () => { throw err; },
+});
 process.argv = [process.execPath, cliPath, ...process.argv.slice(4)];
-try {
-  await import(cliUrl);
-} finally {
-  fs.chmodSync(badCwd, 0o700);
-}
+await import(cliUrl);
 `);
 
 try {

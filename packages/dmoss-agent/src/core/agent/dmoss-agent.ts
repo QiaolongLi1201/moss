@@ -179,6 +179,8 @@ interface AgentLoopRun {
   abortSignal: AbortSignal;
   adapter: ReturnType<typeof createDmossAgentLoopEventAdapter>;
   sessionKey: string;
+  /** Effective user message for this run (post input-guardrail normalization). */
+  userMessage: string;
 }
 
 // ─── Agent ──────────────────────────────────────────────────────
@@ -875,6 +877,7 @@ export class DmossAgent {
       abortSignal,
       adapter,
       sessionKey,
+      userMessage: activeUserMessage,
     };
   }
 
@@ -1001,6 +1004,49 @@ export class DmossAgent {
   }
 
   /**
+   * Optional run-completion observer. When a local overlay module is installed
+   * it receives each completed top-level run; in a clean checkout the module is
+   * absent and this is a no-op. Fully guarded and fire-and-forget so it can
+   * never perturb teardown. Sub-agent sessions are excluded.
+   */
+  private notifyRunObserver(
+    run: AgentLoopRun,
+    done: Extract<DmossAgentEvent, { type: 'done' }>,
+  ): void {
+    try {
+      if (run.sessionKey.startsWith('subagent:')) return;
+      const stopReason = done.result.stopReason;
+      let outcome: string;
+      if (run.state.lastAgentFatalError || stopReason === 'error') {
+        outcome = 'error';
+      } else if (run.abortSignal.aborted) {
+        outcome = 'cancelled';
+      } else if (stopReason === 'max_turns_reached') {
+        outcome = 'completed_partial';
+      } else {
+        outcome = 'completed';
+      }
+      const summary = {
+        sessionKey: run.sessionKey,
+        runId: run.params.runId,
+        userMessage: run.userMessage,
+        assistantMessage: done.result.response ?? '',
+        toolsUsed: done.result.toolCalls.map((call) => call.name),
+        outcome,
+        ...(run.state.lastAgentFatalError ? { errorDetail: run.state.lastAgentFatalError } : {}),
+      };
+      // Optional local overlay; absent in a clean checkout. Loaded via a
+      // specifier variable so the build never requires the module to exist.
+      const observerModule = '../../run-observer/index.js';
+      void import(observerModule)
+        .then((mod) => mod?.onRunCompleted?.(summary))
+        .catch(() => {});
+    } catch {
+      /* best-effort; never disrupt teardown */
+    }
+  }
+
+  /**
    * Teardown phase: persist task frame checkpoint and trigger skill learning.
    * Runs in a `finally` block to ensure cleanup on both success and failure.
    */
@@ -1009,6 +1055,9 @@ export class DmossAgent {
     done: Extract<DmossAgentEvent, { type: 'done' }>,
   ): AsyncGenerator<DmossAgentEvent> {
     const { state } = run;
+
+    // Optional run-completion observer (no-op unless a local overlay is present).
+    this.notifyRunObserver(run, done);
 
     // Persist task frame checkpoint
     if (state.taskFrame.status === 'active' || done.result.response.trim()) {

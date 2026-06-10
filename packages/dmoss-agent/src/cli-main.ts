@@ -54,9 +54,9 @@ import { buildEnvironmentContextLayer } from './context/environment.js';
 import { buildMossDefaultWorkflowPrompt } from './context/default-workflow.js';
 import { buildRuntimeCapabilitiesPrompt } from './context/runtime-capabilities.js';
 import { createDockerExecTool } from './tools/docker-exec.js';
-import { createDeviceSshTools, getDeviceConfigFromEnv } from './tools/device-ssh.js';
-import { createDeviceDiagnosticsTools } from './tools/device-diagnostics.js';
-import { createRos2Tools } from './tools/device-ros2.js';
+import { getDeviceConfigFromEnv } from './tools/device-ssh.js';
+import { connectDeviceForSession } from './cli/device-connect.js';
+import type { CliRuntimeStatus } from './cli/onboarding.js';
 import { AgentMesh, createMeshTools, isMeshVerboseEnabled } from './mesh/agent-mesh.js';
 import { MeshEventBus } from './mesh/index.js';
 import { LanDiscovery } from './mesh/lan-discovery.js';
@@ -452,11 +452,25 @@ async function main() {
       await setupMesh(agent, deviceConfig);
     }
 
+    let startupDevice: CliRuntimeStatus['device'] = null;
+    let startupDeviceSession: CliRuntimeStatus['deviceSession'] = null;
     if (deviceConfig) {
-      console.error(`[device] Connected to ${deviceConfig.host} (${deviceConfig.user || 'root'}@${deviceConfig.host}:${deviceConfig.port || 22})`);
-      for (const tool of createDeviceSshTools(deviceConfig)) agent.tools.register(tool);
-      for (const tool of createDeviceDiagnosticsTools(deviceConfig)) agent.tools.register(tool);
-      for (const tool of createRos2Tools(deviceConfig)) agent.tools.register(tool);
+      // Same verified path as /connect: probe SSH before claiming the device
+      // is connected — an env var being set proves nothing about the board.
+      const skipVerify = process.env.DMOSS_DEVICE_NO_VERIFY === '1' || process.env.DMOSS_DEVICE_NO_VERIFY === 'true';
+      const mode = process.env.DMOSS_DEVICE_HYBRID === '1' || process.env.DMOSS_DEVICE_HYBRID === 'true' ? 'hybrid' : 'board';
+      const deviceRuntime: CliRuntimeStatus = {};
+      if (!skipVerify) {
+        console.error(`[device] Verifying SSH to ${deviceConfig.user || 'root'}@${deviceConfig.host}:${deviceConfig.port || 22} (set DMOSS_DEVICE_NO_VERIFY=1 to skip) ...`);
+      }
+      const startupConnect = await connectDeviceForSession(agent, deviceRuntime, deviceConfig, {
+        skipVerify,
+        mode,
+        locale: process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG,
+      });
+      console.error(startupConnect.message);
+      startupDevice = deviceRuntime.device ?? null;
+      startupDeviceSession = deviceRuntime.deviceSession ?? null;
     }
 
     extraPromptLayers.push(buildRuntimeCapabilitiesPrompt({
@@ -505,9 +519,8 @@ async function main() {
       sessionKey: session.sessionKey,
       config: resolvedConfig,
       communityAuth: communityAuthRuntime,
-      device: deviceConfig
-        ? { host: deviceConfig.host, user: deviceConfig.user, port: deviceConfig.port }
-        : null,
+      device: startupDevice,
+      deviceSession: startupDeviceSession,
     }, { sessionKey: session.sessionKey });
   } finally {
     await closeMcpConnections(mcpConnections);

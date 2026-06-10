@@ -31,6 +31,26 @@ export function missingSshExecutableProcessError(
   return new ProcessError(127, '', formatMissingSshExecutable(executable));
 }
 
+/**
+ * Convert an SSH child-process failure into the Error a tool must THROW.
+ * Returns null for non-SSH errors (caller wraps those as DmossError).
+ *
+ * Failures must THROW so the pipeline marks the result isError (UI "err",
+ * skill evidence failed:true). Returning failure text as a normal result
+ * rendered SSH failures as successful tool calls — past P0, fixed in
+ * device-diagnostics and (later) device-ros2; use this helper for every
+ * SSH-backed tool so the class stays fixed.
+ */
+export function sshFailureToError(err: unknown, executable: string): Error | null {
+  const missingExecutable = missingSshExecutableProcessError(err, executable);
+  if (missingExecutable) return new Error(missingExecutable.stderr);
+  if (err instanceof ProcessError) {
+    const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
+    return new Error(output || err.message);
+  }
+  return null;
+}
+
 export function buildSshCommand(
   config: DeviceSshConfig,
   remoteCmd: string,
@@ -44,6 +64,14 @@ export function buildSshCommand(
     parts.push('-i', config.keyPath);
   }
 
-  parts.push('-p', String(port), `${user}@${config.host}`, shellEscape(remoteCmd));
+  // The remote command must be passed RAW. We spawn ssh without a local
+  // shell, so no local escaping is needed, and ssh hands the string to the
+  // remote shell for parsing. Wrapping it in quotes here (the old behavior)
+  // made the remote shell treat the WHOLE command as one program name —
+  // `bash: uname -n || hostname: No such file or directory` — which silently
+  // broke every multi-word command in every SSH-backed tool. Escaping belongs
+  // to arguments INSIDE the remote command (shellEscape on paths), never to
+  // the command as a whole.
+  parts.push('-p', String(port), `${user}@${config.host}`, remoteCmd);
   return parts;
 }

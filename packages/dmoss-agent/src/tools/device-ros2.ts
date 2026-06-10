@@ -9,11 +9,43 @@
 import type { Tool, ToolContext } from '../core/tools/tool-types.js';
 import type { DeviceSshConfig } from './device-ssh.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
-import { runProcess, ProcessError } from '../utils/run-process.js';
+import { runProcess } from '../utils/run-process.js';
 import { wrapAsDmoss, ErrorCode } from '../errors.js';
-import { buildSshCommand, missingSshExecutableProcessError, shellEscape } from './ssh-utils.js';
+import { buildSshCommand, shellEscape, sshFailureToError } from './ssh-utils.js';
 
 const ROS_SETUP = 'source /opt/tros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash 2>/dev/null || true';
+
+/** @internal */
+export const ROS2_LAUNCH_OK_MARKER = '__MOSS_ROS2_LAUNCH_OK__';
+/** @internal */
+export const ROS2_LAUNCH_DEAD_MARKER = '__MOSS_ROS2_LAUNCH_DEAD__';
+
+/**
+ * Interpret the marker-tagged output of the ros2_launch verification script.
+ * Exported for tests. Throws when the launched process died within 1s.
+ *
+ * @internal
+ */
+export function interpretRos2LaunchOutput(output: string, pkg: string, launchFile: string): string {
+  const okLine = output.split('\n').find((line) => line.includes(ROS2_LAUNCH_OK_MARKER));
+  if (okLine) {
+    const pid = okLine.match(/pid=(\d+)/)?.[1];
+    return `Launched ${pkg}/${launchFile} (detached${pid ? `, pid ${pid}` : ''}, alive after 1s). Log: /tmp/ros2_launch_${pkg}.log`;
+  }
+  if (output.includes(ROS2_LAUNCH_DEAD_MARKER)) {
+    const logTail = output
+      .split('\n')
+      .filter((line) => !line.includes(ROS2_LAUNCH_DEAD_MARKER))
+      .join('\n')
+      .trim();
+    throw new Error(
+      `ros2 launch ${pkg}/${launchFile} exited within 1s — it did NOT start.\n${logTail ? `Log tail:\n${logTail}` : 'Log was empty.'}`,
+    );
+  }
+  throw new Error(
+    `ros2_launch could not verify the process state (unexpected output):\n${output || '(no output)'}`,
+  );
+}
 
 async function sshExec(
   config: DeviceSshConfig,
@@ -36,15 +68,11 @@ async function sshExec(
     });
     return result.stdout.trim();
   } catch (err) {
-    const missingExecutable = missingSshExecutableProcessError(
-      err,
-      config.password ? 'sshpass' : 'ssh',
-    );
-    if (missingExecutable) return missingExecutable.stderr;
-    if (err instanceof ProcessError) {
-      const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
-      return output || `Error: ${err.message}`;
-    }
+    // Failures must THROW so the pipeline marks the result isError —
+    // returning the text here used to render SSH failures (auth errors,
+    // unreachable host, failed ros2 commands) as successful tool calls.
+    const sshError = sshFailureToError(err, config.password ? 'sshpass' : 'ssh');
+    if (sshError) throw sshError;
     throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
       hint: 'Check SSH connectivity and ROS2 installation',
       recoverable: true,
@@ -130,7 +158,7 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
 
   const ros2Launch: Tool = {
     name: 'ros2_launch',
-    description: 'Launch a ROS2 launch file on the device (runs detached).',
+    description: 'Launch a ROS2 launch file on the device (runs detached; verifies the process is still alive after 1s).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -142,9 +170,17 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
     },
     async execute(input, ctx) {
       const args = input.args ? ` ${shellEscape(input.args)}` : '';
-      const cmd = `nohup ros2 launch ${shellEscape(input.package)} ${shellEscape(input.launch_file)}${args} > /tmp/ros2_launch_${shellEscape(input.package)}.log 2>&1 &`;
-      await sshExec(config, cmd, 5_000, ctx);
-      return `Launched ${input.package}/${input.launch_file} (detached). Log: /tmp/ros2_launch_${input.package}.log`;
+      const logFile = `/tmp/ros2_launch_${shellEscape(input.package)}.log`;
+      // Launch detached, then verify the process survived 1s — `nohup ... &`
+      // exits 0 even when the launch dies instantly (bad package, missing
+      // launch file), so a fixed "Launched" string here was a past lie.
+      const cmd =
+        `nohup ros2 launch ${shellEscape(input.package)} ${shellEscape(input.launch_file)}${args} > ${logFile} 2>&1 & ` +
+        `pid=$!; sleep 1; ` +
+        `if kill -0 "$pid" 2>/dev/null; then echo "${ROS2_LAUNCH_OK_MARKER} pid=$pid"; ` +
+        `else echo "${ROS2_LAUNCH_DEAD_MARKER}"; tail -n 20 ${logFile} 2>/dev/null; fi`;
+      const output = await sshExec(config, cmd, 10_000, ctx);
+      return interpretRos2LaunchOutput(output, input.package, input.launch_file);
     },
   };
 

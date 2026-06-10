@@ -515,6 +515,11 @@ export const execTool: Tool = {
       return outParts.join('\n\n') || '(no output)';
     } catch (err) {
       if (err instanceof ProcessError) {
+        // Deliberate exception to the throw-on-failure rule above: for a local
+        // shell tool a non-zero exit is a *result*, not a tool failure (grep
+        // with no match, `test`, linters). The text explicitly says "failed",
+        // so nothing renders as success. Reopen if skill-evidence quality or
+        // the UI err badge needs exit-code awareness for local exec.
         const output = [err.stdout.trim(), err.stderr.trim()].filter(Boolean).join('\n');
         return `Command failed (exit ${err.exitCode}):\n${output || err.message}`;
       }

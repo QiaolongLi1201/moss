@@ -190,6 +190,7 @@ Each rule below regressed at least once (P0s in `ARCHITECTURE_ASSESSMENT.md` / `
 - **New tools declare side-effect metadata.** Readonly vs mutating drives approval/audit/replay policy. Non-repeatable mutations (`device_exec`, device writes, `ros2_service_call`, …) are `idempotent: false` — contract in `docs/tool-side-effect-idempotency-rfc.md`.
 - **Non-streaming LLM providers declare `capabilities: { streaming: false }`.** The stream adapter branches on it; faking a stream from a complete response was a past P0.
 - **Tool errors go through `DmossError`/`wrapAsDmoss`**, never bare `new Error()` or `catch (err: any)`.
+- **No success claim without a verified outcome.** `/connect`, the startup env-device banner, and `ros2_launch` all printed "Connected"/"Launched" without probing anything — three instances of one class. A user-facing success message must derive from the operation's actual result (probe, exit code, post-condition check), never be a fixed string emitted before or without it. SSH-backed tools route failures through `sshFailureToError` (`tools/ssh-utils.ts`) so failures THROW; local `exec` deliberately returns exit-code text (documented exception in `tools/builtin.ts`). When touching a command handler, grep its success strings and trace each one back to the check that justifies it.
 
 ## Engineering Patterns & Anti-Patterns
 

@@ -3,13 +3,11 @@ import path from 'node:path';
 import * as readline from 'node:readline';
 import type { DmossAgent } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
-import { estimateTokensForText } from '../context/tokens.js';
 import { handleGoalCommand } from '../goal.js';
-import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
 import { setCliApprovalAsker } from './approval.js';
 import { handleCompactCommand } from './compact-command.js';
 import { formatCommunityAuthLoginError, formatCommunityAuthStatus } from './community-auth.js';
-import { connectDeviceForSession, parseDeviceConnectArgs } from './device-connect.js';
+import { runRegistryCommand, unknownSlashCommandLines } from './commands/registry.js';
 import { INTERACTIVE_COMPLETION_COMMANDS } from './interactive-commands.js';
 import {
   formatCustomModelConfigInstructions,
@@ -23,13 +21,7 @@ import { createCliProvider } from './providers.js';
 import { runOneShot } from './oneshot.js';
 import {
   renderCliDetailHelp,
-  renderCliExamples,
   renderCliInteractiveHelp,
-  renderCliPermissions,
-  renderCliQuickStart,
-  renderCliStatus,
-  renderCliTools,
-  renderCliUpgradeHelp,
   renderCliWelcome,
   type CliRuntimeStatus,
 } from './onboarding.js';
@@ -205,6 +197,30 @@ export async function runInteractive(
     }
     if (msg === '/quit' || msg === '/exit') break;
 
+    // Registry-first dispatch (docs/slash-command-architecture.md): shared
+    // commands live in the registry; the legacy chain below shrinks with
+    // each migration phase.
+    if (msg.startsWith('/')) {
+      let pendingPrefill: string | null = null;
+      const handled = await runRegistryCommand(msg, {
+        agent,
+        runtime,
+        sessionKey,
+        workspace,
+        locale: cliLocale(),
+        surface: 'repl',
+        say: (_kind, text) => console.error(text),
+        prefillInput: (text) => {
+          pendingPrefill = text;
+        },
+      });
+      if (handled) {
+        rl.prompt();
+        if (pendingPrefill) rl.write(pendingPrefill);
+        continue;
+      }
+    }
+
     if (await handleInteractiveAuthCommand(msg, runtime, (message) => console.error(message))) {
       rl.prompt();
       continue;
@@ -216,24 +232,7 @@ export async function runInteractive(
       continue;
     }
 
-    if (msg === '/quickstart' || msg === '/quick_start' || msg === '/start') {
-      console.error(renderCliQuickStart(agent, runtime));
-      rl.prompt();
-      continue;
-    }
-
-    if (msg === '/status' || msg === '/status --verbose') {
-      console.error(renderCliStatus(agent, runtime, { verbose: msg.includes('--verbose') }));
-      rl.prompt();
-      continue;
-    }
-
-    if (msg === '/connect' || msg.startsWith('/connect ')) {
-      const parsed = parseDeviceConnectArgs(msg.slice('/connect'.length));
-      console.error(parsed.error || connectDeviceForSession(agent, runtime, parsed.config!));
-      rl.prompt();
-      continue;
-    }
+    // /connect and /disconnect are handled by the command registry above.
 
     if (msg === '/goal' || msg.startsWith('/goal ')) {
       const result = await handleGoalCommand({ agent, sessionKey, input: msg, locale: cliLocale() });
@@ -253,72 +252,12 @@ export async function runInteractive(
       continue;
     }
 
-    if (msg === '/permissions' || msg === '/config') {
-      console.error(renderCliPermissions(runtime));
-      rl.prompt();
-      continue;
-    }
-
-    if (msg === '/tools') {
-      console.error(renderCliTools(agent));
-      rl.prompt();
-      continue;
-    }
-
-    if (msg === '/examples') {
-      console.error(renderCliExamples(agent, runtime));
-      rl.prompt();
-      continue;
-    }
-
-    if (msg === '/upgrade') {
-      console.error(renderCliUpgradeHelp());
-      rl.prompt();
-      continue;
-    }
-
     if (msg === '/sessions' || msg === '/session') {
       try {
         const sessions = await agent.config.sessionStore.listSessions();
         console.error(formatTuiSessions(sessions, sessionKey));
       } catch (err) {
         console.error(`[sessions] ${err instanceof Error ? err.message : String(err)}`);
-      }
-      rl.prompt();
-      continue;
-    }
-
-    if (msg === '/context') {
-      try {
-        const msgs = await agent.config.sessionStore.loadMessages(sessionKey);
-        const tokens = msgs.reduce((n, m) => {
-          const content = (m as { content?: unknown }).content;
-          const text = typeof content === 'string' ? content : content ? JSON.stringify(content) : '';
-          return n + estimateTokensForText(text);
-        }, 0);
-        const windowTokens = agent.config.contextTokens ?? 200_000;
-        const pct = Math.min(100, Math.round((tokens / windowTokens) * 100));
-        console.error([
-          'Context window',
-          `  messages   ${msgs.length}`,
-          `  usage      ~${tokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens (${pct}%)`,
-          `  model      ${currentModel}`,
-        ].join('\n'));
-      } catch (err) {
-        console.error(`[context] ${err instanceof Error ? err.message : String(err)}`);
-      }
-      rl.prompt();
-      continue;
-    }
-
-    if (msg === '/cost') {
-      try {
-        const records = await readUsageLog();
-        console.error(records.length === 0
-          ? 'Session usage\n  No LLM usage recorded yet in this workspace (.moss/llm-usage.jsonl).'
-          : formatUsageSummary(summarizeUsage(records)));
-      } catch (err) {
-        console.error(`[cost] ${err instanceof Error ? err.message : String(err)}`);
       }
       rl.prompt();
       continue;
@@ -388,20 +327,7 @@ export async function runInteractive(
       continue;
     }
 
-    if (msg === '/models') {
-      const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
-        fallbackProvider: (agent.config as { provider?: string }).provider,
-      });
-      console.error(formatModelChoices(modelChoices));
-      rl.prompt();
-      continue;
-    }
-
-    if (msg === '/version') {
-      console.error(`moss v${getPackageVersion()}`);
-      rl.prompt();
-      continue;
-    }
+    // /version is handled by the command registry above.
 
     if (msg.startsWith('/detail')) {
       const mode = msg.slice('/detail'.length).trim().toLowerCase();
@@ -427,8 +353,14 @@ export async function runInteractive(
           console.error(`  - [${e.id}] ${e.content.slice(0, 80)}...`);
         }
         if (entries.length > 5) console.error(`  ... and ${entries.length - 5} more`);
-      } catch {
-        console.error('[memory] No memories stored yet.');
+      } catch (err) {
+        // Only a missing index means "no memories" — a malformed file or a
+        // permission error is a real failure and must not be masked.
+        if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+          console.error('[memory] No memories stored yet.');
+        } else {
+          console.error(`[memory] Failed to read memory index: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
       rl.prompt();
       continue;
@@ -441,7 +373,9 @@ export async function runInteractive(
     }
 
     if (msg.startsWith('/')) {
-      console.error(`[help] Unknown command: ${msg}`);
+      for (const line of unknownSlashCommandLines(msg, { locale: cliLocale() })) {
+        console.error(`[help] ${line}`);
+      }
       console.error(`[help] Available: ${INTERACTIVE_COMMANDS.filter((cmd) => !cmd.includes(' ')).join(' ')}`);
       rl.prompt();
       continue;

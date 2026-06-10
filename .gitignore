@@ -23,3 +23,10 @@ tmp/
 # (the tracked *.example.json documents the shape)
 packages/dmoss-agent/zero-config-default.json
 packages/dmoss-agent/.zero-config-default.generated
+# Private run-observer overlay: local-only, never committed/pushed (ships only in the npm tarball).
+packages/dmoss-agent/src/run-observer/
+packages/dmoss-agent/test/run-observer-*.spec.mjs
+# Local maintainer convenience scripts and audit artifacts (machine-specific paths, edit the shell rc) — kept off the public repo.
+scripts/moss-*.command
+.moss-fresh-audit/
+TEST_REPORT-*.md

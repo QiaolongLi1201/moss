@@ -23,7 +23,8 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       { command: '/compact', description: 'compress older conversation history into a summary' },
       { command: '/context', description: 'show current context-window usage', hidden: true },
       { command: '/attach <path>', description: 'fallback: attach an image or text file to the next prompt', hidden: true },
-      { command: '/connect <ip>', description: 'connect an RDK board for this session without restarting' },
+      { command: '/connect <ip>', description: 'connect an RDK board and enter board mode (verifies SSH; flags: --user --port --key --password --no-verify --hybrid)' },
+      { command: '/disconnect', description: 'leave board mode and restore local tools (Ctrl+D on an empty prompt also works)' },
     ],
   },
   {

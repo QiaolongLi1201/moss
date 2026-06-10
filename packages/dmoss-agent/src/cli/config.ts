@@ -37,14 +37,14 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     displayName: 'DeepSeek',
     defaultModel: 'deepseek-v4-pro',
     defaultBaseUrl: 'https://api.deepseek.com',
-    defaultImageInput: false,
+    defaultImageInput: true,
   },
   qwen: {
     id: 'qwen',
     displayName: 'Aliyun / Qwen',
     defaultModel: 'qwen3.7-max',
     defaultBaseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
-    defaultImageInput: false,
+    defaultImageInput: true,
   },
   openai: {
     id: 'openai',
@@ -65,7 +65,7 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     displayName: 'OpenAI-compatible',
     defaultModel: 'gpt-4o-mini',
     defaultBaseUrl: 'https://api.openai.com',
-    defaultImageInput: false,
+    defaultImageInput: true,
   },
 };
 

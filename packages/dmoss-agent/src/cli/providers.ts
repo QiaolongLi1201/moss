@@ -49,12 +49,11 @@ type AnthropicCliContentBlock =
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
 
-function defaultImageInputForProvider(provider: CliProviderPreset): boolean {
-  return provider === 'openai' || provider === 'anthropic';
-}
-
 function resolveRuntimeImageInput(config: CliProviderRuntimeConfig): boolean {
-  return config.imageInput ?? defaultImageInputForProvider(config.provider);
+  // Image input is on by default for every provider. Vision-capable models
+  // receive image_url / base64 parts directly; opt out per session with
+  // imageInput=false (config / env / CLI) for text-only gateways.
+  return config.imageInput ?? true;
 }
 
 function imageOmittedText(block: Extract<LLMContentBlock, { type: 'image' }>): string {

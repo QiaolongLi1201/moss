@@ -31,7 +31,7 @@ async function sshRun(
   config: DeviceSshConfig,
   remoteCmd: string,
   timeout: number,
-  ctx?: ToolContext,
+  ctx?: Pick<ToolContext, 'abortSignal'>,
   maxBuffer?: number,
 ): Promise<string> {
   const sshBin = config.password ? 'sshpass' : 'ssh';
@@ -50,6 +50,100 @@ async function sshRun(
     throw missingSshExecutableProcessError(err, sshBin) ?? err;
   }
   return result.stdout.trim() || '(no output)';
+}
+
+/** Failure category so callers can give targeted, actionable guidance. */
+export type DeviceSshProbeFailureKind =
+  | 'auth'
+  | 'refused'
+  | 'unreachable'
+  | 'dns'
+  | 'missing-tool'
+  | 'other';
+
+export interface DeviceSshProbeResult {
+  ok: boolean;
+  /** Remote hostname when ok; human-readable failure reason when not. */
+  detail: string;
+  /** Set when ok is false. */
+  kind?: DeviceSshProbeFailureKind;
+}
+
+function classifyProbeFailure(
+  config: DeviceSshConfig,
+  err: unknown,
+): { kind: DeviceSshProbeFailureKind; message: string } {
+  const target = `${config.user || 'root'}@${config.host}:${config.port || 22}`;
+  if (err instanceof ProcessError) {
+    const stderr = (err.stderr || '').trim();
+    const text = stderr.toLowerCase();
+    const tail = stderr.split('\n').slice(-3).join(' ').trim();
+    if (text.includes('permission denied') || text.includes('authentication fail') || err.exitCode === 5) {
+      return {
+        kind: 'auth',
+        message: `Authentication failed for ${target}. Pass --password <pw> or --key <path>, or set DMOSS_DEVICE_PASSWORD / DMOSS_DEVICE_KEY.`,
+      };
+    }
+    if (text.includes('connection refused')) {
+      return {
+        kind: 'refused',
+        message: `Connection refused on port ${config.port || 22} of ${config.host}. Check --port and that sshd is running on the board.`,
+      };
+    }
+    if (
+      text.includes('timed out') ||
+      text.includes('no route to host') ||
+      text.includes('host unreachable') ||
+      text.includes('network is unreachable')
+    ) {
+      return {
+        kind: 'unreachable',
+        message: `Host ${config.host} is unreachable (${tail || 'connection timed out'}). Check the IP and that the board is on the same network.`,
+      };
+    }
+    if (text.includes('could not resolve') || text.includes('not known')) {
+      return {
+        kind: 'dns',
+        message: `Cannot resolve hostname ${config.host}. Check the spelling or use the board IP.`,
+      };
+    }
+    if (err.exitCode === 127) {
+      return { kind: 'missing-tool', message: tail || 'SSH executable not found.' };
+    }
+    return {
+      kind: 'other',
+      message: `SSH probe failed (exit ${err.exitCode})${tail ? `: ${tail}` : ''}. Target: ${target}.`,
+    };
+  }
+  return {
+    kind: 'other',
+    message: `SSH probe failed for ${target}: ${err instanceof Error ? err.message : String(err)}`,
+  };
+}
+
+/**
+ * Verify that the device is actually reachable and credentials work by
+ * running a trivial remote command. Used by /connect before claiming success.
+ *
+ * @beta
+ */
+export async function probeDeviceSsh(
+  config: DeviceSshConfig,
+  options: { timeoutMs?: number; abortSignal?: AbortSignal } = {},
+): Promise<DeviceSshProbeResult> {
+  try {
+    const hostname = await sshRun(
+      config,
+      'uname -n 2>/dev/null || hostname',
+      options.timeoutMs ?? 15_000,
+      { abortSignal: options.abortSignal },
+      64 * 1024,
+    );
+    return { ok: true, detail: hostname === '(no output)' ? config.host : hostname.split('\n')[0].trim() };
+  } catch (err) {
+    const classified = classifyProbeFailure(config, err);
+    return { ok: false, detail: classified.message, kind: classified.kind };
+  }
 }
 
 export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {

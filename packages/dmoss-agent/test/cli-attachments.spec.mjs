@@ -19,7 +19,10 @@ import { prepareClipboardAttachment, prepareClipboardImageAttachment } from '../
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-attachments-'));
 try {
   const imagePath = path.join(tempDir, 'screen shot.png');
-  fs.writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  // Full 8-byte PNG signature: detectImageMime requires the complete header
+  // (length >= 8), not just the 4-byte magic.
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  fs.writeFileSync(imagePath, pngBytes);
   const textPath = path.join(tempDir, 'notes.txt');
   fs.writeFileSync(textPath, 'line one\nline two\n', 'utf8');
 
@@ -44,7 +47,7 @@ try {
   assert.equal(result.blocks[1].type, 'image');
   assert.equal(result.blocks[1].mimeType, 'image/png');
   assert.equal(result.blocks[1].filename, 'screen shot.png');
-  assert.equal(result.blocks[1].data, Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'));
+  assert.equal(result.blocks[1].data, pngBytes.toString('base64'));
   assert.equal(result.blocks[2].type, 'text');
   assert.match(result.blocks[2].text, /\[File #2: notes\.txt\]/);
   assert.match(result.blocks[2].text, /line two/);
@@ -69,7 +72,7 @@ try {
     startIndex: 3,
     saveClipboardImage: async (destPath) => {
       assert.match(destPath, /clipboard-.*\.png$/);
-      fs.writeFileSync(destPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      fs.writeFileSync(destPath, pngBytes);
     },
   });
   assert.equal(clipboardResult.attachments.length, 1);

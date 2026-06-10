@@ -378,7 +378,9 @@ test('/goal clear is immediate while an auto-goal run is busy', async () => {
   assert.ok(aborted, '/goal clear should abort the in-flight auto-goal run');
   assert.equal(await agent.getGoal('cli'), undefined);
   assert.equal(calls.length, 1, 'clearing the goal should not enqueue another continuation');
-  assert.match(strip(lastFrame()), /Goal cleared|已清除目标|Run stopped/);
+  // Locale-robust: the clear ack is "Goal cleared." (en) / "目标已清除。" (zh),
+  // and the busy run surfaces a stop ack ("Stop requested..." / "Run stopped.").
+  assert.match(strip(lastFrame()), /Goal cleared|目标已清除|Run stopped|Stop requested/);
   cleanup();
 });
 

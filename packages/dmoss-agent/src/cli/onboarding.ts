@@ -15,6 +15,20 @@ export interface CliDeviceStatus {
   port?: number;
 }
 
+/**
+ * Live state of a /connect session, kept so /disconnect can verifiably undo
+ * everything the connect did (board mode displaces local tools).
+ */
+export interface CliDeviceSessionHandle {
+  /** Every tool name this device session registered (device_*, ros2_*, board replacements). */
+  registeredNames: string[];
+  /** Local tools displaced or suspended by board mode; re-registered on disconnect. */
+  displaced: Tool[];
+  /** Board-mode prompt layer pushed into agent.config.extraPromptLayers. */
+  promptLayer?: string;
+  boardMode: boolean;
+}
+
 export interface CliRuntimeStatus {
   workspace?: string;
   runtimeDir?: string;
@@ -25,6 +39,7 @@ export interface CliRuntimeStatus {
   dockerImage?: string;
   meshEnabled?: boolean;
   device?: CliDeviceStatus | null;
+  deviceSession?: CliDeviceSessionHandle | null;
   sessionKey?: string;
   config?: ResolvedCliConfig;
   communityAuth?: DmossCommunityAuthRuntime;
@@ -45,9 +60,10 @@ function loadDefaultRuntimeConfig(): ResolvedCliConfig {
   }
 }
 
-const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage' | 'communityAuth'>> & {
+const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'deviceSession' | 'dockerImage' | 'communityAuth'>> & {
   dockerImage?: string;
   device: CliDeviceStatus | null;
+  deviceSession: CliDeviceSessionHandle | null;
   communityAuth?: DmossCommunityAuthRuntime;
 } = {
   workspace: WORKSPACE,
@@ -62,6 +78,7 @@ const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'dockerImage' 
   config: loadDefaultRuntimeConfig(),
   communityAuth: undefined,
   device: null,
+  deviceSession: null,
 };
 
 function runtimeWithDefaults(runtime: CliRuntimeStatus = {}) {
@@ -215,7 +232,7 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
         ? '      Change it anytime: run `moss setup` (interactive), or `/model` to choose a model for this session.'
         : '      Configure it: run `moss setup` — choose a provider, choose a model, and paste your API key.',
     '      Model settings live in moss config only — env vars (DEEPSEEK_API_KEY, DMOSS_PROVIDER, ...) are ignored.',
-    '      Image input: OpenAI/Anthropic default on; OpenAI-compatible/DeepSeek/Qwen default off. Set DMOSS_IMAGE_INPUT=true for vision-capable gateways.',
+    '      Image input: on by default for every provider — vision-capable models receive pasted images. Set DMOSS_IMAGE_INPUT=false (or `moss config set imageInput false`) to disable for text-only gateways.',
     `      Settings are saved to ${compactPath(auth.configPath)} — inspect them with /config.`,
     '',
     `  ${label('2/3 Workspace')} ${compactPath(rt.workspace)} · safety ${rt.safetyMode}`,
@@ -252,7 +269,7 @@ export function renderCliStatus(
       `  ${label('model')} ${agent.config.model} (${auth.usingBundledDefault ? 'built-in D-Robotics model' : auth.provider})`,
       `  ${label('login')} ${community ? formatCommunityAuthStatus(community) : 'unknown'}`,
       `  ${label('workspace')} ${rt.workspace}`,
-      `  ${label('board')} ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}` : 'not connected'}`,
+      `  ${label('board')} ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}${rt.deviceSession?.boardMode ? ' — BOARD MODE (default tools run on the board; /disconnect to leave)' : ' (hybrid)'}` : 'not connected'}`,
       `  ${label('tools')} ${agent.tools.size} (${toolGroups.map((g) => g.title).join(', ') || 'none'})`,
       `  ${label('memory')} ${memoryCount} entries`,
       `  ${label('skills')} ${skillCount}`,
@@ -289,7 +306,7 @@ export function renderCliStatus(
     `  ${label('memory')} ${memoryCount} entries`,
     `  ${label('skills')} ${skillCount}`,
     `  ${label('tools')} ${agent.tools.size} (${toolGroups.map((g) => g.title).join(', ')})`,
-    `  ${label('device')} ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}` : 'not connected'}`,
+    `  ${label('device')} ${rt.device ? `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}${rt.deviceSession?.boardMode ? ' — BOARD MODE (default tools run on the board; /disconnect to leave)' : ' (hybrid)'}` : 'not connected'}`,
     `  ${label('mesh')} ${rt.meshEnabled ? 'enabled' : 'disabled'}`,
   ].join('\n');
 }

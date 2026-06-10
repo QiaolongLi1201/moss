@@ -71,7 +71,16 @@ function nodeCommand(source) {
 }
 
 {
-  const url = 'https://example.com/' + 'a'.repeat(40);
+  // CJK prose has no ASCII spaces, so whole sentences match the long-token
+  // breaker — it must NOT inject spaces mid-word ("apply_pa tch" regression).
+  const zh = '板卡模式：exec 和文件工具现在直接在板卡上执行（apply_patch/exec_background 已挂起）。退出用 /disconnect。';
+  assert.equal(sanitizeRenderableText(zh), zh, 'CJK text must pass through unmodified');
+  const zhToolList = '大部分工作工具（exec、read_file、write_file、edit_file、list_directory、search_files、search_code、move_file）不是操作本机';
+  assert.equal(sanitizeRenderableText(zhToolList), zhToolList, 'CJK-joined tool names must not be split');
+}
+
+{
+  const url ='https://example.com/' + 'a'.repeat(40);
   assert.equal(sanitizeRenderableText(url), url);
 }
 
@@ -127,7 +136,7 @@ assert.deepEqual(
 
 assert.equal(commandArgumentHint('/goal'), '[<condition> | clear]');
 assert.equal(commandArgumentHint('/goal set ship it'), null);
-assert.equal(commandArgumentHint('/connect'), '<board-ip> [--user root --port 22]');
+assert.equal(commandArgumentHint('/connect'), '<[user@]board-ip> [--port 22 --key <path> --password <pw>]');
 assert.equal(commandArgumentHint('/attach'), '<image-or-text-file>');
 assert.equal(commandArgumentHint('/model'), '<model-name-or-number>');
 assert.equal(commandArgumentHint('/auth'), '[login | status | logout]');
@@ -147,7 +156,12 @@ assert.equal(approvalKeyDecision('a', {}), 'allow-always');
 assert.equal(approvalKeyDecision('n', {}), 'deny');
 assert.equal(approvalKeyDecision('', { escape: true }), 'deny');
 assert.equal(approvalKeyDecision('x', {}), null);
-assert.match(footerHint('ready'), /Ctrl\+V attach/);
+// Clipboard paste is macOS-only; the hint must not advertise it elsewhere.
+if (process.platform === 'darwin') {
+  assert.match(footerHint('ready'), /Ctrl\+V attach/);
+} else {
+  assert.doesNotMatch(footerHint('ready'), /Ctrl\+V attach/);
+}
 assert.match(footerHint('ready'), /paste file path \+ Enter/);
 assert.match(footerHint('ready'), /Ctrl\+O details/);
 assert.match(footerHint('ready'), /Tab complete/);

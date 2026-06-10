@@ -9,9 +9,9 @@
 import type { Tool, ToolContext } from '../core/tools/tool-types.js';
 import type { DeviceSshConfig } from './device-ssh.js';
 import { safeChildEnv } from '../utils/safe-child-env.js';
-import { runProcess, ProcessError } from '../utils/run-process.js';
+import { runProcess } from '../utils/run-process.js';
 import { wrapAsDmoss, ErrorCode } from '../errors.js';
-import { buildSshCommand, missingSshExecutableProcessError } from './ssh-utils.js';
+import { buildSshCommand, sshFailureToError } from './ssh-utils.js';
 
 async function sshExec(
   config: DeviceSshConfig,
@@ -34,17 +34,10 @@ async function sshExec(
     return result.stdout.trim();
   } catch (err) {
     // Failures must THROW so the pipeline marks the result isError (UI "err",
-    // skill evidence failed:true). Returning the text rendered SSH failures
-    // as successful tool calls.
-    const missingExecutable = missingSshExecutableProcessError(
-      err,
-      config.password ? 'sshpass' : 'ssh',
-    );
-    if (missingExecutable) throw new Error(missingExecutable.stderr);
-    if (err instanceof ProcessError) {
-      const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
-      throw new Error(output || err.message);
-    }
+    // skill evidence failed:true). Shared helper keeps this class fixed
+    // across all SSH-backed tools.
+    const sshError = sshFailureToError(err, config.password ? 'sshpass' : 'ssh');
+    if (sshError) throw sshError;
     throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
       hint: 'Check SSH connectivity and device power',
       recoverable: true,

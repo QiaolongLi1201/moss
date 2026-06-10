@@ -36,9 +36,22 @@ export class SkillPipeline {
     this.autoPromote = config.autoPromoteHighConfidence ?? false;
   }
 
+  /**
+   * Process a finished session into a skill candidate (+ optional auto-promote).
+   *
+   * Contract: callers must only invoke this AFTER verifying the task actually
+   * completed — the dmoss-agent host gates on `taskFrame.status === 'completed'`.
+   * Pass `runMeta` to record the real outcome; the defaults assert completion
+   * on the caller's behalf and feed the scorer's completeness bonus.
+   */
   async processSession(
     sessionKey: string,
     messages: LLMMessage[],
+    runMeta?: {
+      completionKind?: "complete" | "partial" | "cancelled" | "failed";
+      totalElapsedMs?: number;
+      stopReason?: string;
+    },
   ): Promise<SkillPipelineResult | null> {
     const toolCalls = this.extractToolCalls(messages);
     if (toolCalls.length < 2) return null;
@@ -69,9 +82,10 @@ export class SkillPipeline {
       userMessage,
       assistantText,
       runMeta: {
-        completionKind: "complete",
+        completionKind: runMeta?.completionKind ?? "complete",
         model: this.model,
-        totalElapsedMs: 0,
+        totalElapsedMs: runMeta?.totalElapsedMs ?? 0,
+        ...(runMeta?.stopReason ? { stopReason: runMeta.stopReason } : {}),
       },
     });
 

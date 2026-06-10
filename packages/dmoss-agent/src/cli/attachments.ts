@@ -38,6 +38,31 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
+/**
+ * Detect the actual image type from file magic bytes. Returns the real MIME
+ * (which wins over the extension-implied one) or null when the bytes are not
+ * a supported image. @internal exported for tests.
+ */
+export function detectImageMime(buffer: Buffer): string | null {
+  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+    return 'image/png';
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (buffer.length >= 6 && buffer.subarray(0, 4).toString('latin1') === 'GIF8') {
+    return 'image/gif';
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString('latin1') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('latin1') === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  return null;
+}
+
 const TEXT_EXTENSIONS = new Set([
   '.c',
   '.cc',
@@ -192,14 +217,27 @@ export function preparePromptAttachments(
     const index = nextIndex;
 
     if (imageMime) {
+      if (stat.size === 0) {
+        warnings.push(`Image attachment is empty (0 bytes), not attached: ${label}`);
+        continue;
+      }
       if (stat.size > MAX_IMAGE_BYTES) {
         warnings.push(`Image attachment is too large (${formatBytes(stat.size)} > ${formatBytes(MAX_IMAGE_BYTES)}): ${label}`);
         continue;
       }
-      const data = fs.readFileSync(absPath).toString('base64');
-      attachments.push({ index, kind: 'image', path: absPath, label, filename, mimeType: imageMime, bytes: stat.size });
+      const buffer = fs.readFileSync(absPath);
+      // Verify the bytes actually are an image before claiming "attached" —
+      // a renamed/corrupt/truncated file would otherwise be silently sent to
+      // the model as a broken image block.
+      const detectedMime = detectImageMime(buffer);
+      if (!detectedMime) {
+        warnings.push(`Attachment has an image extension but not a valid image signature (corrupt or mislabeled), not attached: ${label}`);
+        continue;
+      }
+      const data = buffer.toString('base64');
+      attachments.push({ index, kind: 'image', path: absPath, label, filename, mimeType: detectedMime, bytes: stat.size });
       blocks.push({ type: 'text', text: attachmentTextHeader('Image', index, label) });
-      blocks.push({ type: 'image', data, mimeType: imageMime, filename });
+      blocks.push({ type: 'image', data, mimeType: detectedMime, filename });
       nextIndex += 1;
       continue;
     }

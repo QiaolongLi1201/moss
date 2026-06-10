@@ -205,9 +205,15 @@ Inside Moss, use `/model` to list models from the active provider when available
 
 ```text
 /connect 192.168.1.10 --user root
+/connect ubuntu@192.168.1.10 --port 2222 --key ~/.ssh/id_rsa
+/connect 192.168.1.10 --password <pw>
 /status
 Check camera, ROS2 nodes, disk space, and device health.
 ```
+
+`/connect` verifies SSH reachability and credentials before enabling device tools — if the probe fails, it reports why (unreachable host, wrong port, auth failure) and the tools stay disabled. Pass `--no-verify` to skip the probe and register tools anyway (e.g. for a board that is about to boot). Credentials default to `DMOSS_DEVICE_USER` / `DMOSS_DEVICE_PORT` / `DMOSS_DEVICE_KEY` / `DMOSS_DEVICE_PASSWORD` when flags are omitted; prefer `--key` or the env vars over typing `--password` so secrets stay out of the session transcript.
+
+After a verified connect the session enters **board mode**: the default tools (`exec`, `read_file`, `write_file`, `edit_file`, `list_directory`, `search_files`, `search_code`, `move_file`) operate on the board over SSH, so working in moss feels like running it on the board itself. Writes are atomic and byte-count verified. Leave board mode with `/disconnect` or Ctrl+D on an empty prompt — the local tools are restored exactly as they were. Pass `--hybrid` to keep the local tools and only add the `device_*`/`ros2_*` tools alongside (the pre-board-mode behavior).
 
 `/connect` is session-scoped and does not require restarting Moss. The host still owns SSH credentials, protected paths, approval policy, and the concrete device tools that are exposed.
 

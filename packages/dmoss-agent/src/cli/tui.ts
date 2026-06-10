@@ -28,13 +28,13 @@ import {
 import { prepareClipboardAttachment } from './clipboard-image.js';
 import { handleCompactCommand } from './compact-command.js';
 import { formatCommunityAuthLoginError, formatCommunityAuthStatus } from './community-auth.js';
-import { connectDeviceForSession, parseDeviceConnectArgs } from './device-connect.js';
+import { disconnectDeviceForSession } from './device-connect.js';
+import { runRegistryCommand, unknownSlashCommandLines } from './commands/registry.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
 import {
   describeModelListSource,
   formatCustomModelConfigInstructions,
-  formatModelChoices,
   loadModelChoicesForRuntime,
   parseCustomModelConfigInput,
   resolveModelSelection,
@@ -42,13 +42,11 @@ import {
 } from './model-catalog.js';
 import { loadConfigFile, resolveConfigPath, saveConfigFileAtPath } from './config.js';
 import { createCliProvider } from './providers.js';
-import { renderCliDetailHelp, renderCliExamples, renderCliPermissions, renderCliQuickStart, renderCliStatus, renderCliTools, renderCliUpgradeHelp, type CliRuntimeStatus } from './onboarding.js';
+import { renderCliDetailHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
 import { createCliSessionKey } from './session.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, ui } from './ui.js';
-import { readUsageLog, summarizeUsage, formatUsageSummary } from '../observability/index.js';
-import { estimateTokensForText } from '../context/tokens.js';
 import { handleGoalCommand } from '../goal.js';
 import { getMossWorkspacePaths } from '../utils/workspace-paths.js';
 
@@ -202,6 +200,9 @@ const ANSI_RE = new RegExp(
 );
 const CONTROL_CHAR_RE = new RegExp(String.raw`[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]`, 'g');
 const LONG_TOKEN_RE = /[^\s]{33,}/g;
+// CJK (incl. fullwidth punctuation) — these wrap naturally at every character,
+// so the long-token breaker must leave them alone.
+const CJK_CHAR_RE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
 const COPY_SENSITIVE_TOKEN_RE = /^(?:https?:\/\/|file:\/\/|[A-Za-z]:\\|\/|\.\/|\.\.\/|[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+|[A-Za-z0-9_-]*_[A-Za-z0-9_-]*|\[[^\]\n]{1,160}\]\((?:https?:\/\/|file:\/\/)[^)]+\))/;
 const RTL_RE = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 const LOCAL_SHELL_OUTPUT_LIMIT = 40_000;
@@ -254,6 +255,12 @@ function sanitizeTextForTerminal(text: string, options: { breakLongTokens: boole
   const tokenSafe = options.breakLongTokens
     ? binarySafe.replace(LONG_TOKEN_RE, (token) => {
         if (COPY_SENSITIVE_TOKEN_RE.test(token)) return token;
+        // Chinese/Japanese/Korean prose contains no ASCII spaces, so whole
+        // sentences match LONG_TOKEN_RE — injecting spaces every 24 chars
+        // mangled them mid-word ("apply_pa tch", "read_f ile"). CJK has a
+        // natural wrap point at every character; only space-free ASCII blobs
+        // (base64, hashes, long URLs) actually need soft breaks.
+        if (CJK_CHAR_RE.test(token)) return token;
         return token.replace(/(.{24})/g, '$1 ');
       })
     : binarySafe;
@@ -813,7 +820,7 @@ function compactWelcomeTip(tip: string): string {
 export function footerHint(state: TuiRunState): string {
   if (state === 'approval') return '←/→ choose · Enter submit · y approve · a trust scope · n/Esc deny';
   if (state === 'running') return 'Esc cancel · Enter queue · /queue clear · Ctrl+C exit';
-  return 'Ctrl+V attach · paste file path + Enter · Tab complete · Up/Down history · Ctrl+O details · Ctrl+C exit';
+  return `${process.platform === 'darwin' ? 'Ctrl+V attach · ' : ''}paste file path + Enter · Tab complete · Up/Down history · Ctrl+O details · Ctrl+C exit`;
 }
 
 export function editorPreviewLines(value: string, placeholder: string, maxLines = 8): string[] {
@@ -1136,7 +1143,7 @@ export function commandArgumentHint(value: string): string | null {
   const [command, ...rest] = normalized.split(/\s+/);
   const hasArg = rest.some(Boolean);
   if (command === '/goal') return hasArg ? null : '[<condition> | clear]';
-  if (command === '/connect') return hasArg ? null : '<board-ip> [--user root --port 22]';
+  if (command === '/connect') return hasArg ? null : '<[user@]board-ip> [--port 22 --key <path> --password <pw>]';
   if (command === '/attach') return hasArg ? null : '<image-or-text-file>';
   if (command === '/model') return hasArg ? null : '<model-name-or-number>';
   if (command === '/auth') return hasArg ? null : '[login | status | logout]';
@@ -1541,7 +1548,6 @@ function ensureMarkdownRenderer(): void {
     code: ui.dim,
     blockquote: ui.dim,
     codespan: ui.cyan,
-    listitem: (text: string) => `  • ${text}`,
   }) as unknown as Parameters<typeof marked.use>[0] & {
     renderer: Record<string, (this: unknown, ...args: unknown[]) => string>;
   };
@@ -1549,6 +1555,12 @@ function ensureMarkdownRenderer(): void {
     string,
     (this: unknown, ...args: unknown[]) => string
   >;
+  // Lists use marked-terminal's native rendering ("* item", numbered ordered
+  // lists, correct nesting). Do NOT try to swap the bullet glyph: a `listitem`
+  // OPTION is a style hook applied INSIDE the default "* " prefix (the old
+  // double-bullet bug, "*   • item"), and rewriting at the list/listitem
+  // renderer level breaks ordered numbering or nested-list line structure
+  // because outer lists re-process inner lists' already-rendered text.
   terminalRenderer.tablecell = function tablecell(content: unknown) {
     return `${markdownTableCellText(content, this)}${MARKDOWN_TABLE_CELL}`;
   };
@@ -3034,9 +3046,9 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     addTranscript('system', [
       `Custom model configured: ${nextConfig.model} (${nextConfig.provider})`,
       `Saved to ${configPath}`,
-      nextConfig.imageInput === true
-        ? 'Image input enabled for this provider.'
-        : 'Image input disabled unless you set image_input=true for a vision-capable gateway.',
+      nextConfig.imageInput === false
+        ? 'Image input disabled for this provider — omit image_input (or set it true) to send images.'
+        : 'Image input enabled for this provider.',
     ].join('\n'));
   }, [addTranscript, agent, runtime]);
 
@@ -3278,6 +3290,16 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       });
       return;
     }
+    // ssh-style exit: Ctrl+D on an empty idle prompt leaves the board session
+    // and restores local tools (quitting moss stays Ctrl+C / /quit).
+    if (
+      key.ctrl && (normalizedInput === 'd' || inputChar === '\u0004')
+      && input === '' && !activeRunControllerRef.current && runtime?.deviceSession
+    ) {
+      addTranscript('system', disconnectDeviceForSession(agent, runtime));
+      showFlash('disconnected from board');
+      return;
+    }
     if (key.tab && key.shift) {
       setInteractionMode((m) => {
         const next: CliInteractionMode = m === 'plan' ? 'default' : m === 'default' ? 'acceptEdits' : 'plan';
@@ -3306,16 +3328,32 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   });
 
   const handleCommand = useCallback(async (message: string): Promise<boolean> => {
+    // Registry-first dispatch (docs/slash-command-architecture.md): shared
+    // commands live in the registry; the legacy chain below shrinks with
+    // each migration phase.
+    if (message.startsWith('/')) {
+      const handled = await runRegistryCommand(message, {
+        agent,
+        runtime,
+        sessionKey,
+        workspace,
+        locale: cliLocale(),
+        surface: 'tui',
+        say: (kind, text) => addTranscript(kind, text),
+        prefillInput: (text) => {
+          setInput(text);
+          setInputCursor(text.length);
+          showFlash(/^zh/i.test(cliLocale() ?? '') ? '已预填重试命令，补上密码回车' : 'retry command pre-filled — add the password and press Enter');
+        },
+      });
+      if (handled) return true;
+    }
     if (message === '/quit' || message === '/exit') {
       app.exit();
       return true;
     }
     if (message === '/help') {
       addTranscript('system', commandList());
-      return true;
-    }
-    if (message === '/quickstart' || message === '/quick_start' || message === '/start') {
-      addTranscript('system', renderCliQuickStart(agent, runtime));
       return true;
     }
     if (message === '/paste') {
@@ -3381,7 +3419,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
           renderPendingAttachmentSummary(pendingAttachments),
           '',
           'Usage: /attach <image-or-text-file> [more files...]',
-          'Supported images: png, jpg, jpeg, gif, webp. Text files are included as prompt context.',
+          'Supported images: png, jpg, jpeg, gif, webp (max 5 MB, content-verified). Text files up to 200 KB are included as prompt context.',
         ].join('\n'));
         return true;
       }
@@ -3422,10 +3460,6 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       });
       return true;
     }
-    if (message === '/status' || message === '/status --verbose') {
-      addTranscript('system', renderCliStatus(agent, runtime, { verbose: message.includes('--verbose') }));
-      return true;
-    }
     if (message === '/subagents' || message === '/agents') {
       const registry = (agent as unknown as { asyncTasks?: MossAsyncTaskRegistry }).asyncTasks;
       if (!registry) {
@@ -3443,11 +3477,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       addTranscript('system', formatSubagentTaskList(tasks, completions));
       return true;
     }
-    if (message === '/connect' || message.startsWith('/connect ')) {
-      const parsed = parseDeviceConnectArgs(message.slice('/connect'.length));
-      addTranscript(parsed.error ? 'error' : 'system', parsed.error || connectDeviceForSession(agent, runtime, parsed.config!));
-      return true;
-    }
+    // /connect and /disconnect are handled by the command registry above.
     if (message === '/auth' || message.startsWith('/auth ') || message === '/logout') {
       const auth = runtime?.communityAuth;
       if (!auth) {
@@ -3509,22 +3539,6 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       }
       return true;
     }
-    if (message === '/permissions' || message === '/config') {
-      addTranscript('system', renderCliPermissions(runtime));
-      return true;
-    }
-    if (message === '/tools') {
-      addTranscript('system', renderCliTools(agent));
-      return true;
-    }
-    if (message === '/examples') {
-      addTranscript('system', renderCliExamples(agent, runtime));
-      return true;
-    }
-    if (message === '/upgrade') {
-      addTranscript('system', renderCliUpgradeHelp());
-      return true;
-    }
     if (message === '/memory') {
       addTranscript('system', renderMemory(workspace));
       return true;
@@ -3534,7 +3548,21 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     if (message.startsWith('/skills promote ')) {
-      const candidateId = message.slice('/skills promote '.length).trim();
+      const promoteArg = message.slice('/skills promote '.length).trim();
+      const force = /\s--force$/.test(promoteArg);
+      const candidateId = promoteArg.replace(/\s--force$/, '').trim();
+      // Low-confidence candidates need an explicit override: promotion makes
+      // the skill auto-matchable in future sessions, and the draft itself
+      // says it has not been verified by a successful run.
+      const listing = listSkillCandidates(workspace).find((c) => c.id === candidateId);
+      const confidence = Number.parseFloat(listing?.confidence ?? '');
+      if (!force && Number.isFinite(confidence) && confidence < 0.5) {
+        addTranscript('error', [
+          `Candidate "${candidateId}" has low confidence (${confidence}) — its source run was not a verified success.`,
+          `Re-run the workflow successfully first, or promote anyway with: /skills promote ${candidateId} --force`,
+        ].join('\n'));
+        return true;
+      }
       try {
         const { promoteSkillCandidate } = await import('@rdk-moss/skills');
         const result = await promoteSkillCandidate({ workspaceDir: workspace, candidateId });
@@ -3561,7 +3589,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
         addTranscript('error', `Candidate "${candidateId}" was not found. /skills lists candidate ids.`);
         return true;
       }
-      fs.rmSync(candidateDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(candidateDir, { recursive: true, force: true });
+      } catch (err) {
+        addTranscript('error', `Failed to discard candidate "${candidateId}": ${err instanceof Error ? err.message : String(err)}`);
+        return true;
+      }
       addTranscript('system', `Discarded skill candidate "${candidateId}".`);
       return true;
     }
@@ -3580,7 +3613,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
         addTranscript('error', `Learned skill "${fileName}" was not found. /skills lists learned files.`);
         return true;
       }
-      fs.rmSync(target, { force: true });
+      try {
+        fs.rmSync(target, { force: true });
+      } catch (err) {
+        addTranscript('error', `Failed to forget skill "${fileName}": ${err instanceof Error ? err.message : String(err)}`);
+        return true;
+      }
       addTranscript('system', `Forgot learned skill "${fileName}".`);
       return true;
     }
@@ -3590,50 +3628,6 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
         addTranscript('system', formatTuiSessions(sessions, sessionKey));
       } catch (err) {
         addTranscript('error', `Could not list sessions: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return true;
-    }
-    if (message === '/context') {
-      try {
-        const msgs = await agent.config.sessionStore.loadMessages(sessionKey);
-        // CJK-aware estimate via the same estimator compaction uses, against
-        // the real effective context window (config.contextTokens), not a
-        // hard-coded 1M denominator.
-        const tokens = msgs.reduce((n, m) => {
-          const c = (m as { content?: unknown }).content;
-          const text = typeof c === 'string' ? c : c ? JSON.stringify(c) : '';
-          return n + estimateTokensForText(text);
-        }, 0);
-        const windowTokens = agent.config.contextTokens ?? 200_000;
-        const pct = Math.min(100, Math.round((tokens / windowTokens) * 100));
-        addTranscript('system', [
-          'Context window',
-          `  messages   ${msgs.length}`,
-          `  usage      ~${tokens.toLocaleString()} / ${windowTokens.toLocaleString()} tokens (${pct}%)`,
-          `  model      ${currentModel}`,
-          '  (CJK-aware estimate; live usage tracked in the status bar)',
-        ].join('\n'));
-      } catch (err) {
-        addTranscript('error', `Could not read context: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      return true;
-    }
-    if (message === '/cost') {
-      try {
-        // Real recorded spend from .moss/llm-usage.jsonl (logged per LLM
-        // request in the agent loop), not a chars/4 guess.
-        const records = await readUsageLog();
-        if (records.length === 0) {
-          addTranscript('system', [
-            'Session usage',
-            '  No LLM usage recorded yet in this workspace (.moss/llm-usage.jsonl).',
-            '  Token counts and cost are logged once the agent makes an LLM call.',
-          ].join('\n'));
-        } else {
-          addTranscript('system', formatUsageSummary(summarizeUsage(records)));
-        }
-      } catch (err) {
-        addTranscript('error', `Could not read usage log: ${err instanceof Error ? err.message : String(err)}`);
       }
       return true;
     }
@@ -3673,17 +3667,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       addTranscript('system', lines.join('\n'));
       return true;
     }
-    if (message === '/models') {
-      const modelChoices = await loadModelChoicesForRuntime(runtime?.config, currentModel, {
-        fallbackProvider: (agent.config as { provider?: string }).provider,
-      });
-      addTranscript('system', formatModelChoices(modelChoices));
-      return true;
-    }
-    if (message === '/version') {
-      addTranscript('system', `moss v${getPackageVersion()}`);
-      return true;
-    }
+    // /version is handled by the command registry above.
     if (message === '/model' || message.startsWith('/model ')) {
       const nextModel = message === '/model' ? '' : message.slice(7).trim();
       if (nextModel === 'config' || nextModel.startsWith('config ')) {
@@ -3752,11 +3736,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     if (message.startsWith('/')) {
-      const suggestion = commandSuggestion(message);
-      addTranscript('error', [
-        `Unknown command: ${message}`,
-        suggestion ? `Did you mean ${suggestion}?` : 'Use /help for available commands.',
-      ].join('\n'));
+      addTranscript(
+        'error',
+        unknownSlashCommandLines(message, { suggestion: commandSuggestion(message), locale: cliLocale() }).join('\n'),
+      );
       return true;
     }
     return false;
@@ -4181,7 +4164,9 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     setQueuedInputs,
   ]);
 
-  const device = runtime?.device ? `${runtime.device.user || 'root'}@${runtime.device.host}` : 'no device';
+  const device = runtime?.device
+    ? `${runtime.deviceSession?.boardMode ? 'BOARD ' : ''}${runtime.device.user || 'root'}@${runtime.device.host}`
+    : 'no device';
   const cacheMode = promptCacheModeLabel(runtime);
   const profile = runtime?.config?.profile || 'balanced';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';

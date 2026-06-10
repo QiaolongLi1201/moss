@@ -78,7 +78,8 @@ try {
   assert.equal(resolved.contextTokensSource, 'default');
   assert.deepEqual(resolved.compactionSettings, { reserveTokens: 20000, keepRecentTokens: 20000 });
   assert.equal(resolved.compactionSettingsSource, 'default');
-  assert.equal(resolved.imageInput, false);
+  // Image input is on by default for every provider (qwen included); opt out with imageInput=false.
+  assert.equal(resolved.imageInput, true);
   assert.equal(resolved.imageInputSource, 'provider default');
 
   // Operational env vars still apply; model env vars are deliberately ignored
@@ -211,7 +212,7 @@ try {
   assert.match(status, /promptCacheDebug: disabled/);
   assert.match(status, /mcp: disabled \(default\)/);
   assert.match(status, /mcpConfig: .*mcp\.json \(default\)/);
-  assert.match(status, /imageInput: disabled \(provider default\)/);
+  assert.match(status, /imageInput: enabled \(provider default\)/);
   assert.match(status, /guardrails: none \(default\)/);
   assert.match(status, /maxAgentTurns: 64 \(default\)/);
   assert.match(status, /contextTokens: 200000 \(default\)/);
@@ -229,7 +230,10 @@ try {
     apiKey: 'stored-secret',
   }, {});
   assert.match(redactedStatus, /baseUrl: https:\/\/example\.com\/compatible-mode\/v1/);
-  assert.doesNotMatch(redactedStatus, /user|pass|api_key|secret/);
+  // Word boundaries: the rendered status legitimately contains filesystem
+  // paths, and a path segment like ".../compassionate-host/..." must not trip
+  // the credential check via the embedded "pass" substring.
+  assert.doesNotMatch(redactedStatus, /\b(user|pass|api_key|secret)\b/);
 
   const redactedJson = JSON.parse(renderConfigJson({
     provider: 'openai-compatible',
@@ -251,7 +255,7 @@ try {
   assert.deepEqual(redactedJson.trustedTools, ['exec']);
   assert.deepEqual(redactedJson.deniedTools, ['device_exec']);
   assert.deepEqual(redactedJson.configWarnings, []);
-  assert.doesNotMatch(JSON.stringify(redactedJson), /stored-secret|user|pass|api_key|secret/);
+  assert.doesNotMatch(JSON.stringify(redactedJson), /stored-secret|\b(user|pass|api_key|secret)\b/);
 
   const riskyConfigJson = JSON.parse(renderConfigJson({
     provider: 'openai-compatible',
@@ -364,7 +368,7 @@ try {
     assert.deepEqual(parsed.configWarnings, []);
     assert.equal(parsed.promptCacheEnabled, true);
     assert.equal(parsed.maxAgentTurns, 64);
-    assert.equal(parsed.imageInput, false);
+    assert.equal(parsed.imageInput, true);
     assert.equal(parsed.imageInputSource, 'provider default');
     assert.deepEqual(parsed.compactionSettings, { reserveTokens: 20000, keepRecentTokens: 20000 });
     assert.match(parsed.configPath, /config\.json$/);
@@ -457,7 +461,7 @@ try {
     assert.equal(initialized.agent.maxTurns, 64);
     assert.equal(initialized.agent.contextTokens, 200000);
     assert.deepEqual(initialized.agent.compaction, { reserveTokens: 20000, keepRecentTokens: 20000 });
-    assert.equal(initialized.imageInput, false);
+    assert.equal(initialized.imageInput, true);
     assert.equal(initialized._examples.customModel.provider, 'openai-compatible');
     assert.equal(initialized._examples.customModel.model, 'your-model-name');
     assert.equal(initialized._examples.customModel.baseUrl, 'https://your-gateway.example/v1');
@@ -603,7 +607,7 @@ try {
     assert.equal(projectResolved.contextTokensSource, 'config');
     assert.deepEqual(projectResolved.compactionSettings, { reserveTokens: 10000, keepRecentTokens: 20000 });
     assert.equal(projectResolved.compactionSettingsSource, 'config');
-    assert.equal(projectResolved.imageInput, false);
+    assert.equal(projectResolved.imageInput, true);
     assert.equal(projectResolved.imageInputSource, 'provider default');
 
     const projectShow = spawnSync(process.execPath, [

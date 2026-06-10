@@ -100,6 +100,18 @@ function titleFromText(text: string, fallback = "对话沉淀技能"): string {
   return clean.length > 42 ? `${clean.slice(0, 42)}...` : clean;
 }
 
+const IPV4_RE = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
+
+/**
+ * Host-specific addresses must not be baked into a reusable skill: the board
+ * IP changes between sessions/users, and a hardcoded one silently steers
+ * future runs at the wrong device. Replaced with a placeholder the agent can
+ * resolve from the live connection.
+ */
+function redactHostSpecific(value: string): string {
+  return value.replace(IPV4_RE, "<device-ip>");
+}
+
 function formatToolStepForDistill(
   call: { name: string; input: Record<string, unknown> },
   index: number,
@@ -107,7 +119,7 @@ function formatToolStepForDistill(
   const keys = Object.keys(call.input);
   const primaryKey = keys[0];
   const primaryVal = primaryKey
-    ? String(call.input[primaryKey] ?? "").slice(0, 120)
+    ? redactHostSpecific(String(call.input[primaryKey] ?? "").slice(0, 120))
     : "";
   const summary = primaryVal ? `: ${primaryKey}=${primaryVal}` : "";
   return `${index + 1}. \`${call.name}\`${summary}`;
@@ -165,7 +177,7 @@ function buildDraftMarkdown(
       ? `\n## 前置条件\n${score.preconditions.map((p) => `- ${p}`).join("\n")}\n`
       : "";
 
-  const resultSummary = assistantText.replace(/\s+/g, " ").trim().slice(0, 700);
+  const resultSummary = redactHostSpecific(assistantText.replace(/\s+/g, " ").trim().slice(0, 700));
 
   const triggerList = [
     evidence.candidateId,

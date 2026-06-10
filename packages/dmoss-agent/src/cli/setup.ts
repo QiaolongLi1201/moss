@@ -545,7 +545,7 @@ function buildUserConfigTemplate(): ConfigFile {
         baseUrl: 'https://your-gateway.example/v1',
         model: 'your-model-name',
         apiKey: 'paste-your-api-key',
-        imageInput: false,
+        imageInput: true,
       },
     },
   });

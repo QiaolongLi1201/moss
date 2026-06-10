@@ -1,6 +1,6 @@
 {
   "name": "@rdk-moss/skills",
-  "version": "0.3.32",
+  "version": "0.3.33",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -38,7 +38,7 @@
     "test": "npm run build && node ../../scripts/run-package-tests.mjs"
   },
   "dependencies": {
-    "@rdk-moss/core": "^0.3.32"
+    "@rdk-moss/core": "^0.3.33"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

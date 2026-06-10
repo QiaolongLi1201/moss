@@ -334,6 +334,22 @@ export async function runAgentLoopLlmTurn(params: AgentLoopLlmTurnParams): Promi
                   catchUp = visible.slice(streamedVisibleAccum.length);
                 } else if (!streamedVisibleAccum.trim()) {
                   catchUp = visible;
+                } else {
+                  /**
+                   * Streamed deltas can differ from the assembled final block by
+                   * leading/trailing whitespace (e.g. the provider streams a leading
+                   * "\n" that `response.content[].text` does not carry). The strict
+                   * `startsWith` above then fails, so the un-streamed tail would be
+                   * silently dropped from the live stream while still landing in
+                   * `turnTextParts` → persisted full text is complete but the UI is
+                   * truncated. Re-match on the leading-trimmed forms so the tail is
+                   * still emitted.
+                   */
+                  const accCore = streamedVisibleAccum.trimStart();
+                  const visCore = visible.trimStart();
+                  if (accCore && visCore.startsWith(accCore)) {
+                    catchUp = visCore.slice(accCore.length);
+                  }
                 }
 
                 if (catchUp && !abortSignal.aborted && !suppressVisibleDeltas) {

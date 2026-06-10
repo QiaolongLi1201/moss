@@ -18,8 +18,97 @@ import {
   BUILTIN_ERROR_RECOVERY_RULE,
   BUILTIN_TOOL_LOOP_RULE,
 } from '../dist/core/index.js';
+import {
+  createToolLoopGuardState,
+  recordToolLoopOutcome,
+  shouldShortCircuitToolCall,
+} from '../dist/core/tools/tool-loop-guard.js';
 
 const GUARD_MARKER = '[dmoss-agent] Tool loop guard stopped';
+
+function withEnv(overrides, fn) {
+  const previousEnv = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    previousEnv[key] = process.env[key];
+    if (value === undefined || value === null) delete process.env[key];
+    else process.env[key] = String(value);
+  }
+  try {
+    fn();
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function runHighVolumeLocalToolGuardTests() {
+  withEnv({
+    DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: undefined,
+    DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT: undefined,
+    DMOSS_TOOL_LOOP_TOTAL_LIMIT: undefined,
+    DMOSS_TOOL_LOOP_FAILURE_LIMIT: undefined,
+  }, () => {
+    const state = createToolLoopGuardState();
+    for (let i = 0; i < 80; i += 1) {
+      assert.equal(
+        shouldShortCircuitToolCall(state, 'preset_probe', { value: `distinct-${i}` }),
+        null,
+        'unset tool-loop env should not create an implicit by-tool or total-count guard',
+      );
+    }
+    for (let i = 0; i < 8; i += 1) {
+      assert.equal(
+        shouldShortCircuitToolCall(state, 'preset_probe', { value: 'same' }),
+        null,
+        'unset tool-loop env should not create an implicit identical-input guard',
+      );
+    }
+    for (let i = 0; i < 8; i += 1) {
+      recordToolLoopOutcome(state, 'web_fetch', true);
+      assert.equal(
+        shouldShortCircuitToolCall(state, 'web_fetch', { value: `failed-${i}` }),
+        null,
+        'unset tool-loop env should not create an implicit repeated-failure guard',
+      );
+    }
+  });
+
+  withEnv({
+    DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: 99,
+    DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT: 3,
+    DMOSS_TOOL_LOOP_TOTAL_LIMIT: undefined,
+  }, () => {
+    const state = createToolLoopGuardState();
+    for (let i = 0; i < 80; i += 1) {
+      const reason = shouldShortCircuitToolCall(state, 'edit_file', {
+        path: `src/file-${i}.ts`,
+        old_string: `before ${i}`,
+        new_string: `after ${i}`,
+      });
+      assert.equal(reason, null, 'distinct edit_file calls should not hit implicit single-tool or total-count guards');
+    }
+  });
+
+  withEnv({
+    DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: 99,
+    DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT: 3,
+    DMOSS_TOOL_LOOP_TOTAL_LIMIT: 4,
+  }, () => {
+    const state = createToolLoopGuardState();
+    for (let i = 0; i < 4; i += 1) {
+      assert.equal(shouldShortCircuitToolCall(state, 'edit_file', { path: `src/${i}.ts` }), null);
+    }
+    assert.match(
+      shouldShortCircuitToolCall(state, 'edit_file', { path: 'src/4.ts' }) ?? '',
+      /user turn already requested 4 tool call/,
+      'the total tool budget should still catch runaway high-volume local work',
+    );
+  });
+
+  console.log('  [PASS] high-volume local file tools bypass implicit count guards while honoring explicit budgets');
+}
 
 function makeTool(name, calls) {
   return {
@@ -128,7 +217,8 @@ async function runChatScenario(name, toolUses, env, assertFn) {
   const previousEnv = {};
   for (const [key, value] of Object.entries(env)) {
     previousEnv[key] = process.env[key];
-    process.env[key] = String(value);
+    if (value === undefined || value === null) delete process.env[key];
+    else process.env[key] = String(value);
   }
 
   try {
@@ -284,15 +374,22 @@ await runChatScenario(
 );
 
 await runChatScenario(
-  'invalid env values fall back to default limits',
+  'invalid env values do not create hidden default limits',
   [
     { name: 'preset_probe', input: { value: 'same' } },
     { name: 'preset_probe', input: { value: 'same' } },
     { name: 'preset_probe', input: { value: 'same' } },
   ],
-  { DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: 'not-a-number' },
-  ({ messages }) => {
-    assert.ok(lastToolResultText(messages).includes('identical input was already requested 2 time(s)'));
+  {
+    DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: 'not-a-number',
+    DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT: undefined,
+    DMOSS_TOOL_LOOP_TOTAL_LIMIT: undefined,
+    DMOSS_TOOL_LOOP_FAILURE_LIMIT: undefined,
+  },
+  ({ calls, result, messages }) => {
+    assert.equal(calls.length, 1, 'idempotent replay may reuse the result, but the hidden guard must stay off');
+    assert.equal(result.response, 'done');
+    assert.ok(!lastToolResultText(messages).includes(GUARD_MARKER));
   },
 );
 
@@ -411,5 +508,6 @@ await runFailureLoopScenario();
 await runSoftFailureLoopScenario();
 await runMaxToolCallsScenario();
 runSteeringTests();
+runHighVolumeLocalToolGuardTests();
 
-console.log('\n[pass] tool-loop-guard self-test: 9/9');
+console.log('\n[pass] tool-loop-guard self-test: 10/10');

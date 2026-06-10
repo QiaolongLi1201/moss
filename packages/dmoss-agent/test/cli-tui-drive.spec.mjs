@@ -68,12 +68,15 @@ function makeAgent(options = {}) {
       return goal;
     },
     async resumeGoal() {
+      if (goal) goal = { ...goal, status: 'active', statusReason: undefined };
       return goal;
     },
-    async completeGoal() {
+    async completeGoal(_sessionKey, reason) {
+      if (goal) goal = { ...goal, status: 'completed', statusReason: reason };
       return goal;
     },
-    async blockGoal() {
+    async blockGoal(_sessionKey, reason) {
+      if (goal) goal = { ...goal, status: 'blocked', statusReason: reason };
       return goal;
     },
     async clearGoal() {
@@ -92,6 +95,14 @@ function makeAgent(options = {}) {
     // eslint-disable-next-line require-yield
     async *streamChat(sessionKey, message, chatOptions) {
       options.onStreamChat?.({ sessionKey, message, options: chatOptions });
+      const finishGoal = chatOptions?.ephemeralTools?.find((tool) => tool.name === 'finish_goal');
+      if (finishGoal && options.autoFinishGoal !== false && goal?.status === 'active') {
+        await finishGoal.execute({ status: 'completed', reason: 'test auto-finish' }, {
+          workspaceDir: packageRoot,
+          sessionKey,
+        });
+      }
+      yield { type: 'done', result: { text: '', toolCalls: [], stopReason: 'end_turn' } };
     },
   };
 }
@@ -248,7 +259,7 @@ test('/goal is visible and handled by the TUI', async () => {
   await wait(140);
   stdin.write('/');
   await wait();
-  assert.match(strip(lastFrame()), /\/goal\s+show or manage the persistent session goal/, 'slash menu should list /goal');
+  assert.match(strip(lastFrame()), /\/goal\s+show or manage the active goal runner/, 'slash menu should list /goal');
   assert.match(strip(lastFrame()), /\/compact\s+compress older conversation history/, 'slash menu should list /compact');
   cleanup();
 
@@ -264,6 +275,110 @@ test('/goal is visible and handled by the TUI', async () => {
   f = await runSlashCommand(stdin, lastFrame, '/goal 请你帮我拉一下https://github.com/copyleft/slark.git');
   assert.equal((await agent.getGoal('cli'))?.objective, '请你帮我拉一下https://github.com/copyleft/slark.git');
   assert.doesNotMatch(strip(f), /Unknown goal command/);
+  cleanup();
+});
+
+test('active goal mode keeps running until the goal is completed', async () => {
+  setRows(24);
+  const calls = [];
+  const agent = makeAgent();
+  agent.streamChat = async function* streamChat(sessionKey, message, chatOptions) {
+    calls.push({ sessionKey, message, options: chatOptions });
+    yield { type: 'turn_start', turn: 1 };
+    if (calls.length === 1) {
+      yield { type: 'text_delta', delta: 'step one done, continuing' };
+    } else {
+      const finishGoal = chatOptions?.ephemeralTools?.find((tool) => tool.name === 'finish_goal');
+      assert.ok(finishGoal, 'auto goal runs must expose finish_goal');
+      await finishGoal.execute({ status: 'completed', reason: 'verified by test' }, {
+        workspaceDir: packageRoot,
+        sessionKey,
+      });
+      yield { type: 'text_delta', delta: 'goal completed' };
+    }
+    yield { type: 'turn_end', turn: 1, stopReason: 'end_turn' };
+    yield { type: 'done', result: { text: '', toolCalls: [], stopReason: 'end_turn' } };
+  };
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+
+  await runSlashCommand(stdin, lastFrame, '/goal finish the two-step task');
+  await wait(900);
+
+  assert.equal(calls.length, 2, 'active goal should automatically continue after an unfinished run');
+  assert.match(calls[0].message, /finish the two-step task/);
+  assert.match(calls[1].message, /continue/i);
+  assert.equal((await agent.getGoal('cli'))?.status, 'completed');
+  assert.match(strip(lastFrame()), /Goal completed|目标已完成/);
+  cleanup();
+});
+
+test('manual prompt under an active goal can finish the goal in the same run', async () => {
+  setRows(24);
+  const calls = [];
+  const agent = makeAgent({ autoFinishGoal: false });
+  await agent.setGoal('cli', 'finish from a manual prompt');
+  agent.streamChat = async function* streamChat(sessionKey, message, chatOptions) {
+    calls.push({ sessionKey, message, options: chatOptions });
+    const finishGoal = chatOptions?.ephemeralTools?.find((tool) => tool.name === 'finish_goal');
+    assert.ok(finishGoal, 'manual prompts under an active goal must expose finish_goal');
+    await finishGoal.execute({ status: 'completed', reason: 'manual prompt verified' }, {
+      workspaceDir: packageRoot,
+      sessionKey,
+    });
+    yield { type: 'text_delta', delta: 'finished manually' };
+    yield { type: 'done', result: { text: '', toolCalls: [], stopReason: 'end_turn' } };
+  };
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+
+  stdin.write('the requested work is done now');
+  await wait();
+  stdin.write('\r');
+  await wait(450);
+
+  assert.equal(calls.length, 1, 'manual completion should not require an extra auto-goal run');
+  assert.equal(calls[0].message, 'the requested work is done now');
+  assert.equal((await agent.getGoal('cli'))?.status, 'completed');
+  assert.match(strip(lastFrame()), /Goal completed|目标已完成/);
+  cleanup();
+});
+
+test('/goal clear is immediate while an auto-goal run is busy', async () => {
+  setRows(24);
+  const calls = [];
+  let aborted = false;
+  const agent = makeAgent({ autoFinishGoal: false });
+  agent.streamChat = async function* streamChat(sessionKey, message, chatOptions) {
+    calls.push({ sessionKey, message, options: chatOptions });
+    yield { type: 'turn_start', turn: 1 };
+    await new Promise((resolve) => {
+      if (chatOptions.abortSignal?.aborted) {
+        aborted = true;
+        resolve();
+        return;
+      }
+      chatOptions.abortSignal?.addEventListener('abort', () => {
+        aborted = true;
+        resolve();
+      }, { once: true });
+    });
+    yield { type: 'done', result: { text: '', toolCalls: [], stopReason: 'end_turn' } };
+  };
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+
+  await runSlashCommand(stdin, lastFrame, '/goal run until cleared');
+  await wait(180);
+  stdin.write('/goal clear');
+  await wait();
+  stdin.write('\r');
+  await wait(450);
+
+  assert.ok(aborted, '/goal clear should abort the in-flight auto-goal run');
+  assert.equal(await agent.getGoal('cli'), undefined);
+  assert.equal(calls.length, 1, 'clearing the goal should not enqueue another continuation');
+  assert.match(strip(lastFrame()), /Goal cleared|已清除目标|Run stopped/);
   cleanup();
 });
 

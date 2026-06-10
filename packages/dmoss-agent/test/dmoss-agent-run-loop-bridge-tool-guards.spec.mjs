@@ -48,7 +48,24 @@ async function collectEvents(agent, sessionKey, prompt) {
   return events;
 }
 
-{
+async function withEnv(overrides, fn) {
+  const previousEnv = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    previousEnv[key] = process.env[key];
+    if (value === undefined || value === null) delete process.env[key];
+    else process.env[key] = String(value);
+  }
+  try {
+    await fn();
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+await withEnv({ DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: '2' }, async () => {
   const store = new InMemorySessionStore();
   let executeCount = 0;
   const toolResults = [];
@@ -134,7 +151,7 @@ async function collectEvents(agent, sessionKey, prompt) {
     ),
     'expected visible guard tool_end error',
   );
-}
+});
 
 {
   const store = new InMemorySessionStore();

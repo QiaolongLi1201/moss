@@ -5,6 +5,26 @@ All notable changes to `@rdk-moss/agent` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.32] - 2026-06-10
+
+### Changed
+
+- CLI `/goal <condition>` now behaves as an active goal runner: Moss continues
+  bounded follow-up turns until the goal is completed, blocked, cleared, or
+  stopped, while still letting the user send messages during the run.
+- Tool-loop count limits are now opt-in budgets instead of hidden defaults.
+  Hosts or users can still set `DMOSS_TOOL_LOOP_IDENTICAL_LIMIT`,
+  `DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT`, `DMOSS_TOOL_LOOP_TOTAL_LIMIT`,
+  `DMOSS_TOOL_LOOP_FAILURE_LIMIT`, or per-call `maxToolCalls`.
+
+### Fixed
+
+- `/goal clear`, `/goal pause`, `/goal complete`, and `/goal block` now apply
+  immediately while the CLI is busy, so a long goal run can be stopped without
+  waiting for the current queue.
+- Internal context-repair logs for dangling tool-use/tool-result pairs are
+  debug-only instead of ordinary user-visible warnings.
+
 ## [0.3.22] - 2026-06-08
 
 ### Changed

@@ -35,9 +35,9 @@ assert.ok(completeInteractiveCommand('/com')[0].includes('/compact'), 'readline 
 assert.ok(completeInteractiveCommand('/con')[0].includes('/connect'), 'readline completion should find /connect');
 
 const interactiveHelp = renderCliInteractiveHelp();
-assert.match(interactiveHelp, /\/goal\s+show or manage the persistent session goal/);
+assert.match(interactiveHelp, /\/goal\s+show or manage the active goal runner/);
 assert.match(interactiveHelp, /\/model\s+choose or switch the active model for this session/);
-assert.match(interactiveHelp, /\/goal <objective>\s+set the goal Moss should keep in context/);
+assert.match(interactiveHelp, /\/goal <condition>\s+run until this goal condition is met/);
 assert.match(interactiveHelp, /\/compact\s+compress older conversation history into a summary/);
 assert.match(interactiveHelp, /\/auth login\s+optional: link a D-Robotics developer community account/);
 assert.match(interactiveHelp, /\/connect <ip>\s+connect an RDK board/);

@@ -13,7 +13,7 @@ import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { StreamingSpinner } from './components/StreamingSpinner.js';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
-import type { DmossAgent, DmossAgentEvent, ToolResultOutcome } from '../core/index.js';
+import type { DmossAgent, DmossAgentEvent, GoalState, Tool, ToolResultOutcome } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import type { SessionMeta } from '../core/session/session.js';
 import { SkillRegistry, type SkillMeta } from '../skills/index.js';
@@ -93,6 +93,27 @@ interface ApprovalState {
   question: string;
   selectedIndex: number;
   resolve: (answer: string) => void;
+}
+
+interface GoalActivityState {
+  objective: string;
+  startedAt: number;
+  runCount: number;
+}
+
+interface RunPromptOptions {
+  echoUser?: boolean;
+  autoGoal?: boolean;
+  ephemeralTools?: Tool[];
+}
+
+interface GoalAutoRefState {
+  running: boolean;
+  suspended: boolean;
+  scheduled: boolean;
+  startedAt: number;
+  runCount: number;
+  objective: string;
 }
 
 export interface QueuedInput {
@@ -372,6 +393,15 @@ export function isQueueControlCommand(message: string): boolean {
     || message === '/clearqueue'
     || message === '/queue resume'
     || message === '/queue continue';
+}
+
+export function isImmediateGoalCommand(message: string): boolean {
+  return message === '/goal clear'
+    || message === '/goal pause'
+    || message === '/goal complete'
+    || message.startsWith('/goal complete ')
+    || message === '/goal block'
+    || message.startsWith('/goal block ');
 }
 
 function availableTranscriptRows(options: TranscriptViewportRowsOptions): number {
@@ -2465,6 +2495,86 @@ function imageInputDisabledNotice(): string {
   return IMAGE_INPUT_DISABLED_NOTICE_LINES.join('\n');
 }
 
+type FinishGoalStatus = 'completed' | 'blocked';
+
+interface FinishGoalInput {
+  status?: FinishGoalStatus;
+  reason?: string;
+}
+
+function resolveGoalAutoMaxRuns(): number | undefined {
+  const rawText = process.env.DMOSS_GOAL_AUTO_MAX_RUNS?.trim();
+  if (!rawText) return undefined;
+  const raw = Number.parseInt(rawText, 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : undefined;
+}
+
+function cleanGoalReason(value: unknown): string | undefined {
+  const text = String(value ?? '').trim().replace(/\s+/g, ' ');
+  if (!text) return undefined;
+  return text.length > 500 ? text.slice(0, 500) : text;
+}
+
+function formatGoalContinuationPrompt(goal: GoalState, runCount: number): string {
+  return [
+    `/continue active /goal run ${runCount}. Keep working until this goal condition is actually satisfied.`,
+    `Goal: ${goal.objective}`,
+    'Do the next concrete step now. Do not stop with only a progress summary while the goal remains unfinished.',
+    'When the goal is complete, call finish_goal with status "completed" and a short reason.',
+    'If the goal is genuinely blocked by missing user input, unavailable credentials, or an external state change after trying the useful next steps, call finish_goal with status "blocked" and a short reason.',
+  ].join('\n');
+}
+
+function formatGoalSettledMessage(goal: GoalState | undefined, status: FinishGoalStatus, reason?: string): string {
+  const label = status === 'completed' ? 'Goal completed' : 'Goal blocked';
+  const objective = goal?.objective ? `: ${goal.objective}` : '';
+  return `${label}${objective}${reason ? `\nReason: ${reason}` : ''}`;
+}
+
+function createFinishGoalTool(params: {
+  agent: DmossAgent;
+  sessionKey: string;
+  onSettled: (goal: GoalState | undefined, status: FinishGoalStatus, reason?: string) => void;
+}): Tool<FinishGoalInput> {
+  return {
+    name: 'finish_goal',
+    description: 'Finish the active /goal autonomous run when the goal is completed or genuinely blocked.',
+    metadata: {
+      permissionBoundary: 'Runtime goal state only',
+      sideEffectClass: 'runtime_state',
+      requiresApproval: false,
+      ui: { surface: 'silent' },
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          enum: ['completed', 'blocked'],
+          description: 'Use completed when the goal is done; blocked when progress requires user input or an external state change.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Concise evidence or blocker summary.',
+        },
+      },
+      required: ['status'],
+    },
+    async execute(input) {
+      const status = input?.status;
+      if (status !== 'completed' && status !== 'blocked') {
+        return 'finish_goal requires status "completed" or "blocked".';
+      }
+      const reason = cleanGoalReason(input.reason);
+      const goal = status === 'completed'
+        ? await params.agent.completeGoal(params.sessionKey, reason)
+        : await params.agent.blockGoal(params.sessionKey, reason);
+      params.onSettled(goal, status, reason);
+      return formatGoalSettledMessage(goal, status, reason);
+    },
+  };
+}
+
 function PendingAttachmentPreview({
   items,
   imageInputEnabled,
@@ -2581,14 +2691,27 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const [queuePausedAfterCancel, setQueuePausedAfterCancelState] = useState(false);
   const [subagentTasks, setSubagentTasks] = useState<SubagentTaskSnapshot[]>([]);
   const [subagentCompletions, setSubagentCompletions] = useState<Map<string, MossAsyncTaskCompletion>>(new Map());
+  const [goalActivity, setGoalActivity] = useState<GoalActivityState | null>(null);
+  const [goalNow, setGoalNow] = useState(Date.now());
   const answerIdRef = useRef<number | null>(null);
   const currentTurnIdRef = useRef<number | null>(null);
   const activeRunControllerRef = useRef<AbortController | null>(null);
   const localShellApprovedRef = useRef(false);
   const flashTimerRef = useRef<NodeJS.Timeout | null>(null);
   const busyRef = useRef(false);
+  const approvalRef = useRef<ApprovalState | null>(null);
   const queuedInputsRef = useRef<QueuedInput[]>([]);
   const queuePausedAfterCancelRef = useRef(false);
+  const goalAutoRef = useRef<GoalAutoRefState>({
+    running: false,
+    suspended: false,
+    scheduled: false,
+    startedAt: 0,
+    runCount: 0,
+    objective: '',
+  });
+  const goalAutoTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const scheduleGoalContinuationRef = useRef<() => void>(() => {});
   const inputHistoryRef = useRef<string[]>([]);
   const historyIndexRef = useRef<number | null>(null);
   const historyDraftRef = useRef('');
@@ -2606,6 +2729,56 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const setQueuePausedAfterCancel = useCallback((next: boolean): void => {
     queuePausedAfterCancelRef.current = next;
     setQueuePausedAfterCancelState(next);
+  }, []);
+
+  useEffect(() => {
+    approvalRef.current = approval;
+  }, [approval]);
+
+  useEffect(() => {
+    if (!goalActivity) return undefined;
+    setGoalNow(Date.now());
+    const timer = setInterval(() => setGoalNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [goalActivity]);
+
+  const clearGoalActivity = useCallback((): void => {
+    goalAutoRef.current = {
+      running: false,
+      suspended: false,
+      scheduled: false,
+      startedAt: 0,
+      runCount: 0,
+      objective: '',
+    };
+    setGoalActivity(null);
+  }, []);
+
+  const activateGoalActivity = useCallback((goal: GoalState): void => {
+    const startedAt = Date.now();
+    goalAutoRef.current = {
+      running: false,
+      suspended: false,
+      scheduled: false,
+      startedAt,
+      runCount: 0,
+      objective: goal.objective,
+    };
+    setGoalNow(startedAt);
+    setGoalActivity({ objective: goal.objective, startedAt, runCount: 0 });
+  }, []);
+
+  const updateGoalActivityFromRef = useCallback((): void => {
+    const state = goalAutoRef.current;
+    if (!state.objective || state.startedAt <= 0 || state.suspended) {
+      setGoalActivity(null);
+      return;
+    }
+    setGoalActivity({
+      objective: state.objective,
+      startedAt: state.startedAt,
+      runCount: state.runCount,
+    });
   }, []);
 
   const refreshSubagentTasks = useCallback((): void => {
@@ -2704,6 +2877,15 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     setTranscript((items) => [...items, { id, kind, text, ...extra }]);
     return id;
   }, []);
+
+  const createGoalFinishTool = useCallback((): Tool<FinishGoalInput> => createFinishGoalTool({
+    agent,
+    sessionKey,
+    onSettled: (settledGoal, status, reason) => {
+      clearGoalActivity();
+      addTranscript('system', formatGoalSettledMessage(settledGoal, status, reason));
+    },
+  }), [addTranscript, agent, clearGoalActivity, sessionKey]);
 
   const updateTranscript = useCallback((id: number, append: string, extra: Partial<TranscriptItem> = {}): void => {
     setTranscript((items) => items.map((item) => (
@@ -2857,6 +3039,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
 
   useEffect(() => () => {
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    if (goalAutoTimerRef.current) clearTimeout(goalAutoTimerRef.current);
   }, []);
 
   const requestStop = useCallback((): boolean => {
@@ -3234,6 +3417,15 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     if (message === '/goal' || message.startsWith('/goal ')) {
       const result = await handleGoalCommand({ agent, sessionKey, input: message, locale: cliLocale() });
       addTranscript(result.error ? 'error' : 'system', result.message);
+      if (!result.error && result.goal?.status === 'active' && (result.action === 'set' || result.action === 'resume')) {
+        activateGoalActivity(result.goal);
+        scheduleGoalContinuationRef.current();
+      } else if (!result.error && result.action && ['pause', 'complete', 'block', 'clear'].includes(result.action)) {
+        clearGoalActivity();
+        if (busyRef.current && isImmediateGoalCommand(message)) {
+          requestStop();
+        }
+      }
       return true;
     }
     if (message === '/compact') {
@@ -3442,7 +3634,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     return false;
-  }, [addTranscript, agent, app, applyCustomModelConfig, currentModel, input, pasteClipboardAttachment, pendingAttachmentBlocks, pendingAttachments, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, switchModelForSession, workspace]);
+  }, [activateGoalActivity, addTranscript, agent, app, applyCustomModelConfig, clearGoalActivity, currentModel, input, pasteClipboardAttachment, pendingAttachmentBlocks, pendingAttachments, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, switchModelForSession, workspace]);
 
   const runLocalShell = useCallback(async (raw: string): Promise<void> => {
     const command = raw.slice(1);
@@ -3486,8 +3678,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     message: string,
     attachments: PreparedPromptAttachment[] = [],
     attachmentBlocks: PromptAttachmentBlock[] = [],
-  ): Promise<void> => {
-    addTranscript('user', formatPromptEcho(message, attachments));
+    options: RunPromptOptions = {},
+  ): Promise<boolean> => {
+    let ok = true;
+    if (options.echoUser !== false) {
+      addTranscript('user', formatPromptEcho(message, attachments));
+    }
     if (runtime?.config?.imageInput === false && hasImageAttachment(attachments)) {
       addTranscript('system', imageInputDisabledNotice());
     }
@@ -3500,9 +3696,17 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       ? `[计划模式] 你现在处于 plan 模式：只读探索代码库，产出清晰的实施计划（步骤 / 涉及文件 / 验证方式）。在用户批准（按 Shift+Tab 切到 default 或 accept-edits）前，不要修改文件或执行有副作用的命令。\n\n${message}`
       : message;
     try {
+      let ephemeralTools = options.ephemeralTools ?? [];
+      if (!ephemeralTools.some((tool) => tool.name === 'finish_goal')) {
+        const activeGoal = await agent.getGoal(sessionKey).catch(() => undefined);
+        if (activeGoal?.status === 'active') {
+          ephemeralTools = [...ephemeralTools, createGoalFinishTool()];
+        }
+      }
       for await (const event of agent.streamChat(sessionKey, effectiveMessage, {
         abortSignal: controller.signal,
         ...(attachmentBlocks.length > 0 ? { attachments: attachmentBlocks } : {}),
+        ...(ephemeralTools.length > 0 ? { ephemeralTools } : {}),
       })) {
         if (event.type === 'turn_start') {
           currentTurnIdRef.current = event.turn;
@@ -3568,6 +3772,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
           currentTurnIdRef.current = null;
         }
         if (event.type === 'error') {
+          ok = false;
           addTranscript('error', String(event.error));
         }
         // Surface context-window usage in the status bar when the agent reports it.
@@ -3602,14 +3807,124 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
         }
       }
     } catch (err) {
+      ok = false;
       addTranscript('error', controller.signal.aborted ? 'Run stopped.' : String(err instanceof Error ? err.message : err));
     } finally {
       if (activeRunControllerRef.current === controller) activeRunControllerRef.current = null;
       setBusyState(false);
       answerIdRef.current = null;
       currentTurnIdRef.current = null;
+      if (!options.autoGoal && ok) scheduleGoalContinuationRef.current();
     }
-  }, [addTranscript, agent, detailMode, runtime, sessionKey, setBusyState, showThinking, skillLearner, updateTranscript]);
+    return ok;
+  }, [addTranscript, agent, createGoalFinishTool, detailMode, runtime, sessionKey, setBusyState, showThinking, skillLearner, updateTranscript]);
+
+  const runGoalContinuation = useCallback(async (): Promise<void> => {
+    const state = goalAutoRef.current;
+    if (
+      state.running
+      || state.suspended
+      || busyRef.current
+      || approvalRef.current
+      || queuePausedAfterCancelRef.current
+      || queuedInputsRef.current.length > 0
+    ) {
+      return;
+    }
+
+    let goal: GoalState | undefined;
+    try {
+      goal = await agent.getGoal(sessionKey);
+    } catch (err) {
+      goalAutoRef.current = { ...goalAutoRef.current, suspended: true };
+      setGoalActivity(null);
+      addTranscript('error', `Could not read active goal: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    if (!goal || goal.status !== 'active') {
+      clearGoalActivity();
+      return;
+    }
+
+    const maxRuns = resolveGoalAutoMaxRuns();
+    const current = goalAutoRef.current.objective === goal.objective ? goalAutoRef.current : {
+      ...goalAutoRef.current,
+      startedAt: Date.now(),
+      runCount: 0,
+      objective: goal.objective,
+    };
+    if (maxRuns !== undefined && current.runCount >= maxRuns) {
+      goalAutoRef.current = { ...current, running: false, suspended: true, scheduled: false };
+      setGoalActivity(null);
+      addTranscript('error', [
+        `Goal auto-run paused after ${maxRuns} continuation run${maxRuns === 1 ? '' : 's'}.`,
+        'Use /goal resume to continue, /goal clear to stop, or raise/remove DMOSS_GOAL_AUTO_MAX_RUNS for this session.',
+      ].join('\n'));
+      return;
+    }
+
+    const nextRunCount = current.runCount + 1;
+    goalAutoRef.current = {
+      ...current,
+      running: true,
+      suspended: false,
+      scheduled: false,
+      runCount: nextRunCount,
+    };
+    updateGoalActivityFromRef();
+
+    const finishGoalTool = createGoalFinishTool();
+    const ok = await runPrompt(
+      formatGoalContinuationPrompt(goal, nextRunCount),
+      [],
+      [],
+      {
+        echoUser: false,
+        autoGoal: true,
+        ephemeralTools: [finishGoalTool],
+      },
+    );
+
+    const latest = await agent.getGoal(sessionKey).catch(() => undefined);
+    if (!latest || latest.status !== 'active') {
+      clearGoalActivity();
+      return;
+    }
+
+    const afterRun = goalAutoRef.current;
+    goalAutoRef.current = {
+      ...afterRun,
+      running: false,
+      objective: latest.objective,
+      startedAt: afterRun.objective === latest.objective && afterRun.startedAt > 0
+        ? afterRun.startedAt
+        : Date.now(),
+    };
+    if (!ok) {
+      goalAutoRef.current = { ...goalAutoRef.current, suspended: true };
+      setGoalActivity(null);
+      addTranscript('system', 'Goal auto-run paused after the current run was stopped or errored. Use /goal resume to continue or /goal clear to stop.');
+      return;
+    }
+    updateGoalActivityFromRef();
+    scheduleGoalContinuationRef.current();
+  }, [addTranscript, agent, clearGoalActivity, createGoalFinishTool, runPrompt, sessionKey, updateGoalActivityFromRef]);
+
+  const scheduleGoalContinuation = useCallback((): void => {
+    const state = goalAutoRef.current;
+    if (state.running || state.suspended || state.scheduled) return;
+    if (busyRef.current || approvalRef.current || queuePausedAfterCancelRef.current || queuedInputsRef.current.length > 0) return;
+    goalAutoRef.current = { ...state, scheduled: true };
+    goalAutoTimerRef.current = setTimeout(() => {
+      goalAutoTimerRef.current = null;
+      goalAutoRef.current = { ...goalAutoRef.current, scheduled: false };
+      void runGoalContinuation();
+    }, 0);
+  }, [runGoalContinuation]);
+
+  useEffect(() => {
+    scheduleGoalContinuationRef.current = scheduleGoalContinuation;
+  }, [scheduleGoalContinuation]);
 
   const runInput = useCallback((
     raw: string,
@@ -3650,11 +3965,13 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     historyDraftRef.current = '';
     const queuePaused = queuePausedAfterCancelRef.current;
     const queueControlCommand = isQueueControlCommand(message);
+    const immediateGoalCommand = isImmediateGoalCommand(message);
     const isImmediateBusyCommand = message === '/stop'
       || message === '/abort'
       || message === '/sessions'
       || message === '/session'
-      || queueControlCommand;
+      || queueControlCommand
+      || immediateGoalCommand;
     const attachesToPrompt = !message.startsWith('/') && !isLocalShellLine(raw);
     if (
       attachesToPrompt
@@ -3726,6 +4043,12 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const cacheMode = promptCacheModeLabel(runtime);
   const profile = runtime?.config?.profile || 'balanced';
   const runState: TuiRunState = approval ? 'approval' : busy ? 'running' : 'ready';
+  const goalElapsedSeconds = goalActivity
+    ? Math.max(0, Math.floor((goalNow - goalActivity.startedAt) / 1000))
+    : 0;
+  const goalStatusText = goalActivity
+    ? `${emojiEnabled() ? '◎' : 'o'} /goal active (${goalElapsedSeconds}s)`
+    : '';
   const executionPlane = executionPlaneSummary(runtime);
   const terminalRows = Math.max(12, termRows);
   const promptRows = promptEditorRowBudget(input, {
@@ -3897,6 +4220,8 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
                 ? `${emojiEnabled() ? '⏸' : '||'} plan mode on ${emojiEnabled() ? '(⇧⇥ to cycle)' : '(shift+tab to cycle)'}`
                 : `${emojiEnabled() ? '⏵⏵' : '>>'} accept edits on ${emojiEnabled() ? '(⇧⇥ to cycle)' : '(shift+tab to cycle)'}`)
           : React.createElement(Text, { color: theme.textDim }, footerHint(runState)),
+        goalStatusText ? React.createElement(Text, { color: theme.accent, bold: true },
+          `   ${goalStatusText}`) : null,
         ctxUsage ? React.createElement(Text, { color: ctxUsageBarColor(ctxUsage) },
           `   ${Math.round((ctxUsage.used / ctxUsage.total) * 100)}% context used`) : null,
       ) : null,
@@ -3911,7 +4236,7 @@ function commandList(): string {
     '  /subagents         show background sub-agent status and progress',
     '  /model [name|#]    choose or switch the active model',
     '  /model config ...  save base_url/key/model_name and use it now',
-    '  /goal <text>       set what Moss should keep working toward',
+    '  /goal <condition>  run until this goal condition is met',
     '  /compact           compress older conversation history into a summary',
     '  /auth login        optional: link a D-Robotics developer community account',
     '  /connect <ip>      connect an RDK board for this session',

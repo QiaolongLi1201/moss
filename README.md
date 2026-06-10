@@ -22,6 +22,7 @@ Moss gives you the familiar terminal-agent loop from Claude Code and Codex, but 
 - **Embed it in your own product** - Moss is a runtime with public contracts, not only a closed standalone app.
 - **Stay honest about evidence** - Moss is prompted to separate verified facts, reasonable inferences, and unverified assumptions, and to say when CodeGraph, device access, or other evidence is unavailable.
 - **Grow reusable skills** - Moss can install workspace skills into `.moss/skills/<name>/SKILL.md` through the approved `install_skill` tool, then rediscover them in later runs.
+- **Keep going when you set a goal** - `/goal <condition>` turns the CLI into a goal runner that continues across turns until the goal is completed, blocked, cleared, or stopped by the user.
 - **Keep the first screen usable** - focused slash commands, image/file attachment, goals, compaction, sessions, MCP, skills, and sub-agents stay available without turning `/help` into a wall.
 
 If that direction is useful, star the repo to follow the open runtime, fork it to build your own host, and open issues for model providers, board workflows, or host-adapter gaps you want Moss to support.
@@ -105,6 +106,14 @@ npm i -g @rdk-moss/agent@latest
    ```
 
 Moss asks before file writes, commands, and external actions unless you explicitly choose a more autonomous approval profile.
+
+For longer work, set an explicit goal:
+
+```text
+/goal migrate this repo to the new package name and verify the build
+```
+
+The CLI keeps working until the goal is completed, blocked, cleared, or stopped. Normal tool-loop count limits are opt-in host/user budgets, not hidden defaults.
 
 ## Honest Runtime Capabilities
 

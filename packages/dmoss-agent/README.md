@@ -36,6 +36,7 @@ Moss gives you the familiar terminal-agent workflow of Claude Code and Codex, bu
 - **Embeddable runtime** - use the Host Adapter contract to put Moss inside your own IDE, robot console, desktop app, or device platform.
 - **Evidence-first behavior** - Moss is instructed to separate verified facts, inferences, and assumptions, and to say when evidence or runtime capabilities are unavailable.
 - **Self-installing workspace skills** - Moss can use the approved `install_skill` tool to write reusable `SKILL.md` workflows into `.moss/skills/`.
+- **Goal-runner CLI** - `/goal <condition>` keeps the interactive CLI working across turns until the goal is completed, blocked, cleared, or stopped.
 - **Agent primitives included** - goals, compaction, sessions, attachments, MCP, skills, sub-agents, safety hooks, and tool execution.
 
 If that ownership model matters to you, star the repo, fork it for your host, and open issues for providers, boards, or workflows you want Moss to cover next.
@@ -245,7 +246,7 @@ Inside Moss:
 ```
 /status      view model, workspace, device, and tool state
 /model       list or choose active models
-/goal        show or manage the persistent session goal
+/goal        show or manage the active goal runner
 /compact     compress older conversation history into a summary
 /attach      attach an image or text file to the next prompt
 /connect     connect an RDK board for this session
@@ -266,6 +267,8 @@ moss config set profile autonomous
 ```
 
 `DMOSS_CLI_AUTO_APPROVE=1` only approves tools allowed by the active safety policy. It does not bypass `--read-only`, `deniedTools`, protected paths, or workspace sandbox checks. Browser workflows such as real checkout/add-to-cart testing use `web_browser_control`, which is an external interaction and needs `--full-access` plus approval.
+
+For long-running CLI work, `/goal <condition>` starts an active goal runner. Moss keeps taking bounded turns until it can mark the goal completed, mark it blocked, you clear it with `/goal clear`, or you stop the run. Hidden tool-loop count limits are off by default; hosts or users can still opt into explicit budgets with `DMOSS_TOOL_LOOP_IDENTICAL_LIMIT`, `DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT`, `DMOSS_TOOL_LOOP_TOTAL_LIMIT`, `DMOSS_TOOL_LOOP_FAILURE_LIMIT`, or per-call `maxToolCalls`.
 
 `@rdk-moss/agent` includes `web_browser_fetch` and `web_browser_control` through `puppeteer-core`. It does not download a browser at install time. If Chrome or Chromium is not auto-discovered, configure the executable:
 
@@ -456,7 +459,7 @@ const hooks: AgentHooks = {
 
 ## Goal Mode
 
-D-Moss provides **thread-level goal tracking** without autonomous background execution. The runtime stores one goal per session in the configured `SessionStore` and injects active or paused goal context into the system prompt during chat turns.
+D-Moss provides **thread-level goal tracking** in the runtime and an active goal runner in the bundled CLI. The runtime stores one goal per session in the configured `SessionStore` and injects active or paused goal context into the system prompt during chat turns. The `moss` TUI builds on that state: `/goal <condition>` schedules follow-up turns until the goal is completed, blocked, cleared, or stopped.
 
 For host integrations that want a thin command router, `@rdk-moss/agent/goal` exposes a stable `/goal` adapter with `isGoalCommand()`, `parseGoalCommand()`, `executeGoalCommand()`, and `handleGoalCommand()`. Results are structured, so hosts can echo `message` now and map `action`/`event` into UI or observability later.
 
@@ -474,7 +477,7 @@ await agent.completeGoal('session-1', 'verified in CI');
 await agent.clearGoal('session-1');
 ```
 
-Goals are bound to the exact `sessionKey` passed in by the host. Subagents, mesh peer queries, and external channel sessions should use their own session keys unless the host explicitly wants goal inheritance. Hosts own the product behavior around this API: routing, UI controls, approval workflows, and any background execution loop. `@rdk-moss/agent` only stores the goal and surfaces it to the model as runtime guidance.
+Goals are bound to the exact `sessionKey` passed in by the host. Subagents, mesh peer queries, and external channel sessions should use their own session keys unless the host explicitly wants goal inheritance. Hosts own product behavior around this API: routing, UI controls, approval workflows, and any background execution loop. The bundled CLI provides one such loop, while `DmossAgent` itself stores the goal and surfaces it to the model as runtime guidance.
 
 ## Adding a New Hardware Platform
 

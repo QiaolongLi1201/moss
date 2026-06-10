@@ -1,14 +1,24 @@
 import { stableSerializeToolInput } from './tool-idempotent-replay.js';
-import { parseEnvPositiveInt } from '../../utils/env-compat.js';
+import { readEnv } from '../../utils/env-compat.js';
 
-const DEFAULT_TOOL_LOOP_IDENTICAL_LIMIT = 2;
-const DEFAULT_TOOL_LOOP_SINGLE_TOOL_LIMIT = 24;
-const DEFAULT_TOOL_LOOP_TOTAL_LIMIT = 64;
 // A tool that keeps ERRORING in one turn (e.g. web_fetch on a dead/SPA URL tried
 // with many different URLs) trips far sooner than the by-name limit, so the agent
 // stops the wasteful retry-different-variation loop and answers honestly with what
 // it has instead of grinding to the timeout.
-const DEFAULT_TOOL_LOOP_FAILURE_LIMIT = 6;
+// Local workspace work often needs many distinct reads/edits in one turn. If a
+// host/user opts into by-tool budgets, do not cap these by tool name alone.
+const SINGLE_TOOL_LIMIT_EXEMPT_TOOLS = new Set([
+  'read_file',
+  'write_file',
+  'edit_file',
+  'move_file',
+  'apply_patch',
+  'list_directory',
+  'search_files',
+  'search_code',
+  'device_file_read',
+  'device_file_list',
+]);
 
 export type ToolLoopGuardState = {
   bySignature: Map<string, number>;
@@ -17,8 +27,11 @@ export type ToolLoopGuardState = {
   total: number;
 };
 
-function resolvePositiveIntEnv(name: string, fallback: number): number {
-  return parseEnvPositiveInt(name, fallback);
+function resolveOptionalPositiveIntEnv(name: string): number | undefined {
+  const raw = readEnv(name);
+  if (!raw) return undefined;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 export function createToolLoopGuardState(): ToolLoopGuardState {
@@ -84,37 +97,29 @@ export function shouldShortCircuitToolCall(
   toolName: string,
   input: Record<string, unknown>,
 ): string | null {
-  const identicalLimit = resolvePositiveIntEnv(
-    'DMOSS_TOOL_LOOP_IDENTICAL_LIMIT',
-    DEFAULT_TOOL_LOOP_IDENTICAL_LIMIT,
-  );
-  const singleToolLimit = resolvePositiveIntEnv(
-    'DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT',
-    DEFAULT_TOOL_LOOP_SINGLE_TOOL_LIMIT,
-  );
-  const totalLimit = resolvePositiveIntEnv(
-    'DMOSS_TOOL_LOOP_TOTAL_LIMIT',
-    DEFAULT_TOOL_LOOP_TOTAL_LIMIT,
-  );
-  const failureLimit = resolvePositiveIntEnv(
-    'DMOSS_TOOL_LOOP_FAILURE_LIMIT',
-    DEFAULT_TOOL_LOOP_FAILURE_LIMIT,
-  );
+  const identicalLimit = resolveOptionalPositiveIntEnv('DMOSS_TOOL_LOOP_IDENTICAL_LIMIT');
+  const singleToolLimit = resolveOptionalPositiveIntEnv('DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT');
+  const totalLimit = resolveOptionalPositiveIntEnv('DMOSS_TOOL_LOOP_TOTAL_LIMIT');
+  const failureLimit = resolveOptionalPositiveIntEnv('DMOSS_TOOL_LOOP_FAILURE_LIMIT');
   const signature = `${toolName}:${stableSerializeToolInput(input)}`;
   const sameSignatureCount = state.bySignature.get(signature) ?? 0;
   const sameToolCount = state.byTool.get(toolName) ?? 0;
   const failureCount = state.byToolFailure.get(toolName) ?? 0;
 
-  if (failureCount >= failureLimit) {
+  if (failureLimit !== undefined && failureCount >= failureLimit) {
     return `${toolName} has failed ${failureCount} time(s) in this user turn`;
   }
-  if (sameSignatureCount >= identicalLimit) {
+  if (identicalLimit !== undefined && sameSignatureCount >= identicalLimit) {
     return `identical input was already requested ${sameSignatureCount} time(s) in this user turn`;
   }
-  if (sameToolCount >= singleToolLimit) {
+  if (
+    singleToolLimit !== undefined
+    && !SINGLE_TOOL_LIMIT_EXEMPT_TOOLS.has(toolName)
+    && sameToolCount >= singleToolLimit
+  ) {
     return `${toolName} has already been requested ${sameToolCount} time(s) in this user turn`;
   }
-  if (state.total >= totalLimit) {
+  if (totalLimit !== undefined && state.total >= totalLimit) {
     return `the user turn already requested ${state.total} tool call(s)`;
   }
 

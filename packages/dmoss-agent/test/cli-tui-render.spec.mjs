@@ -617,7 +617,7 @@ test('PromptEditor renders command suggestions when slash is typed', () => {
   assert.match(frame, /\/status\s+view model, workspace, device, and tool state/);
   assert.match(frame, /\/subagents\s+show background sub-agent status and progress/);
   assert.match(frame, /\/model\s+choose or switch the active model/);
-  assert.match(frame, /\/goal\s+show or manage the persistent session goal/);
+  assert.match(frame, /\/goal\s+show or manage the active goal runner/);
   assert.match(frame, /\/compact\s+compress older conversation history/);
   assert.match(frame, /\/connect\s+connect an RDK board/);
   assert.doesNotMatch(frame, /\/attach\s+attach an image or text file/);

@@ -321,7 +321,7 @@ export async function prepareTurnContext(
   if (sessionRoundtripRepair.changed) {
     currentMessages.splice(0, currentMessages.length, ...sessionRoundtripRepair.messages);
     await persistCurrentMessages();
-    log.warn('repaired dangling tool_use/tool_result pairs in session before provider call', {
+    log.debug('repaired dangling tool_use/tool_result pairs in session before provider call', {
       insertedMissingToolResults: sessionRoundtripRepair.insertedCount,
       synthesizedToolUses: sessionRoundtripRepair.synthesizedToolUseCount,
       orphanResultIds: sessionRoundtripRepair.orphanResultIds,
@@ -385,7 +385,7 @@ export async function prepareTurnContext(
   const repairedRoundtrip = repairMissingToolResults(messagesForModel);
   if (repairedRoundtrip.changed) {
     messagesForModel = repairedRoundtrip.messages;
-    log.warn('repaired dangling tool_use/tool_result pairs in provider window', {
+    log.debug('repaired dangling tool_use/tool_result pairs in provider window', {
       insertedMissingToolResults: repairedRoundtrip.insertedCount,
       synthesizedToolUses: repairedRoundtrip.synthesizedToolUseCount,
       orphanResultIds: repairedRoundtrip.orphanResultIds,

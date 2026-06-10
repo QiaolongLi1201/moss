@@ -96,6 +96,23 @@ async function collect(iterable) {
   return out;
 }
 
+async function withEnv(overrides, fn) {
+  const previousEnv = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    previousEnv[key] = process.env[key];
+    if (value === undefined || value === null) delete process.env[key];
+    else process.env[key] = String(value);
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 assert.deepEqual(detectContinuationIntent('继续'), {
   isContinuation: true,
   isArchiveLookup: false,
@@ -167,7 +184,10 @@ const agent = new DmossAgent({
 });
 agent.tools.register(makeProbeTool(calls));
 
-const firstEvents = await collect(agent.streamChat('task-frame-session', '孵化一个小地瓜桌宠'));
+const firstEvents = await withEnv(
+  { DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: '2' },
+  () => collect(agent.streamChat('task-frame-session', '孵化一个小地瓜桌宠')),
+);
 assert.ok(
   firstEvents.some(
     (event) => event.type === 'working_context_checkpoint' && event.reason === 'tool_loop_guard',

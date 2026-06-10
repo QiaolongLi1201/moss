@@ -8,6 +8,7 @@ import { setCliApprovalAsker } from './approval.js';
 import { handleCompactCommand } from './compact-command.js';
 import { formatCommunityAuthLoginError, formatCommunityAuthStatus } from './community-auth.js';
 import { runRegistryCommand, unknownSlashCommandLines } from './commands/registry.js';
+import { loadCustomCommands, reservedBuiltinNames } from './commands/custom-commands.js';
 import { INTERACTIVE_COMPLETION_COMMANDS } from './interactive-commands.js';
 import {
   formatCustomModelConfigInstructions,
@@ -16,7 +17,7 @@ import {
   parseCustomModelConfigInput,
   resolveModelSelection,
 } from './model-catalog.js';
-import { loadConfigFile, resolveConfigPath, saveConfigFileAtPath } from './config.js';
+import { loadConfigFile, resolveConfigDir, resolveConfigPath, saveConfigFileAtPath } from './config.js';
 import { createCliProvider } from './providers.js';
 import { runOneShot } from './oneshot.js';
 import {
@@ -155,6 +156,12 @@ export async function runInteractive(
   currentModel = agent.config.model || currentModel;
   const workspace = runtime?.workspace || process.cwd();
   const sessionKey = options.sessionKey || createCliSessionKey();
+  // File-based custom commands (.moss/commands/*.md) join the registry dispatch.
+  const customCommands = loadCustomCommands({
+    workspace,
+    configDir: runtime?.configDir ?? resolveConfigDir(),
+    reservedNames: reservedBuiltinNames(),
+  });
   let closed = false;
   const rl = readline.createInterface({
     input: process.stdin,
@@ -202,6 +209,7 @@ export async function runInteractive(
     // each migration phase.
     if (msg.startsWith('/')) {
       let pendingPrefill: string | null = null;
+      let pendingSubmit: string | null = null;
       const handled = await runRegistryCommand(msg, {
         agent,
         runtime,
@@ -213,8 +221,13 @@ export async function runInteractive(
         prefillInput: (text) => {
           pendingPrefill = text;
         },
-      });
+        submitPrompt: (text) => {
+          pendingSubmit = text;
+        },
+      }, customCommands);
       if (handled) {
+        // A custom command expands to a prompt — run it as the next turn.
+        if (pendingSubmit) await runOneShot(agent, pendingSubmit, skillLearner, { sessionKey });
         rl.prompt();
         if (pendingPrefill) rl.write(pendingPrefill);
         continue;
@@ -228,6 +241,12 @@ export async function runInteractive(
 
     if (msg === '/help') {
       console.error(renderCliInteractiveHelp());
+      if (customCommands.length) {
+        console.error(`\n  Custom commands (.moss/commands/*.md)`);
+        for (const command of customCommands) {
+          console.error(`    ${command.name.padEnd(18)} ${command.summary}`);
+        }
+      }
       rl.prompt();
       continue;
     }
@@ -376,7 +395,11 @@ export async function runInteractive(
       for (const line of unknownSlashCommandLines(msg, { locale: cliLocale() })) {
         console.error(`[help] ${line}`);
       }
-      console.error(`[help] Available: ${INTERACTIVE_COMMANDS.filter((cmd) => !cmd.includes(' ')).join(' ')}`);
+      const availableCommands = [
+        ...INTERACTIVE_COMMANDS.filter((cmd) => !cmd.includes(' ')),
+        ...customCommands.map((command) => command.name),
+      ];
+      console.error(`[help] Available: ${availableCommands.join(' ')}`);
       rl.prompt();
       continue;
     }

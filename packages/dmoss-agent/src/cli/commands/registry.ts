@@ -48,6 +48,12 @@ export interface CommandContext {
   say(kind: 'system' | 'error', text: string): void;
   /** Pre-fill the input line for a follow-up command. May be a no-op. */
   prefillInput(text: string): void;
+  /**
+   * Submit `text` as the next user turn (runs the model). Provided by surfaces
+   * that can start a run; used by file-based custom commands to expand a
+   * template into a prompt. Absent in headless/test contexts.
+   */
+  submitPrompt?(text: string): void;
 }
 
 export interface CommandSpec {
@@ -232,14 +238,31 @@ export interface RegistryMatch {
   args: string;
 }
 
-/** Match `input` against registered commands ("/name" or "/name args..."). */
-export function findRegistryCommand(input: string): RegistryMatch | null {
+/** Built-in command names + aliases (with leading slash), for collision guards. */
+export function registryCommandNames(): string[] {
+  const names: string[] = [];
+  for (const command of COMMANDS) {
+    names.push(command.name, ...(command.aliases ?? []));
+  }
+  return names;
+}
+
+/**
+ * Match `input` against registered commands ("/name" or "/name args...").
+ * Built-ins are matched first; `customCommands` (file-based) only resolve a
+ * name no built-in owns, so a custom file can never shadow a shipped command.
+ */
+export function findRegistryCommand(
+  input: string,
+  customCommands: readonly CommandSpec[] = [],
+): RegistryMatch | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith('/')) return null;
   const head = trimmed.split(/\s+/, 1)[0];
-  const spec = COMMANDS.find(
-    (command) => command.name === head || command.aliases?.includes(head as `/${string}`),
-  );
+  const spec =
+    COMMANDS.find(
+      (command) => command.name === head || command.aliases?.includes(head as `/${string}`),
+    ) ?? customCommands.find((command) => command.name === head);
   if (!spec) return null;
   return { spec, args: trimmed.slice(head.length).trim() };
 }
@@ -248,8 +271,12 @@ export function findRegistryCommand(input: string): RegistryMatch | null {
  * Dispatch `input` through the registry. Returns true when a registered
  * command handled it; false means the caller's legacy chain should run.
  */
-export async function runRegistryCommand(input: string, ctx: CommandContext): Promise<boolean> {
-  const match = findRegistryCommand(input);
+export async function runRegistryCommand(
+  input: string,
+  ctx: CommandContext,
+  customCommands: readonly CommandSpec[] = [],
+): Promise<boolean> {
+  const match = findRegistryCommand(input, customCommands);
   if (!match) return false;
   await match.spec.run(ctx, match.args);
   return true;

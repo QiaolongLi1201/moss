@@ -60,7 +60,7 @@ interface CommandContext {
 - Unknown-command handling is written once (suggestion + "does not reach the
   model" note, localized).
 
-## Custom commands (mainstream alignment, zero core growth)
+## Custom commands (mainstream alignment, zero core growth) — IMPLEMENTED
 
 File-based custom commands following the Claude Code convention:
 `.moss/commands/<name>.md` (workspace) and `<configDir>/commands/<name>.md`
@@ -68,6 +68,23 @@ File-based custom commands following the Claude Code convention:
 into the next prompt. This answers "let users define /xxx" without adding any
 core surface: custom commands enter the same registry, appear in the same
 help/completion, and inherit the same unknown-command behavior.
+
+Shipped in `cli/commands/custom-commands.ts`:
+
+- Two roots, workspace wins a name clash; both skip reserved built-in names
+  (`reservedBuiltinNames()`), so a custom file can never shadow a shipped
+  command — built-ins are matched first in `findRegistryCommand`.
+- Optional `--- description / argument-hint ---` frontmatter; body supports
+  `$ARGUMENTS` and `$1..$9`, and appends bare args when neither is referenced.
+- A new optional `CommandContext.submitPrompt` lets a command run its expanded
+  body as a turn; the REPL wires it to `runOneShot`, the TUI to `runInput`.
+- Custom commands appear in the TUI slash menu (`commandRowsForSlashInput`
+  takes an `extra` arg), in `/help` on both surfaces, and in the REPL
+  unknown-command "Available" list.
+
+This shipped ahead of full registry consolidation because both surfaces
+already dispatch through the registry FIRST: file-based commands work today
+without waiting for phases 2–3, and the built-in-wins guard keeps them safe.
 
 ## Migration plan (each phase shippable alone)
 

@@ -29,7 +29,8 @@ import { prepareClipboardAttachment } from './clipboard-image.js';
 import { handleCompactCommand } from './compact-command.js';
 import { formatCommunityAuthLoginError, formatCommunityAuthStatus } from './community-auth.js';
 import { disconnectDeviceForSession } from './device-connect.js';
-import { runRegistryCommand, unknownSlashCommandLines } from './commands/registry.js';
+import { runRegistryCommand, unknownSlashCommandLines, type CommandSpec } from './commands/registry.js';
+import { loadCustomCommands, reservedBuiltinNames } from './commands/custom-commands.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
 import {
@@ -40,7 +41,7 @@ import {
   resolveModelSelection,
   type ModelChoiceList,
 } from './model-catalog.js';
-import { loadConfigFile, resolveConfigPath, saveConfigFileAtPath } from './config.js';
+import { loadConfigFile, resolveConfigDir, resolveConfigPath, saveConfigFileAtPath } from './config.js';
 import { createCliProvider } from './providers.js';
 import { renderCliDetailHelp, type CliRuntimeStatus } from './onboarding.js';
 import { getPackageVersion } from './package-info.js';
@@ -2082,19 +2083,30 @@ export interface PromptEditorProps {
   hint?: string;
   model?: string;
   mode?: string;
+  /** File-based custom commands to merge into the slash-command menu. */
+  extraCommandRows?: ReadonlyArray<readonly [string, string]>;
 }
 
-function commandRowsForInput(value: string): Array<[string, string]> {
-  return commandRowsForSlashInput(value);
+function commandRowsForInput(
+  value: string,
+  extra: ReadonlyArray<readonly [string, string]> = [],
+): Array<[string, string]> {
+  return commandRowsForSlashInput(value, extra);
 }
 
 export function promptEditorRowBudget(
   value: string,
-  options: { hint?: string; model?: string; placeholder?: string; maxPreviewLines?: number } = {},
+  options: {
+    hint?: string;
+    model?: string;
+    placeholder?: string;
+    maxPreviewLines?: number;
+    extraCommandRows?: ReadonlyArray<readonly [string, string]>;
+  } = {},
 ): number {
   const maxPreviewLines = options.maxPreviewLines ?? 6;
   let rows = 1; // PromptEditor marginTop.
-  const commandRows = commandRowsForInput(value);
+  const commandRows = commandRowsForInput(value, options.extraCommandRows ?? []);
   if (commandRows.length > 0) {
     rows += Math.min(6, commandRows.length) + 1; // visible command window (cap 6) plus marginBottom.
   } else if (value.startsWith('/') && commandSuggestion(value)) {
@@ -2129,6 +2141,7 @@ export function PromptEditor({
   hint,
   model: _model,
   mode,
+  extraCommandRows,
 }: PromptEditorProps): React.ReactElement {
   const lineCount = value.length > 0 ? value.split('\n').length : 0;
   const isMulti = lineCount > 1;
@@ -2141,7 +2154,7 @@ export function PromptEditor({
 
   // ── Slash-command menu: navigable + responsive window (compact agent style) ──
   const { rows: termRows, columns: termColumns } = useTerminalSize();
-  const commandRows = commandRowsForInput(value);
+  const commandRows = commandRowsForInput(value, extraCommandRows ?? []);
   const [menuIndex, setMenuIndex] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const menuOpen = commandRows.length > 0 && !menuDismissed;
@@ -2726,6 +2739,22 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       sessionKey,
     });
   }
+  // File-based custom commands (.moss/commands/*.md) join the registry dispatch.
+  // Loaded once per session; submitPromptRef bridges to runInput (defined below)
+  // without a render-time TDZ on the const.
+  const customCommandsRef = useRef<CommandSpec[] | null>(null);
+  if (!customCommandsRef.current) {
+    customCommandsRef.current = loadCustomCommands({
+      workspace,
+      configDir: runtime?.configDir ?? resolveConfigDir(),
+      reservedNames: reservedBuiltinNames(),
+    });
+  }
+  const submitPromptRef = useRef<(text: string) => void>(() => {});
+  // Slash-menu rows for the loaded custom commands (stable for the session).
+  const customCommandRows: ReadonlyArray<readonly [string, string]> = (customCommandsRef.current ?? []).map(
+    (command) => [command.name, command.summary] as [string, string],
+  );
   const [input, setInput] = useState('');
   const [inputCursor, setInputCursor] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -3345,7 +3374,8 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
           setInputCursor(text.length);
           showFlash(/^zh/i.test(cliLocale() ?? '') ? '已预填重试命令，补上密码回车' : 'retry command pre-filled — add the password and press Enter');
         },
-      });
+        submitPrompt: (text) => submitPromptRef.current(text),
+      }, customCommandsRef.current ?? []);
       if (handled) return true;
     }
     if (message === '/quit' || message === '/exit') {
@@ -3353,7 +3383,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     if (message === '/help') {
-      addTranscript('system', commandList());
+      addTranscript('system', commandList(customCommandsRef.current ?? []));
       return true;
     }
     if (message === '/paste') {
@@ -4068,6 +4098,9 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     })();
   }, [approval, handleCommand, runLocalShell, runPrompt, addTranscript]);
 
+  // Bridge for custom commands: submit their expanded body as a normal turn.
+  submitPromptRef.current = (text: string) => runInput(text);
+
   useEffect(() => {
     if (!shouldDrainQueue({
       busy,
@@ -4191,6 +4224,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const promptRows = promptEditorRowBudget(input, {
     placeholder: promptPlaceholder(runState),
     hint: footerHint(runState),
+    extraCommandRows: customCommandRows,
   });
   const modelPickerRows = modelPicker ? Math.min(10, modelPicker.list.choices.length + 5) : 0;
   const queueRows = queuedInputs.length > 0 ? Math.min(5, queuedInputs.length + 2) : 0;
@@ -4345,6 +4379,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
             onHistoryNext: recallHistoryNext,
             onShiftEnter: () => undefined,
             onPasteAttachmentShortcut: () => { void pasteClipboardAttachment(); },
+            extraCommandRows: customCommandRows,
           }),
       // Structured goal progress gets its own full-width line so the latest
       // checkpoint is never truncated away by the footer row.
@@ -4373,7 +4408,14 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   );
 }
 
-function commandList(): string {
+function commandList(customCommands: readonly CommandSpec[] = []): string {
+  const customSection = customCommands.length
+    ? [
+        '',
+        'Custom commands (.moss/commands/*.md)',
+        ...customCommands.map((command) => `  ${command.name.padEnd(18)} ${command.summary}`),
+      ]
+    : [];
   return [
     'Core commands',
     '  /status            view model, workspace, device, and tool state',
@@ -4396,6 +4438,7 @@ function commandList(): string {
     '  Tab                complete slash command',
     '  Ctrl+C             exit',
     '  !<command>         run a LOCAL host shell command after session approval',
+    ...customSection,
     '',
     'Advanced commands still work when needed: /status --verbose, /context, /cost, /rewind, /permissions, /tools, /memory, /skills, /upgrade, /detail, /queue.',
   ].join('\n');

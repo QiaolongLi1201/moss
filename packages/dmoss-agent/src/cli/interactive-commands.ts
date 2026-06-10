@@ -105,13 +105,20 @@ export const INTERACTIVE_COMPLETION_COMMANDS: readonly string[] = Array.from(new
   ...SLASH_MENU_ROWS.flatMap((row) => row.aliases ?? []),
 ]));
 
-export function commandRowsForSlashInput(value: string): Array<[string, string]> {
+export function commandRowsForSlashInput(
+  value: string,
+  extra: ReadonlyArray<readonly [string, string]> = [],
+): Array<[string, string]> {
   if (!value.startsWith('/')) return [];
   const normalized = value.trim().toLowerCase();
-  const rows = SLASH_MENU_ROWS.map((row): [string, string] => [row.command, row.description]);
+  // Built-ins first, then file-based custom commands (.moss/commands/*.md).
+  const rows: Array<[string, string]> = [
+    ...SLASH_MENU_ROWS.map((row): [string, string] => [row.command, row.description]),
+    ...extra.map(([command, description]): [string, string] => [command, description]),
+  ];
   return normalized === '/'
     ? rows
-    : rows.filter(([command]) => command.startsWith(normalized));
+    : rows.filter(([command]) => command.toLowerCase().startsWith(normalized));
 }
 
 export function formatInteractiveCommandSections(options: {

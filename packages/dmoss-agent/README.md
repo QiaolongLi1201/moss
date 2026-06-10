@@ -258,6 +258,29 @@ Inside Moss:
 
 Advanced commands such as `/status --verbose`, `/context`, `/rewind`, `/tools`, `/permissions`, and `/memory` still work, but stay out of the default menu so the first screen remains usable.
 
+### Custom Slash Commands
+
+Define your own `/command` by dropping a Markdown file in either location (the
+Claude Code / codex convention):
+
+- `.moss/commands/<name>.md` — project commands, shareable via git
+- `<config-dir>/commands/<name>.md` — personal, available in every workspace
+
+The file body becomes the prompt when you run `/<name>`. Optional frontmatter
+sets a help description; `$ARGUMENTS` and `$1`..`$9` interpolate what you typed
+after the command (bare args are appended when neither is referenced).
+
+```markdown
+---
+description: Diagnose the connected board
+argument-hint: [topic]
+---
+Check the board's CPU, memory, temperature, and ROS2 topics. Focus on $1.
+```
+
+Then `/<name>` shows up in the slash menu and `/help`, expands the body, and
+runs it. A custom file can never shadow a built-in command — built-ins win.
+
 ## Automation And Browser Tools
 
 ```bash

@@ -10,6 +10,8 @@
  * Run: npm run build -w @rdk-moss/agent && node packages/dmoss-agent/test/cli-tui-drive.spec.mjs
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -600,6 +602,48 @@ test('mouse-report bytes are ignored — a stray wheel never types into the prom
     'mouse report bytes must never be typed into the prompt box',
   );
   cleanup();
+});
+
+test('a custom command is discoverable in the slash menu and expands into a prompt', async () => {
+  setRows(24);
+  const tmpWs = fs.mkdtempSync(path.join(os.tmpdir(), 'moss-tui-cmds-'));
+  fs.mkdirSync(path.join(tmpWs, '.moss', 'commands'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpWs, '.moss', 'commands', 'greet.md'),
+    '---\ndescription: Greet someone\n---\nSay hello to $1 from the board.',
+  );
+  const runtimeOverride = {
+    workspace: tmpWs,
+    configDir: path.join(tmpWs, 'cfg'),
+    runtimeDir: path.join(tmpWs, 'runtime'),
+  };
+
+  // (1) Discoverable: typing the prefix surfaces it in the slash menu.
+  {
+    const { stdin, lastFrame } = mount(makeAgent(), runtimeOverride);
+    await wait(140);
+    stdin.write('/gre');
+    await wait(120);
+    assert.match(strip(lastFrame()), /\/greet/, 'custom command shows in the slash menu');
+    cleanup();
+  }
+
+  // (2) Runs: submitting expands $1 and sends the body as a model turn.
+  {
+    const seen = [];
+    const agent = makeAgent({ onStreamChat: ({ message }) => seen.push(message) });
+    const { stdin, lastFrame } = mount(agent, runtimeOverride);
+    await wait(140);
+    await runSlashCommand(stdin, lastFrame, '/greet world');
+    await wait(260);
+    assert.ok(
+      seen.some((m) => /Say hello to world from the board\./.test(m)),
+      `expanded prompt should reach the model; saw ${JSON.stringify(seen)}`,
+    );
+    cleanup();
+  }
+
+  fs.rmSync(tmpWs, { recursive: true, force: true });
 });
 
 let failures = 0;

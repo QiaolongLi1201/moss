@@ -79,6 +79,16 @@ interface BackgroundProc {
   outputListeners: Set<BackgroundOutputListener>;
 }
 
+/**
+ * DESIGN INTENT — deliberate process-wide singleton (cf. keep-alive-dispatcher):
+ * background child processes are OS resources owned by the process, not by an
+ * agent instance; a process-wide registry is what lets ANY surface (TUI list,
+ * lifecycle listeners, shutdown cleanup) see every live child. Ids are unique
+ * per process via `counter`. Consequence: in a multi-agent process, agents
+ * share one background-proc namespace — acceptable while the CLI is the only
+ * multiplexing host; revisit if the host-adapter multi-tenant RFC needs
+ * per-agent visibility scoping. Tests isolate via clearBackgroundRegistryForTests().
+ */
 const registry = new Map<string, BackgroundProc>();
 let counter = 0;
 

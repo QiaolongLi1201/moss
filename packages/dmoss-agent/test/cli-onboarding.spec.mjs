@@ -126,7 +126,7 @@ const agent = createAgent([
 
 {
   const welcome = renderCliWelcome(agent, runtime);
-  assert.match(welcome, /D-Moss Agent/);
+  assert.match(welcome, /Moss Agent/);
   assert.match(welcome, /model: qwen3\.7-max/);
   assert.match(welcome, literalPattern(`workspace: ${workspacePath}`));
   assert.match(welcome, /login: own provider configured/);
@@ -252,10 +252,12 @@ const agent = createAgent([
   assert.match(permissions, /moss config unset approvalPolicy/);
   assert.match(permissions, /trust the approved tool for the current session/);
   assert.match(permissions, /DMOSS_PROFILE/);
-  assert.match(permissions, /DMOSS_PROVIDER/);
-  assert.match(permissions, /DMOSS_MODEL/);
-  assert.match(permissions, /DMOSS_API_KEY/);
-  assert.match(permissions, /DMOSS_BASE_URL/);
+  // Model settings are config-only: their env vars must not be advertised.
+  assert.doesNotMatch(permissions, /DMOSS_PROVIDER/);
+  assert.doesNotMatch(permissions, /DMOSS_MODEL\b/);
+  assert.doesNotMatch(permissions, /DMOSS_API_KEY/);
+  assert.doesNotMatch(permissions, /DMOSS_BASE_URL/);
+  assert.match(permissions, /model settings are config-only/i);
   assert.match(permissions, /DMOSS_IMAGE_INPUT/);
   assert.match(permissions, /DMOSS_SAFETY_MODE/);
   assert.match(permissions, /DMOSS_TRUSTED_TOOLS/);

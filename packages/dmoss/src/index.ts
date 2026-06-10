@@ -126,8 +126,14 @@ export {
   buildSoftwareEngineeringPromptQuick,
 } from './prompts/software-engineering-prompt.js';
 
-// --- Agent behavior (沟通风格/代码纪律/忠实报告/谨慎执行，与领域无关) ---
+// --- Agent behavior (communication style / code-change discipline / faithful reporting / careful execution; domain-independent) ---
 export {
   buildAgentBehaviorPrompt,
   buildAgentBehaviorPromptQuick,
 } from './prompts/agent-behavior-prompt.js';
+
+// --- Response-language policy (English-first, auto-switch to the user's language; domain-independent) ---
+export {
+  buildLanguagePolicyPrompt,
+  buildLanguagePolicyPromptQuick,
+} from './prompts/language-policy-prompt.js';

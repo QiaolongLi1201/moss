@@ -13,6 +13,7 @@ import * as path from "node:path";
 import type { SkillCandidateEvidence } from "./skill-candidate-store.js";
 import {
   getCandidatesRoot,
+  isUnsafeCandidateId,
   removeCandidate,
 } from "./skill-candidate-store.js";
 import {
@@ -21,15 +22,7 @@ import {
   type SkillValidationResult,
 } from "./skill-validation.js";
 import { MOSS_SKILL_META_FILE } from "./skill-metadata.js";
-
-async function atomicWriteFile(
-  filePath: string,
-  data: string,
-): Promise<void> {
-  const tmpPath = `${filePath}.tmp`;
-  await fs.promises.writeFile(tmpPath, data, "utf-8");
-  await fs.promises.rename(tmpPath, filePath);
-}
+import { atomicWriteFile } from "./fs-atomic.js";
 
 export interface PromoteResult {
   skillId: string;
@@ -64,11 +57,12 @@ export async function promoteSkillCandidate(
   opts: PromoteOptions,
 ): Promise<PromoteResult | null> {
   const { workspaceDir, candidateId, confidence } = opts;
-  // Validate the candidate id up front (mirrors removeCandidate's guard): a
-  // traversal id must never reach the candidate read path below, and the late
-  // removeCandidate() call must not be the first thing to reject the id after
-  // the skill has already been written to disk.
-  if (!candidateId || /[/\\]/.test(candidateId) || candidateId.includes("..")) {
+  // Validate the candidate id up front (shared guard with removeCandidate): a
+  // traversal id — including the '.' alias for the candidates root — must
+  // never reach the candidate read path below, and the late removeCandidate()
+  // call must not be the first thing to reject the id after the skill has
+  // already been written to disk.
+  if (isUnsafeCandidateId(candidateId)) {
     throw new Error("Invalid candidate ID");
   }
   const candidatesRoot = getCandidatesRoot(workspaceDir);

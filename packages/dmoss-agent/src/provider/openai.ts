@@ -23,6 +23,7 @@ import type {
 } from '../core/llm/llm-provider.js';
 import { DmossError, ErrorCode } from '../errors.js';
 import { buildApiV1Url } from './api-v1-url.js';
+import { fetchWithConnectionContext } from './connection-error.js';
 
 export interface OpenAILLMProviderConfig {
   apiKey: string;
@@ -89,7 +90,7 @@ export class OpenAILLMProvider implements LLMProvider {
       }));
     }
 
-    const res = await fetch(buildApiV1Url(this.baseUrl, 'chat/completions'), {
+    const res = await fetchWithConnectionContext(buildApiV1Url(this.baseUrl, 'chat/completions'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

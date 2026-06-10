@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { buildApiV1Url } from '../provider/api-v1-url.js';
 import {
   normalizeProvider,
@@ -21,7 +22,32 @@ export interface ModelChoiceList {
   choices: ModelChoice[];
   source: 'live' | 'built-in' | 'common';
   configPath?: string;
+  /** False when configPath is the default location but no file exists there (e.g. user deleted it). */
+  configPathExists?: boolean;
+  /** True when provider/model/key come from the bundled Moss gateway. */
+  usingBundledDefault?: boolean;
   warning?: string;
+}
+
+/**
+ * One line naming where the listed models COME FROM. The picker previously
+ * showed "OpenAI-compatible · config ~/.config/dmoss/config.json" while
+ * listing the built-in gateway's live deepseek models — even after the user
+ * deleted that config file — which read as contradictory state.
+ */
+export function describeModelListSource(list: ModelChoiceList): string {
+  const origin = list.source === 'live'
+    ? (list.usingBundledDefault ? 'live from the built-in Moss gateway' : 'live from the provider /v1/models')
+    : list.source === 'built-in'
+      ? 'built-in Moss gateway defaults'
+      : 'common example names (no live list available)';
+  if (list.usingBundledDefault) {
+    return `models: ${origin} · no user model config (run moss setup to use your own)`;
+  }
+  if (list.configPath && list.configPathExists === false) {
+    return `models: ${origin} · config file deleted (${list.configPath}) — provider fell back to defaults`;
+  }
+  return `models: ${origin}${list.configPath ? ` · config ${list.configPath}` : ''}`;
 }
 
 export interface CustomModelConfig {
@@ -223,6 +249,7 @@ export async function loadModelChoicesForRuntime(
   const liveModels = canFetchLive
     ? await fetchOpenAiCompatibleModels(config ?? {}, { timeoutMs: options.timeoutMs, fetchImpl: options.fetchImpl })
     : [];
+  const configPathExists = config?.configPath ? fs.existsSync(config.configPath) : undefined;
   if (liveModels.length > 0) {
     const choices = uniqueModels([currentModel, ...liveModels]).slice(0, 50).map((model): ModelChoice => ({
       provider,
@@ -234,8 +261,10 @@ export async function loadModelChoicesForRuntime(
       providerLabel,
       currentModel,
       choices,
-      source: config?.usingBundledDefault ? 'built-in' : 'live',
+      source: 'live',
       configPath: config?.configPath,
+      configPathExists,
+      usingBundledDefault: config?.usingBundledDefault,
     };
   }
   return {
@@ -247,6 +276,8 @@ export async function loadModelChoicesForRuntime(
     }),
     source: config?.usingBundledDefault ? 'built-in' : 'common',
     configPath: config?.configPath,
+    configPathExists,
+    usingBundledDefault: config?.usingBundledDefault,
     warning: canFetchLive ? 'Live model list was unavailable; showing common model names for this provider.' : undefined,
   };
 }
@@ -265,12 +296,15 @@ export function resolveModelSelection(input: string, choices: readonly ModelChoi
 }
 
 export function formatModelChoices(list: ModelChoiceList): string {
+  const configFileLine = list.configPath
+    ? `${list.configPath}${list.configPathExists === false ? ' (not present — using defaults)' : ''}`
+    : '(default user config)';
   const lines = [
     'Models',
-    `  active provider  ${list.providerLabel} (${list.provider})`,
+    `  active provider  ${list.providerLabel} (${list.provider})${list.usingBundledDefault ? ' · built-in Moss gateway' : ''}`,
     `  current model    ${list.currentModel || '(not set)'}`,
-    `  config file      ${list.configPath || '(default user config)'}`,
-    `  source           ${list.source === 'live' ? 'provider /v1/models' : list.source === 'built-in' ? 'built-in default' : 'common examples'}`,
+    `  config file      ${configFileLine}`,
+    `  ${describeModelListSource(list)}`,
   ];
   if (list.warning) lines.push(`  note             ${list.warning}`);
   lines.push('', 'Choose for this session:');

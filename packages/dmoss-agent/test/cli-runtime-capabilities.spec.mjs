@@ -50,6 +50,9 @@ function startMockProvider() {
 }
 
 function runCli({ cwd, configDir, port, extraEnv = {} }) {
+  // Model env vars are ignored by design (IGNORED_MODEL_ENV_VARS), so the
+  // API key must come from the config file, not DMOSS_API_KEY.
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ apiKey: 'test-key' }), { mode: 0o600 });
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
       cliPath,
@@ -67,7 +70,6 @@ function runCli({ cwd, configDir, port, extraEnv = {} }) {
         ...process.env,
         DMOSS_CONFIG_DIR: configDir,
         DMOSS_NO_BUNDLED_DEFAULT: '1',
-        DMOSS_API_KEY: 'test-key',
         NO_PROXY: '127.0.0.1,localhost',
         no_proxy: '127.0.0.1,localhost',
         ...extraEnv,

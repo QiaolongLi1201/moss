@@ -15,6 +15,10 @@ export interface SkillScoreResult {
     patternOccurrences: number;
     hasVerification: boolean;
     allSucceeded: boolean;
+    /** Number of tool calls recorded as failed. */
+    failedCount: number;
+    /** True when some failure was never followed by a success of the same tool. */
+    unrecoveredFailure: boolean;
   };
   errorRecoveryPatterns: string[];
   preconditions: string[];
@@ -39,9 +43,19 @@ export function scoreSkillCandidate(
   const distinctTools = new Set(toolCalls.map((tc) => tc.name)).size;
   const errorRecovered = detectErrorRecovery(toolCalls);
   const hasVerification = toolCalls.some((tc) =>
-    tc.name === "exec" || tc.name === "device_exec" || tc.name === "read",
+    tc.name === "exec" || tc.name === "device_exec" ||
+    tc.name === "read" || tc.name === "read_file" || tc.name === "device_file_read",
   );
   const allSucceeded = toolCalls.every((tc) => !tc.failed);
+  const failedCount = toolCalls.filter((tc) => tc.failed).length;
+  const endsWithFailure = toolCalls.length > 0 && toolCalls[toolCalls.length - 1].failed === true;
+  // A failure is only "recovered" when the SAME tool succeeds later;
+  // an unrelated next tool succeeding is not evidence of recovery.
+  const unrecoveredFailure = toolCalls.some(
+    (tc, i) =>
+      tc.failed &&
+      !toolCalls.slice(i + 1).some((later) => later.name === tc.name && !later.failed),
+  );
 
   let confidence = 0.3;
 
@@ -84,6 +98,18 @@ export function scoreSkillCandidate(
     confidence += 0.05;
   }
 
+  // Failure gates: a run whose tool failures were never recovered, that ends
+  // in a failure, or where most calls failed is not a reusable "verified
+  // path" — cap it below the medium-confidence threshold regardless of other
+  // bonuses. (Regression: a fully-denied run used to score 0.95 "high".)
+  if (
+    unrecoveredFailure ||
+    endsWithFailure ||
+    (toolCalls.length > 0 && failedCount / toolCalls.length > 0.5)
+  ) {
+    confidence = Math.min(confidence, 0.4);
+  }
+
   confidence = Math.min(1, Math.max(0, confidence));
 
   return {
@@ -95,31 +121,39 @@ export function scoreSkillCandidate(
       patternOccurrences,
       hasVerification,
       allSucceeded,
+      failedCount,
+      unrecoveredFailure,
     },
     errorRecoveryPatterns: extractErrorRecoveryPatterns(toolCalls),
     preconditions: extractPreconditions(toolCalls),
   };
 }
 
+// Recovery means the SAME tool succeeded later. A different tool succeeding
+// next proves nothing about the failure (and used to reward runs where every
+// distinct tool failed once).
 function detectErrorRecovery(toolCalls: SkillCandidateToolCall[]): boolean {
-  for (let i = 0; i < toolCalls.length - 1; i++) {
-    if (toolCalls[i].failed && !toolCalls[i + 1].failed) {
-      return true;
-    }
-  }
-  return false;
+  return toolCalls.some(
+    (tc, i) =>
+      tc.failed &&
+      toolCalls.slice(i + 1).some((later) => later.name === tc.name && !later.failed),
+  );
 }
 
 function extractErrorRecoveryPatterns(
   toolCalls: SkillCandidateToolCall[],
 ): string[] {
   const patterns: string[] = [];
-  for (let i = 0; i < toolCalls.length - 1; i++) {
-    if (toolCalls[i].failed && !toolCalls[i + 1].failed) {
-      patterns.push(
-        `${toolCalls[i].name} failed → recovered with ${toolCalls[i + 1].name}`,
-      );
-    }
+  for (let i = 0; i < toolCalls.length; i++) {
+    if (!toolCalls[i].failed) continue;
+    const j = toolCalls.findIndex((tc, k) => k > i && tc.name === toolCalls[i].name && !tc.failed);
+    if (j === -1) continue;
+    const via = toolCalls.slice(i + 1, j).filter((tc) => !tc.failed).map((tc) => tc.name);
+    patterns.push(
+      via.length
+        ? `${toolCalls[i].name} failed → recovered with ${via.join(", ")} → ${toolCalls[j].name} succeeded`
+        : `${toolCalls[i].name} failed → recovered with ${toolCalls[j].name}`,
+    );
   }
   return patterns;
 }

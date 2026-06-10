@@ -147,8 +147,8 @@ export function rejectAnthropicOAuthToken(apiKey: string, api: string | undefine
     throw new Error(
       '@rdk-moss/agent refuses Anthropic OAuth / session tokens (sk-ant-oat*). ' +
         'Please provide an official API key (sk-ant-api03-*) or configure an ' +
-        'OpenAI-compatible gateway via DMOSS_BASE_URL. See SECURITY.md for ' +
-        'the rationale ("Provider credentials & identity").',
+        'OpenAI-compatible gateway baseUrl (moss config set baseUrl ...). ' +
+        'See SECURITY.md for the rationale ("Provider credentials & identity").',
     );
   }
 }

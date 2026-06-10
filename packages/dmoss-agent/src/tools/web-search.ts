@@ -30,6 +30,12 @@ const log = getRootLogger().child('tool:web-search');
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_RESULTS = 8;
 const MAX_RESULTS_CAP = 20;
+/** Default attempts per backend (1 retry). Keyless endpoints often clear a transient anti-bot page on a second try. */
+const DEFAULT_RETRY_ATTEMPTS = 2;
+/** Base backoff between attempts (exponential, with jitter). */
+const DEFAULT_RETRY_BASE_DELAY_MS = 400;
+/** Upper bound on any single backoff sleep. */
+const RETRY_MAX_DELAY_MS = 4_000;
 /** Browser-like UA: public search endpoints reject the default agent UA. Overridable. */
 const DEFAULT_UA =
   'Mozilla/5.0 (compatible; dmoss-agent/0.1; +https://github.com/D-Moss)';
@@ -54,10 +60,29 @@ export type WebSearchBackend = (
   opts: WebSearchBackendOptions,
 ) => Promise<WebSearchResult[]>;
 
+/**
+ * Bounded retry policy for transient/recoverable backend failures
+ * (rate-limit, timeout, upstream/anti-bot). Each backend in the fallback chain
+ * is retried independently before the chain moves on to the next backend.
+ * @beta
+ */
+export interface WebSearchRetryOptions {
+  /** Max attempts per backend (≥1). Default 2 (i.e. 1 retry). */
+  maxAttempts?: number;
+  /** Base backoff delay in ms; grows exponentially with jitter, capped. Default 400. */
+  baseDelayMs?: number;
+  /**
+   * Injectable sleep, primarily for tests. Must reject (or resolve fast) when
+   * `signal` aborts. Default: an abort-aware `setTimeout`.
+   */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+}
+
 export interface WebSearchOptions {
   /**
    * Custom backend. Takes precedence over `provider`. Use this to route to a
-   * proprietary search API or a multi-engine backplane.
+   * proprietary search API or a multi-engine backplane. When set, the keyless
+   * fallback chain is bypassed entirely (the host owns routing).
    */
   search?: WebSearchBackend;
   /** Built-in provider when `search` is not supplied. Default: `duckduckgo`. */
@@ -72,6 +97,20 @@ export interface WebSearchOptions {
   region?: string;
   /** Custom User-Agent. */
   userAgent?: string;
+  /**
+   * Per-backend retry-with-backoff for recoverable failures. Default 2 attempts.
+   * @beta
+   */
+  retry?: WebSearchRetryOptions;
+  /**
+   * Keyless provider fallback chain. When true (default), a blocked/failed
+   * primary backend falls through to the next available keyless endpoint
+   * (DuckDuckGo HTML → DuckDuckGo Lite; Brave is prepended automatically when an
+   * API key is present). Set false to use only the single resolved backend.
+   * Ignored when a custom `search` backend is supplied.
+   * @beta
+   */
+  fallback?: boolean;
 }
 
 function coerceString(v: unknown, fallback = ''): string {
@@ -264,8 +303,85 @@ export async function duckDuckGoSearch(
 export function duckDuckGoResponseLooksBlocked(text: string): boolean {
   const looksBlocked =
     /anomaly|challenge-form|captcha|unusual traffic|detected unusual|are you a (?:human|robot)/i.test(text);
-  const hasResultMarkup = /result__a|result__snippet|no-results|results_links/i.test(text);
+  // Recognize both the html endpoint (`result__a`/`result__snippet`) and the
+  // Lite endpoint (`result-link`/`result-snippet`) markup so a genuinely empty
+  // page on either surface is not misreported as blocked.
+  const hasResultMarkup =
+    /result__a|result__snippet|result-link|result-snippet|no-results|results_links/i.test(text);
   return looksBlocked || !hasResultMarkup;
+}
+
+/**
+ * Keyless DuckDuckGo **Lite**-endpoint backend. The Lite surface (a minimal
+ * table-based page) frequently succeeds when the main html endpoint serves an
+ * anti-bot/anomaly page, so it serves as the keyless fallback for
+ * {@link duckDuckGoSearch}. Same redirect-unwrapping and blocked-page detection.
+ */
+export async function duckDuckGoLiteSearch(
+  query: string,
+  opts: WebSearchBackendOptions,
+): Promise<WebSearchResult[]> {
+  const body = new URLSearchParams({ q: query, kl: opts.region || 'wt-wt' });
+  const { ok, status, text } = await fetchWithTimeout(
+    'https://lite.duckduckgo.com/lite/',
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        'user-agent': opts.userAgent,
+        accept: 'text/html',
+      },
+      body: body.toString(),
+    },
+    opts.timeoutMs,
+    opts.signal,
+  );
+
+  if (!ok) {
+    throw new DmossError({
+      code: status === 429 ? ErrorCode.PROVIDER_RATE_LIMITED : ErrorCode.PROVIDER_UPSTREAM_ERROR,
+      message: `web_search: DuckDuckGo Lite returned HTTP ${status}`,
+      hint:
+        status === 429
+          ? 'Rate-limited by DuckDuckGo. Retry shortly, or configure a Brave API key (provider: "brave").'
+          : undefined,
+      recoverable: true,
+    });
+  }
+
+  const results: WebSearchResult[] = [];
+  // Lite results are `result-link` anchors (title + href); the matching
+  // `result-snippet` cell holds the description.
+  const linkRe =
+    /<a[^>]+class="[^"]*result-link[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  const snippetRe = /class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/g;
+  const snippets: string[] = [];
+  let sm: RegExpExecArray | null;
+  while ((sm = snippetRe.exec(text)) !== null) snippets.push(stripTags(sm[1]));
+
+  let lm: RegExpExecArray | null;
+  let i = 0;
+  while ((lm = linkRe.exec(text)) !== null && results.length < opts.maxResults) {
+    const url = unwrapDuckDuckGoHref(lm[1]);
+    const title = stripTags(lm[2]);
+    if (!title || !/^https?:\/\//i.test(url)) {
+      i++;
+      continue;
+    }
+    results.push({ title, url, snippet: snippets[i] ?? '' });
+    i++;
+  }
+  if (results.length === 0 && duckDuckGoResponseLooksBlocked(text)) {
+    throw new DmossError({
+      code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+      message:
+        'web_search: DuckDuckGo Lite blocked automated access (anti-bot/anomaly page) — no results could be retrieved. This is a backend failure, NOT an empty result set; do not infer the topic has no information.',
+      hint:
+        'Configure a Brave API key (set BRAVE_API_KEY or pass provider: "brave") for reliable search, or call web_fetch on a specific known URL instead.',
+      recoverable: true,
+    });
+  }
+  return results;
 }
 
 /** Brave Search API backend (requires an API key). */
@@ -327,12 +443,65 @@ export function createBraveSearch(apiKey: string): WebSearchBackend {
   };
 }
 
-function resolveBackend(opts: WebSearchOptions): WebSearchBackend {
-  if (opts.search) return opts.search;
+interface NamedBackend {
+  name: string;
+  backend: WebSearchBackend;
+}
+
+interface ResolvedRetry {
+  maxAttempts: number;
+  baseDelayMs: number;
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+}
+
+/** Abort-aware default sleep used between retry attempts. */
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DmossError({ code: ErrorCode.USER_ABORTED, message: 'web_search aborted' }));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DmossError({ code: ErrorCode.USER_ABORTED, message: 'web_search aborted' }));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof DmossError && err.code === ErrorCode.USER_ABORTED;
+}
+
+function isRecoverableError(err: unknown): boolean {
+  return err instanceof DmossError && err.recoverable === true && err.code !== ErrorCode.USER_ABORTED;
+}
+
+function backoffDelay(attempt: number, baseDelayMs: number): number {
+  const exp = baseDelayMs * 2 ** (attempt - 1);
+  const jitter = Math.random() * baseDelayMs * 0.5;
+  return Math.min(RETRY_MAX_DELAY_MS, exp + jitter);
+}
+
+/**
+ * Resolve the ordered backend chain. A custom `search` backend bypasses the
+ * chain (host owns routing). Otherwise: Brave is used (and, with fallback on,
+ * prepended) whenever an API key is available; the keyless DuckDuckGo HTML and
+ * Lite endpoints provide a no-key fallback. Selecting `provider: 'brave'`
+ * without a key still fails fast at construction.
+ */
+function resolveBackendChain(opts: WebSearchOptions): NamedBackend[] {
+  if (opts.search) return [{ name: 'custom', backend: opts.search }];
+
   const provider = opts.provider ?? 'duckduckgo';
-  if (provider === 'brave') {
-    const key = opts.apiKey ?? process.env.BRAVE_API_KEY;
-    if (!key) {
+  const braveKey = opts.apiKey ?? process.env.BRAVE_API_KEY;
+  const braveBackend = (): NamedBackend => {
+    if (!braveKey) {
       throw new DmossError({
         code: ErrorCode.PROVIDER_CONFIG_MISSING,
         message: 'web_search: Brave provider selected but no API key',
@@ -340,9 +509,81 @@ function resolveBackend(opts: WebSearchOptions): WebSearchBackend {
         recoverable: false,
       });
     }
-    return createBraveSearch(key);
+    return { name: 'brave', backend: createBraveSearch(braveKey) };
+  };
+
+  // Primary: explicit Brave, or Brave auto-selected when a key is present;
+  // otherwise the keyless DuckDuckGo html endpoint.
+  const primary: NamedBackend =
+    provider === 'brave' || braveKey ? braveBackend() : { name: 'duckduckgo', backend: duckDuckGoSearch };
+
+  if (opts.fallback === false) return [primary];
+
+  const chain: NamedBackend[] = [primary];
+  for (const candidate of [
+    { name: 'duckduckgo', backend: duckDuckGoSearch },
+    { name: 'duckduckgo-lite', backend: duckDuckGoLiteSearch },
+  ] satisfies NamedBackend[]) {
+    if (!chain.some((c) => c.name === candidate.name)) chain.push(candidate);
   }
-  return duckDuckGoSearch;
+  return chain;
+}
+
+/** Run one backend with bounded retry-with-backoff on recoverable errors. */
+async function runBackendWithRetry(
+  backend: WebSearchBackend,
+  query: string,
+  opts: WebSearchBackendOptions,
+  retry: ResolvedRetry,
+): Promise<WebSearchResult[]> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= retry.maxAttempts; attempt++) {
+    if (opts.signal?.aborted) {
+      throw new DmossError({ code: ErrorCode.USER_ABORTED, message: 'web_search aborted' });
+    }
+    try {
+      return await backend(query, opts);
+    } catch (err) {
+      lastErr = err;
+      if (isAbortError(err)) throw err;
+      if (!isRecoverableError(err) || attempt >= retry.maxAttempts) throw err;
+      await retry.sleep(backoffDelay(attempt, retry.baseDelayMs), opts.signal);
+    }
+  }
+  throw lastErr; // unreachable: the loop always returns or throws
+}
+
+/**
+ * Try each backend in order. A backend that returns hits wins immediately. A
+ * genuinely empty (but successful) result is remembered and reported only if no
+ * later backend finds hits. Recoverable/non-recoverable failures fall through to
+ * the next backend; the last error is rethrown if every backend fails. User
+ * aborts short-circuit immediately.
+ */
+async function searchWithFallback(
+  chain: NamedBackend[],
+  query: string,
+  opts: WebSearchBackendOptions,
+  retry: ResolvedRetry,
+): Promise<WebSearchResult[]> {
+  let sawEmptySuccess = false;
+  let lastErr: unknown;
+  for (const { backend } of chain) {
+    if (opts.signal?.aborted) {
+      throw new DmossError({ code: ErrorCode.USER_ABORTED, message: 'web_search aborted' });
+    }
+    try {
+      const results = await runBackendWithRetry(backend, query, opts, retry);
+      if (results.length > 0) return results;
+      sawEmptySuccess = true; // valid empty answer — try the next engine for hits
+    } catch (err) {
+      if (isAbortError(err)) throw err;
+      lastErr = err;
+    }
+  }
+  if (sawEmptySuccess) return [];
+  if (lastErr) throw lastErr;
+  return [];
 }
 
 function formatResults(query: string, results: WebSearchResult[]): string {
@@ -364,9 +605,14 @@ export function createWebSearchTool(opts: WebSearchOptions = {}): Tool<{ query: 
   const timeoutMs = Math.max(1000, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const userAgent = opts.userAgent ?? DEFAULT_UA;
   const region = opts.region;
-  // Resolve eagerly so a misconfigured Brave key surfaces at registration in
-  // tests, but tolerate it at construction time for the default keyless path.
-  const backend = resolveBackend(opts);
+  const retry: ResolvedRetry = {
+    maxAttempts: Math.max(1, Math.trunc(opts.retry?.maxAttempts ?? DEFAULT_RETRY_ATTEMPTS)),
+    baseDelayMs: Math.max(0, opts.retry?.baseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS),
+    sleep: opts.retry?.sleep ?? defaultSleep,
+  };
+  // Resolve eagerly so an explicit but misconfigured Brave key surfaces at
+  // registration; the keyless default chain is always constructible.
+  const chain = resolveBackendChain(opts);
 
   return {
     name: 'web_search',
@@ -410,15 +656,14 @@ export function createWebSearchTool(opts: WebSearchOptions = {}): Tool<{ query: 
         MAX_RESULTS_CAP,
       );
 
-      log.debug('start', { query, maxResults, provider: opts.provider ?? 'duckduckgo' });
+      log.debug('start', { query, maxResults, chain: chain.map((c) => c.name) });
       const started = Date.now();
-      const results = await backend(query, {
-        maxResults,
-        timeoutMs,
-        signal: ctx.abortSignal,
-        region,
-        userAgent,
-      });
+      const results = await searchWithFallback(
+        chain,
+        query,
+        { maxResults, timeoutMs, signal: ctx.abortSignal, region, userAgent },
+        retry,
+      );
       log.debug('done', { query, count: results.length, ms: Date.now() - started });
       return formatResults(query, results.slice(0, maxResults));
     },

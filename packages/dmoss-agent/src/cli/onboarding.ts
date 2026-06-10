@@ -69,8 +69,8 @@ function runtimeWithDefaults(runtime: CliRuntimeStatus = {}) {
 }
 
 function guardrailLine(config: ResolvedCliConfig): string {
-  const inputCount = config.guardrails.input.blockPatterns.length + config.guardrails.input.redactPatterns.length;
-  const outputCount = config.guardrails.output.blockPatterns.length + config.guardrails.output.redactPatterns.length;
+  const inputCount = (config.guardrails?.input?.blockPatterns?.length ?? 0) + (config.guardrails?.input?.redactPatterns?.length ?? 0);
+  const outputCount = (config.guardrails?.output?.blockPatterns?.length ?? 0) + (config.guardrails?.output?.redactPatterns?.length ?? 0);
   if (inputCount === 0 && outputCount === 0) return 'guardrails off';
   return `guardrails in ${inputCount} out ${outputCount}`;
 }
@@ -178,7 +178,7 @@ export function renderCliWelcome(agent: DmossAgent, runtime: CliRuntimeStatus = 
     : 'not connected';
 
   return [
-    `${ui.bold('D-Moss Agent')} ${ui.dim(`v${getPackageVersion()}`)}`,
+    `${ui.bold('Moss Agent')} ${ui.dim(`v${getPackageVersion()}`)}`,
     `${label('model')} ${agent.config.model} (${providerState})`,
     `${label('workspace')} ${compactPath(rt.workspace)}`,
     `${label('login')} ${loginState}`,
@@ -214,7 +214,7 @@ export function renderCliQuickStart(agent: DmossAgent, runtime: CliRuntimeStatus
       : auth.apiKey
         ? '      Change it anytime: run `moss setup` (interactive), or `/model` to choose a model for this session.'
         : '      Configure it: run `moss setup` — choose a provider, choose a model, and paste your API key.',
-    '      Or set env vars: DMOSS_PROVIDER · DMOSS_MODEL · DMOSS_API_KEY · DMOSS_BASE_URL (provider keys also work).',
+    '      Model settings live in moss config only — env vars (DEEPSEEK_API_KEY, DMOSS_PROVIDER, ...) are ignored.',
     '      Image input: OpenAI/Anthropic default on; OpenAI-compatible/DeepSeek/Qwen default off. Set DMOSS_IMAGE_INPUT=true for vision-capable gateways.',
     `      Settings are saved to ${compactPath(auth.configPath)} — inspect them with /config.`,
     '',
@@ -284,7 +284,7 @@ export function renderCliStatus(
     `  ${label('guardrails')} ${guardrailLine(auth)} (${auth.guardrailsSource ?? 'default'})`,
     `  ${label('max turns')} ${auth.maxAgentTurns} (${auth.maxAgentTurnsSource ?? 'default'})`,
     `  ${label('context tokens')} ${auth.contextTokens} (${auth.contextTokensSource ?? 'default'})`,
-    `  ${label('compaction')} reserve ${auth.compactionSettings.reserveTokens}, keepRecent ${auth.compactionSettings.keepRecentTokens} (${auth.compactionSettingsSource ?? 'default'})`,
+    `  ${label('compaction')} reserve ${auth.compactionSettings?.reserveTokens ?? 20000}, keepRecent ${auth.compactionSettings?.keepRecentTokens ?? 20000} (${auth.compactionSettingsSource ?? 'default'})`,
     `  ${label('exec')} ${rt.execBackend}${rt.execBackend === 'docker' && rt.dockerImage ? ` (${rt.dockerImage})` : ''}`,
     `  ${label('memory')} ${memoryCount} entries`,
     `  ${label('skills')} ${skillCount}`,
@@ -329,8 +329,15 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
   const cacheDebug = auth.promptCacheDebug === true ? 'enabled' : 'disabled';
   const imageInput = auth.imageInput === true ? 'enabled' : 'disabled';
   const mcp = auth.mcpEnabled === true ? 'enabled' : 'disabled';
-  const inputGuardrails = auth.guardrails.input.blockPatterns.length + auth.guardrails.input.redactPatterns.length;
-  const outputGuardrails = auth.guardrails.output.blockPatterns.length + auth.guardrails.output.redactPatterns.length;
+  // Host-embedded TUIs may pass a partial config; never crash the session
+  // over missing optional sections.
+  const guardrails = auth.guardrails ?? {
+    input: { blockPatterns: [], redactPatterns: [] },
+    output: { blockPatterns: [], redactPatterns: [] },
+  };
+  const inputGuardrails = (guardrails.input?.blockPatterns?.length ?? 0) + (guardrails.input?.redactPatterns?.length ?? 0);
+  const outputGuardrails = (guardrails.output?.blockPatterns?.length ?? 0) + (guardrails.output?.redactPatterns?.length ?? 0);
+  const compaction = auth.compactionSettings ?? { reserveTokens: 20000, keepRecentTokens: 20000 };
   return [
     ui.bold('Permissions & Config'),
     `  ${label('config file')} ${auth.configPath}`,
@@ -348,7 +355,7 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     `  ${label('guardrails')} input ${inputGuardrails}, output ${outputGuardrails} (${auth.guardrailsSource ?? 'default'})`,
     `  ${label('max turns')} ${auth.maxAgentTurns} (${auth.maxAgentTurnsSource ?? 'default'})`,
     `  ${label('context tokens')} ${auth.contextTokens} (${auth.contextTokensSource ?? 'default'})`,
-    `  ${label('compaction')} reserve ${auth.compactionSettings.reserveTokens}, keepRecent ${auth.compactionSettings.keepRecentTokens} (${auth.compactionSettingsSource ?? 'default'})`,
+    `  ${label('compaction')} reserve ${compaction.reserveTokens}, keepRecent ${compaction.keepRecentTokens} (${auth.compactionSettingsSource ?? 'default'})`,
     ...configWarningLines(auth),
     '',
     '  Profiles:',
@@ -391,8 +398,8 @@ export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {
     '    moss config unset --project safetyMode',
     '    moss config unset approvalPolicy',
     '',
-    '  Environment overrides:',
-    '    DMOSS_PROVIDER, DMOSS_MODEL, DMOSS_API_KEY, DMOSS_BASE_URL, DMOSS_IMAGE_INPUT, DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG, DMOSS_MCP_ENABLED, DMOSS_MCP_CONFIG, DMOSS_MAX_AGENT_TURNS, DMOSS_CONTEXT_TOKENS',
+    '  Environment overrides (model settings are config-only; provider/model/key/baseUrl env vars are ignored):',
+    '    DMOSS_IMAGE_INPUT, DMOSS_PROFILE, DMOSS_SAFETY_MODE, DMOSS_APPROVAL_POLICY, DMOSS_TRUSTED_TOOLS, DMOSS_PROMPT_CACHE, DMOSS_PROMPT_CACHE_DEBUG, DMOSS_MCP_ENABLED, DMOSS_MCP_CONFIG, DMOSS_MAX_AGENT_TURNS, DMOSS_CONTEXT_TOKENS',
   ].join('\n');
 }
 

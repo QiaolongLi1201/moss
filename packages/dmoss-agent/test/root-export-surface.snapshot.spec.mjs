@@ -66,6 +66,7 @@ const expectedExports = [
   'createWebSearchTool',
   'deleteLane',
   'describeError',
+  'duckDuckGoLiteSearch',
   'duckDuckGoSearch',
   'enqueueInLane',
   'ensureDmossCommunityAuth',

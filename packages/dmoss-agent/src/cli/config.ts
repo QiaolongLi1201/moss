@@ -28,7 +28,6 @@ export interface ProviderPreset {
   displayName: string;
   defaultModel: string;
   defaultBaseUrl: string;
-  keyEnvVars: string[];
   defaultImageInput: boolean;
 }
 
@@ -38,7 +37,6 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     displayName: 'DeepSeek',
     defaultModel: 'deepseek-v4-pro',
     defaultBaseUrl: 'https://api.deepseek.com',
-    keyEnvVars: ['DEEPSEEK_API_KEY'],
     defaultImageInput: false,
   },
   qwen: {
@@ -46,7 +44,6 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     displayName: 'Aliyun / Qwen',
     defaultModel: 'qwen3.7-max',
     defaultBaseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
-    keyEnvVars: ['DASHSCOPE_API_KEY', 'ALIYUN_API_KEY'],
     defaultImageInput: false,
   },
   openai: {
@@ -54,7 +51,6 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     displayName: 'OpenAI',
     defaultModel: 'gpt-4o-mini',
     defaultBaseUrl: 'https://api.openai.com',
-    keyEnvVars: ['OPENAI_API_KEY'],
     defaultImageInput: true,
   },
   anthropic: {
@@ -62,7 +58,6 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     displayName: 'Anthropic',
     defaultModel: DEFAULT_MODEL,
     defaultBaseUrl: 'https://api.anthropic.com',
-    keyEnvVars: ['ANTHROPIC_API_KEY'],
     defaultImageInput: true,
   },
   'openai-compatible': {
@@ -70,7 +65,6 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
     displayName: 'OpenAI-compatible',
     defaultModel: 'gpt-4o-mini',
     defaultBaseUrl: 'https://api.openai.com',
-    keyEnvVars: ['OPENAI_API_KEY'],
     defaultImageInput: false,
   },
 };
@@ -440,7 +434,11 @@ export function saveConfigFile(config: ConfigFile, configDir?: string): void {
   saveConfigFileAtPath(config, resolveConfigPath(configDir));
 }
 
-export function normalizeProvider(value: string | undefined): CliProviderPreset {
+/**
+ * Strict provider parsing: returns null for unknown values so callers can
+ * reject them. Use this for user-entered values (`moss config set provider`).
+ */
+export function parseProviderPreset(value: string | undefined): CliProviderPreset | null {
   const raw = (value || '').toLowerCase().trim();
   if (raw === 'deepseek' || raw === 'ds') return 'deepseek';
   if (raw === 'qwen' || raw === 'aliyun' || raw === 'dashscope') return 'qwen';
@@ -449,7 +447,12 @@ export function normalizeProvider(value: string | undefined): CliProviderPreset 
   if (raw === 'openai-compatible' || raw === 'compatible' || raw === 'custom') {
     return 'openai-compatible';
   }
-  return 'anthropic';
+  return null;
+}
+
+/** Lenient variant for resolution paths that need a usable default. */
+export function normalizeProvider(value: string | undefined): CliProviderPreset {
+  return parseProviderPreset(value) ?? 'anthropic';
 }
 
 export function normalizeConfigProfile(value: string | undefined): CliConfigProfile | null {
@@ -583,21 +586,32 @@ function inferProviderFromBaseUrl(baseUrl: string | undefined): CliProviderPrese
   return 'openai-compatible';
 }
 
-function inferProviderFromApiKeyEnv(env: NodeJS.ProcessEnv): { provider: CliProviderPreset; source: string } | null {
-  if (env.DEEPSEEK_API_KEY) return { provider: 'deepseek', source: 'DEEPSEEK_API_KEY' };
-  if (env.DASHSCOPE_API_KEY) return { provider: 'qwen', source: 'DASHSCOPE_API_KEY' };
-  if (env.ALIYUN_API_KEY) return { provider: 'qwen', source: 'ALIYUN_API_KEY' };
-  if (env.OPENAI_API_KEY) return { provider: 'openai', source: 'OPENAI_API_KEY' };
-  if (env.ANTHROPIC_API_KEY) return { provider: 'anthropic', source: 'ANTHROPIC_API_KEY' };
-  return null;
-}
+/**
+ * Model-connection env vars moss deliberately does NOT read (decision 2026-06).
+ *
+ * Generic provider keys are a namespace shared with every other tool on the
+ * machine; a leftover `DEEPSEEK_API_KEY` used to silently flip moss onto that
+ * provider. Model settings (provider/model/baseUrl/apiKey) now come only from
+ * CLI flags and moss config files. These names are still detected so doctor
+ * and startup can tell the user their env var is being ignored.
+ */
+const IGNORED_MODEL_ENV_VARS = [
+  'DMOSS_PROVIDER',
+  'DMOSS_MODEL',
+  'DMOSS_BASE_URL',
+  'DMOSS_API_KEY',
+  'DEEPSEEK_API_KEY',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'DASHSCOPE_API_KEY',
+  'ALIYUN_API_KEY',
+  'OPENAI_BASE_URL',
+  'ANTHROPIC_BASE_URL',
+  'DASHSCOPE_BASE_URL',
+] as const;
 
-function firstEnv(env: NodeJS.ProcessEnv, names: string[]): { value: string; source: string } | null {
-  for (const name of names) {
-    const value = env[name];
-    if (value) return { value, source: name };
-  }
-  return null;
+function listIgnoredModelEnvVars(env: NodeJS.ProcessEnv): string[] {
+  return IGNORED_MODEL_ENV_VARS.filter((name) => Boolean(env[name]));
 }
 
 function resolveMcpConfigPath(
@@ -629,6 +643,15 @@ export interface ResolvedCliConfig {
   apiKeySource: string;
   /** True when provider/model/key came from the hidden bundled gateway default (redact in user-facing output). */
   usingBundledDefault: boolean;
+  /** Set when a bundled gateway default exists but the moss config file shadowed it. */
+  bundledDefaultSuppressedBy?: string;
+  /**
+   * Model-connection env vars that are set in the environment but deliberately
+   * ignored (model settings come only from CLI flags and config files).
+   * Surfaced by doctor and startup so a leftover DEEPSEEK_API_KEY etc. can
+   * explain itself instead of silently doing nothing.
+   */
+  ignoredModelEnvVars: string[];
   model: string;
   modelSource: string;
   baseUrl: string;
@@ -763,16 +786,24 @@ export function hasTrustedToolWildcard(config: Pick<ResolvedCliConfig, 'trustedT
  * file, so it keeps the provider-default behavior. Override the lookup with
  * DMOSS_BUNDLED_DEFAULT_FILE, or disable it with DMOSS_NO_BUNDLED_DEFAULT=1.
  */
+let bundledDefaultReadWarned = false;
+
 function readBundledZeroConfigDefault(env: NodeJS.ProcessEnv): Partial<ConfigFile> | null {
   if (env.DMOSS_NO_BUNDLED_DEFAULT === '1') return null;
   const candidates: string[] = [];
-  if (env.DMOSS_BUNDLED_DEFAULT_FILE) candidates.push(env.DMOSS_BUNDLED_DEFAULT_FILE);
-  try {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    candidates.push(path.resolve(here, '../../zero-config-default.json'));
-    candidates.push(path.resolve(here, '../zero-config-default.json'));
-  } catch {
-    // import.meta unavailable — only an explicit override path can apply
+  if (env.DMOSS_BUNDLED_DEFAULT_FILE) {
+    // An explicit override is authoritative: never fall through to the
+    // packaged file, otherwise an unreadable override would be silently
+    // replaced by a different gateway right after we warned about it.
+    candidates.push(env.DMOSS_BUNDLED_DEFAULT_FILE);
+  } else {
+    try {
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      candidates.push(path.resolve(here, '../../zero-config-default.json'));
+      candidates.push(path.resolve(here, '../zero-config-default.json'));
+    } catch {
+      // import.meta unavailable — no bundled default candidates apply
+    }
   }
   for (const candidate of candidates) {
     try {
@@ -784,22 +815,31 @@ function readBundledZeroConfigDefault(env: NodeJS.ProcessEnv): Partial<ConfigFil
         }
       }
       if (Object.keys(result).length > 0) return result;
-    } catch {
-      // missing or invalid — try the next candidate
+    } catch (err) {
+      // A PERMISSION failure must be loud: `sudo npm i -g` historically left
+      // the bundled gateway file root-owned 0600, every non-root run silently
+      // lost zero-config and demanded a manual model setup. ENOENT stays
+      // silent (source checkouts legitimately have no bundled file).
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if ((code === 'EACCES' || code === 'EPERM') && !bundledDefaultReadWarned) {
+        bundledDefaultReadWarned = true;
+        console.error(
+          `[config] built-in model gateway file exists but is not readable (${code}): ${candidate}\n` +
+          '[config] Fix: sudo chmod 644 <that file>  — or reinstall: npm i -g @rdk-moss/agent@latest',
+        );
+      }
     }
   }
   return null;
 }
 
-/** True when the user has set any model / provider / key / baseUrl via config or env. */
-function hasUserModelConfig(cfg: ConfigFile, env: NodeJS.ProcessEnv): boolean {
-  return Boolean(
-    cfg.provider || cfg.model || cfg.baseUrl || cfg.apiKey ||
-      env.DMOSS_PROVIDER || env.DMOSS_MODEL || env.DMOSS_BASE_URL || env.DMOSS_API_KEY ||
-      env.OPENAI_API_KEY || env.ANTHROPIC_API_KEY || env.DEEPSEEK_API_KEY ||
-      env.DASHSCOPE_API_KEY || env.ALIYUN_API_KEY ||
-      env.OPENAI_BASE_URL || env.ANTHROPIC_BASE_URL || env.DASHSCOPE_BASE_URL,
-  );
+/**
+ * True when the user has set any model / provider / key / baseUrl in a moss
+ * config file. Environment variables are deliberately not consulted: model
+ * settings come only from CLI flags and config files (see IGNORED_MODEL_ENV_VARS).
+ */
+function hasUserModelConfig(cfg: ConfigFile): boolean {
+  return Boolean(cfg.provider || cfg.model || cfg.baseUrl || cfg.apiKey);
 }
 
 export function resolveCliConfig(
@@ -813,15 +853,22 @@ export function resolveCliConfig(
   let activeConfig: ConfigFile = config ?? defaultLoadedConfig?.config ?? {};
   let usingBundledDefault = false;
   let bundledDefaultKeys = new Set<keyof ConfigFile>();
+  let bundledDefaultSuppressedBy: string | undefined;
   // Zero-config fallback: when nothing is configured anywhere, use a bundled
   // gateway default if the package ships one (npm only; gitignored in source).
-  if (!hasUserModelConfig(activeConfig, env)) {
+  if (!hasUserModelConfig(activeConfig)) {
     const bundled = readBundledZeroConfigDefault(env);
     if (bundled) {
       activeConfig = { ...activeConfig, ...bundled };
       bundledDefaultKeys = new Set(Object.keys(bundled) as Array<keyof ConfigFile>);
       usingBundledDefault = true;
     }
+  } else if (readBundledZeroConfigDefault(env)) {
+    // A bundled gateway exists but the user's own model config shadows it
+    // (by design). Remember that it did, so a half-configured file (e.g. a
+    // baseUrl without a key) can explain itself instead of silently
+    // demanding a full manual setup.
+    bundledDefaultSuppressedBy = 'moss config file';
   }
   const configPaths = loadedConfig ?? defaultLoadedConfig;
   const profileEnv = env.DMOSS_PROFILE || env.DMOSS_CONFIG_PROFILE;
@@ -840,50 +887,24 @@ export function resolveCliConfig(
         : 'default';
   const profileDefaults = CLI_PROFILE_DEFAULTS[profile];
 
-  const providerEnv = env.DMOSS_PROVIDER;
-  const inferredProvider = inferProviderFromBaseUrl(
-    overrides.baseUrl ||
-      env.DMOSS_BASE_URL ||
-      env.OPENAI_BASE_URL ||
-      env.ANTHROPIC_BASE_URL ||
-      env.DASHSCOPE_BASE_URL ||
-      activeConfig.baseUrl,
-  );
-  const envInferredProvider = inferProviderFromApiKeyEnv(env);
+  // Model settings (provider/model/baseUrl/apiKey) resolve from CLI flags >
+  // config files > built-in default only. Env vars are detected purely to
+  // warn the user that they are ignored (IGNORED_MODEL_ENV_VARS).
+  const ignoredModelEnvVars = listIgnoredModelEnvVars(env);
+  const inferredProvider = inferProviderFromBaseUrl(overrides.baseUrl || activeConfig.baseUrl);
   const activeConfigSource = (key: keyof ConfigFile): string =>
     usingBundledDefault && bundledDefaultKeys.has(key) ? 'built-in' : 'config';
-  const provider = overrides.provider || providerEnv || activeConfig.provider
-    ? normalizeProvider(overrides.provider || providerEnv || activeConfig.provider)
-    : inferredProvider || envInferredProvider?.provider || 'deepseek';
+  const provider = overrides.provider || activeConfig.provider
+    ? normalizeProvider(overrides.provider || activeConfig.provider)
+    : inferredProvider || 'deepseek';
   const preset = PROVIDER_PRESETS[provider];
   const providerSource = overrides.provider
     ? 'cli'
-    : providerEnv
-      ? 'DMOSS_PROVIDER'
-      : activeConfig.provider
-        ? activeConfigSource('provider')
-        : inferredProvider
-          ? 'baseUrl'
-          : envInferredProvider
-            ? envInferredProvider.source
-            : 'default';
-
-  const apiKeyEnv = firstEnv(env, [
-    'DMOSS_API_KEY',
-    ...preset.keyEnvVars,
-    'DEEPSEEK_API_KEY',
-    'OPENAI_API_KEY',
-    'ANTHROPIC_API_KEY',
-    'DASHSCOPE_API_KEY',
-    'ALIYUN_API_KEY',
-  ]);
-  const modelEnv = env.DMOSS_MODEL;
-  const baseUrlEnv = firstEnv(env, [
-    'DMOSS_BASE_URL',
-    'OPENAI_BASE_URL',
-    'ANTHROPIC_BASE_URL',
-    'DASHSCOPE_BASE_URL',
-  ]);
+    : activeConfig.provider
+      ? activeConfigSource('provider')
+      : inferredProvider
+        ? 'baseUrl'
+        : 'default';
   const workspaceEnv = env.DMOSS_WORKSPACE;
   const safetyModeEnv = env.DMOSS_SAFETY_MODE || env.DMOSS_CLI_SAFETY_MODE;
   const configSafetyMode = normalizeSafetyModeConfig(
@@ -1062,13 +1083,15 @@ export function resolveCliConfig(
     profileSource,
     provider,
     providerSource,
-    apiKey: apiKeyEnv?.value || activeConfig.apiKey || '',
-    apiKeySource: apiKeyEnv?.source || (activeConfig.apiKey ? activeConfigSource('apiKey') : 'missing'),
+    apiKey: activeConfig.apiKey || '',
+    apiKeySource: activeConfig.apiKey ? activeConfigSource('apiKey') : 'missing',
     usingBundledDefault,
-    model: overrides.model || modelEnv || activeConfig.model || preset.defaultModel,
-    modelSource: overrides.model ? 'cli' : modelEnv ? 'DMOSS_MODEL' : activeConfig.model ? activeConfigSource('model') : 'provider default',
-    baseUrl: overrides.baseUrl || baseUrlEnv?.value || activeConfig.baseUrl || preset.defaultBaseUrl,
-    baseUrlSource: overrides.baseUrl ? 'cli' : baseUrlEnv?.source || (activeConfig.baseUrl ? activeConfigSource('baseUrl') : 'provider default'),
+    ...(bundledDefaultSuppressedBy ? { bundledDefaultSuppressedBy } : {}),
+    ignoredModelEnvVars,
+    model: overrides.model || activeConfig.model || preset.defaultModel,
+    modelSource: overrides.model ? 'cli' : activeConfig.model ? activeConfigSource('model') : 'provider default',
+    baseUrl: overrides.baseUrl || activeConfig.baseUrl || preset.defaultBaseUrl,
+    baseUrlSource: overrides.baseUrl ? 'cli' : activeConfig.baseUrl ? activeConfigSource('baseUrl') : 'provider default',
     workspace: overrides.workspace || workspaceEnv || activeConfig.workspace || safeCwd.cwd,
     workspaceSource: overrides.workspace ? 'cli' : workspaceEnv ? 'DMOSS_WORKSPACE' : activeConfig.workspace ? 'config' : safeCwd.source,
     safetyMode,

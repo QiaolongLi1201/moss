@@ -44,6 +44,16 @@ async function safePath(inputPath: string, workspaceDir: string): Promise<string
   return resolved;
 }
 
+/**
+ * Tool failures must THROW so the execution pipeline marks the result
+ * `isError` (UI shows "err", skill-learning records `failed: true`).
+ * Returning an "Error ..." string makes failures look like successes to
+ * everything except the model.
+ */
+function toolError(prefix: string, err: unknown): Error {
+  return new Error(`${prefix}: ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // ── Read-before-edit / stale-write guard ──────────────────────────────────
 // Maps a resolved absolute path to the on-disk mtimeMs observed the last time
 // the agent read or wrote it, so write_file/edit_file can refuse to silently
@@ -229,7 +239,7 @@ export const readFileTool: Tool = {
       }
       return withLineNumbers(content);
     } catch (err) {
-      return `Error reading file: ${err instanceof Error ? err.message : String(err)}`;
+      throw toolError('Error reading file', err);
     }
   },
 };
@@ -259,7 +269,7 @@ export const writeFileTool: Tool = {
       await recordFileState(filePath);
       return `Successfully wrote ${input.content.length} chars to ${input.path}`;
     } catch (err) {
-      return `Error writing file: ${err instanceof Error ? err.message : String(err)}`;
+      throw toolError('Error writing file', err);
     }
   },
 };
@@ -371,7 +381,7 @@ export const editFileTool: Tool = {
       const fuzzyNote = fuzzy ? '; matched after normalizing quote characters' : '';
       return `Edited ${displayPath} (replaced ${label}${fuzzyNote}).`;
     } catch (err) {
-      return `Error editing file: ${err instanceof Error ? err.message : String(err)}`;
+      throw toolError('Error editing file', err);
     }
   },
 };
@@ -415,7 +425,7 @@ export const moveFileTool: Tool = {
       await fs.rename(src, dest);
       return `Moved ${input.source} -> ${input.destination}`;
     } catch (err) {
-      return `Error moving file: ${err instanceof Error ? err.message : String(err)}`;
+      throw toolError('Error moving file', err);
     }
   },
 };
@@ -443,7 +453,7 @@ export const listDirectoryTool: Tool = {
       });
       return lines.join('\n') || '(empty directory)';
     } catch (err) {
-      return `Error listing directory: ${err instanceof Error ? err.message : String(err)}`;
+      throw toolError('Error listing directory', err);
     }
   },
 };
@@ -536,7 +546,7 @@ export const searchFilesTool: Tool = {
       const results = await walkMatch(searchDir, input.pattern, 100);
       return results.length > 0 ? results.join('\n') : 'No files found';
     } catch (err) {
-      return `Error: ${err instanceof Error ? err.message : String(err)}`;
+      throw toolError('Error searching files', err);
     }
   },
 };
@@ -635,7 +645,7 @@ export const searchCodeTool: Tool = {
       if (matches.length === 0) return 'No matches found';
       return matches.join('\n');
     } catch (err) {
-      return `Error searching code: ${err instanceof Error ? err.message : String(err)}`;
+      throw toolError('Error searching code', err);
     }
   },
 };
@@ -896,7 +906,7 @@ export const installSkillTool: Tool = {
       await atomicWriteFile(skillPath, markdown);
       return `Installed skill ${skillName} at .moss/skills/${skillName}/SKILL.md`;
     } catch (err) {
-      return `Error installing skill: ${err instanceof Error ? err.message : String(err)}`;
+      throw toolError('Error installing skill', err);
     }
   },
 };

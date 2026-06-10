@@ -177,7 +177,16 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
             const result = summarizeForCli(event.result);
             stderrLine(result ? `${mark(statusKind)} ${ui.bold(event.toolName)} ${status}${ui.dim(elapsed)} ${result}` : `${mark(statusKind)} ${ui.bold(event.toolName)} ${status}${ui.dim(elapsed)}`);
           } else {
-            stderrLine(`${mark(statusKind)} ${ui.bold(progressToolLabel(event.toolName))} ${status}${ui.dim(elapsed)}`);
+            // On failure, show WHY (approval denial, ENOENT, timeout, …) — a
+            // bare "failed 0ms" hid policy denials from the user entirely.
+            // 220 chars keeps the actionable second half of denial messages
+            // ("Use `moss config set …`") visible.
+            const failReason = event.isError ? summarizeForCli(event.result, 220) : '';
+            stderrLine(
+              failReason
+                ? `${mark(statusKind)} ${ui.bold(progressToolLabel(event.toolName))} ${status}${ui.dim(elapsed)} ${ui.dim(failReason)}`
+                : `${mark(statusKind)} ${ui.bold(progressToolLabel(event.toolName))} ${status}${ui.dim(elapsed)}`,
+            );
           }
         }
         break;

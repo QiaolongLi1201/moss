@@ -75,7 +75,9 @@ function inferRisk(toolNames: string[]): "low" | "medium" | "high" {
 function inferPermissions(toolNames: string[]): string[] {
   const permissions = new Set<string>(["workspace_read"]);
   const joined = toolNames.join(" ");
-  if (/device_|board_|fleet_|exec|ssh|openclaw/i.test(joined))
+  // Host-side `exec` / `exec_background` are NOT board tools; only device/board
+  // tool families imply a board (bare `exec` used to force requires_board).
+  if (/device_|board_|fleet_|ssh|openclaw/i.test(joined))
     permissions.add("device_exec");
   if (
     /write|upload|delete|rename|mkdir|local-skill|skill_mark_validated/i.test(
@@ -127,13 +129,16 @@ function buildDraftMarkdown(
     "不适用：未验证完成、设备状态变化较大或用户要求重新探索的任务。",
   ].join(" ");
 
-  // Quality label
+  // Quality label — must reflect the recorded tool outcomes, not assume them.
+  const hadFailures = !score.signals.allSucceeded;
   const qualityLabel = isHighConfidence(score) ? "high" : score.confidence >= 0.5 ? "medium" : "low";
   const qualityDescription = isHighConfidence(score)
-    ? "多项信号支持此技能可复用（多工具、无错误、教学注解完整）"
+    ? "多项信号支持此技能可复用（多工具、全部步骤成功、教学注解完整）"
     : score.confidence >= 0.5
       ? "中等置信度，建议人工确认后再 promote"
-      : "低置信度，建议在相似场景验证成功后再 promote";
+      : hadFailures
+        ? `低置信度（${score.signals.failedCount} 个工具步骤失败），建议在相似场景验证成功后再 promote`
+        : "低置信度，建议在相似场景验证成功后再 promote";
 
   // Teaching annotation sections
   const teachingSections = buildTeachingSections(teachingMeta);
@@ -141,6 +146,10 @@ function buildDraftMarkdown(
   const steps = toolCalls
      .map((call, i) => formatToolStepForDistill(call, i))
     .join("\n");
+
+  const sourceLine = hadFailures
+    ? `- 注意：来源对话中有 ${score.signals.failedCount} 个工具步骤失败，本技能未经完整成功验证。`
+    : "- 本技能来自真实对话中的成功工具链，不是示例或 mock 数据。";
 
   const rows = toolNames
     .map((tool) => `| \`${tool}\` | 本轮已验证工具链的一部分 | 是 |`)
@@ -194,7 +203,7 @@ example_query: ${yamlScalar(userMessage, 120)}
 
 ## 适用场景
 - 用户再次提出与本轮相似的需求时，先阅读本技能复用已验证路径。
-- 本技能来自真实对话中的成功工具链，不是示例或 mock 数据。
+${sourceLine}
 - 若设备、路径、版本或用户目标已经变化，先重新核实关键事实。
 
 ## 执行流程

@@ -203,6 +203,61 @@ const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dmoss-distiller-'));
   console.log('  [PASS] distillCandidate infers risk from tool names');
 }
 
+// ─── Regression: host-side exec must not imply a board ────────────
+// Bare `exec`/`write_file`/`read_file` are host tools; requires_board used to
+// flip to true (and delegate_preference to board) for every shell-using skill.
+
+{
+  const writeResult = await writeSkillCandidate({
+    workspaceDir: tmpDir,
+    sessionKey: 'distill-host-exec',
+    turnHash: 'he1',
+    gate: 'strict',
+    toolCalls: [
+      { name: 'exec', input: { command: 'echo hi' }, failed: false },
+      { name: 'write_file', input: { path: 'a.txt' }, failed: false },
+      { name: 'read_file', input: { path: 'a.txt' }, failed: false },
+    ],
+    userMessage: 'host-only exec skill',
+    assistantText: 'completed',
+    runMeta: { completionKind: 'complete', model: 'test', totalElapsedMs: 100 },
+  });
+
+  const result = await distillCandidate(tmpDir, writeResult.candidateId);
+  assert.ok(result);
+  assert.match(result.markdown, /requires_board: false/);
+  assert.match(result.markdown, /delegate_preference: local/);
+  assert.doesNotMatch(result.markdown, /permissions: [^\n]*device_exec/);
+  console.log('  [PASS] regression: host exec does not imply requires_board');
+}
+
+// ─── Regression: failed steps must not be described as error-free ─
+
+{
+  const writeResult = await writeSkillCandidate({
+    workspaceDir: tmpDir,
+    sessionKey: 'distill-failed-run',
+    turnHash: 'fr1',
+    gate: 'strict',
+    toolCalls: [
+      { name: 'exec', input: { command: 'echo hi' }, failed: true },
+      { name: 'write_file', input: { path: 'a.txt' }, failed: true },
+      { name: 'read_file', input: { path: 'a.txt' }, failed: false },
+    ],
+    userMessage: 'failed run skill',
+    assistantText: 'claimed done',
+    runMeta: { completionKind: 'complete', model: 'test', totalElapsedMs: 100 },
+  });
+
+  const result = await distillCandidate(tmpDir, writeResult.candidateId);
+  assert.ok(result);
+  assert.doesNotMatch(result.markdown, /quality: high/);
+  assert.doesNotMatch(result.markdown, /无错误/);
+  assert.doesNotMatch(result.markdown, /成功工具链/);
+  assert.match(result.markdown, /工具步骤失败/);
+  console.log('  [PASS] regression: failed run is not described as error-free');
+}
+
 // ─── Cleanup ──────────────────────────────────────────────────────
 
 await fs.rm(tmpDir, { recursive: true, force: true });

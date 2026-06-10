@@ -39,12 +39,7 @@ function canWriteDir(dir: string): boolean {
 }
 
 function sourceLooksEnv(source: string): boolean {
-  return source.startsWith('DMOSS_') ||
-    source.endsWith('_API_KEY') ||
-    source.endsWith('_BASE_URL') ||
-    source === 'OPENAI_BASE_URL' ||
-    source === 'ANTHROPIC_BASE_URL' ||
-    source === 'DASHSCOPE_BASE_URL';
+  return source.startsWith('DMOSS_');
 }
 
 function renderMcpDoctor(config: ResolvedCliConfig): string {
@@ -123,13 +118,20 @@ function renderBaseUrlDoctor(config: ResolvedCliConfig): string {
 }
 
 export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
-  const lines = ['[doctor] dmoss'];
+  const lines = ['[doctor] Moss'];
   const nodeMajor = Number.parseInt(process.versions.node.split('.')[0] || '0', 10);
   lines.push(nodeMajor >= 22 ? ok('node', process.version) : fail('node', `${process.version}; requires >=22.16.0`));
   lines.push(ok('version', options.currentVersion));
   lines.push(options.config.apiKey
     ? ok('auth', `configured via ${options.config.apiKeySource}`)
-    : fail('auth', 'missing API key; run moss setup or set DEEPSEEK_API_KEY'));
+    : fail('auth', 'missing API key; run moss setup'));
+  // Built-in gateway visibility: "active" / "shadowed by user env-config" — the
+  // two states behind most "fresh install asks for a model" reports.
+  if (options.config.usingBundledDefault) {
+    lines.push(ok('built-in model', 'active (no API key needed)'));
+  } else if (options.config.bundledDefaultSuppressedBy) {
+    lines.push(ok('built-in model', `available but shadowed by ${options.config.bundledDefaultSuppressedBy}`));
+  }
   lines.push(ok('provider', `${options.config.provider} (${options.config.providerSource})`));
   lines.push(ok('model', `${options.config.model} (${options.config.modelSource})`));
   lines.push(renderBaseUrlDoctor(options.config));
@@ -146,16 +148,20 @@ export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
   lines.push(renderMcpDoctor(options.config));
 
   const envSources = [
-    options.config.providerSource,
-    options.config.apiKeySource,
-    options.config.modelSource,
-    options.config.baseUrlSource,
     options.config.workspaceSource,
     options.config.mcpEnabledSource,
     options.config.mcpConfigPathSource,
   ].filter(sourceLooksEnv);
   if (envSources.length > 0) {
     lines.push(warn('env overrides', [...new Set(envSources)].join(', ')));
+  }
+  // Model settings never come from env (decision 2026-06); a set-but-ignored
+  // provider key would otherwise look like silent breakage after an upgrade.
+  if (options.config.ignoredModelEnvVars.length > 0) {
+    lines.push(warn(
+      'env ignored',
+      `${options.config.ignoredModelEnvVars.join(', ')} — model settings come only from moss config; run moss setup or moss config set`,
+    ));
   }
 
   const notice = await checkForCliUpdate({

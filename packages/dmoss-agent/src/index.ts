@@ -331,8 +331,10 @@ export { createWebFetchTool, type WebFetchOptions } from './tools/web-fetch.js';
 export {
   createWebSearchTool,
   duckDuckGoSearch,
+  duckDuckGoLiteSearch,
   createBraveSearch,
   type WebSearchOptions,
+  type WebSearchRetryOptions,
   type WebSearchBackend,
   type WebSearchBackendOptions,
   type WebSearchResult,

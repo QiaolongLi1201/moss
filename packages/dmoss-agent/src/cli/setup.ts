@@ -2,15 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as readline from 'node:readline';
 import { stdin as input, stderr as output, stdout as standardOutput } from 'node:process';
+import { stripEndpointSuffix } from '../provider/api-v1-url.js';
 import {
   auditResolvedCliConfig,
   loadCliConfigFile,
   loadConfigFile,
   normalizeApprovalPolicyConfig,
   normalizeConfigProfile,
-  normalizeProvider,
   normalizeSafetyModeConfig,
   parseConfigBoolean,
+  parseProviderPreset,
   parseTrustedTools,
   PROVIDER_PRESETS,
   resolveCliConfig,
@@ -105,9 +106,9 @@ function sanitizeBaseUrl(value: string): string {
     url.password = '';
     url.search = '';
     url.hash = '';
-    return url.toString().replace(/\/+$/, '').replace(/\/v1$/, '');
+    return stripEndpointSuffix(url.toString());
   } catch {
-    return trimmed.replace(/\/+$/, '').replace(/\/v1$/, '');
+    return stripEndpointSuffix(trimmed);
   }
 }
 
@@ -152,6 +153,7 @@ function serializeResolvedConfig(resolved: ReturnType<typeof resolveCliConfig>):
     imageInputSource: resolved.imageInputSource,
     apiKeyConfigured: Boolean(resolved.apiKey),
     apiKeySource: resolved.apiKeySource,
+    ignoredModelEnvVars: [...resolved.ignoredModelEnvVars],
     workspace: resolved.workspace,
     workspaceSource: resolved.workspaceSource,
     safetyMode: resolved.safetyMode,
@@ -395,7 +397,7 @@ export function runConfigValidate(
 
 export async function runSetupWizard(): Promise<void> {
   const current = loadConfigFile();
-  print('D-Moss model setup');
+  print('Moss model setup');
   print('');
   print('Choose provider:');
   print('  1. DeepSeek (recommended)');
@@ -641,9 +643,27 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
     }
     next.profile = profile;
   }
-  else if (key === 'provider') next.provider = normalizeProvider(value);
+  else if (key === 'provider') {
+    const provider = parseProviderPreset(value);
+    if (!provider) {
+      // normalizeProvider silently coerced unknown values to a default,
+      // which buried typos until the first model call failed opaquely.
+      print(`Unknown provider: ${value}`);
+      print('Supported provider values: deepseek, qwen, openai, anthropic, openai-compatible');
+      process.exitCode = 1;
+      return;
+    }
+    next.provider = provider;
+  }
   else if (key === 'model') next.model = value;
-  else if (key === 'baseUrl') next.baseUrl = sanitizeBaseUrl(value);
+  else if (key === 'baseUrl') {
+    const sanitized = sanitizeBaseUrl(value);
+    if (sanitized !== value.trim().replace(/\/+$/, '')) {
+      print(`[config] baseUrl normalized to API root: ${sanitized}`);
+      print('[config] (Moss appends /v1/chat/completions itself — do not include the endpoint path.)');
+    }
+    next.baseUrl = sanitized;
+  }
   else if (key === 'imageInput') {
     const enabled = parseConfigBoolean(value);
     if (enabled === null) {
@@ -835,16 +855,25 @@ export function runConfigUnset(args: string[], startDir = process.cwd()): void {
   print(`[config] ${scope}${key} removed from ${target.configPath}`);
 }
 
-export function printMissingConfigGuidance(interactive: boolean): void {
-  print('D-Moss needs a model configuration before it can run.');
+export function printMissingConfigGuidance(interactive: boolean, options: { bundledDefaultSuppressedBy?: string } = {}): void {
+  print('Moss needs a model configuration before it can run.');
+  if (options.bundledDefaultSuppressedBy) {
+    // Without this, a half-filled config file (e.g. a baseUrl without an API
+    // key) silently disabled the built-in gateway and the prompt looked like
+    // a broken fresh install.
+    print('');
+    print(`Note: the built-in model gateway is available but disabled because ${options.bundledDefaultSuppressedBy} already sets model settings.`);
+    print('Remove them (moss config unset provider|model|baseUrl) or complete them with an API key.');
+  }
   print('');
   print('Fast path:');
-    print('  moss setup');
+  print('  moss setup');
   print('');
-  print('Script/env path:');
-  print('  export DEEPSEEK_API_KEY=your-key');
-  print('  export DMOSS_MODEL=deepseek-v4-pro');
-  print('  export DMOSS_BASE_URL=https://api.deepseek.com');
+  print('Script path (no TTY — model settings are read from config files, never env vars):');
+  print('  moss config set provider deepseek');
+  print('  moss config set model deepseek-v4-pro');
+  print('  write the API key with `moss setup` once, or provide a config file:');
+  print('  moss --config-file /path/to/config.json  # {"provider":"deepseek","apiKey":"..."}');
   print('');
   if (interactive) {
     print('You can run setup now, then start `dmoss` again.');
@@ -853,8 +882,8 @@ export function printMissingConfigGuidance(interactive: boolean): void {
   }
 }
 
-export async function offerSetupForInteractiveMissingConfig(): Promise<void> {
-  printMissingConfigGuidance(true);
+export async function offerSetupForInteractiveMissingConfig(options: { bundledDefaultSuppressedBy?: string } = {}): Promise<void> {
+  printMissingConfigGuidance(true, options);
   const answer = await question('Start setup now? [Y/n] ');
   if (!answer || /^y(es)?$/i.test(answer)) {
     await runSetupWizard();

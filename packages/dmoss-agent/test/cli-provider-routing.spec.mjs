@@ -12,7 +12,19 @@ import path from 'node:path';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..');
 
-function runProviderProbe(env) {
+// Model env vars are ignored by design (IGNORED_MODEL_ENV_VARS): the probe
+// configures provider/baseUrl/apiKey via a config FILE in a temp config dir.
+function writeProbeConfig(modelConfig) {
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-provider-routing-'));
+  fs.writeFileSync(
+    path.join(configDir, 'config.json'),
+    JSON.stringify({ apiKey: 'test-key', ...modelConfig }),
+    { mode: 0o600 },
+  );
+  return configDir;
+}
+
+function runProviderProbe(modelConfig) {
   const script = `
     globalThis.fetch = async (url) => {
       console.log(String(url));
@@ -26,9 +38,8 @@ function runProviderProbe(env) {
     env: {
       PATH: process.env.PATH,
       HOME: os.homedir(),
-      DMOSS_CONFIG_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-provider-routing-')),
-      DMOSS_API_KEY: 'test-key',
-      ...env,
+      DMOSS_CONFIG_DIR: writeProbeConfig(modelConfig),
+      DMOSS_NO_BUNDLED_DEFAULT: '1',
     },
     encoding: 'utf-8',
   });
@@ -36,8 +47,8 @@ function runProviderProbe(env) {
 
 {
   const result = runProviderProbe({
-    DMOSS_PROVIDER: 'anthropic',
-    DMOSS_BASE_URL: 'https://internal-llm-gateway.example.com',
+    provider: 'anthropic',
+    baseUrl: 'https://internal-llm-gateway.example.com',
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /internal-llm-gateway\.example\.com\/v1\/messages/);
@@ -45,8 +56,8 @@ function runProviderProbe(env) {
 
 {
   const result = runProviderProbe({
-    DMOSS_PROVIDER: 'anthropic',
-    DMOSS_BASE_URL: 'https://internal-llm-gateway.example.com/v1',
+    provider: 'anthropic',
+    baseUrl: 'https://internal-llm-gateway.example.com/v1',
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /internal-llm-gateway\.example\.com\/v1\/messages/);
@@ -55,8 +66,8 @@ function runProviderProbe(env) {
 
 {
   const result = runProviderProbe({
-    DMOSS_PROVIDER: 'openai-compatible',
-    DMOSS_BASE_URL: 'https://anthropic-compatible-openai-proxy.example.com',
+    provider: 'openai-compatible',
+    baseUrl: 'https://anthropic-compatible-openai-proxy.example.com',
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /anthropic-compatible-openai-proxy\.example\.com\/v1\/chat\/completions/);
@@ -64,8 +75,8 @@ function runProviderProbe(env) {
 
 {
   const result = runProviderProbe({
-    DMOSS_PROVIDER: 'openai-compatible',
-    DMOSS_BASE_URL: 'https://anthropic-compatible-openai-proxy.example.com/v1',
+    provider: 'openai-compatible',
+    baseUrl: 'https://anthropic-compatible-openai-proxy.example.com/v1',
   });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /anthropic-compatible-openai-proxy\.example\.com\/v1\/chat\/completions/);
@@ -228,10 +239,11 @@ function runProviderProbe(env) {
     env: {
       PATH: process.env.PATH,
       HOME: os.homedir(),
-      DMOSS_CONFIG_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-provider-error-')),
-      DMOSS_PROVIDER: 'openai-compatible',
-      DMOSS_BASE_URL: 'https://proxy.example.com',
-      DMOSS_API_KEY: 'test-key',
+      DMOSS_CONFIG_DIR: writeProbeConfig({
+        provider: 'openai-compatible',
+        baseUrl: 'https://proxy.example.com',
+      }),
+      DMOSS_NO_BUNDLED_DEFAULT: '1',
     },
     encoding: 'utf-8',
   });

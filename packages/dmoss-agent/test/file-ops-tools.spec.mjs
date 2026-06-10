@@ -75,8 +75,13 @@ console.log('[TEST] move_file rejects a missing source');
 
 console.log('[TEST] move_file blocks escaping the sandbox');
 {
-  const out = await moveFileTool.execute({ source: 'c.txt', destination: '../escape.txt' }, CTX);
-  assert.match(out, /Error/, 'a path outside the workspace must be rejected');
+  // Sandbox escapes now THROW (isError classification) instead of returning
+  // an "Error ..." success string.
+  await assert.rejects(
+    () => moveFileTool.execute({ source: 'c.txt', destination: '../escape.txt' }, CTX),
+    /Error moving file/,
+    'a path outside the workspace must be rejected',
+  );
   assert.ok(!(await exists(path.join(dir, '..', 'escape.txt'))), 'no file should be written outside the sandbox');
 }
 

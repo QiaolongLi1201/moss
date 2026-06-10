@@ -33,14 +33,17 @@ async function sshExec(
     });
     return result.stdout.trim();
   } catch (err) {
+    // Failures must THROW so the pipeline marks the result isError (UI "err",
+    // skill evidence failed:true). Returning the text rendered SSH failures
+    // as successful tool calls.
     const missingExecutable = missingSshExecutableProcessError(
       err,
       config.password ? 'sshpass' : 'ssh',
     );
-    if (missingExecutable) return missingExecutable.stderr;
+    if (missingExecutable) throw new Error(missingExecutable.stderr);
     if (err instanceof ProcessError) {
       const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
-      return output || `Error: ${err.message}`;
+      throw new Error(output || err.message);
     }
     throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
       hint: 'Check SSH connectivity and device power',

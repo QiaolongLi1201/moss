@@ -27,6 +27,14 @@ const BASE_TOOL_OUTPUT_LIMITS: Record<string, number> = {
   bash: 4_500,
 };
 
+/**
+ * DESIGN INTENT — deliberate process-wide registry (cf. keep-alive-dispatcher):
+ * output limits are host-level configuration registered once at startup
+ * (`registerToolOutputLimits`), keyed by tool name. All agents in a process
+ * share one limit table by design; per-agent overrides would need an instance
+ * config channel — revisit if a real host needs different limits per agent in
+ * the same process.
+ */
 let _extraToolOutputLimits: Record<string, number> = {};
 
 /**

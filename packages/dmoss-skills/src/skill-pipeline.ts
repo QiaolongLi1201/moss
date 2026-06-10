@@ -1,5 +1,5 @@
 import * as crypto from "node:crypto";
-import type { LLMMessage } from "./llm-message.js";
+import { isSyntheticUserText, type LLMMessage } from "./llm-message.js";
 import { writeSkillCandidate, listCandidates } from "./skill-candidate-store.js";
 import { distillCandidate, type DistillResult } from "./skill-distiller.js";
 import { promoteSkillCandidate, type PromoteResult } from "./skill-promoter.js";
@@ -144,6 +144,10 @@ export class SkillPipeline {
     for (const msg of messages) {
       if (msg.role !== "user") continue;
       if (typeof msg.content === "string" && msg.content.trim()) {
+        // Skip runtime-synthesized user messages (compaction summaries,
+        // [Steering]/[System] injections) — using them produced garbage
+        // skill names like "the-conversation-history-before-…".
+        if (isSyntheticUserText(msg.content)) continue;
         return msg.content.trim().slice(0, 600);
       }
       if (Array.isArray(msg.content)) {
@@ -164,6 +168,7 @@ export class SkillPipeline {
           .map((b) => b.text)
           .join(" ")
           .trim();
+        if (text && isSyntheticUserText(text)) continue;
         if (text) return text.slice(0, 600);
       }
     }

@@ -34,6 +34,24 @@ Exact `contractVersion` still wins if it is present in the requirement. Range
 fields are only used when Moss intentionally allows more than one host contract
 version.
 
+### Contract-version bump policy
+
+`MOSS_HOST_ADAPTER_CONTRACT_VERSION` is decoupled from package semver on
+purpose: most releases ship runtime changes without touching the manifest
+shape. The binding rule between the two is:
+
+- Bumping `MOSS_HOST_ADAPTER_CONTRACT_VERSION` (manifest shape or
+  compatibility behavior changed) requires at least a **minor** version bump
+  of `@rdk-moss/core` while the project is on 0.x, and a **major** bump once
+  1.0 ships — never a patch. The release notes must name the contract bump.
+- A package version bump alone never implies a contract bump; hosts detect
+  contract compatibility exclusively through `evaluateMossHostCompatibility()`,
+  not by comparing package versions.
+
+Changing the manifest shape or the compatibility behavior without bumping the
+contract version is a contract violation — see the review requirement in
+`CLAUDE.md` (API stability).
+
 ## Minimal Host Manifest
 
 ```ts

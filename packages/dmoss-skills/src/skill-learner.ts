@@ -18,7 +18,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import type { LLMMessage } from './llm-message.js';
+import { isSyntheticUserText, type LLMMessage } from './llm-message.js';
 
 export interface LearnedSkill {
   name: string;
@@ -93,8 +93,13 @@ export class SkillLearner {
     const looksSuccessful = successKeyword || !finalFailed;
     if (!looksSuccessful) return null;
 
+    // Skip runtime-synthesized user messages (compaction summaries,
+    // [Steering]/[System] injections) — they are not the user's request and
+    // produced garbage skill names after long runs. No real request → no skill.
     const userMessages = messages.filter(m => m.role === 'user');
-    const firstUserMsg = userMessages[0] ? this.extractText(userMessages[0]) : '';
+    const firstUserMsg = userMessages
+      .map(m => this.extractText(m))
+      .find(text => text && !isSyntheticUserText(text)) ?? '';
     if (!firstUserMsg) return null;
 
     const pattern = this.extractToolChainPattern(toolCalls);
@@ -178,9 +183,28 @@ export class SkillLearner {
     if (failedCalls.length === 0 && toolCalls.length >= 3) score += 0.1;
 
     const hasVerification = toolCalls.some(tc =>
-      tc.name === 'exec' || tc.name === 'device_exec' || tc.name === 'read'
+      tc.name === 'exec' || tc.name === 'device_exec' ||
+      tc.name === 'read' || tc.name === 'read_file' || tc.name === 'device_file_read'
     );
     if (hasVerification) score += 0.05;
+
+    // Failure gates (mirrors skill-scorer.ts): a run whose failures were never
+    // recovered by the SAME tool, or where most calls failed, is not a
+    // reusable verified path — cap it below typical promote thresholds.
+    // (Regression: a 3-of-5-failed run scored 0.75 and was saved to learned/.)
+    const unrecoveredFailure = toolCalls.some(
+      (tc, i) =>
+        tc.failed &&
+        !toolCalls.slice(i + 1).some(later => later.name === tc.name && !later.failed),
+    );
+    const endsWithFailure = toolCalls.length > 0 && toolCalls[toolCalls.length - 1].failed === true;
+    if (
+      unrecoveredFailure ||
+      endsWithFailure ||
+      (toolCalls.length > 0 && failedCalls.length / toolCalls.length > 0.5)
+    ) {
+      score = Math.min(score, 0.4);
+    }
 
     return Math.min(1, score);
   }
@@ -193,8 +217,10 @@ export class SkillLearner {
       .map(tc => `${tc.name}:${Object.keys(tc.input).sort().join(',')}`)
       .join('|');
     const succeeded = !toolCalls[toolCalls.length - 1]?.failed;
+    // Recovery means the SAME tool succeeded after failing; an unrelated later
+    // success proves nothing about the failed step.
     const errorRecovered = toolCalls.some((tc, i) =>
-      tc.failed && i < toolCalls.length - 1 && !toolCalls[toolCalls.length - 1].failed
+      tc.failed && toolCalls.slice(i + 1).some(later => later.name === tc.name && !later.failed)
     );
     return { toolSequence, inputSignature, succeeded, errorRecovered };
   }
@@ -217,13 +243,19 @@ export class SkillLearner {
   private extractErrorRecoveryPatterns(
     toolCalls: ReturnType<typeof this.extractToolCalls>,
   ): string[] {
+    // A failure counts as recovered only when the SAME tool succeeds later;
+    // the successful steps in between are the remedy worth recording.
     const patterns: string[] = [];
-    for (let i = 0; i < toolCalls.length - 1; i++) {
-      if (toolCalls[i].failed && !toolCalls[i + 1].failed) {
-        patterns.push(
-          `${toolCalls[i].name} failed → recovered with ${toolCalls[i + 1].name}`
-        );
-      }
+    for (let i = 0; i < toolCalls.length; i++) {
+      if (!toolCalls[i].failed) continue;
+      const j = toolCalls.findIndex((tc, k) => k > i && tc.name === toolCalls[i].name && !tc.failed);
+      if (j === -1) continue;
+      const via = toolCalls.slice(i + 1, j).filter(tc => !tc.failed).map(tc => tc.name);
+      patterns.push(
+        via.length
+          ? `${toolCalls[i].name} failed → recovered with ${via.join(', ')} → ${toolCalls[j].name} succeeded`
+          : `${toolCalls[i].name} failed → recovered with ${toolCalls[j].name}`
+      );
     }
     return patterns;
   }

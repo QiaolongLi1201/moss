@@ -54,6 +54,7 @@ function resolvedConfig(overrides = {}) {
       mcpEnabledSource: 'default',
       mcpConfigPath: path.join(tmp, 'mcp.json'),
       mcpConfigPathSource: 'default',
+      ignoredModelEnvVars: [],
       configPath: path.join(tmp, 'config.json'),
       ...overrides,
     },
@@ -79,6 +80,22 @@ async function doctor(config) {
     assert.match(output, /ok\s+approval: prompt \(profile:balanced\)/);
     assert.match(output, /ok\s+trustedTools: none \(profile:balanced\)/);
     assert.match(output, /ok\s+mcp: disabled \(default\); config .*mcp\.json/);
+    assert.doesNotMatch(output, /env ignored/);
+  } finally {
+    fixture.cleanup();
+  }
+}
+
+// Set-but-ignored model env vars surface as a structured warn line, so a
+// leftover DEEPSEEK_API_KEY explains itself instead of silently doing nothing.
+{
+  const fixture = resolvedConfig({
+    ignoredModelEnvVars: ['DEEPSEEK_API_KEY', 'DMOSS_PROVIDER'],
+  });
+  try {
+    const output = await doctor(fixture.config);
+    assert.match(output, /warn\s+env ignored: DEEPSEEK_API_KEY, DMOSS_PROVIDER/);
+    assert.match(output, /model settings come only from moss config/);
   } finally {
     fixture.cleanup();
   }

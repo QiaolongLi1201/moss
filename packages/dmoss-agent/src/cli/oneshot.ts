@@ -116,7 +116,9 @@ export async function runOneShot(
     writeStructured(formatHeadlessThrownError(state, err));
   }
 
-  if (finalResult && (options.headless || outputFormat !== 'text') && isHeadlessResultError(finalResult)) {
+  // An error result must be observable by scripts/CI in every output mode.
+  // Text mode previously exited 0 even when the run ended in a fatal error.
+  if (finalResult ? isHeadlessResultError(finalResult) : Boolean(state.lastError)) {
     process.exitCode = 1;
   }
 }

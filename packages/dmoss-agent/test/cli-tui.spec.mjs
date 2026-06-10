@@ -38,11 +38,19 @@ import {
   statusLine,
   stopRequestedMessage,
   transcriptViewportRows,
+  createTranscriptId,
   visibleText,
 } from '../dist/cli/tui.js';
 
 function nodeCommand(source) {
   return `"${process.execPath}" -e ${JSON.stringify(source)}`;
+}
+
+{
+  const now = 1_781_061_854_234;
+  const ids = Array.from({ length: 5 }, () => createTranscriptId(now));
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(ids, [...ids].sort((a, b) => a - b));
 }
 
 {
@@ -309,7 +317,7 @@ assert.equal(transcriptViewportRows({
     workspace: process.cwd(),
     profile: 'autonomous',
   });
-  assert.match(line, /D-Moss  ready  user-configured-model/);
+  assert.match(line, /Moss  ready  user-configured-model/);
   assert.match(line, /profile autonomous/);
   assert.match(line, /cache stable/);
   assert.match(statusLine({

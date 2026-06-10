@@ -99,6 +99,13 @@ export interface PromptConfig {
    */
   includeAgentBehaviorPrompt?: boolean;
   /**
+   * When false, omit the response-language policy (English-first; the model
+   * auto-detects the user's most recent message language and replies in it)
+   * from `buildSystemPrompt`. Set false when the host controls output language
+   * itself. Default: true.
+   */
+  includeLanguagePolicyPrompt?: boolean;
+  /**
    * Optional per-turn long-term-memory context provider. Called at the start of
    * each agent run; the returned text (e.g. a `MemoryManager.buildDigest()`
    * digest) is injected into the dynamic system-prompt layer so persistent

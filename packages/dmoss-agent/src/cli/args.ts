@@ -2,7 +2,7 @@ import path from 'node:path';
 import { normalizeApprovalPolicyConfig, normalizeConfigProfile, normalizeSafetyModeConfig, parseConfigBoolean, parseTrustedTools, safeProcessCwd, type CliConfigOverrides } from './config.js';
 import type { CliSafetyMode } from './approval.js';
 
-export type CliCommand = 'chat' | 'setup' | 'auth' | 'config' | 'doctor' | 'update' | 'resume' | 'fork';
+export type CliCommand = 'chat' | 'setup' | 'auth' | 'config' | 'doctor' | 'update' | 'resume' | 'fork' | 'mcp';
 export type ApprovalPolicy = 'prompt' | 'never';
 
 export interface ParsedCliArgs {
@@ -143,7 +143,8 @@ function asCommand(value: string | undefined): CliCommand | null {
     value === 'doctor' ||
     value === 'update' ||
     value === 'resume' ||
-    value === 'fork'
+    value === 'fork' ||
+    value === 'mcp'
   ) {
     return value;
   }

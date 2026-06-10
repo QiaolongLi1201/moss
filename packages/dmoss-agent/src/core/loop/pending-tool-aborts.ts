@@ -17,7 +17,18 @@ interface PendingAbortEntry {
 const PENDING_ABORT_TTL_MS = 5 * 60 * 1000;
 const GC_INTERVAL_MS = 60 * 1000;
 
-/** sessionKey -> toolUseId -> entry */
+/**
+ * sessionKey -> toolUseId -> entry
+ *
+ * DESIGN INTENT — deliberate process-wide singleton (cf. keep-alive-dispatcher):
+ * entries are keyed by sessionKey, and two DmossAgent instances sharing a
+ * sessionKey would already be sharing the same session store — so per-session
+ * keying IS the isolation boundary. Entries are TTL-bounded (5 min) and the GC
+ * timer is unref'd, so the map cannot grow unbounded or hold the process open.
+ * Revisit (move onto the agent instance) only if the host-adapter multi-tenant
+ * RFC introduces same-key sessions in one process.
+ * Isolation guarded by test/pending-tool-aborts.spec.mjs.
+ */
 const pendingAbortBySession = new Map<string, Map<string, PendingAbortEntry>>();
 
 let gcTimer: ReturnType<typeof setInterval> | undefined;

@@ -79,7 +79,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       } catch (err) {
         if (err instanceof ProcessError) {
           const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
-          return `Device command failed (exit ${err.exitCode}):\n${output || err.message}`;
+          throw new Error(`Device command failed (exit ${err.exitCode}):\n${output || err.message}`);
         }
         throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
           hint: 'Check SSH connectivity and credentials',
@@ -110,7 +110,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       } catch (err) {
         if (err instanceof ProcessError) {
           const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
-          return `Failed to get device info (exit ${err.exitCode}):\n${output || err.message}`;
+          throw new Error(`Failed to get device info (exit ${err.exitCode}):\n${output || err.message}`);
         }
         throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
           hint: 'Check SSH connectivity and device power',
@@ -147,7 +147,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       } catch (err) {
         if (err instanceof ProcessError) {
           const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
-          return `Failed to read ${input.path} (exit ${err.exitCode}):\n${output || err.message}`;
+          throw new Error(`Failed to read ${input.path} (exit ${err.exitCode}):\n${output || err.message}`);
         }
         throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
           hint: 'Check SSH connectivity and file path',
@@ -174,7 +174,7 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       } catch (err) {
         if (err instanceof ProcessError) {
           const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
-          return `Failed to list ${dir} (exit ${err.exitCode}):\n${output || err.message}`;
+          throw new Error(`Failed to list ${dir} (exit ${err.exitCode}):\n${output || err.message}`);
         }
         throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
           hint: 'Check SSH connectivity and directory path',

@@ -202,6 +202,9 @@ await runLoginCallbackTest((redirectUrl) => {
 
 {
   const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-community-auth-optional-'));
+  // Model env vars are ignored by design (IGNORED_MODEL_ENV_VARS), so the
+  // API key must come from the config file, not DMOSS_API_KEY.
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ apiKey: 'test-key' }), { mode: 0o600 });
   const result = spawnSync(process.execPath, [
     cliPath,
     '--provider',
@@ -217,7 +220,7 @@ await runLoginCallbackTest((redirectUrl) => {
     env: {
       ...process.env,
       DMOSS_CONFIG_DIR: configDir,
-      DMOSS_API_KEY: 'test-key',
+      DMOSS_NO_BUNDLED_DEFAULT: '1',
       DMOSS_NO_COLOR: '1',
       NO_PROXY: '127.0.0.1,localhost',
       no_proxy: '127.0.0.1,localhost',

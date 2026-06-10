@@ -34,7 +34,10 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       { command: '/diff', description: 'show git working-tree changes' },
       { command: '/rewind [seq]', description: 'undo file edits from a checkpoint', hidden: true },
       { command: '/memory', description: 'show stored long-term memories', hidden: true },
-      { command: '/skills', description: 'list learned SKILL.md files', hidden: true },
+      { command: '/skills', description: 'list available, learned, and candidate skills', hidden: true },
+      { command: '/skills promote <id>', description: 'promote a distilled skill candidate', hidden: true },
+      { command: '/skills discard <id>', description: 'discard a distilled skill candidate', hidden: true },
+      { command: '/skills forget <file>', description: 'delete a learned skill file', hidden: true },
     ],
   },
   {
@@ -68,7 +71,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       { command: '/upgrade', description: 'show install and update commands', hidden: true },
       { command: '/init', description: 'create an AGENTS.md project memory file', hidden: true },
       { command: '/help', description: 'show this command reference' },
-      { command: '/quit', description: 'exit D-Moss', hidden: true },
+      { command: '/quit', description: 'exit Moss', hidden: true },
     ],
   },
 ] as const;

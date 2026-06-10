@@ -207,7 +207,9 @@ function inferRisk(toolNames: string[]): "low" | "medium" | "high" {
 function inferPermissions(toolNames: string[]): string[] {
   const permissions = new Set<string>(["workspace_read"]);
   const joined = toolNames.join(" ");
-  if (/device_|board_|fleet_|exec|ssh|openclaw/i.test(joined)) permissions.add("device_exec");
+  // Host-side `exec` / `exec_background` are NOT board tools (bare `exec`
+  // used to force requires_board on every shell-using skill).
+  if (/device_|board_|fleet_|ssh|openclaw/i.test(joined)) permissions.add("device_exec");
   if (/write|upload|delete|rename|mkdir|local-skill|skill_mark_validated/i.test(joined)) permissions.add("workspace_write");
   if (/web_|forum_|community_|skillhub|find_skills|network|fetch|search/i.test(joined)) permissions.add("network");
   return [...permissions];

@@ -18,6 +18,7 @@ import type {
 } from '../core/llm/llm-provider.js';
 import { DmossError, ErrorCode } from '../errors.js';
 import { buildApiV1Url } from './api-v1-url.js';
+import { fetchWithConnectionContext } from './connection-error.js';
 
 export interface AnthropicLLMProviderConfig {
   apiKey: string;
@@ -161,7 +162,7 @@ export class AnthropicLLMProvider implements LLMProvider {
       ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
     };
 
-    const res = await fetch(buildApiV1Url(this.baseUrl, 'messages'), {
+    const res = await fetchWithConnectionContext(buildApiV1Url(this.baseUrl, 'messages'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

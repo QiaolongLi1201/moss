@@ -244,6 +244,15 @@ function rankEntriesByTerms(entries: MemoryEntry[], queryTerms: string[]): Memor
 }
 
 export class MemoryManager {
+  /**
+   * DESIGN INTENT — deliberate process-wide, per-target write chain:
+   * multiple MemoryManager instances may point at the same baseDir. Windows can
+   * return EPERM when those instances concurrently rename over the same
+   * index/embedding file, so same-target writes are serialized while unrelated
+   * memory files remain independent.
+   */
+  private static readonly atomicWriteChains = new Map<string, Promise<void>>();
+
   private baseDir: string;
   private entries: MemoryEntry[] = [];
   private loaded = false;
@@ -284,22 +293,55 @@ export class MemoryManager {
     this.loaded = true;
   }
 
+  /**
+   * M3: Atomic write — write to a UNIQUE temp file then rename. A fixed
+   * `.tmp` suffix lets two concurrent writers (e.g. two MemoryManager
+   * instances over the same baseDir) interleave into the same temp file and
+   * rename a torn JSON into place; unique names keep each rename atomic.
+   * On failure the temp file is removed best-effort.
+   */
+  private async atomicWrite(targetPath: string, data: string): Promise<void> {
+    const resolved = path.resolve(targetPath);
+    const previous = MemoryManager.atomicWriteChains.get(resolved) ?? Promise.resolve();
+    const current = previous
+      .catch(() => undefined)
+      .then(() => this.writeAtomically(resolved, data));
+    MemoryManager.atomicWriteChains.set(resolved, current);
+    try {
+      await current;
+    } finally {
+      if (MemoryManager.atomicWriteChains.get(resolved) === current) {
+        MemoryManager.atomicWriteChains.delete(resolved);
+      }
+    }
+  }
+
+  private async writeAtomically(targetPath: string, data: string): Promise<void> {
+    const tmpPath = `${targetPath}.${process.pid}-${Math.random().toString(36).slice(2, 10)}.tmp`;
+    try {
+      await fs.writeFile(tmpPath, data, 'utf-8');
+      await fs.rename(tmpPath, targetPath);
+    } catch (err) {
+      try {
+        await fs.rm(tmpPath, { force: true });
+      } catch {
+        // best-effort cleanup; the original error matters more
+      }
+      throw err;
+    }
+  }
+
   private async save(): Promise<void> {
     await fs.mkdir(this.baseDir, { recursive: true });
-    // M3: Atomic write — write to temp file then rename
-    const tmpPath = this.indexPath + '.tmp';
-    await fs.writeFile(tmpPath, JSON.stringify(this.entries, null, 2), 'utf-8');
-    await fs.rename(tmpPath, this.indexPath);
+    await this.atomicWrite(this.indexPath, JSON.stringify(this.entries, null, 2));
   }
 
   private async saveEmbeddings(): Promise<void> {
     if (!this.embeddingProvider) return;
     await fs.mkdir(this.baseDir, { recursive: true });
     const embedPath = path.join(this.baseDir, 'embeddings.json');
-    const tmp = embedPath + '.tmp';
     const arr = Array.from(this.embeddingMap.entries()).map(([id, embedding]) => ({ id, embedding }));
-    await fs.writeFile(tmp, JSON.stringify(arr), 'utf-8');
-    await fs.rename(tmp, embedPath);
+    await this.atomicWrite(embedPath, JSON.stringify(arr));
   }
 
   private pruneOrphanEmbeddings(): void {

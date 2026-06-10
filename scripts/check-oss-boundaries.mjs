@@ -65,13 +65,48 @@ function lineAt(body, index) {
   return body.slice(0, index).split(/\r?\n/).length;
 }
 
+/**
+ * Files that are git-ignored can never be committed, so they sit outside this
+ * check's threat model (credentials entering the public repo / its history).
+ * Scanning them produces false positives on documented publish-time artifacts
+ * — e.g. `packages/dmoss-agent/zero-config-default.json` (gitignored;
+ * generated at publish; intentionally carries a PUBLIC gateway token per
+ * zero-config-default.example.json) — and turns `verify` permanently red on
+ * any machine where such an artifact exists locally.
+ *
+ * Tracked files and untracked-but-committable files are still fully scanned.
+ * If git is unavailable, we conservatively scan everything — the failure mode
+ * keeps the check stronger, never weaker.
+ */
+function gitIgnoredSubset(files) {
+  if (files.length === 0) return new Set();
+  const relFiles = files.map((f) => path.relative(repoRoot, f));
+  try {
+    const out = execFileSync('git', ['check-ignore', '--stdin', '-z'], {
+      cwd: repoRoot,
+      input: relFiles.join('\0'),
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return new Set(out.split('\0').filter(Boolean).map((p) => path.join(repoRoot, p)));
+  } catch (err) {
+    // git check-ignore exits 1 when NO path is ignored — that is the normal
+    // "nothing to skip" outcome, not an error.
+    if (err && typeof err.status === 'number' && err.status === 1) return new Set();
+    return new Set();
+  }
+}
+
 for (const relPkg of packages) {
   const absPkg = path.join(repoRoot, relPkg);
   if (!fs.existsSync(absPkg)) {
     findings.push(`${relPkg}: missing package directory`);
     continue;
   }
-  for (const file of walk(absPkg)) {
+  const walked = walk(absPkg);
+  const gitIgnored = gitIgnoredSubset(walked);
+  for (const file of walked) {
+    if (gitIgnored.has(file)) continue;
     const rel = path.relative(repoRoot, file);
     const normalized = `/${rel.replaceAll(path.sep, '/')}`;
     for (const fragment of forbiddenPathFragments) {

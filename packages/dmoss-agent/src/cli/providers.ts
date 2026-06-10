@@ -8,6 +8,7 @@ import type {
   LLMContentBlock,
 } from '../core/llm/llm-provider.js';
 import { buildApiV1Url } from '../provider/api-v1-url.js';
+import { fetchWithConnectionContext } from '../provider/connection-error.js';
 
 export interface CliProviderRuntimeConfig {
   provider: CliProviderPreset;
@@ -165,7 +166,7 @@ async function callAnthropic(
     stream: false,
   };
 
-  const res = await fetch(buildApiV1Url(config.baseUrl, 'messages'), {
+  const res = await fetchWithConnectionContext(buildApiV1Url(config.baseUrl, 'messages'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -286,16 +287,27 @@ async function callOpenAI(
     }));
   }
 
-  const res = await fetch(buildApiV1Url(config.baseUrl, 'chat/completions'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-      ...communityAuthHeaders(config),
-    },
-    body: JSON.stringify(body),
-    signal: opts.abortSignal,
-  });
+  let res: Response;
+  try {
+    res = await fetchWithConnectionContext(buildApiV1Url(config.baseUrl, 'chat/completions'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+        ...communityAuthHeaders(config),
+      },
+      body: JSON.stringify(body),
+      signal: opts.abortSignal,
+    });
+  } catch (err) {
+    // A fresh install talks to the BUILT-IN gateway: when that is unreachable
+    // (server down, or plain-HTTP blocked by a corporate proxy) the user needs
+    // a way forward, not just a connection error.
+    if (config.usingBundledDefault && err instanceof Error) {
+      err.message += '\nThe built-in Moss gateway is unreachable — run `moss setup` to use your own model (DeepSeek/Qwen/OpenAI/Anthropic/any OpenAI-compatible), or retry later.';
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     const text = await res.text();

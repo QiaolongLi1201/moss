@@ -14,6 +14,7 @@ export {
   listCandidates,
   removeCandidate,
   getCandidatesRoot,
+  isUnsafeCandidateId,
   type SkillCandidateEvidence,
   type SkillCandidateToolCall,
   type SkillCandidateTeachingMeta,

@@ -32,6 +32,7 @@ import { connectDeviceForSession, parseDeviceConnectArgs } from './device-connec
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
 import {
+  describeModelListSource,
   formatCustomModelConfigInstructions,
   formatModelChoices,
   loadModelChoicesForRuntime,
@@ -99,6 +100,10 @@ interface GoalActivityState {
   objective: string;
   startedAt: number;
   runCount: number;
+  /** Live counters so long goal runs read as structured progress, not a spinner. */
+  turns?: number;
+  toolCalls?: number;
+  lastCheckpoint?: { status: string; nextAction: string };
 }
 
 interface RunPromptOptions {
@@ -179,8 +184,16 @@ function emojiEnabled(): boolean {
 // Sanitizers & helpers (unchanged public surface)
 // ────────────────────────────────────────────────────────────────────────────
 
+let lastTranscriptId = 0;
+
+export function createTranscriptId(now = Date.now()): number {
+  const timestamp = Number.isFinite(now) ? Math.trunc(now) : Date.now();
+  lastTranscriptId = Math.max(lastTranscriptId + 1, timestamp);
+  return lastTranscriptId;
+}
+
 function nextId(): number {
-  return Date.now() + Math.floor(Math.random() * 1000);
+  return createTranscriptId();
 }
 
 const ANSI_RE = new RegExp(
@@ -203,7 +216,7 @@ const MARKDOWN_TABLE_ROW = '\u001E';
 
 const AGENTS_MD_TEMPLATE = `# AGENTS.md
 
-Project memory for D-Moss and coding agents. Auto-loaded at the start of every session.
+Project memory for Moss and coding agents. Auto-loaded at the start of every session.
 
 ## Overview
 <!-- What this project is, in one or two sentences. -->
@@ -535,7 +548,7 @@ export function statusLine(options: {
   profile?: string;
 }): string {
   const parts = [
-    'D-Moss',
+    'Moss',
     statusBadge(options.state),
     options.model || 'no model',
     options.profile ? `profile ${options.profile}` : '',
@@ -578,7 +591,9 @@ function isLikelyBoardRuntime(): boolean {
   if (process.env.DMOSS_BOARD_RUNTIME === '1') return true;
   if (process.env.RDK_BOARD || process.env.RDK_MODEL || process.env.TROS_DISTRO) return true;
   if (process.platform !== 'linux') return false;
-  if (process.arch === 'arm64' || process.arch === 'arm') return true;
+  // arch alone is NOT evidence of a board: generic arm64 Linux (Apple-silicon
+  // Docker/WSL, AWS Graviton, arm64 dev containers) must stay 'pc-host'.
+  // Require a positive device-tree match instead.
   try {
     const model = fs.readFileSync('/proc/device-tree/model', 'utf8').toLowerCase();
     return /rdk|d-robotics|horizon|raspberry|rockchip|jetson/.test(model);
@@ -1188,8 +1203,40 @@ function listLearnedSkillFiles(workspace: string): string[] {
   ].sort((left, right) => left.localeCompare(right));
 }
 
+interface SkillCandidateListing {
+  id: string;
+  name: string;
+  confidence: string;
+}
+
+export function listSkillCandidates(workspace: string): SkillCandidateListing[] {
+  const paths = getMossWorkspacePaths(workspace);
+  try {
+    return fs.readdirSync(paths.skillCandidatesDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        let name = entry.name;
+        let confidence = '?';
+        try {
+          const draft = fs.readFileSync(path.join(paths.skillCandidatesDir, entry.name, 'SKILL.draft.md'), 'utf8');
+          const nameMatch = draft.match(/^name:\s*"?([^"\n]+)"?/m);
+          const confMatch = draft.match(/^confidence:\s*([0-9.]+)/m);
+          if (nameMatch) name = nameMatch[1].trim();
+          if (confMatch) confidence = confMatch[1];
+        } catch {
+          /* candidate without a draft still shows by id */
+        }
+        return { id: entry.name, name, confidence };
+      })
+      .sort((left, right) => left.id.localeCompare(right.id));
+  } catch {
+    return [];
+  }
+}
+
 export function renderSkills(workspace: string): string {
   const learned = listLearnedSkillFiles(workspace);
+  const candidates = listSkillCandidates(workspace);
   let registered: SkillMeta[] = [];
   try {
     registered = new SkillRegistry({ workspaceDir: workspace }).list();
@@ -1197,7 +1244,7 @@ export function renderSkills(workspace: string): string {
     registered = [];
   }
   const lines = [
-    `Skills: ${registered.length} available, ${learned.length} learned`,
+    `Skills: ${registered.length} available, ${learned.length} learned, ${candidates.length} candidate${candidates.length === 1 ? '' : 's'}`,
   ];
   if (registered.length > 0) {
     lines.push('Available SKILL.md entries:');
@@ -1210,8 +1257,15 @@ export function renderSkills(workspace: string): string {
     lines.push('Learned skills:');
     lines.push(...learned.slice(0, 8).map((file) => `  • ${file}`));
     if (learned.length > 8) lines.push(`  ... ${learned.length - 8} more learned skill${learned.length - 8 === 1 ? '' : 's'}`);
+    lines.push('  Manage: /skills forget <file>');
   } else {
     lines.push('Learned skills: none yet.');
+  }
+  if (candidates.length > 0) {
+    lines.push('Skill candidates (auto-distilled, not active yet):');
+    lines.push(...candidates.slice(0, 8).map((c) => `  • ${c.id}  ${c.name} (confidence ${c.confidence})`));
+    if (candidates.length > 8) lines.push(`  ... ${candidates.length - 8} more candidate${candidates.length - 8 === 1 ? '' : 's'}`);
+    lines.push('  Manage: /skills promote <candidate-id> · /skills discard <candidate-id>');
   }
   return lines.join('\n');
 }
@@ -1822,10 +1876,17 @@ function approvalChoicesForQuestion(question: string): ApprovalChoice[] {
 }
 
 function approvalPromptBodyLines(question: string): string[] {
-  return visibleText(question, 8)
+  // 26 lines leaves room for the inline diff / device-action preview.
+  return visibleText(question, 26)
     .split('\n')
     .map((line) => line.trimEnd())
     .filter((line) => line.trim() && !/^\s*Allow once, (?:allow this tool|trust this workspace|allow this scope) for the session, or deny\./.test(line));
+}
+
+function approvalBodyLineColor(line: string): string | undefined {
+  if (line.startsWith('+') && !line.startsWith('+++')) return theme.diffAddedWord;
+  if (line.startsWith('-') && !line.startsWith('---')) return theme.diffRemovedWord;
+  return theme.text;
 }
 
 export function ApprovalPromptLine({ question, selectedIndex = 0 }: ApprovalPromptLineProps): React.ReactElement {
@@ -1845,7 +1906,7 @@ export function ApprovalPromptLine({ question, selectedIndex = 0 }: ApprovalProm
     },
     React.createElement(Text, { color: theme.permission, bold: true }, 'Permission required'),
     ...approvalPromptBodyLines(question).map((line, idx) => (
-      React.createElement(Text, { key: idx, color: theme.text }, line)
+      React.createElement(Text, { key: idx, color: approvalBodyLineColor(line) }, line)
     )),
     React.createElement(
       Text,
@@ -2459,7 +2520,10 @@ function ModelPicker({ state }: { state: ModelPickerState }): React.ReactElement
     { flexDirection: 'column', paddingX: 1, marginBottom: 1 },
     React.createElement(Text, { color: theme.accent, bold: true }, 'Select model'),
     React.createElement(Text, { color: theme.textMuted },
-      `${state.list.providerLabel} (${state.list.provider}) · config ${state.list.configPath || '(default user config)'}`),
+      `${state.list.providerLabel} (${state.list.provider})${state.list.usingBundledDefault ? ' · built-in Moss gateway' : state.list.configPath && state.list.configPathExists !== false ? ` · config ${state.list.configPath}` : ''}`),
+    // Name the SOURCE of the entries — live gateway list vs config vs examples —
+    // so a deleted config or built-in gateway models never look contradictory.
+    React.createElement(Text, { color: theme.textMuted }, describeModelListSource(state.list)),
     React.createElement(Text, { color: theme.textMuted }, 'Choose for this session:'),
     ...visible.map((choice, offset) => {
       const index = start + offset;
@@ -2774,11 +2838,14 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       setGoalActivity(null);
       return;
     }
-    setGoalActivity({
+    // Preserve live progress counters (turns/tools/checkpoint) across goal
+    // run iterations — replacing the whole object reset them every run.
+    setGoalActivity((previous) => ({
+      ...(previous ?? {}),
       objective: state.objective,
       startedAt: state.startedAt,
       runCount: state.runCount,
-    });
+    }));
   }, []);
 
   const refreshSubagentTasks = useCallback((): void => {
@@ -3466,6 +3533,57 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       addTranscript('system', renderSkills(workspace));
       return true;
     }
+    if (message.startsWith('/skills promote ')) {
+      const candidateId = message.slice('/skills promote '.length).trim();
+      try {
+        const { promoteSkillCandidate } = await import('@rdk-moss/skills');
+        const result = await promoteSkillCandidate({ workspaceDir: workspace, candidateId });
+        if (result) {
+          addTranscript('system', `Promoted skill candidate to ${compactPath(result.skillPath)} — it is active for future sessions.`);
+        } else {
+          addTranscript('error', `Candidate "${candidateId}" was not found or failed validation. /skills lists candidate ids.`);
+        }
+      } catch (err) {
+        addTranscript('error', `Could not promote candidate: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
+    if (message.startsWith('/skills discard ')) {
+      const candidateId = message.slice('/skills discard '.length).trim();
+      // '.' would make path.join() resolve to the candidates root itself and
+      // rmSync(recursive) would wipe EVERY candidate — reject it explicitly.
+      if (!candidateId || candidateId === '.' || /[/\\]/.test(candidateId) || candidateId.includes('..')) {
+        addTranscript('error', 'Usage: /skills discard <candidate-id>');
+        return true;
+      }
+      const candidateDir = path.join(getMossWorkspacePaths(workspace).skillCandidatesDir, candidateId);
+      if (!fs.existsSync(candidateDir)) {
+        addTranscript('error', `Candidate "${candidateId}" was not found. /skills lists candidate ids.`);
+        return true;
+      }
+      fs.rmSync(candidateDir, { recursive: true, force: true });
+      addTranscript('system', `Discarded skill candidate "${candidateId}".`);
+      return true;
+    }
+    if (message.startsWith('/skills forget ')) {
+      const fileName = message.slice('/skills forget '.length).trim();
+      // '.' aliases the learned-skills directory itself — reject it explicitly.
+      if (!fileName || fileName === '.' || /[/\\]/.test(fileName) || fileName.includes('..')) {
+        addTranscript('error', 'Usage: /skills forget <learned-skill-file.md>');
+        return true;
+      }
+      const paths = getMossWorkspacePaths(workspace);
+      const target = [paths.learnedSkillsDir, paths.legacyLearnedSkillsDir]
+        .map((dir) => path.join(dir, fileName))
+        .find((candidate) => fs.existsSync(candidate));
+      if (!target) {
+        addTranscript('error', `Learned skill "${fileName}" was not found. /skills lists learned files.`);
+        return true;
+      }
+      fs.rmSync(target, { force: true });
+      addTranscript('system', `Forgot learned skill "${fileName}".`);
+      return true;
+    }
     if (message === '/sessions' || message === '/session') {
       try {
         const sessions = await agent.config.sessionStore.listSessions();
@@ -3607,7 +3725,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       }
       try {
         fs.writeFileSync(target, AGENTS_MD_TEMPLATE, 'utf8');
-        addTranscript('system', `Created ${compactPath(target)} — D-Moss auto-loads it. Fill in build/test commands, layout, and conventions.`);
+        addTranscript('system', `Created ${compactPath(target)} — Moss auto-loads it. Fill in build/test commands, layout, and conventions.`);
       } catch (err) {
         addTranscript('error', `Could not write AGENTS.md: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -3619,7 +3737,15 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
           command: 'git --no-pager diff --stat && git --no-pager diff',
           cwd: workspace,
         });
-        addTranscript('system', result.output.trim() || '(no unstaged working-tree changes)');
+        if (result.exitCode !== 0) {
+          // Outside a git repo, git dumps a usage screen — show one line instead.
+          const notRepo = /not a git repository/i.test(result.output);
+          addTranscript('error', notRepo
+            ? `Not a git repository: ${workspace} — /diff needs a git workspace.`
+            : `git diff failed (exit ${result.exitCode}): ${result.output.trim().split('\n')[0] || 'unknown error'}`);
+        } else {
+          addTranscript('system', result.output.trim() || '(no unstaged working-tree changes)');
+        }
       } catch (err) {
         addTranscript('error', `Could not run git diff: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -3710,6 +3836,16 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       })) {
         if (event.type === 'turn_start') {
           currentTurnIdRef.current = event.turn;
+          setGoalActivity((goal) => (goal ? { ...goal, turns: (goal.turns ?? 0) + 1 } : goal));
+        }
+        if (event.type === 'working_context_checkpoint') {
+          const rawNextAction = String(event.nextAction ?? '').replace(/\s+/g, ' ').trim();
+          const nextAction = sanitizeRenderableText(
+            rawNextAction.length > 120 ? `${rawNextAction.slice(0, 119)}…` : rawNextAction,
+          );
+          setGoalActivity((goal) => (goal
+            ? { ...goal, lastCheckpoint: { status: String(event.status), nextAction } }
+            : goal));
         }
         if (event.type === 'text_delta') {
           if (answerIdRef.current === null) {
@@ -3726,6 +3862,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
           updateTranscript(answerIdRef.current, sanitizeRenderableText(`\n[thinking] ${event.delta}`));
         }
         if (event.type === 'tool_start') {
+          setGoalActivity((goal) => (goal ? { ...goal, toolCalls: (goal.toolCalls ?? 0) + 1 } : goal));
           addTranscript('tool', '', {
             toolName: event.toolName,
             toolCallId: event.toolCallId,
@@ -3934,14 +4071,19 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     const message = raw.trim();
     if (!message || approval) return;
     void (async () => {
-      if (isLocalShellLine(raw)) {
-        await runLocalShell(raw);
-        return;
+      try {
+        if (isLocalShellLine(raw)) {
+          await runLocalShell(raw);
+          return;
+        }
+        const handled = await handleCommand(message);
+        if (!handled) await runPrompt(message, attachments, attachmentBlocks);
+      } catch (err) {
+        // One failing command must never take down the whole TUI session.
+        addTranscript('error', `Command failed: ${err instanceof Error ? err.message : String(err)}`);
       }
-      const handled = await handleCommand(message);
-      if (!handled) await runPrompt(message, attachments, attachmentBlocks);
     })();
-  }, [approval, handleCommand, runLocalShell, runPrompt]);
+  }, [approval, handleCommand, runLocalShell, runPrompt, addTranscript]);
 
   useEffect(() => {
     if (!shouldDrainQueue({
@@ -4046,9 +4188,19 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const goalElapsedSeconds = goalActivity
     ? Math.max(0, Math.floor((goalNow - goalActivity.startedAt) / 1000))
     : 0;
-  const goalStatusText = goalActivity
-    ? `${emojiEnabled() ? '◎' : 'o'} /goal active (${goalElapsedSeconds}s)`
-    : '';
+  // Structured long-run progress: objective + run/turn/tool counters on one
+  // line, the latest working-context checkpoint on its own line (a single
+  // long line gets truncated on narrow terminals and hides the checkpoint).
+  const goalStatusLines = goalActivity
+    ? [
+        `${emojiEnabled() ? '◎' : 'o'} goal: ${goalActivity.objective.slice(0, 60)}${goalActivity.objective.length > 60 ? '…' : ''}` +
+          `  ·  run ${goalActivity.runCount + 1} · turns ${goalActivity.turns ?? 0} · tools ${goalActivity.toolCalls ?? 0} · ${goalElapsedSeconds}s`,
+        ...(goalActivity.lastCheckpoint
+          ? [`   next: ${goalActivity.lastCheckpoint.nextAction}`]
+          : []),
+      ]
+    : [];
+  const goalStatusText = goalStatusLines[0] ?? '';
   const executionPlane = executionPlaneSummary(runtime);
   const terminalRows = Math.max(12, termRows);
   const promptRows = promptEditorRowBudget(input, {
@@ -4209,6 +4361,13 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
             onShiftEnter: () => undefined,
             onPasteAttachmentShortcut: () => { void pasteClipboardAttachment(); },
           }),
+      // Structured goal progress gets its own full-width line so the latest
+      // checkpoint is never truncated away by the footer row.
+      !approval && goalStatusLines[1] ? React.createElement(
+        Box,
+        { flexDirection: 'column', paddingX: 1 },
+        React.createElement(Text, { color: theme.accent }, goalStatusLines[1]),
+      ) : null,
       // One compact agent-style line under the input: the active non-default mode, else
       // the key hints — plus a subtle context-used %.
       !approval ? React.createElement(

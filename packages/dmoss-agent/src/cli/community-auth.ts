@@ -381,7 +381,7 @@ function openExternalUrl(url: string): boolean {
 
 function tokenRelayHtml(): string {
   const keys = JSON.stringify(TOKEN_QUERY_KEYS);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>D-Moss Login</title></head><body>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Moss Login</title></head><body>
 <script>
 (function(){
   var keys = ${keys};
@@ -399,15 +399,15 @@ function tokenRelayHtml(): string {
     location.replace(u.toString());
     return;
   }
-  document.body.textContent = 'D-Moss login returned without a usable token. Please return to the terminal and try again.';
+  document.body.textContent = 'Moss login returned without a usable token. Please return to the terminal and try again.';
 })();
 </script>
 </body></html>`;
 }
 
 function errorHtml(message: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>D-Moss Login</title></head><body>
-<p>D-Moss login failed: ${escapeHtml(message)}</p>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Moss Login</title></head><body>
+<p>Moss login failed: ${escapeHtml(message)}</p>
 </body></html>`;
 }
 
@@ -421,7 +421,7 @@ function escapeHtml(value: string): string {
 }
 
 function successHtml(): string {
-  return '<!doctype html><html><body>D-Moss login received. You can return to the terminal.</body></html>';
+  return '<!doctype html><html><body>Moss login received. You can return to the terminal.</body></html>';
 }
 
 function buildPortalLoginUrl(ssoBaseUrl: string, callbackUrl: string): string {

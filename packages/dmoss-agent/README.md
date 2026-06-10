@@ -180,30 +180,24 @@ moss setup
 moss auth status
 ```
 
-Environment variables:
-
-```bash
-export DEEPSEEK_API_KEY=...
-# or: export OPENAI_API_KEY=...
-# or: export ANTHROPIC_API_KEY=...
-# or: export DASHSCOPE_API_KEY=...
-moss
-```
+Model settings (provider, model, baseUrl, API key) live in moss config only. Environment variables such as `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, or `DMOSS_PROVIDER` are deliberately ignored — a key exported for another tool never silently changes which provider Moss talks to. `moss doctor` lists any such leftover variables under `env ignored`.
 
 Private OpenAI-compatible gateway:
 
 ```bash
-export OPENAI_API_KEY=...      # or DMOSS_API_KEY=... for a generic gateway key
 moss config set provider openai-compatible
 moss config set model <your-model>
 moss config set baseUrl https://llm.example.com
+moss setup            # stores the API key (hidden prompt)
 moss auth status
 moss
 ```
 
-`baseUrl` is the API root, not the full chat endpoint. Do not include `/chat/completions`. Both `https://llm.example.com` and `https://llm.example.com/v1` are accepted; Moss calls `/v1/chat/completions` for OpenAI-compatible providers. If multiple provider keys are set in your shell, set `DMOSS_PROVIDER` explicitly.
+For scripts and CI, provide a config file instead of env vars: `moss --config-file /path/to/config.json` (JSON with `provider` / `model` / `baseUrl` / `apiKey`).
 
-Configuration priority is: CLI flags and `-c key=value` > environment variables > `moss config` / `moss setup` > built-in gateway.
+`baseUrl` is the API root, not the full chat endpoint. Do not include `/chat/completions`. Both `https://llm.example.com` and `https://llm.example.com/v1` are accepted; Moss calls `/v1/chat/completions` for OpenAI-compatible providers.
+
+Configuration priority is: CLI flags and `-c key=value` > project `.moss/config.json` > `moss config` / `moss setup` > built-in gateway.
 
 Inside Moss, use `/model` to list models from the active provider when available, choose by number, or type `/model <model-name>` for a custom model.
 

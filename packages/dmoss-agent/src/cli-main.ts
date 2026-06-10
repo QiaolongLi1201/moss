@@ -42,6 +42,7 @@ import {
   runConfigValidate,
   runSetupWizard,
 } from './cli/setup.js';
+import { runMcpCommand } from './cli/mcp-command.js';
 import { DmossAgent, JsonlSessionStore, MemoryManager } from './core/index.js';
 import { configureRootLogger, type LogLevel } from './logger.js';
 import pc from 'picocolors';
@@ -66,7 +67,19 @@ import type { DeviceSshConfig } from './tools/device-ssh.js';
 import type { McpConnection } from './mcp/index.js';
 import { migrateLegacyWorkspacePaths } from './utils/workspace-paths.js';
 
-const parsedArgs = parseCliArgs(process.argv.slice(2));
+// Argument errors must be a one-line message, not an uncaught stack trace
+// (`moss -m` used to dump a raw Node throw at module load).
+function parseCliArgsOrExit(argv: string[]): ReturnType<typeof parseCliArgs> {
+  try {
+    return parseCliArgs(argv);
+  } catch (err) {
+    console.error(`moss: ${err instanceof Error ? err.message : String(err)}`);
+    console.error('Run `moss --help` for usage.');
+    process.exit(1);
+  }
+}
+
+const parsedArgs = parseCliArgsOrExit(process.argv.slice(2));
 
 const originalEmitWarning = process.emitWarning.bind(process);
 process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
@@ -296,6 +309,10 @@ async function main() {
     process.exitCode = 1;
     return;
   }
+  if (parsedArgs.command === 'mcp') {
+    runMcpCommand(parsedArgs.commandArgs, fallbackStartDir);
+    return;
+  }
 
   if (parsedArgs.configOverrides.workspace) {
     loadEnvFromAncestors(parsedArgs.configOverrides.workspace);
@@ -303,6 +320,15 @@ async function main() {
   const configStartDir = fallbackStartDir;
   const loadedConfig = loadCliConfigFile(process.env, process.argv.slice(2), configStartDir);
   const resolvedConfig = resolveCliConfig(process.env, loadedConfig.config, parsedArgs.configOverrides, loadedConfig);
+  // Model settings are config-only (decision 2026-06). Say so once when a
+  // leftover provider env var is present, instead of silently ignoring it —
+  // doctor shows the same list as a structured `env ignored` line.
+  if (resolvedConfig.ignoredModelEnvVars.length > 0 && parsedArgs.command !== 'doctor') {
+    console.error(
+      `[config] ignoring model env var(s): ${resolvedConfig.ignoredModelEnvVars.join(', ')} — ` +
+      'model settings come only from moss config (moss setup / moss config set)',
+    );
+  }
   const safetyMode = parsedArgs.safetyModeOverride ?? resolvedConfig.safetyMode ?? resolveCliSafetyMode(argv);
   const workspace = resolvedConfig.workspace;
   const model = resolvedConfig.model;
@@ -330,12 +356,26 @@ async function main() {
   }
 
   const oneShotMessage = parsedArgs.prompt;
+
+  // Diagnose `resume`/`fork` with no saved sessions BEFORE the model-config
+  // gate: "needs a model configuration" was the wrong message for that case.
+  if (parsedArgs.command === 'resume' || parsedArgs.command === 'fork') {
+    const earlyStore = new JsonlSessionStore({ dir: workspacePathMigration.paths.sessionsDir });
+    const existing = await earlyStore.listSessions().catch(() => []);
+    if (existing.length === 0) {
+      console.error(`[session] No saved sessions to ${parsedArgs.command} in this workspace (${workspace}).`);
+      console.error('[session] Start one with `moss`, then use `moss resume --last`.');
+      process.exit(1);
+    }
+  }
+
   if (!resolvedConfig.apiKey) {
+    const guidance = { bundledDefaultSuppressedBy: resolvedConfig.bundledDefaultSuppressedBy };
     if (process.stdin.isTTY && !oneShotMessage) {
-      await offerSetupForInteractiveMissingConfig();
+      await offerSetupForInteractiveMissingConfig(guidance);
       return;
     }
-    printMissingConfigGuidance(false);
+    printMissingConfigGuidance(false, guidance);
     process.exit(1);
   }
 
@@ -365,11 +405,15 @@ async function main() {
   if (wsPromptLayer) extraPromptLayers.push(wsPromptLayer);
 
   const configuredHooks = createConfiguredHookCallbacks(loadedConfig.config.hooks, { workspaceDir: workspace });
+  // Resolved early so device-mutation approval cards can show the board target.
+  // (A board connected later via /connect falls back to the generic label.)
+  const envDeviceConfig = getDeviceConfigFromEnv();
   const approvalHook = createCliToolApprovalHook(safetyMode, process.env, {
     approvalPolicy: resolvedConfig.approvalPolicy,
     trustedTools: resolvedConfig.trustedTools,
     deniedTools: resolvedConfig.deniedTools,
     workspaceDir: workspace,
+    device: envDeviceConfig ? { host: envDeviceConfig.host, user: envDeviceConfig.user, port: envDeviceConfig.port } : null,
   });
   const configPreHook = configuredHooks.onBeforeToolExec;
   const onBeforeToolExec: AgentHooks['onBeforeToolExec'] = configPreHook
@@ -403,7 +447,7 @@ async function main() {
     }
     for (const tool of createMemoryTools(memoryManager)) agent.tools.register(tool);
 
-    const deviceConfig = getDeviceConfigFromEnv();
+    const deviceConfig = envDeviceConfig;
     if (process.env.DMOSS_MESH_ENABLED === 'true' || parsedArgs.mesh) {
       await setupMesh(agent, deviceConfig);
     }

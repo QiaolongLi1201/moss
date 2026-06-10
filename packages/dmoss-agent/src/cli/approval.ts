@@ -6,6 +6,7 @@ import type { Tool, ToolSideEffectClass } from '../core/tools/tool-types.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
 import { sanitizeSecrets } from '../safety/secret-sanitizer.js';
 import { normalizeSafetyModeConfig, type ConfigApprovalPolicy } from './config.js';
+import { buildApprovalDetailLines, type ApprovalDetailContext } from './approval-detail.js';
 
 export type CliSafetyMode = 'read-only' | 'workspace-write' | 'full-access';
 
@@ -28,6 +29,8 @@ export interface CliToolApprovalOptions {
   trustedTools?: readonly string[];
   deniedTools?: readonly string[];
   workspaceDir?: string;
+  /** Connected board target, shown in device-mutation approval cards. */
+  device?: { host: string; user?: string; port?: number } | null;
 }
 
 export interface CliToolApprovalPreview {
@@ -362,12 +365,17 @@ function approvalAlwaysSummary(preview: CliToolApprovalPreview): string {
 export function renderCliApprovalPrompt(
   preview: CliToolApprovalPreview,
   input: Record<string, unknown>,
+  detailCtx: ApprovalDetailContext = {},
 ): string {
   const target = approvalTargetSummary(preview.toolName, input);
+  // Decision-time detail: ± diff for file edits, action plan for device
+  // mutations — so the user can decide without expanding anything.
+  const detail = buildApprovalDetailLines(preview.toolName, preview.sideEffect, input, detailCtx);
   const lines = [
     '',
     `Moss wants to ${approvalActionSummary(preview, input)}`,
     target ? `  ${target}` : '',
+    ...detail,
     `Scope: ${approvalScopeSummary(preview, input)}`,
     `Allow once, ${approvalAlwaysSummary(preview)}, or deny. [y/a/N] `,
   ].filter((line) => line !== '');
@@ -513,7 +521,10 @@ export function createCliToolApprovalHook(
       };
     }
 
-    const prompt = renderCliApprovalPrompt(preview, request.input);
+    const prompt = renderCliApprovalPrompt(preview, request.input, {
+      workspaceDir: options.workspaceDir,
+      device: options.device,
+    });
     const answer = (await (interactiveAsker ?? defaultAskUser)(prompt)).trim().toLowerCase();
     if (answer === 'a' || answer === 'always') {
       if (isWorkspaceTrustEligible(preview.sideEffect)) {

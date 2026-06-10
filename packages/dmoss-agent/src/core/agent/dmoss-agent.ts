@@ -22,7 +22,7 @@ const log = getRootLogger().child('agent');
 import { ToolRegistry } from '../tools/tool-registry.js';
 import type { AgentHooks } from './agent-hooks.js';
 import { KnowledgeRegistry, drainPendingGlobalModules } from '../../knowledge/registry.js';
-import { buildAgentBehaviorPrompt, buildRoboticsEngineeringPrompt, DEFAULT_MODEL } from '@rdk-moss/core';
+import { buildAgentBehaviorPrompt, buildLanguagePolicyPrompt, buildRoboticsEngineeringPrompt, DEFAULT_MODEL } from '@rdk-moss/core';
 import type { KnowledgeModule } from '@rdk-moss/core';
 import {
   createInMemoryMossAsyncTaskRegistry,
@@ -281,6 +281,15 @@ export class DmossAgent {
 
     if (this.config.baseSystemPrompt) {
       parts.push(this.config.baseSystemPrompt);
+    }
+
+    // ── Response-language policy ──
+    // English-first; the model auto-detects the user's language and switches to
+    // it. Placed high in the stable layer so it governs output regardless of the
+    // domain/behavior prose that follows. It is a static directive (the model
+    // does the per-message detection), so the stable layer stays cache-friendly.
+    if (this.config.includeLanguagePolicyPrompt !== false) {
+      parts.push(buildLanguagePolicyPrompt());
     }
 
     if (this.config.domainPrompt === false) {
@@ -1071,15 +1080,12 @@ export class DmossAgent {
           sessionMessages as never,
         );
         if (pipelineResult?.promoted) {
-          log.info('auto-promoted skill from session', {
-            sessionKey: run.sessionKey,
-            skillId: pipelineResult.promoted.skillId,
-            skillPath: pipelineResult.promoted.skillPath,
+          log.info('learned a reusable skill from this task — see /skills', {
+            skill: pipelineResult.promoted.skillId,
           });
         } else if (pipelineResult?.distill) {
-          log.info('distilled skill candidate (below auto-promote threshold)', {
-            sessionKey: run.sessionKey,
-            candidateId: pipelineResult.candidateId,
+          log.info('saved a skill candidate — review with /skills, promote with /skills promote', {
+            candidate: pipelineResult.candidateId,
             confidence: pipelineResult.distill.score.confidence,
           });
         }

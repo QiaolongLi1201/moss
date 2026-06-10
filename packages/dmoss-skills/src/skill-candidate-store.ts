@@ -2,6 +2,8 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { atomicWriteFile } from "./fs-atomic.js";
+
 export interface SkillCandidateToolCall {
   name: string;
   input: Record<string, unknown>;
@@ -68,13 +70,18 @@ export interface CandidateStoreResult {
 const CANDIDATES_DIR = path.join(".moss", "skills", "candidates");
 const CANDIDATE_FILE = "candidate.json";
 
-async function atomicWriteFile(
-  filePath: string,
-  data: string,
-): Promise<void> {
-  const tmpPath = `${filePath}.tmp`;
-  await fs.promises.writeFile(tmpPath, data, "utf-8");
-  await fs.promises.rename(tmpPath, filePath);
+/**
+ * Reject candidate ids that could escape (or BE) the candidates root when
+ * joined onto it. `'.'` is the subtle one: `path.join(root, '.')` === root,
+ * so an unguarded `'.'` turns "remove one candidate" into "remove them all".
+ */
+export function isUnsafeCandidateId(candidateId: string): boolean {
+  return (
+    !candidateId ||
+    candidateId === "." ||
+    /[/\\]/.test(candidateId) ||
+    candidateId.includes("..")
+  );
 }
 
 function redactInput(value: unknown): unknown {
@@ -292,8 +299,9 @@ export async function removeCandidate(
   workspaceDir: string,
   candidateId: string,
 ): Promise<boolean> {
-  // H2: Validate candidateId to prevent path traversal
-  if (!candidateId || /[/\\]/.test(candidateId) || candidateId.includes('..')) {
+  // H2: Validate candidateId to prevent path traversal (incl. the '.' alias
+  // for the candidates root itself — see isUnsafeCandidateId).
+  if (isUnsafeCandidateId(candidateId)) {
     throw new Error('Invalid candidate ID');
   }
   const targetDir = path.join(candidatesRoot(workspaceDir), candidateId);

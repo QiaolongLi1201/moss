@@ -81,6 +81,8 @@ try {
   assert.equal(resolved.imageInput, false);
   assert.equal(resolved.imageInputSource, 'provider default');
 
+  // Operational env vars still apply; model env vars are deliberately ignored
+  // (model settings come only from CLI flags and config files).
   const envResolved = resolveCliConfig({
     DMOSS_PROFILE: 'autonomous',
     DMOSS_PROVIDER: 'openai',
@@ -99,12 +101,17 @@ try {
     DMOSS_CONTEXT_TOKENS: '64000',
     DMOSS_IMAGE_INPUT: 'true',
   }, loadConfigFile());
-  assert.equal(envResolved.provider, 'openai');
+  assert.equal(envResolved.provider, 'qwen');
+  assert.equal(envResolved.providerSource, 'config');
   assert.equal(envResolved.profile, 'autonomous');
   assert.equal(envResolved.profileSource, 'DMOSS_PROFILE');
-  assert.equal(envResolved.apiKey, 'env-secret');
-  assert.equal(envResolved.apiKeySource, 'OPENAI_API_KEY');
-  assert.equal(envResolved.modelSource, 'DMOSS_MODEL');
+  assert.equal(envResolved.apiKey, 'stored-secret');
+  assert.equal(envResolved.apiKeySource, 'config');
+  assert.equal(envResolved.modelSource, 'config');
+  assert.deepEqual(
+    [...envResolved.ignoredModelEnvVars].sort(),
+    ['DMOSS_BASE_URL', 'DMOSS_MODEL', 'DMOSS_PROVIDER', 'OPENAI_API_KEY'],
+  );
   assert.equal(envResolved.safetyMode, 'read-only');
   assert.equal(envResolved.safetyModeSource, 'DMOSS_SAFETY_MODE');
   assert.equal(envResolved.approvalPolicy, 'never');
@@ -128,52 +135,19 @@ try {
   assert.equal(envResolved.imageInput, true);
   assert.equal(envResolved.imageInputSource, 'DMOSS_IMAGE_INPUT');
 
-  const deepseekEnvResolved = resolveCliConfig({
-    DEEPSEEK_API_KEY: 'deepseek-env-secret',
-  }, {});
-  assert.equal(deepseekEnvResolved.provider, 'deepseek');
-  assert.equal(deepseekEnvResolved.providerSource, 'DEEPSEEK_API_KEY');
-  assert.equal(deepseekEnvResolved.apiKey, 'deepseek-env-secret');
-  assert.equal(deepseekEnvResolved.apiKeySource, 'DEEPSEEK_API_KEY');
-  assert.equal(deepseekEnvResolved.model, 'deepseek-v4-pro');
-  assert.equal(deepseekEnvResolved.baseUrl, 'https://api.deepseek.com');
-  assert.equal(deepseekEnvResolved.imageInput, false);
-  assert.equal(deepseekEnvResolved.imageInputSource, 'provider default');
-
-  const qwenEnvResolved = resolveCliConfig({
-    DASHSCOPE_API_KEY: 'qwen-env-secret',
-  }, {});
-  assert.equal(qwenEnvResolved.provider, 'qwen');
-  assert.equal(qwenEnvResolved.providerSource, 'DASHSCOPE_API_KEY');
-  assert.equal(qwenEnvResolved.apiKey, 'qwen-env-secret');
-  assert.equal(qwenEnvResolved.apiKeySource, 'DASHSCOPE_API_KEY');
-  assert.equal(qwenEnvResolved.model, 'qwen3.7-max');
-  assert.equal(qwenEnvResolved.baseUrl, 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode');
-  assert.equal(qwenEnvResolved.imageInput, false);
-  assert.equal(qwenEnvResolved.imageInputSource, 'provider default');
-
-  const openaiEnvResolved = resolveCliConfig({
-    OPENAI_API_KEY: 'openai-env-secret',
-  }, {});
-  assert.equal(openaiEnvResolved.provider, 'openai');
-  assert.equal(openaiEnvResolved.providerSource, 'OPENAI_API_KEY');
-  assert.equal(openaiEnvResolved.apiKey, 'openai-env-secret');
-  assert.equal(openaiEnvResolved.apiKeySource, 'OPENAI_API_KEY');
-  assert.equal(openaiEnvResolved.model, 'gpt-4o-mini');
-  assert.equal(openaiEnvResolved.baseUrl, 'https://api.openai.com');
-  assert.equal(openaiEnvResolved.imageInput, true);
-  assert.equal(openaiEnvResolved.imageInputSource, 'provider default');
-
-  const anthropicEnvResolved = resolveCliConfig({
-    ANTHROPIC_API_KEY: 'anthropic-env-secret',
-  }, {});
-  assert.equal(anthropicEnvResolved.provider, 'anthropic');
-  assert.equal(anthropicEnvResolved.providerSource, 'ANTHROPIC_API_KEY');
-  assert.equal(anthropicEnvResolved.apiKey, 'anthropic-env-secret');
-  assert.equal(anthropicEnvResolved.apiKeySource, 'ANTHROPIC_API_KEY');
-  assert.equal(anthropicEnvResolved.baseUrl, 'https://api.anthropic.com');
-  assert.equal(anthropicEnvResolved.imageInput, true);
-  assert.equal(anthropicEnvResolved.imageInputSource, 'provider default');
+  // Provider keys exported for other tools must not configure moss
+  // (they used to silently select the provider and act as the API key).
+  for (const leftoverKey of ['DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY']) {
+    const leftoverResolved = resolveCliConfig({
+      DMOSS_NO_BUNDLED_DEFAULT: '1',
+      [leftoverKey]: 'leftover-secret',
+    }, {});
+    assert.equal(leftoverResolved.provider, 'deepseek', `${leftoverKey} must not select the provider`);
+    assert.equal(leftoverResolved.providerSource, 'default');
+    assert.equal(leftoverResolved.apiKey, '', `${leftoverKey} must not be used as the API key`);
+    assert.equal(leftoverResolved.apiKeySource, 'missing');
+    assert.deepEqual(leftoverResolved.ignoredModelEnvVars, [leftoverKey]);
+  }
 
   const invalidEnvResolved = resolveCliConfig({
     DMOSS_MAX_AGENT_TURNS: '1.5',
@@ -244,8 +218,10 @@ try {
   assert.match(status, /compaction: reserve 20000, keepRecent 20000 \(default\)/);
   assert.doesNotMatch(status, /stored-secret/);
 
+  // A leftover provider key in the environment must not change auth status:
+  // the stored config key stays authoritative and the secret never leaks.
   const envStatus = renderAuthStatus(loadConfigFile(), { DASHSCOPE_API_KEY: 'env-secret' });
-  assert.match(envStatus, /apiKey: configured via DASHSCOPE_API_KEY/);
+  assert.match(envStatus, /apiKey: configured via config/);
   assert.doesNotMatch(envStatus, /env-secret/);
 
   const redactedStatus = renderAuthStatus({
@@ -459,10 +435,14 @@ try {
     'DMOSS_IMAGE_INPUT',
   ];
   const oldInitEnv = new Map(initEnvNames.map((name) => [name, process.env[name]]));
+  const oldNoBundled = process.env.DMOSS_NO_BUNDLED_DEFAULT;
   try {
     process.env.DMOSS_CONFIG_DIR = initConfigDir;
     delete process.env.DMOSS_CONFIG_FILE;
     for (const name of initEnvNames) delete process.env[name];
+    // Local checkouts may carry a generated zero-config-default.json
+    // (gitignored); disable it so init templates are deterministic here.
+    process.env.DMOSS_NO_BUNDLED_DEFAULT = '1';
     runConfigInit([]);
     const initPath = path.join(initConfigDir, 'config.json');
     const initialized = JSON.parse(fs.readFileSync(initPath, 'utf8'));
@@ -507,6 +487,8 @@ try {
     else process.env.DMOSS_CONFIG_DIR = oldInitConfigDir;
     if (oldInitConfigFile === undefined) delete process.env.DMOSS_CONFIG_FILE;
     else process.env.DMOSS_CONFIG_FILE = oldInitConfigFile;
+    if (oldNoBundled === undefined) delete process.env.DMOSS_NO_BUNDLED_DEFAULT;
+    else process.env.DMOSS_NO_BUNDLED_DEFAULT = oldNoBundled;
     for (const [name, value] of oldInitEnv) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;

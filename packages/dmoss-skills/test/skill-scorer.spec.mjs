@@ -205,10 +205,13 @@ function buildEvidence(overrides = {}) {
   const scoreFail = scoreSkillCandidate(evidenceFail);
   assert.equal(scoreOk.signals.allSucceeded, true);
   assert.equal(scoreFail.signals.allSucceeded, false);
-  // evidenceFail also gets error recovery bonus (+0.2) which is > allSucceeded bonus (+0.1),
-  // so we compare signals rather than absolute confidence.
   assert.equal(scoreOk.confidence, 0.55, 'allSucceeded with 3 calls: base 0.3 + 0.1 (3 calls) + 0.1 (allSucceeded) + 0.05 (verification)');
-  assert.equal(scoreFail.signals.errorRecovered, true, 'should detect error recovery');
+  // write failed and a DIFFERENT tool (read) succeeded next: that is not
+  // recovery, and the write failure stays unrecovered → capped below medium.
+  assert.equal(scoreFail.signals.errorRecovered, false, 'different-tool success is not error recovery');
+  assert.equal(scoreFail.signals.unrecoveredFailure, true);
+  assert.ok(scoreFail.confidence <= 0.4, `unrecovered failure must cap confidence, got ${scoreFail.confidence}`);
+  assert.ok(scoreFail.confidence < scoreOk.confidence, 'a failed run must not outscore the clean run');
   console.log('  [PASS] all succeeded bonus');
 }
 
@@ -393,6 +396,30 @@ function buildEvidence(overrides = {}) {
   assert.equal(score.signals.distinctTools, 0);
   assert.equal(score.signals.allSucceeded, true);
   console.log('  [PASS] empty tool calls handled gracefully');
+}
+
+// ─── Regression: a mostly-failed run must never score high ────────
+// Real incident: exec + write_file both denied (failed), read_file "ok",
+// pattern seen twice → scored 0.95 "high" and was nearly auto-promoted.
+
+{
+  const evidence = buildEvidence({
+    toolCalls: [
+      { name: 'exec', input: { command: 'echo hi' }, failed: true },
+      { name: 'write_file', input: { path: 'a.txt' }, failed: true },
+      { name: 'read_file', input: { path: 'a.txt' }, failed: false },
+    ],
+    toolNames: ['exec', 'write_file', 'read_file'],
+    runMeta: { completionKind: 'complete', model: 'test', totalElapsedMs: 100 },
+  });
+  const score = scoreSkillCandidate(evidence, 2);
+  assert.equal(score.signals.errorRecovered, false, 'cross-tool success must not count as recovery');
+  assert.equal(score.signals.unrecoveredFailure, true);
+  assert.equal(score.signals.failedCount, 2);
+  assert.ok(score.confidence <= 0.4, `mostly-failed run must cap at 0.4, got ${score.confidence}`);
+  assert.equal(isHighConfidence(score), false);
+  assert.equal(isMediumConfidence(score), false);
+  console.log('  [PASS] regression: mostly-failed run is capped below medium');
 }
 
 console.log('\nAll skill-scorer tests passed.');

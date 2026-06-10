@@ -40,12 +40,24 @@ fs.writeFileSync(
   console.log('  [PASS] bundled gateway default applies when nothing is configured');
 }
 
-// 2) A user-provided key wins → the bundled default must NOT be applied.
+// 2) A user-configured key wins → the bundled default must NOT be applied.
+//    (Config file only: model env vars are ignored by design.)
 {
-  const r = resolveCliConfig({ DMOSS_BUNDLED_DEFAULT_FILE: gatewayFile, DMOSS_API_KEY: 'user-key' }, {});
+  const r = resolveCliConfig({ DMOSS_BUNDLED_DEFAULT_FILE: gatewayFile }, { apiKey: 'user-key' });
   assert.equal(r.apiKey, 'user-key');
   assert.notEqual(r.baseUrl, 'https://gateway.test/v1');
+  assert.equal(r.bundledDefaultSuppressedBy, 'moss config file');
   console.log('  [PASS] user config overrides the bundled default');
+}
+
+// 2b) A leftover env key must NOT shadow the bundled default (it used to
+//     silently disable the built-in gateway and demand a manual setup).
+{
+  const r = resolveCliConfig({ DMOSS_BUNDLED_DEFAULT_FILE: gatewayFile, DMOSS_API_KEY: 'env-key' }, {});
+  assert.equal(r.usingBundledDefault, true);
+  assert.equal(r.apiKey, 'gw-token-test');
+  assert.deepEqual(r.ignoredModelEnvVars, ['DMOSS_API_KEY']);
+  console.log('  [PASS] env keys neither shadow the bundled default nor become the key');
 }
 
 // 3) DMOSS_NO_BUNDLED_DEFAULT=1 disables the bundled default.

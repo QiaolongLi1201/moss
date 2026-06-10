@@ -2,6 +2,11 @@
 
 Teach-while-solve annotation layer for the Moss agent runtime.
 
+> **Dependency surface**: this package depends on `@rdk-moss/agent` only
+> through its two stable public subpaths — `@rdk-moss/agent/core` (types) and
+> `@rdk-moss/agent/safety` (`sanitizeSecrets`). It never imports agent
+> internals, so agent-internal refactors cannot break the teaching layer.
+
 ## Features
 
 - **Pre-execution Annotations**: Explain tool intent before execution

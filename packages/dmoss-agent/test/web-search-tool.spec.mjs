@@ -8,8 +8,11 @@
 
 import assert from 'node:assert/strict';
 import { createWebSearchTool } from '../dist/tools/web-search.js';
+import { DmossError, ErrorCode } from '../dist/errors.js';
 
 const CTX = { workspaceDir: '/tmp', sessionKey: 'test' };
+/** Zero-delay retry config so retry/fallback tests run instantly. */
+const NO_SLEEP = { retry: { sleep: async () => {} } };
 
 // A minimal DuckDuckGo HTML result page (two results, redirect-wrapped hrefs).
 const DDG_HTML = `
@@ -80,16 +83,16 @@ await withMockedFetch(
   },
 )();
 
-// Test 4: a 429 surfaces as a recoverable rate-limit error.
+// Test 4: a 429 (on every backend) surfaces as a recoverable rate-limit error.
 console.log('[TEST] HTTP 429 -> recoverable rate-limit error');
 await withMockedFetch(
   async () => new Response('rate limited', { status: 429 }),
   async () => {
-    const tool = createWebSearchTool();
+    const tool = createWebSearchTool(NO_SLEEP);
     await assert.rejects(
       () => tool.execute({ query: 'rdk' }, CTX),
       (err) => err?.code === 'PROVIDER_RATE_LIMITED' && err?.recoverable === true,
-      'a 429 must map to a recoverable rate-limit error',
+      'a 429 on every backend must map to a recoverable rate-limit error',
     );
   },
 )();
@@ -147,7 +150,7 @@ await withMockedFetch(
     { status: 200, headers: { 'content-type': 'text/html' } },
   ),
   async () => {
-    const tool = createWebSearchTool();
+    const tool = createWebSearchTool(NO_SLEEP);
     await assert.rejects(
       () => tool.execute({ query: 'rdk x5' }, CTX),
       (err) =>
@@ -170,6 +173,119 @@ await withMockedFetch(
     const tool = createWebSearchTool();
     const out = await tool.execute({ query: 'zxqwv nonsense token' }, CTX);
     assert.match(out, /No results for "zxqwv nonsense token"/, 'genuine empty must report No results, not throw');
+  },
+)();
+
+// Test 10: a recoverable failure is retried, and a subsequent success is returned.
+console.log('[TEST] recoverable failure -> retried then succeeds');
+{
+  let calls = 0;
+  const tool = createWebSearchTool({
+    retry: { maxAttempts: 2, sleep: async () => {} },
+    search: async () => {
+      calls++;
+      if (calls === 1) {
+        throw new DmossError({
+          code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+          message: 'transient blip',
+          recoverable: true,
+        });
+      }
+      return [{ title: 'Recovered', url: 'https://example.com/ok', snippet: 'after retry' }];
+    },
+  });
+  const out = await tool.execute({ query: 'retry me' }, CTX);
+  assert.equal(calls, 2, 'should retry exactly once after a recoverable failure');
+  assert.match(out, /Recovered/, 'the post-retry result must be returned');
+}
+
+// Test 11: a blocked primary (DDG html) falls through to the keyless Lite endpoint.
+console.log('[TEST] blocked primary -> falls back to DuckDuckGo Lite');
+const LITE_HTML = `
+<html><body><table>
+<tr><td><a class="result-link" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Flite&rut=z">Lite Result Title</a></td></tr>
+<tr><td class="result-snippet">A snippet from the lite endpoint.</td></tr>
+</table></body></html>`;
+await withMockedFetch(
+  async (url) => {
+    if (String(url).includes('lite.duckduckgo.com')) {
+      return new Response(LITE_HTML, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    // Primary html endpoint serves an anti-bot/anomaly page.
+    return new Response(
+      '<html><body>anomaly detected <form class="challenge-form"></form></body></html>',
+      { status: 200, headers: { 'content-type': 'text/html' } },
+    );
+  },
+  async () => {
+    const tool = createWebSearchTool(NO_SLEEP);
+    const out = await tool.execute({ query: 'rdk docs' }, CTX);
+    assert.match(out, /Lite Result Title/, 'should return the Lite endpoint result after the html endpoint is blocked');
+    assert.match(out, /https:\/\/example\.com\/lite/, 'lite redirect href should be unwrapped');
+    assert.doesNotMatch(out, /duckduckgo\.com\/l\//, 'no redirect wrapper should leak through');
+  },
+)();
+
+// Test 12: aborting during the retry backoff surfaces USER_ABORTED and starts no new attempt.
+console.log('[TEST] abort during retry -> USER_ABORTED');
+{
+  const controller = new AbortController();
+  let attempts = 0;
+  const tool = createWebSearchTool({
+    retry: {
+      maxAttempts: 3,
+      sleep: async () => {
+        controller.abort(); // user cancels mid-backoff
+      },
+    },
+    search: async () => {
+      attempts++;
+      throw new DmossError({
+        code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+        message: 'still failing',
+        recoverable: true,
+      });
+    },
+  });
+  await assert.rejects(
+    () => tool.execute({ query: 'cancel me' }, { ...CTX, abortSignal: controller.signal }),
+    (err) => err?.code === 'USER_ABORTED',
+    'aborting during backoff must surface USER_ABORTED',
+  );
+  assert.equal(attempts, 1, 'must not start a new attempt after abort');
+}
+
+// Test 13: when every backend fails, the last backend's error is surfaced (not swallowed).
+console.log('[TEST] all backends fail -> last error preserved');
+await withMockedFetch(
+  async (url) => {
+    if (String(url).includes('lite.duckduckgo.com')) return new Response('boom', { status: 500 });
+    return new Response('rate limited', { status: 429 });
+  },
+  async () => {
+    const tool = createWebSearchTool(NO_SLEEP);
+    await assert.rejects(
+      () => tool.execute({ query: 'all fail' }, CTX),
+      (err) => err?.code === 'PROVIDER_UPSTREAM_ERROR' && err?.recoverable === true,
+      'when every backend fails, the last backend error (lite 500) must surface',
+    );
+  },
+)();
+
+// Test 14: fallback:false uses only the primary backend (no Lite fallback).
+console.log('[TEST] fallback:false -> single backend, no Lite call');
+await withMockedFetch(
+  async (url) => {
+    assert.ok(String(url).includes('html.duckduckgo.com'), 'fallback:false must not hit the lite endpoint');
+    return new Response(
+      '<html><body><div class="no-results">No results found.</div></body></html>',
+      { status: 200, headers: { 'content-type': 'text/html' } },
+    );
+  },
+  async () => {
+    const tool = createWebSearchTool({ ...NO_SLEEP, fallback: false });
+    const out = await tool.execute({ query: 'single backend' }, CTX);
+    assert.match(out, /No results for "single backend"/, 'a genuine empty result must still report "No results"');
   },
 )();
 

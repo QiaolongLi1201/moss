@@ -66,7 +66,8 @@ assert.match(helpText, /\/connect <ip>\s+connect an RDK board/);
 assert.match(helpText, /Model configuration/);
 assert.match(helpText, /Built-in: no model API key or community login is required/);
 assert.match(helpText, /OpenAI-compatible example/);
-assert.match(helpText, /Priority: CLI flags\/-c > environment variables > project \.moss\/config\.json > user config > built-in default/);
+assert.match(helpText, /Priority: CLI flags\/-c > project \.moss\/config\.json > user config > built-in default/);
+assert.match(helpText, /Model settings are never read from environment variables/);
 assert.match(helpText, /moss --help --all/);
 assert.doesNotMatch(helpText, /\/context\s+show current context-window usage/);
 

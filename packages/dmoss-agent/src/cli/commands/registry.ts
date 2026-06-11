@@ -156,6 +156,30 @@ const doctorCommand: CommandSpec = {
   },
 };
 
+const yoloCommand: CommandSpec = {
+  name: '/yolo',
+  summary: 'grant FULL POWER for this session — run any tool without per-call approval (/yolo off to revert)',
+  run(ctx, args) {
+    const off = /^(off|0|false|stop|no)$/i.test(args.trim());
+    if (!ctx.runtime) {
+      ctx.say('error', '/yolo is unavailable in this context.');
+      return;
+    }
+    if (off) {
+      ctx.runtime.fullPower = false;
+      ctx.say('system', 'Full power OFF — back to your base safety mode (mutating tools ask for approval again).');
+      return;
+    }
+    ctx.runtime.fullPower = true;
+    ctx.say('system', [
+      '⚡ FULL POWER ON for this session — every tool the model picks runs WITHOUT a per-call prompt,',
+      'including file writes, shell commands, and (after /connect) board actuation.',
+      'Still enforced: dangerous commands (rm -rf /, mkfs, curl|sh, …) stay blocked, and configured',
+      'deniedTools are never run. Type /yolo off to revert to approval prompts.',
+    ].join('\n'));
+  },
+};
+
 const permissionsCommand: CommandSpec = {
   name: '/permissions',
   aliases: ['/config'],
@@ -325,8 +349,21 @@ const reviewCommand: CommandSpec = {
         return;
       }
 
-      ctx.say('system', `Reviewing ${scopeLabel} (${diff.split('\n').length} diff lines) …`);
-      ctx.submitPrompt(buildReviewPrompt(diff, scopeLabel));
+      // Soft cap: a huge or binary-heavy diff would overflow the model context.
+      // Truncate with a clear marker rather than streaming megabytes verbatim.
+      const MAX_DIFF_CHARS = 400_000;
+      const totalLines = diff.split('\n').length;
+      let reviewDiff = diff;
+      let truncatedNote = '';
+      if (diff.length > MAX_DIFF_CHARS) {
+        const kept = diff.slice(0, MAX_DIFF_CHARS);
+        const keptLines = kept.split('\n').length;
+        reviewDiff = `${kept}\n\n[diff truncated: showing ${keptLines} of ${totalLines} lines (${Math.round(MAX_DIFF_CHARS / 1024)} KB cap). Narrow the scope — review specific paths or stage a subset — for a complete review.]`;
+        truncatedNote = ` — truncated to ${Math.round(MAX_DIFF_CHARS / 1024)} KB; narrow the scope for full coverage`;
+      }
+
+      ctx.say('system', `Reviewing ${scopeLabel} (${totalLines} diff lines)${truncatedNote} …`);
+      ctx.submitPrompt(buildReviewPrompt(reviewDiff, scopeLabel));
     } catch (err) {
       const dmoss = err instanceof DmossError ? err : new DmossError({
         code: ErrorCode.TOOL_EXECUTION_FAILED,
@@ -347,6 +384,7 @@ const COMMANDS: readonly CommandSpec[] = [
   mcpCommand,
   doctorCommand,
   reviewCommand,
+  yoloCommand,
   permissionsCommand,
   examplesCommand,
   upgradeCommand,

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderCliDoctor } from '../dist/cli/doctor.js';
+import { renderCliDoctor, renderNodeDoctorLine } from '../dist/cli/doctor.js';
 
 function resolvedConfig(overrides = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-doctor-config-'));
@@ -71,6 +71,12 @@ async function doctor(config) {
     detailMode: 'progress',
     updateFetchImpl: async () => ({ ok: false, async json() { return {}; } }),
   });
+}
+
+{
+  assert.match(renderNodeDoctorLine('v22.15.1'), /fail\s+node: v22\.15\.1; requires >=22\.16\.0/);
+  assert.match(renderNodeDoctorLine('v22.16.0'), /ok\s+node: v22\.16\.0/);
+  assert.match(renderNodeDoctorLine('v23.0.0'), /ok\s+node: v23\.0\.0/);
 }
 
 {

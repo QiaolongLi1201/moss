@@ -109,6 +109,7 @@ if (process.platform !== 'win32' && typeof process.getuid === 'function' && proc
 
 // ── 4. old Node fails fast with one clear line ────────────────────
 {
+  assert.match(String(nodeVersionProblem('v22.15.1')), /Node >= 22\.16/, 'Node 22 before the required minor must fail');
   assert.equal(nodeVersionProblem('v22.16.0'), null);
   assert.equal(nodeVersionProblem('v23.1.0'), null);
   const msg = nodeVersionProblem('v20.11.1');

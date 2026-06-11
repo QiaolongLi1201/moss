@@ -49,6 +49,13 @@ export interface WebFetchOptions {
   blockPrivateNetwork?: boolean;
   /** Allowlist of hosts (lowercased, supports `*.domain` suffix match). If set, everything else is rejected. */
   allowHosts?: string[];
+  /**
+   * Hosts for which the private/loopback/link-local SSRF block is WAIVED (others
+   * stay blocked) — e.g. a connected RDK board's LAN IP, so its web UI is
+   * reachable while the rest of the private network stays protected. Accepts a
+   * getter so a host can track a live `/connect` target. Supports `*.domain`.
+   */
+  allowPrivateHosts?: string[] | (() => string[]);
   /** Custom User-Agent. Default: `dmoss-agent/<version>`. */
   userAgent?: string;
   /** Optional resolver override for tests or embedded hosts. */
@@ -353,6 +360,10 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
   const blockPrivate = opts.blockPrivateNetwork !== false;
   const userAgent = opts.userAgent ?? 'dmoss-agent/0.1 (+https://github.com/D-Moss)';
   const allowHosts = (opts.allowHosts ?? []).map((s) => s.toLowerCase());
+  const resolveAllowPrivate = (): string[] => {
+    const raw = typeof opts.allowPrivateHosts === 'function' ? opts.allowPrivateHosts() : opts.allowPrivateHosts;
+    return (raw ?? []).filter((h): h is string => typeof h === 'string' && h.length > 0).map((h) => h.toLowerCase());
+  };
   const resolveAddresses = opts.resolveHostAddresses ?? resolveHostAddresses;
 
   return {
@@ -413,8 +424,12 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
           recoverable: false,
         });
       }
+      // The private/SSRF block is waived ONLY for explicitly-allowed hosts (a
+      // connected board), so its LAN web UI is reachable while every other
+      // private/metadata target stays blocked.
+      const privateWaived = blockPrivate && resolveAllowPrivate().some((p) => hostMatches(url.hostname, p));
       let verifiedIp: string | null = null;
-      if (blockPrivate) {
+      if (blockPrivate && !privateWaived) {
         verifiedIp = await resolveHostIp(url.hostname, resolveAddresses);
         if (verifiedIp === null) {
           throw new DmossError({
@@ -422,7 +437,8 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
             message: `web_fetch: refused to connect to private host "${url.hostname}"`,
             hint:
               'Private/loopback/link-local IPs are blocked by default (SSRF protection). ' +
-              'If you really need this (e.g. a trusted device), create the tool with `blockPrivateNetwork: false`.',
+              'For a connected board, moss waives this for the /connect target automatically; ' +
+              'otherwise create the tool with `blockPrivateNetwork: false` only for trusted URLs.',
             recoverable: false,
           });
         }

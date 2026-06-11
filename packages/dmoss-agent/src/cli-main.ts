@@ -47,6 +47,7 @@ import { DmossAgent, JsonlSessionStore, MemoryManager } from './core/index.js';
 import { configureRootLogger, type LogLevel } from './logger.js';
 import pc from 'picocolors';
 import { registerBuiltinTools } from './tools/builtin.js';
+import { createWebFetchTool } from './tools/web-fetch.js';
 import { SkillLearner } from './core/memory/skill-learner.js';
 import { SkillPipeline } from '@rdk-moss/skills';
 import { WorkspaceMemory } from './core/memory/workspace-memory.js';
@@ -430,6 +431,9 @@ async function main() {
     workspaceDir: workspace,
     device: envDeviceConfig ? { host: envDeviceConfig.host, user: envDeviceConfig.user, port: envDeviceConfig.port } : null,
     boardMode: () => liveRuntime.deviceSession?.boardMode === true,
+    // /yolo flips liveRuntime.fullPower → session becomes full-access + no prompt.
+    safetyModeOverride: () => (liveRuntime.fullPower ? 'full-access' : undefined),
+    autoApprove: () => liveRuntime.fullPower === true,
   });
   const configPreHook = configuredHooks.onBeforeToolExec;
   const onBeforeToolExec: AgentHooks['onBeforeToolExec'] = configPreHook
@@ -454,6 +458,13 @@ async function main() {
     hooks,
   });
   registerBuiltinTools(agent);
+  // Replace the default web_fetch with a board-aware one: it waives the private
+  // SSRF block ONLY for the connected /connect target (getter → tracks live
+  // /connect), so a board's LAN web UI (http://192.168.x.y:port) is reachable
+  // while the rest of the private network stays blocked.
+  agent.tools.register(createWebFetchTool({
+    allowPrivateHosts: () => (liveRuntime.device?.host ? [liveRuntime.device.host] : []),
+  }));
   const mcpConnections = await registerConfiguredMcpTools(agent, resolvedConfig);
 
   try {

@@ -51,7 +51,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
     title: 'Configure',
     rows: [
       { command: '/auth login', description: 'optional: link a D-Robotics developer community account' },
-      { command: '/auth login --manual', description: 'optional SSH login by pasting the browser redirect URL or token', hidden: true },
+      { command: '/auth login --manual', description: 'optional browserless community login by pasting the redirect URL or token', hidden: true },
       { command: '/logout', description: 'log out of the D-Robotics developer community', hidden: true },
       {
         command: '/quickstart',
@@ -61,6 +61,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       },
       { command: '/examples', description: 'show task examples for enabled capabilities', hidden: true },
       { command: '/permissions', description: 'show safety, approvals, cache, and config policy', hidden: true },
+      { command: '/yolo', description: 'grant full power for this session — no per-call approval (/yolo off to revert)' },
       { command: '/config', description: 'show config file and policy commands', hidden: true },
       { command: '/tools', description: 'view available tool groups and how Moss chooses them', hidden: true },
       { command: '/models', description: 'list selectable models for the active provider', hidden: true },

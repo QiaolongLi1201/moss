@@ -35,6 +35,7 @@ npx create-dmoss-app my-agent --skip-install
 my-agent/
 ├── package.json
 ├── index.ts
+├── mcp.json.example
 └── README.md
 ```
 
@@ -46,5 +47,8 @@ Then:
 ```bash
 cd my-agent
 npm run typecheck
-DMOSS_API_KEY=your-key npm start
+ANTHROPIC_API_KEY=your-key npm start
 ```
+
+The default template uses Anthropic and also accepts `DMOSS_API_KEY` as a
+compatibility fallback. The OpenAI-compatible template uses `OPENAI_API_KEY`.

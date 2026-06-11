@@ -8,6 +8,7 @@ import { formatInteractiveCommandSections } from './interactive-commands.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
 import { getPackageVersion } from './package-info.js';
 import { compactPath, label, ui } from './ui.js';
+import { MIN_NODE_MAJOR, MIN_NODE_MINOR, nodeVersionProblem } from './node-version-check.js';
 
 export interface CliDeviceStatus {
   host: string;
@@ -49,6 +50,12 @@ export interface CliRuntimeStatus {
    * host-neutral. Surfaced in-session by /mcp.
    */
   mcp?: CliMcpServerStatus[];
+  /**
+   * Session "full power" flag, flipped by /yolo. When true the approval hook
+   * treats the session as full-access with no per-call prompt (the hard
+   * isCommandDangerous floor and deniedTools still apply). Off by default.
+   */
+  fullPower?: boolean;
 }
 
 /** One configured MCP server's live connection state, for /mcp. */
@@ -89,6 +96,7 @@ const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'deviceSession
   dockerImage: process.env.DMOSS_DOCKER_IMAGE,
   meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || process.argv.includes('--mesh'),
   sessionKey: 'cli',
+  fullPower: false,
   config: loadDefaultRuntimeConfig(),
   communityAuth: undefined,
   device: null,
@@ -399,10 +407,10 @@ export function renderCliSessionDoctor(agent: DmossAgent, runtime: CliRuntimeSta
   const auth = rt.config;
   const lines: string[] = [ui.bold('Doctor')];
 
-  const nodeMajor = Number.parseInt(process.versions.node.split('.')[0] || '0', 10);
-  lines.push(nodeMajor >= 22
+  const nodeProblem = nodeVersionProblem(process.version);
+  lines.push(!nodeProblem
     ? doctorLine('ok', 'node', process.version)
-    : doctorLine('fail', 'node', `${process.version}; requires >=22.16.0`));
+    : doctorLine('fail', 'node', `${process.version}; requires >=${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.0`));
   if (auth.usingBundledDefault) {
     lines.push(doctorLine('ok', 'model', `${agent.config.model} (built-in D-Robotics model)`));
     lines.push(doctorLine('ok', 'auth', 'built-in gateway (no API key needed)'));

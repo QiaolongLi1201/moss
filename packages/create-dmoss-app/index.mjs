@@ -57,25 +57,34 @@ function mossVersionRange(packageName) {
   return installedVersion ? `^${installedVersion}` : DEFAULT_MOSS_VERSION_RANGE;
 }
 
+function toPackageName(name) {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'dmoss-agent';
+}
+
+function shellQuotePath(value) {
+  if (/^[A-Za-z0-9_./:@-]+$/.test(value)) return value;
+  return JSON.stringify(value);
+}
+
 const TEMPLATES = {
   minimal: {
     description: 'Minimal agent with Anthropic provider (default)',
+    primaryApiKeyEnv: 'ANTHROPIC_API_KEY',
+    fallbackApiKeyEnv: 'DMOSS_API_KEY',
     files: {
-      'mcp.json.example': `{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/dir"],
-      "env": {}
-    }
-  }
-}
-`,
       'index.ts': `import { DmossAgent, InMemorySessionStore, AnthropicLLMProvider } from '@rdk-moss/agent';
 
-const API_KEY = process.env.DMOSS_API_KEY || '';
+const API_KEY = process.env.ANTHROPIC_API_KEY || process.env.DMOSS_API_KEY || '';
+const MODEL = process.env.ANTHROPIC_MODEL || process.env.DMOSS_MODEL || 'claude-sonnet-4-20250514';
+
 if (!API_KEY) {
-  console.error('Set DMOSS_API_KEY first.');
+  console.error('Set ANTHROPIC_API_KEY first. DMOSS_API_KEY is also accepted for compatibility.');
   process.exit(1);
 }
 
@@ -84,7 +93,7 @@ const provider = new AnthropicLLMProvider({ apiKey: API_KEY });
 const agent = new DmossAgent({
   llmProvider: provider,
   sessionStore: new InMemorySessionStore(),
-  model: 'claude-sonnet-4-20250514',
+  model: MODEL,
 });
 
 // Load MCP servers from mcp.json (copy mcp.json.example to mcp.json and edit)
@@ -99,6 +108,7 @@ const agent = new DmossAgent({
 //   }
 // }
 
+console.log(\`Using Anthropic provider with model: \${MODEL}\`);
 const result = await agent.chat('demo', 'Hello! What can you help me with?');
 console.log('Agent:', result.response);
 `,
@@ -106,6 +116,8 @@ console.log('Agent:', result.response);
   },
   openai: {
     description: 'Agent with OpenAI-compatible provider',
+    primaryApiKeyEnv: 'OPENAI_API_KEY',
+    fallbackApiKeyEnv: 'DMOSS_API_KEY',
     files: {
       'index.ts': `import { DmossAgent, InMemorySessionStore, OpenAILLMProvider } from '@rdk-moss/agent';
 
@@ -134,6 +146,19 @@ console.log('Agent:', result.response);
   },
 };
 
+const COMMON_FILES = {
+  'mcp.json.example': `{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/dir"],
+      "env": {}
+    }
+  }
+}
+`,
+};
+
 function printUsage() {
   console.log(`
   create-dmoss-app <project-name> [--template <name>] [--skip-install]
@@ -156,12 +181,12 @@ if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
   process.exit(0);
 }
 
-const projectName = path.basename(args[0]);
+const projectArg = args[0];
 const templateIdx = args.indexOf('--template');
 const templateName = templateIdx !== -1 ? args[templateIdx + 1] : 'minimal';
 const skipInstall = args.includes('--skip-install');
 
-if (!projectName || projectName.startsWith('-')) {
+if (!projectArg || projectArg.startsWith('-')) {
   console.error('Please provide a project name.');
   printUsage();
   process.exit(1);
@@ -174,14 +199,18 @@ if (!template) {
   process.exit(1);
 }
 
-const targetDir = path.resolve(process.cwd(), projectName);
+const targetDir = path.resolve(process.cwd(), projectArg);
+const projectDirName = path.basename(targetDir);
+const projectName = toPackageName(projectDirName);
+const cdTarget = shellQuotePath(path.relative(process.cwd(), targetDir) || '.');
 
 if (fs.existsSync(targetDir)) {
-  console.error(`Directory '${projectName}' already exists.`);
+  console.error(`Directory '${targetDir}' already exists.`);
   process.exit(1);
 }
 
-console.log(`\nCreating D-Moss project: ${projectName}`);
+console.log(`\nCreating D-Moss project: ${projectDirName}`);
+if (projectName !== projectDirName) console.log(`Package name: ${projectName}`);
 console.log(`Template: ${templateName}\n`);
 
 fs.mkdirSync(targetDir, { recursive: true });
@@ -210,11 +239,11 @@ fs.writeFileSync(
   JSON.stringify(packageJson, null, 2) + '\n',
 );
 
-for (const [filename, content] of Object.entries(template.files)) {
+for (const [filename, content] of Object.entries({ ...COMMON_FILES, ...template.files })) {
   fs.writeFileSync(path.join(targetDir, filename), content);
 }
 
-const readme = `# ${projectName}
+const readme = `# ${projectDirName}
 
 A D-Moss agent project.
 
@@ -234,22 +263,24 @@ npm install
 
 \`\`\`sh
 npm run typecheck
-DMOSS_API_KEY=your-key npm start
+${template.primaryApiKeyEnv}=your-key npm start
 \`\`\`
 
 Windows PowerShell:
 
 \`\`\`powershell
 npm run typecheck
-$env:DMOSS_API_KEY="your-key"; npm start
+$env:${template.primaryApiKeyEnv}="your-key"; npm start
 \`\`\`
 
 Windows cmd.exe:
 
 \`\`\`bat
 npm run typecheck
-set DMOSS_API_KEY=your-key && npm start
+set ${template.primaryApiKeyEnv}=your-key && npm start
 \`\`\`
+
+The generated template also accepts \`${template.fallbackApiKeyEnv}\` as a compatibility fallback.
 
 ## MCP (Model Context Protocol)
 
@@ -300,19 +331,19 @@ if (skipInstall) {
 console.log(`
 Done! Next steps:
 
-  cd ${projectName}
+  cd ${cdTarget}
   npm run typecheck
-  DMOSS_API_KEY=your-key npm start
+  ${template.primaryApiKeyEnv}=your-key npm start
 
 Windows PowerShell:
 
-  cd ${projectName}
+  cd ${cdTarget}
   npm run typecheck
-  $env:DMOSS_API_KEY="your-key"; npm start
+  $env:${template.primaryApiKeyEnv}="your-key"; npm start
 
 Windows cmd.exe:
 
-  cd ${projectName}
+  cd ${cdTarget}
   npm run typecheck
-  set DMOSS_API_KEY=your-key && npm start
+  set ${template.primaryApiKeyEnv}=your-key && npm start
 `);

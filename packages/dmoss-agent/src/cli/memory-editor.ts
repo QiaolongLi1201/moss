@@ -79,7 +79,10 @@ export function appendQuickAddMemory(workspace: string, text: string, template?:
   }
   const line = `- ${text}`;
   if (body.includes(QUICK_ADD_SECTION)) {
-    body = body.replace(new RegExp(`(${QUICK_ADD_SECTION}\\n)`), `$1${line}\n`);
+    // Function replacer: the matched header + the user's note are inserted as
+    // LITERAL text, so a note containing `$1`/`$&`/`$\`` is never expanded as a
+    // regex replacement pattern (which would corrupt the note and the file).
+    body = body.replace(new RegExp(`${QUICK_ADD_SECTION}\\n`), (m) => `${m}${line}\n`);
   } else {
     const sep = body.length > 0 && !body.endsWith('\n') ? '\n' : '';
     body = `${body}${sep}\n${QUICK_ADD_SECTION}\n${line}\n`;

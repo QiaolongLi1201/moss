@@ -5,6 +5,8 @@
  *   node packages/dmoss-agent/test/cli-tui-render.spec.mjs
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -27,6 +29,7 @@ import {
   boardTip,
   executionPlaneSummary,
   inferExecutionMode,
+  truncateTerminalText,
 } from '../dist/cli/tui.js';
 import {
   resolveTerminalThemeMode,
@@ -152,6 +155,35 @@ test('StatusBar renders a disconnected device gracefully', () => {
   const frame = lastFrame();
   assert.match(frame, /no device/);
   cleanup();
+});
+
+test('StatusBar truncates long right-side chrome on narrow terminals', () => {
+  const previousColumns = process.stdout.columns;
+  Object.defineProperty(process.stdout, 'columns', { value: 56, configurable: true });
+  try {
+    const { lastFrame } = render(
+      React.createElement(StatusBar, {
+        state: 'ready',
+        device: 'root@192.168.1.10',
+        workspace: '/Users/me/a/very/long/workspace/path/that/should/not/wrap',
+        model: 'provider-with-a-very-long-model-name-that-would-wrap',
+        version: 'v0.3.6',
+        hint: 'Ctrl+O details',
+      }),
+    );
+    const frame = lastFrame();
+    assert.match(frame, /…/);
+    assert.doesNotMatch(frame, /provider-with-a-very-long-model-name-that-would-wrap/);
+    cleanup();
+  } finally {
+    Object.defineProperty(process.stdout, 'columns', { value: previousColumns, configurable: true });
+  }
+});
+
+test('truncateTerminalText respects terminal cell width', () => {
+  const truncated = truncateTerminalText('root@192.168.1.10 · /a/very/long/path · deepseek-v4-pro', 24);
+  assert(stringWidth(truncated) <= 24);
+  assert.match(truncated, /…$/);
 });
 
 test('WelcomePanel renders a compact compact agent-style tip', () => {
@@ -718,6 +750,38 @@ test('PromptEditor accepts slash command completion with Tab', async () => {
   assert.equal(nextValue, '/connect');
   assert.equal(nextCursor, 8);
   cleanup();
+});
+
+test('PromptEditor file completion replaces the whole @token from a mid-token cursor', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'moss-file-complete-'));
+  try {
+    fs.writeFileSync(path.join(workspace, 'robot.ts'), 'export const robot = true;\n');
+    let nextValue = '';
+    let nextCursor = -1;
+    const { stdin } = render(
+      React.createElement(PromptEditor, {
+        value: '@robot.ts',
+        cursor: 3,
+        onChange: (value) => {
+          nextValue = value;
+        },
+        onCursorChange: (cursor) => {
+          nextCursor = cursor;
+        },
+        onSubmit: () => undefined,
+        placeholder: '',
+        disabled: false,
+        workspace,
+      }),
+    );
+    stdin.write('\t');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(nextValue, '@robot.ts ');
+    assert.equal(nextCursor, '@robot.ts '.length);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+    cleanup();
+  }
 });
 
 test('PromptEditor submits on a plain CR enter sequence', async () => {

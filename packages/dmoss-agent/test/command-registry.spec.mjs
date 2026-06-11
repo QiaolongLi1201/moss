@@ -102,6 +102,27 @@ function fakeCtx(overrides = {}) {
   assert.equal(findRegistryCommand('/start')?.spec.name, '/quickstart');
 }
 
+// ── /yolo: explicit session-local full-power toggle ────────────────────────
+
+{
+  const runtime = {};
+  const ctx = fakeCtx({ runtime });
+  assert.equal(await runRegistryCommand('/yolo', ctx), true);
+  assert.equal(runtime.fullPower, true, '/yolo should turn on session-local full power');
+  assert.match(ctx.said.at(-1).text, /FULL POWER ON/);
+
+  assert.equal(await runRegistryCommand('/yolo off', ctx), true);
+  assert.equal(runtime.fullPower, false, '/yolo off should restore the base approval policy');
+  assert.match(ctx.said.at(-1).text, /Full power OFF/);
+}
+
+{
+  const ctx = fakeCtx({ runtime: undefined });
+  assert.equal(await runRegistryCommand('/yolo', ctx), true);
+  assert.equal(ctx.said[0].kind, 'error');
+  assert.match(ctx.said[0].text, /unavailable/);
+}
+
 // ── fall-through contract ───────────────────────────────────────────────────
 
 {

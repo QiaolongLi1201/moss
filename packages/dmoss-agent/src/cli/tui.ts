@@ -365,6 +365,18 @@ export function visibleText(text: string, maxLines = Number.POSITIVE_INFINITY): 
   ].join('\n');
 }
 
+export function truncateTerminalText(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return '';
+  if (stringWidth(text) <= maxWidth) return text;
+  if (maxWidth === 1) return '…';
+  let out = '';
+  for (const ch of Array.from(text)) {
+    if (stringWidth(`${out}${ch}…`) > maxWidth) break;
+    out += ch;
+  }
+  return `${out}…`;
+}
+
 export function formatQueueWait(enqueuedAt: number | undefined, now = Date.now()): string | null {
   if (enqueuedAt === undefined || !Number.isFinite(enqueuedAt)) return null;
   const waitMs = Math.max(0, now - enqueuedAt);
@@ -1780,6 +1792,7 @@ export function SessionHeader({ device: _device, workspace, model, state: _state
  *   - rest: dim
  */
 export function StatusBar({ state, device, workspace, version, notice, model, ctxUsage, flashHint, hint }: StatusBarProps): React.ReactElement {
+  const { columns } = useTerminalSize();
   const ctxPct = ctxUsage && ctxUsage.total > 0 ? (ctxUsage.used / ctxUsage.total) * 100 : null;
   const ctxColor = ctxPct === null
     ? theme.textDim
@@ -1789,6 +1802,15 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
   const ctxLabel = ctxUsage
     ? `ctx ${humanTokens(ctxUsage.used)}/${humanTokens(ctxUsage.total)} (${Math.round(ctxPct ?? 0)}%)`
     : '';
+  const statusText = statusBadge(state);
+  const leftReserve = stringWidth(`Default  ${statusText}  `)
+    + (state === 'running' ? 2 : 0)
+    + (ctxLabel ? stringWidth(ctxLabel) + 2 : 0)
+    + (flashHint ? stringWidth(flashHint) + 2 : 0)
+    + 2;
+  const rightText = `${device}  ·  ${compactPath(workspace)}  ·  ${model || 'connecting...'}  ·  ${version}${hint ? `  |  ${hint}` : ''}`;
+  const rightMax = Math.max(8, columns - leftReserve);
+  const rightDisplay = truncateTerminalText(rightText, rightMax);
 
   return React.createElement(
     Box,
@@ -1802,7 +1824,7 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
       React.createElement(Text, { color: theme.textMuted }, '  '),
       // Status badge + live spinner while the agent is working (self-animating;
       // re-renders on its own interval so the run never looks frozen)
-      React.createElement(Text, { color: statusBarColor(state), bold: true }, statusBadge(state)),
+      React.createElement(Text, { color: statusBarColor(state), bold: true }, statusText),
       state === 'running'
         ? React.createElement(StreamingSpinner, { active: true })
         : null,
@@ -1816,9 +1838,7 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
       // Spacer
       React.createElement(Box, { flexGrow: 1 }),
       // Right side: device · workspace · model · version · hint
-      React.createElement(Text, { color: theme.textMuted },
-        `${device}  ·  ${compactPath(workspace)}  ·  ${model || 'connecting...'}  ·  ${version}${hint ? `  |  ${hint}` : ''}`,
-      ),
+      React.createElement(Text, { color: theme.textMuted, wrap: 'truncate' }, rightDisplay),
     ),
   );
 }
@@ -2341,7 +2361,12 @@ export function PromptEditor({
     if (!atRef) return;
     const insert = `@${suggestion.rel}${suggestion.kind === 'dir' ? '' : ' '}`;
     const head = value.slice(0, atRef.start);
-    const tail = value.slice(currentCursor);
+    // Consume the WHOLE `@token` (the run of non-whitespace from `@`), not just up
+    // to the cursor — otherwise a mid-token selection leaves the old suffix behind
+    // and corrupts the path (e.g. `@ro|bot` → `@robot.tsbot`).
+    const tokenMatch = /^@\S*/.exec(value.slice(atRef.start));
+    const tokenEnd = atRef.start + (tokenMatch ? tokenMatch[0].length : currentCursor - atRef.start);
+    const tail = value.slice(tokenEnd);
     const next = `${head}${insert}${tail}`;
     onChange(next);
     onCursorChange?.(head.length + insert.length);
@@ -4608,11 +4633,16 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
     // via the same pipeline as /attach, so the referenced file content reaches
     // the model THIS turn. The @path text stays in the message as the user's
     // reading context; the file rides alongside as an attachment block.
-    const atRefs = attachesToPrompt ? parseAtReferences(message) : [];
+    // Skip @-resolution for `#` quick-add notes (a `#fact` line is memory, not a
+    // prompt with file refs). An `@word` that doesn't resolve to a real file is
+    // almost always prose (a social @mention, a @decorator, an @ inside a note),
+    // so unresolved @-refs are SILENTLY ignored — never an error — and only
+    // successfully-resolved files attach. This avoids spurious "not a file" noise.
+    const isQuickMemory = parseQuickAddMemory(message) !== null;
+    const atRefs = (attachesToPrompt && !isQuickMemory) ? parseAtReferences(message) : [];
     const atPrepared = atRefs.length > 0
       ? preparePromptAttachments(atRefs, { cwd: workspace, startIndex: pendingAttachments.length + 1 })
       : { attachments: [], blocks: [], warnings: [] };
-    for (const warning of atPrepared.warnings) addTranscript('error', warning);
     const selectedAttachments = attachesToPrompt
       ? selectReferencedPromptAttachments(message, pendingAttachments, pendingAttachmentBlocks)
       : { attachments: [], blocks: [] };

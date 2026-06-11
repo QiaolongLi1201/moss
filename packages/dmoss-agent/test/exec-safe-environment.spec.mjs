@@ -96,3 +96,14 @@ console.log('[TEST] exec tool does not leak ambient host secrets');
 }
 
 console.log('[PASS] exec safe environment regression');
+
+console.log('[TEST] exec tool default timeout is configurable before module load');
+{
+  assert.match(
+    execTool.inputSchema.properties.timeout_ms.description,
+    /default 120000/,
+    'tool schema should advertise the build-friendly default timeout',
+  );
+}
+
+console.log('[PASS] exec default timeout configuration regression');

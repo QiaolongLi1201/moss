@@ -280,6 +280,40 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
 }
 
 {
+  let fullPower = false;
+  const approve = createCliToolApprovalHook('workspace-write', {}, {
+    safetyModeOverride: () => (fullPower ? 'full-access' : undefined),
+    autoApprove: () => fullPower,
+    deniedTools: ['blocked_tool'],
+  });
+  const blockedByBaseMode = await approve({
+    tool: tool('device_exec', 'device_mutation', 'requires_user_confirmation'),
+    input: { command: 'uptime' },
+    sessionKey: 's',
+  });
+  assert.equal(blockedByBaseMode.approved, false, 'base workspace-write still blocks device mutation before /yolo');
+  assert.match(blockedByBaseMode.reason, /workspace-write/);
+
+  fullPower = true;
+  assert.deepEqual(
+    await approve({
+      tool: tool('device_exec', 'device_mutation', 'requires_user_confirmation'),
+      input: { command: 'uptime' },
+      sessionKey: 's',
+    }),
+    { approved: true },
+    '/yolo-style fullPower should allow full-access tools without a per-call prompt',
+  );
+  const denied = await approve({
+    tool: tool('blocked_tool', 'local_write', 'requires_user_confirmation'),
+    input: {},
+    sessionKey: 's',
+  });
+  assert.equal(denied.approved, false, 'deniedTools still overrides fullPower');
+  assert.match(denied.reason, /deniedTools/);
+}
+
+{
   const oldIsTty = process.stdin.isTTY;
   Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
   try {

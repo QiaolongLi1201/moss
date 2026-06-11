@@ -41,6 +41,11 @@ assert.equal(parseQuickAddMemory('hello'), null);
     body = fs.readFileSync(target, 'utf8');
     assert.ok(body.includes('- second fact'));
     assert.equal((body.match(/## Memories/g) || []).length, 1, 'exactly one Memories section');
+    // A note containing regex-replacement specials ($1, $&, $`) must be stored
+    // VERBATIM once the section exists (no $-expansion corruption).
+    appendQuickAddMemory(tmp, 'cost is $1 per $& unit $`', '# AGENTS.md\n');
+    body = fs.readFileSync(target, 'utf8');
+    assert.ok(body.includes('- cost is $1 per $& unit $`'), 'a note with $ specials is stored verbatim');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

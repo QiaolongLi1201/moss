@@ -8,10 +8,8 @@
 
 import type { Tool, ToolContext } from '../core/tools/tool-types.js';
 import type { DeviceSshConfig } from './device-ssh.js';
-import { safeChildEnv } from '../utils/safe-child-env.js';
-import { runProcess } from '../utils/run-process.js';
 import { wrapAsDmoss, ErrorCode } from '../errors.js';
-import { buildSshCommand, shellEscape, sshFailureToError } from './ssh-utils.js';
+import { buildSshCommand, runSsh, sshBinFor, shellEscape, sshFailureToError } from './ssh-utils.js';
 
 const ROS_SETUP = 'source /opt/tros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash 2>/dev/null || true';
 
@@ -57,21 +55,17 @@ async function sshExec(
   const sshArgs = buildSshCommand(config, remoteCmd, 5);
 
   try {
-    const sshBin = config.password ? 'sshpass' : 'ssh';
-    const sshAllArgs = config.password ? ['-e', 'ssh', ...sshArgs] : sshArgs;
-    const result = await runProcess(sshBin, {
-      args: sshAllArgs,
+    const result = await runSsh(config, sshArgs, {
       timeout,
       maxBuffer: 5 * 1024 * 1024,
       signal: ctx?.abortSignal,
-      env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
     });
     return result.stdout.trim();
   } catch (err) {
     // Failures must THROW so the pipeline marks the result isError —
     // returning the text here used to render SSH failures (auth errors,
     // unreachable host, failed ros2 commands) as successful tool calls.
-    const sshError = sshFailureToError(err, config.password ? 'sshpass' : 'ssh');
+    const sshError = sshFailureToError(err, sshBinFor(config));
     if (sshError) throw sshError;
     throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
       hint: 'Check SSH connectivity and ROS2 installation',

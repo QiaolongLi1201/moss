@@ -16,12 +16,11 @@
  */
 
 import type { Tool, ToolContext } from '../core/tools/tool-types.js';
-import { safeChildEnv } from '../utils/safe-child-env.js';
 import { isCommandDangerous } from '../safety/channel-safety.js';
 import { runProcess, ProcessError } from '../utils/run-process.js';
 import { wrapAsDmoss, ErrorCode } from '../errors.js';
 import type { DeviceSshConfig } from './device-ssh.js';
-import { buildSshCommand, shellEscape, sshFailureToError } from './ssh-utils.js';
+import { buildSshCommand, runSsh, sshBinFor, shellEscape, sshFailureToError } from './ssh-utils.js';
 
 /** Tool names board mode replaces. @internal */
 export const BOARD_REPLACED_TOOL_NAMES = [
@@ -75,23 +74,20 @@ async function boardRun(
   remoteCmd: string,
   opts: BoardRunOptions,
 ): Promise<BoardRunResult> {
-  const sshBin = config.password ? 'sshpass' : 'ssh';
-  const sshCmd = buildSshCommand(config, remoteCmd, 5);
-  const args = config.password ? ['-e', 'ssh', ...sshCmd] : sshCmd;
+  const sshArgs = buildSshCommand(config, remoteCmd, 5);
   try {
-    const result = await opts.runner(sshBin, {
-      args,
+    const result = await runSsh(config, sshArgs, {
       timeout: opts.timeout,
       maxBuffer: opts.maxBuffer ?? 5 * 1024 * 1024,
       signal: opts.ctx?.abortSignal,
-      env: safeChildEnv(config.password ? { SSHPASS: config.password } : undefined),
+      runner: opts.runner,
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
   } catch (err) {
     if (err instanceof ProcessError && opts.allowNonZeroExit && !isTransportFailure(config, err)) {
       return { stdout: err.stdout, stderr: err.stderr, exitCode: err.exitCode };
     }
-    const sshError = sshFailureToError(err, sshBin);
+    const sshError = sshFailureToError(err, sshBinFor(config));
     if (sshError) throw sshError;
     throw wrapAsDmoss(err, ErrorCode.TOOL_EXECUTION_FAILED, {
       hint: 'Check SSH connectivity to the board',

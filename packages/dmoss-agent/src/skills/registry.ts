@@ -74,7 +74,7 @@ export interface SkillRegistryOptions {
 }
 
 function parseFrontmatter(content: string): Record<string, string> {
-  const match = content.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
+  const match = content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
   const map: Record<string, string> = {};
   const lines = match[1].split(/\r?\n/);

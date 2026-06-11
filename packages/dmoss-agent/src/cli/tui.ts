@@ -1212,7 +1212,7 @@ function readSkillBody(skill: SkillMeta): string | undefined {
   } catch {
     return undefined;
   }
-  const body = raw.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
+  const body = raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
   return body || undefined;
 }
 

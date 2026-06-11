@@ -330,6 +330,7 @@ export {
 export { createWebFetchTool, type WebFetchOptions } from './tools/web-fetch.js';
 export {
   createWebSearchTool,
+  bingSearch,
   duckDuckGoSearch,
   duckDuckGoLiteSearch,
   createBraveSearch,

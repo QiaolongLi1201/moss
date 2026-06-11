@@ -16,7 +16,7 @@ import { markedTerminal } from 'marked-terminal';
 import type { DmossAgent, DmossAgentEvent, GoalState, Tool, ToolResultOutcome } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import type { SessionMeta } from '../core/session/session.js';
-import { SkillRegistry, type SkillMeta } from '../skills/index.js';
+import { SkillRegistry, resolveDefaultSkillRoots, type SkillMeta } from '../skills/index.js';
 import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type CliInteractionMode } from './approval.js';
 import {
   parseAttachArgs,
@@ -86,6 +86,11 @@ interface ActivityItem {
 
 interface ModelPickerState {
   list: ModelChoiceList;
+  selectedIndex: number;
+}
+
+interface SessionPickerState {
+  sessions: SessionMeta[];
   selectedIndex: number;
 }
 
@@ -1149,6 +1154,7 @@ export function commandArgumentHint(value: string): string | null {
   if (command === '/model') return hasArg ? null : '<model-name-or-number>';
   if (command === '/auth') return hasArg ? null : '[login | status | logout]';
   if (command === '/status') return hasArg ? null : '[--verbose]';
+  if (command === '/compact') return hasArg ? null : '[instructions]';
   return null;
 }
 
@@ -1189,6 +1195,103 @@ function formatSkillLine(skill: SkillMeta): string {
   const disabled = skill.enabled ? '' : ' · disabled';
   const description = visibleText(skill.description, 1);
   return `  • ${skill.name} · ${skill.risk}${disabled}${tags} - ${description}`;
+}
+
+/** Skills auto-injected per turn (cap so a broad query can't flood context). */
+const MAX_INJECTED_SKILLS = 3;
+
+/**
+ * Read a skill's SKILL.md body (frontmatter stripped). Builtins use a virtual
+ * `builtin://` path and have no readable file, so they return undefined.
+ */
+function readSkillBody(skill: SkillMeta): string | undefined {
+  if (!skill.sourcePath || skill.sourcePath.startsWith('builtin://')) return undefined;
+  let raw: string;
+  try {
+    raw = fs.readFileSync(skill.sourcePath, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  const body = raw.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
+  return body || undefined;
+}
+
+/**
+ * Build the per-turn matched-skill context block. Matches the user's message
+ * against registry skills (name/description/trigger) and inlines the top few
+ * skills' instructions. Returns '' when nothing matches. The caller passes this
+ * via ChatOptions.extraContext (dynamic bucket) so it never breaks prompt cache.
+ * @internal
+ */
+export function buildMatchedSkillContext(
+  registry: SkillRegistry | null,
+  message: string,
+): string {
+  if (!registry) return '';
+  let matched: SkillMeta[];
+  try {
+    matched = registry.matchByText(message).slice(0, MAX_INJECTED_SKILLS);
+  } catch {
+    return '';
+  }
+  if (matched.length === 0) return '';
+  const sections: string[] = [];
+  for (const skill of matched) {
+    const body = readSkillBody(skill);
+    sections.push(
+      body
+        ? `### ${skill.name}\n${skill.description}\n\n${body}`
+        : `### ${skill.name}\n${skill.description}`,
+    );
+  }
+  return [
+    '## Matched Skills',
+    'The following skill instructions match this request. Apply the relevant ones.',
+    ...sections,
+  ].join('\n\n');
+}
+
+/**
+ * Build `/<skillName>` slash commands from file-backed registry skills. Mirrors
+ * loadCustomCommands: a skill resolves to a command that expands its SKILL.md
+ * body into a submitted prompt. Builtins (no readable body) and names already
+ * owned by a built-in or custom command are skipped, so a skill can never
+ * shadow a shipped command.
+ * @internal
+ */
+export function loadSkillCommands(
+  registry: SkillRegistry,
+  reserved: ReadonlySet<string>,
+): CommandSpec[] {
+  const seen = new Set<string>();
+  const specs: CommandSpec[] = [];
+  let skills: SkillMeta[];
+  try {
+    skills = registry.list();
+  } catch {
+    return specs;
+  }
+  for (const skill of skills) {
+    const slug = skill.name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!slug) continue;
+    const slash: `/${string}` = `/${slug}`;
+    if (reserved.has(slash) || seen.has(slash)) continue;
+    if (skill.sourcePath.startsWith('builtin://')) continue;
+    const body = readSkillBody(skill);
+    if (!body) continue;
+    seen.add(slash);
+    const summary = `skill: ${visibleText(skill.description, 1)}`;
+    specs.push({
+      name: slash,
+      summary,
+      run(ctx, args) {
+        const prompt = args.trim() ? `${body}\n\n${args.trim()}` : body;
+        if (ctx.submitPrompt) ctx.submitPrompt(prompt);
+        else ctx.prefillInput(prompt);
+      },
+    });
+  }
+  return specs;
 }
 
 function listMarkdownFilenames(dir: string): string[] {
@@ -1242,12 +1345,31 @@ export function listSkillCandidates(workspace: string): SkillCandidateListing[] 
   }
 }
 
-export function renderSkills(workspace: string): string {
+/**
+ * Extra skill roots for a session: config `skills.extraRoots` (tilde-expanded,
+ * existence-checked) or the built-in home defaults. Best-effort — a broken
+ * config file must never stop skills from loading, so failures fall back to the
+ * defaults.
+ * @internal
+ */
+export function resolveSessionSkillRoots(runtime?: CliRuntimeStatus): string[] {
+  let configured: string[] | undefined;
+  try {
+    const configPath = resolveConfigPath(runtime?.configDir);
+    const file = loadConfigFile(configPath);
+    if (Array.isArray(file.skills?.extraRoots)) configured = file.skills?.extraRoots;
+  } catch {
+    configured = undefined;
+  }
+  return resolveDefaultSkillRoots(configured);
+}
+
+export function renderSkills(workspace: string, extraDirs: string[] = []): string {
   const learned = listLearnedSkillFiles(workspace);
   const candidates = listSkillCandidates(workspace);
   let registered: SkillMeta[] = [];
   try {
-    registered = new SkillRegistry({ workspaceDir: workspace }).list();
+    registered = new SkillRegistry({ workspaceDir: workspace, extraDirs }).list();
   } catch {
     registered = [];
   }
@@ -2570,6 +2692,35 @@ function ModelPicker({ state }: { state: ModelPickerState }): React.ReactElement
   );
 }
 
+function SessionPicker({ state }: { state: SessionPickerState }): React.ReactElement {
+  const maxVisible = 7;
+  const sessions = state.sessions;
+  const selected = Math.max(0, Math.min(sessions.length - 1, state.selectedIndex));
+  const start = Math.min(
+    Math.max(0, selected - Math.floor(maxVisible / 2)),
+    Math.max(0, sessions.length - maxVisible),
+  );
+  const visible = sessions.slice(start, start + maxVisible);
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', paddingX: 1, marginBottom: 1 },
+    React.createElement(Text, { color: theme.accent, bold: true }, 'Resume session'),
+    React.createElement(Text, { color: theme.textMuted }, 'Switch this session to a saved conversation:'),
+    ...visible.map((session, offset) => {
+      const index = start + offset;
+      const isSelected = index === selected;
+      const count = `${session.messageCount} msg${session.messageCount === 1 ? '' : 's'}`;
+      return React.createElement(Text, {
+        key: `${session.sessionKey}-${index}`,
+        color: isSelected ? theme.permission : theme.text,
+        bold: isSelected,
+      }, `${isSelected ? '› ' : '  '}${String(index + 1).padStart(2, ' ')}. ${session.sessionKey} · ${count} · ${formatSessionTimestamp(session.updatedAt)}`);
+    }),
+    React.createElement(Text, { color: theme.textDim },
+      'Enter resume · Up/Down move · Esc cancel · /resume <number|key|--last>'),
+  );
+}
+
 function formatPromptEcho(message: string, attachments: PreparedPromptAttachment[]): string {
   if (attachments.length === 0) return message;
   return `${message}\n${renderPendingAttachmentSummary(attachments)}`;
@@ -2731,17 +2882,24 @@ function WorkingIndicator(): React.ReactElement {
   );
 }
 
-export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): React.ReactElement {
+export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSessionKey }: DmossTuiProps): React.ReactElement {
   const app = useApp();
   const { rows: termRows } = useTerminalSize();
   const workspace = runtime?.workspace || process.cwd();
+  // sessionKey is React state so /resume and /clear can re-point the active
+  // conversation in-session. The agent holds no in-memory history — chat/streamChat
+  // load+persist per sessionKey each turn — so switching the key is enough to swap
+  // conversations without rebuilding the agent.
+  const [sessionKey, setSessionKey] = useState(initialSessionKey);
   const checkpointRef = useRef<FileCheckpointStore | null>(null);
-  if (!checkpointRef.current) {
+  const checkpointKeyRef = useRef<string | null>(null);
+  if (checkpointKeyRef.current !== sessionKey) {
     const paths = getMossWorkspacePaths(workspace);
     checkpointRef.current = new FileCheckpointStore({
       runtimeDir: runtime?.runtimeDir || paths.runtimeDir,
       sessionKey,
     });
+    checkpointKeyRef.current = sessionKey;
   }
   // File-based custom commands (.moss/commands/*.md) join the registry dispatch.
   // Loaded once per session; submitPromptRef bridges to runInput (defined below)
@@ -2754,16 +2912,37 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       reservedNames: reservedBuiltinNames(),
     });
   }
+  // One SkillRegistry per session: scans the workspace + cross-agent home roots
+  // (`~/.claude/skills`, `~/.agents/skills`, or config `skills.extraRoots`).
+  // Shared so /skills display, per-turn auto-injection, and /<skillName>
+  // dispatch all see the same skill set.
+  const skillRegistryRef = useRef<SkillRegistry | null>(null);
+  if (!skillRegistryRef.current) {
+    skillRegistryRef.current = new SkillRegistry({
+      workspaceDir: workspace,
+      extraDirs: resolveSessionSkillRoots(runtime),
+    });
+  }
+  // Skill slash commands (/<skillName>): file-backed skills only, expanded like
+  // custom commands. Guarded against shadowing built-ins AND custom commands.
+  const skillCommandsRef = useRef<CommandSpec[] | null>(null);
+  if (!skillCommandsRef.current) {
+    const reserved = new Set(reservedBuiltinNames());
+    for (const cmd of customCommandsRef.current ?? []) reserved.add(cmd.name);
+    skillCommandsRef.current = loadSkillCommands(skillRegistryRef.current, reserved);
+  }
   const submitPromptRef = useRef<(text: string) => void>(() => {});
   // Slash-menu rows for the loaded custom commands (stable for the session).
-  const customCommandRows: ReadonlyArray<readonly [string, string]> = (customCommandsRef.current ?? []).map(
-    (command) => [command.name, command.summary] as [string, string],
-  );
+  const customCommandRows: ReadonlyArray<readonly [string, string]> = [
+    ...(customCommandsRef.current ?? []),
+    ...(skillCommandsRef.current ?? []),
+  ].map((command) => [command.name, command.summary] as [string, string]);
   const [input, setInput] = useState('');
   const [inputCursor, setInputCursor] = useState(0);
   const [busy, setBusy] = useState(false);
   const [currentModel, setCurrentModel] = useState(agent.config.model || '');
   const [modelPicker, setModelPicker] = useState<ModelPickerState | null>(null);
+  const [sessionPicker, setSessionPicker] = useState<SessionPickerState | null>(null);
   const [detailMode, setDetailMode] = useState(process.env.DMOSS_CLI_DETAIL || 'quiet');
   const [showThinking, setShowThinking] = useState(process.env.DMOSS_SHOW_THINKING === 'true');
   const [notice, setNotice] = useState('');
@@ -3024,6 +3203,31 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       : `Model switched to ${model} (${provider})`);
   }, [addTranscript, agent, runtime]);
 
+  // Re-point the active conversation to `nextKey`: wipe the screen + scrollback
+  // (so the old transcript does not bleed into the new context), reset the live
+  // transcript, remount <Static> (epoch bump), drop goal activity, and set the new
+  // sessionKey. checkpointRef rebuilds on the next render via checkpointKeyRef.
+  const switchToSession = useCallback((nextKey: string): void => {
+    if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+    setTranscript([]);
+    setStaticEpoch((n) => n + 1);
+    clearGoalActivity();
+    setSessionKey(nextKey);
+  }, [clearGoalActivity]);
+
+  const resumeSession = useCallback(async (session: SessionMeta): Promise<void> => {
+    switchToSession(session.sessionKey);
+    let count = session.messageCount ?? 0;
+    try {
+      count = (await agent.config.sessionStore.loadMessages(session.sessionKey)).length;
+    } catch {
+      /* fall back to the listed count */
+    }
+    addTranscript('system', /^zh/i.test(cliLocale() ?? '')
+      ? `已恢复会话 ${session.sessionKey}（${count} 条消息），可继续对话。`
+      : `Resumed session ${session.sessionKey} (${count} message${count === 1 ? '' : 's'}). Continue chatting.`);
+  }, [addTranscript, agent, switchToSession]);
+
   const applyCustomModelConfig = useCallback((rawConfig: string): void => {
     const configPath = runtime?.config?.configPath ?? resolveConfigPath();
     const parsed = parseCustomModelConfigInput(rawConfig);
@@ -3226,6 +3430,35 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     // mouse-report bytes Ink surfaces here so they never fire keys (e.g. a stray
     // Esc from a wheel event must not cancel the run).
     if (isLikelyMouseInput(inputChar)) return;
+    if (sessionPicker) {
+      const sessions = sessionPicker.sessions;
+      if (key.escape) {
+        setSessionPicker(null);
+        showFlash('session selection cancelled');
+        return;
+      }
+      if (key.upArrow || (key.ctrl && inputChar.toLowerCase() === 'p')) {
+        setSessionPicker((picker) => picker ? {
+          ...picker,
+          selectedIndex: picker.selectedIndex <= 0 ? picker.sessions.length - 1 : picker.selectedIndex - 1,
+        } : picker);
+        return;
+      }
+      if (key.downArrow || (key.ctrl && inputChar.toLowerCase() === 'n')) {
+        setSessionPicker((picker) => picker ? {
+          ...picker,
+          selectedIndex: picker.selectedIndex >= picker.sessions.length - 1 ? 0 : picker.selectedIndex + 1,
+        } : picker);
+        return;
+      }
+      if (key.return) {
+        const session = sessions[Math.max(0, Math.min(sessions.length - 1, sessionPicker.selectedIndex))];
+        setSessionPicker(null);
+        if (session) void resumeSession(session);
+        return;
+      }
+      return;
+    }
     if (modelPicker) {
       const choices = modelPicker.list.choices;
       if (key.escape) {
@@ -3379,7 +3612,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
           showFlash(/^zh/i.test(cliLocale() ?? '') ? '已预填重试命令，补上密码回车' : 'retry command pre-filled — add the password and press Enter');
         },
         submitPrompt: (text) => submitPromptRef.current(text),
-      }, customCommandsRef.current ?? []);
+      }, [...(customCommandsRef.current ?? []), ...(skillCommandsRef.current ?? [])]);
       if (handled) return true;
     }
     if (message === '/quit' || message === '/exit') {
@@ -3387,20 +3620,56 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     if (message === '/help') {
-      addTranscript('system', commandList(customCommandsRef.current ?? []));
+      addTranscript('system', commandList([
+        ...(customCommandsRef.current ?? []),
+        ...(skillCommandsRef.current ?? []),
+      ]));
       return true;
     }
     if (message === '/paste') {
       await pasteClipboardAttachment();
       return true;
     }
-    if (message === '/clear') {
-      // History lives in the terminal's scrollback now, so clearing means wiping the
-      // screen AND scrollback (2J + 3J), then remounting <Static> (epoch bump) so Ink
-      // forgets the committed output it already emitted.
-      if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
-      setTranscript([]);
-      setStaticEpoch((n) => n + 1);
+    if (message === '/clear' || message === '/new' || message === '/reset') {
+      // Claude Code parity: /clear resets the CONTEXT, not just the screen. Switch to
+      // a fresh sessionKey so the next turn starts with an empty history (the old
+      // session file is left intact and remains resumable via /resume). switchToSession
+      // also wipes the screen + scrollback and remounts <Static>.
+      switchToSession(createCliSessionKey());
+      addTranscript('system', /^zh/i.test(cliLocale() ?? '')
+        ? '已开始新对话——上一段上下文已清空（旧会话仍可用 /resume 恢复）。'
+        : 'Started a new conversation — previous context cleared (the old session is still resumable via /resume).');
+      return true;
+    }
+    if (message === '/resume' || message.startsWith('/resume ')) {
+      const arg = message.slice('/resume'.length).trim();
+      let sessions: SessionMeta[];
+      try {
+        sessions = await agent.config.sessionStore.listSessions();
+      } catch (err) {
+        addTranscript('error', `Could not list sessions: ${err instanceof Error ? err.message : String(err)}`);
+        return true;
+      }
+      const recent = [...(sessions ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
+      if (recent.length === 0) {
+        addTranscript('system', 'No saved sessions to resume yet.');
+        return true;
+      }
+      if (arg === '--last' || arg === '-l') {
+        await resumeSession(recent[0]);
+        return true;
+      }
+      if (arg) {
+        const byIndex = /^\d+$/.test(arg) ? recent[Number.parseInt(arg, 10) - 1] : undefined;
+        const target = recent.find((s) => s.sessionKey === arg) ?? byIndex;
+        if (!target) {
+          addTranscript('error', `No session matching "${arg}". Use /sessions to list keys, or /resume for a picker.`);
+          return true;
+        }
+        await resumeSession(target);
+        return true;
+      }
+      setSessionPicker({ sessions: recent.slice(0, 50), selectedIndex: 0 });
       return true;
     }
     if (message === '/queue' || message === '/queued') {
@@ -3559,10 +3828,11 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       }
       return true;
     }
-    if (message === '/compact') {
+    if (message === '/compact' || message.startsWith('/compact ')) {
+      const compactInstructions = message.slice('/compact'.length).trim() || undefined;
       setBusyState(true);
       try {
-        addTranscript('system', await handleCompactCommand(agent, sessionKey));
+        addTranscript('system', await handleCompactCommand(agent, sessionKey, compactInstructions));
       } catch (err) {
         addTranscript('error', [
           `Could not compact conversation: ${err instanceof Error ? err.message : String(err)}`,
@@ -3578,7 +3848,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     if (message === '/skills') {
-      addTranscript('system', renderSkills(workspace));
+      addTranscript('system', renderSkills(workspace, skillRegistryRef.current?.extraDirsSnapshot() ?? []));
       return true;
     }
     if (message.startsWith('/skills promote ')) {
@@ -3777,7 +4047,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     return false;
-  }, [activateGoalActivity, addTranscript, agent, app, applyCustomModelConfig, clearGoalActivity, currentModel, input, pasteClipboardAttachment, pendingAttachmentBlocks, pendingAttachments, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, switchModelForSession, workspace]);
+  }, [activateGoalActivity, addTranscript, agent, app, applyCustomModelConfig, clearGoalActivity, currentModel, input, pasteClipboardAttachment, pendingAttachmentBlocks, pendingAttachments, requestStop, resumeSession, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, switchModelForSession, switchToSession, workspace]);
 
   const runLocalShell = useCallback(async (raw: string): Promise<void> => {
     const command = raw.slice(1);
@@ -3846,8 +4116,16 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
           ephemeralTools = [...ephemeralTools, createGoalFinishTool()];
         }
       }
+      // Auto-inject skills whose name/description/trigger match this turn. Goes
+      // ONLY into extraContext (the dynamic prompt-cache bucket), never the
+      // stable layer, so matched skills never invalidate the cached prefix.
+      const matchedSkillContext = buildMatchedSkillContext(
+        skillRegistryRef.current,
+        message,
+      );
       for await (const event of agent.streamChat(sessionKey, effectiveMessage, {
         abortSignal: controller.signal,
+        ...(matchedSkillContext ? { extraContext: matchedSkillContext } : {}),
         ...(attachmentBlocks.length > 0 ? { attachments: attachmentBlocks } : {}),
         ...(ephemeralTools.length > 0 ? { ephemeralTools } : {}),
       })) {
@@ -4231,6 +4509,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     extraCommandRows: customCommandRows,
   });
   const modelPickerRows = modelPicker ? Math.min(14, modelPicker.list.choices.length + 7) : 0;
+  const sessionPickerRows = sessionPicker ? Math.min(12, sessionPicker.sessions.length + 4) : 0;
   const queueRows = queuedInputs.length > 0 ? Math.min(5, queuedInputs.length + 2) : 0;
   const subagentRows = subagentTasks.length > 0 ? Math.min(8, subagentTasks.length + 2) : 0;
   const footerRows = approval ? 0 : 1;
@@ -4316,6 +4595,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     1 /* paddingTop */
     + (busy && !approval ? 1 : 0) /* working indicator */
     + modelPickerRows
+    + sessionPickerRows
     + subagentRows
     + queueRows
     + noticeRows
@@ -4357,6 +4637,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       // is always clear the agent is alive (not frozen) even between visible output.
       busy && !approval ? React.createElement(WorkingIndicator, { key: 'working' }) : null,
       modelPicker ? React.createElement(ModelPicker, { state: modelPicker }) : null,
+      sessionPicker ? React.createElement(SessionPicker, { state: sessionPicker }) : null,
       React.createElement(SubagentTaskPanel, {
         tasks: subagentTasks,
         completions: subagentCompletions,
@@ -4377,7 +4658,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
             onCursorChange: setInputCursor,
             onSubmit: submit,
             placeholder: promptPlaceholder(runState),
-            disabled: modelPicker !== null,
+            disabled: modelPicker !== null || sessionPicker !== null,
             mode: interactionMode,
             onHistoryPrevious: recallHistoryPrevious,
             onHistoryNext: recallHistoryNext,
@@ -4427,7 +4708,7 @@ function commandList(customCommands: readonly CommandSpec[] = []): string {
     '  /model [name|#]    choose or switch the active model',
     '  /model config ...  save base_url/key/model_name and use it now',
     '  /goal <condition>  run until this goal condition is met',
-    '  /compact           compress older conversation history into a summary',
+    '  /compact [instructions]  compress older conversation history into a summary',
     '  /auth login        optional: link a D-Robotics developer community account',
     '  /connect <ip>      connect an RDK board for this session',
     '  /sessions          list saved conversations you can resume',

@@ -14,6 +14,8 @@ export interface ParsedCliArgs {
   approvalPolicy: ApprovalPolicy;
   sessionKey?: string;
   sessionLast: boolean;
+  /** `--continue`: auto-resume the most recent session on the default chat command. */
+  continueLast: boolean;
   forkSource?: string;
   detailMode?: 'quiet' | 'progress' | 'verbose';
   mesh: boolean;
@@ -191,6 +193,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
   let approvalPolicy: ApprovalPolicy = 'prompt';
   let sessionKey: string | undefined;
   let sessionLast = false;
+  let continueLast = false;
   let forkSource: string | undefined;
   let detailMode: ParsedCliArgs['detailMode'];
   let mesh = false;
@@ -338,6 +341,12 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
       sessionLast = true;
       continue;
     }
+    if (arg === '--continue') {
+      // Auto-resume the most recent session for the cwd on a bare `moss` (parity
+      // with Claude Code's `claude --continue`). `-c` is already `--config`.
+      continueLast = true;
+      continue;
+    }
     if (arg === '--fork-from' || arg.startsWith('--fork-from=')) {
       const parsed = readValue(argv, i, arg);
       forkSource = parsed.value;
@@ -371,6 +380,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     approvalPolicy,
     sessionKey,
     sessionLast,
+    continueLast,
     forkSource,
     detailMode,
     mesh,

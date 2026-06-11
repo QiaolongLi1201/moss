@@ -726,6 +726,7 @@ async function runLlmCompaction(params: {
   contextWindowTokens: number;
   maxTokens?: number;
   reserveTokens: number;
+  customInstructions?: string;
 }): Promise<string> {
   return buildCompactionSummary({
     summarize: params.summarize,
@@ -733,6 +734,7 @@ async function runLlmCompaction(params: {
     contextWindowTokens: params.contextWindowTokens,
     maxTokens: params.maxTokens,
     reserveTokens: params.reserveTokens,
+    customInstructions: params.customInstructions,
   });
 }
 
@@ -873,6 +875,7 @@ export async function compactHistoryIfNeeded(params: {
         contextWindowTokens: params.contextWindowTokens,
         maxTokens: params.maxTokens,
         reserveTokens: resolvedSettings.reserveTokens,
+        customInstructions: params.customInstructions,
       });
     }
   } catch (err) {

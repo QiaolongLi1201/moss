@@ -260,9 +260,10 @@ export async function runInteractive(
       continue;
     }
 
-    if (msg === '/compact') {
+    if (msg === '/compact' || msg.startsWith('/compact ')) {
+      const compactInstructions = msg.slice('/compact'.length).trim() || undefined;
       try {
-        console.error(await handleCompactCommand(agent, sessionKey));
+        console.error(await handleCompactCommand(agent, sessionKey, compactInstructions));
       } catch (err) {
         console.error(`[compact] ${err instanceof Error ? err.message : String(err)}`);
         console.error('[compact] You can keep chatting; try /status --verbose to inspect context, or ask Moss to summarize the current session manually.');

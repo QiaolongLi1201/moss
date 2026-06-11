@@ -43,6 +43,19 @@ export interface CliRuntimeStatus {
   sessionKey?: string;
   config?: ResolvedCliConfig;
   communityAuth?: DmossCommunityAuthRuntime;
+  /**
+   * Live MCP status snapshot, populated at startup after MCP servers connect.
+   * Plain data only (no live connection handles) so the runtime stays
+   * host-neutral. Surfaced in-session by /mcp.
+   */
+  mcp?: CliMcpServerStatus[];
+}
+
+/** One configured MCP server's live connection state, for /mcp. */
+export interface CliMcpServerStatus {
+  name: string;
+  connected: boolean;
+  toolCount: number;
 }
 
 interface ToolGroupSummary {
@@ -60,11 +73,12 @@ function loadDefaultRuntimeConfig(): ResolvedCliConfig {
   }
 }
 
-const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'deviceSession' | 'dockerImage' | 'communityAuth'>> & {
+const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'deviceSession' | 'dockerImage' | 'communityAuth' | 'mcp'>> & {
   dockerImage?: string;
   device: CliDeviceStatus | null;
   deviceSession: CliDeviceSessionHandle | null;
   communityAuth?: DmossCommunityAuthRuntime;
+  mcp?: CliMcpServerStatus[];
 } = {
   workspace: WORKSPACE,
   runtimeDir: path.join(WORKSPACE, '.moss'),
@@ -330,6 +344,39 @@ export function renderCliTools(agent: DmossAgent): string {
     '    Ctrl+V / paste path attach copied images, Finder files, or file paths',
     '    /compact           compress older conversation history into a summary',
     '    /detail verbose    show redacted tool inputs and results',
+  ].join('\n');
+}
+
+export function renderCliMcp(runtime: CliRuntimeStatus = {}): string {
+  const rt = runtimeWithDefaults(runtime);
+  const mcpEnabled = rt.config?.mcpEnabled === true;
+  const servers = rt.mcp ?? [];
+  if (!mcpEnabled) {
+    return [
+      ui.bold('MCP servers'),
+      `  ${label('status')} disabled`,
+      `  Enable with \`moss config set mcpEnabled true\`, then configure servers in ${rt.config?.mcpConfigPath ?? 'mcp.json'}.`,
+    ].join('\n');
+  }
+  if (servers.length === 0) {
+    return [
+      ui.bold('MCP servers'),
+      `  ${label('status')} enabled, no servers connected`,
+      `  ${label('config')} ${rt.config?.mcpConfigPath ?? '(not configured)'}`,
+      '  Add a server with `moss mcp add <name> -- <command> [args...]`.',
+    ].join('\n');
+  }
+  const connected = servers.filter((s) => s.connected).length;
+  const totalTools = servers.reduce((n, s) => n + s.toolCount, 0);
+  return [
+    ui.bold('MCP servers'),
+    `  ${label('config')} ${rt.config?.mcpConfigPath ?? '(not configured)'}`,
+    `  ${label('summary')} ${connected}/${servers.length} connected · ${totalTools} tools`,
+    ...servers.map((server) => {
+      const marker = server.connected ? ui.green('●') : ui.yellow('○');
+      const state = server.connected ? `${server.toolCount} tools` : 'failed to connect';
+      return `  ${marker} ${server.name}  ${ui.dim(state)}`;
+    }),
   ].join('\n');
 }
 

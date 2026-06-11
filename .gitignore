@@ -30,3 +30,6 @@ packages/dmoss-agent/test/run-observer-*.spec.mjs
 scripts/moss-*.command
 .moss-fresh-audit/
 TEST_REPORT-*.md
+
+# Local agent worktrees (EnterWorktree / isolated subagents)
+.claude/worktrees/

@@ -84,7 +84,17 @@ function makeAgent(options = {}) {
     async clearGoal() {
       goal = undefined;
     },
-    async compactSession() {
+    async compactSession(_sessionKey, customInstructions) {
+      options.onCompactSession?.({ customInstructions });
+      if (customInstructions) {
+        return {
+          compacted: true,
+          summary: `focused:${customInstructions}`,
+          summaryChars: `focused:${customInstructions}`.length,
+          droppedMessages: 3,
+          tokensAfter: 21,
+        };
+      }
       return {
         compacted: false,
         summaryChars: 0,
@@ -153,6 +163,30 @@ test('/status renders cleanly (no squash) and shows the newest lines by default'
   assertNoCrush(f, '/status @24');
   assert.match(strip(f), /Details: \/status --verbose/, 'default /status should point to verbose details');
   assert.match(strip(f), /tools: 0/, 'default /status should keep the core runtime summary visible');
+  cleanup();
+});
+
+test('/mcp lists configured servers with tool counts and a connected/failed marker', async () => {
+  setRows(24);
+  const mcpRuntime = {
+    ...runtime,
+    config: { mcpEnabled: true, mcpConfigPath: '/tmp/dmoss-test/mcp.json' },
+    mcp: [
+      { name: 'filesystem', connected: true, toolCount: 5 },
+      { name: 'broken-server', connected: false, toolCount: 0 },
+    ],
+  };
+  const { stdin, lastFrame } = mount(makeAgent(), mcpRuntime);
+  await wait(140);
+  const f = await runSlashCommand(stdin, lastFrame, '/mcp');
+  const s = strip(f);
+  assert.doesNotMatch(s, /Unknown command: \/mcp/, '/mcp must be a recognized command');
+  assert.match(s, /MCP servers/, '/mcp should render the MCP servers header');
+  assert.match(s, /filesystem/, '/mcp should list the connected server name');
+  assert.match(s, /5 tools/, '/mcp should show the connected server tool count');
+  assert.match(s, /broken-server/, '/mcp should list the failed server name');
+  assert.match(s, /failed to connect/, '/mcp should mark a non-connected server as failed');
+  assert.match(s, /[●○]/, '/mcp should render per-server status markers');
   cleanup();
 });
 
@@ -393,6 +427,23 @@ test('/compact is visible and handled by the TUI', async () => {
   const f = await runSlashCommand(stdin, lastFrame, '/compact');
   assert.match(strip(f), /No compaction needed\./, '/compact should call compactSession');
   assert.doesNotMatch(strip(f), /Unknown command: \/compact/);
+  cleanup();
+});
+
+test('/compact <instructions> threads the free-text focus into compactSession', async () => {
+  setRows(24);
+  let captured;
+  const agent = makeAgent({ onCompactSession: (info) => { captured = info; } });
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+  const f = await runSlashCommand(stdin, lastFrame, '/compact focus on the SSH bug');
+  assert.equal(
+    captured?.customInstructions,
+    'focus on the SSH bug',
+    '/compact <text> must pass the trailing instructions to compactSession',
+  );
+  assert.match(strip(f), /Compacted conversation context\./, '/compact <text> should compact');
+  assert.doesNotMatch(strip(f), /Unknown command/);
   cleanup();
 });
 
@@ -644,6 +695,166 @@ test('a custom command is discoverable in the slash menu and expands into a prom
   }
 
   fs.rmSync(tmpWs, { recursive: true, force: true });
+});
+
+test('/clear starts a fresh conversation with a new sessionKey (Claude Code parity)', async () => {
+  setRows(24);
+  const seen = [];
+  const agent = makeAgent({ onStreamChat: (c) => seen.push(c) });
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+  stdin.write('hello one');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.equal(seen[0]?.sessionKey, 'cli', 'baseline prompt uses the mounted sessionKey');
+
+  await runSlashCommand(stdin, lastFrame, '/clear');
+  assert.match(strip(lastFrame()), /new conversation|新对话/, '/clear should announce a fresh context');
+
+  stdin.write('hello two');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.equal(seen.length, 2, 'second prompt should still be sent');
+  assert.notEqual(seen[1].sessionKey, 'cli', '/clear must switch to a fresh session, not keep the old context');
+  cleanup();
+});
+
+test('/resume --last switches the active session to the most recent saved one', async () => {
+  setRows(24);
+  const seen = [];
+  const agent = makeAgent({ onStreamChat: (c) => seen.push(c) });
+  agent.config.sessionStore = {
+    listSessions: async () => [
+      { sessionKey: 'sess-older', updatedAt: 1000, messageCount: 2 },
+      { sessionKey: 'sess-newest', updatedAt: 2000, messageCount: 4 },
+    ],
+    loadMessages: async () => [{}, {}, {}, {}],
+  };
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+  await runSlashCommand(stdin, lastFrame, '/resume --last');
+  assert.match(strip(lastFrame()), /sess-newest/, '/resume --last should resume the most recent session');
+
+  stdin.write('after resume');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.equal(seen.at(-1).sessionKey, 'sess-newest', 'subsequent prompts run against the resumed session');
+  cleanup();
+});
+
+test('/resume opens a session picker; Down+Enter resumes the highlighted session', async () => {
+  setRows(24);
+  const seen = [];
+  const agent = makeAgent({ onStreamChat: (c) => seen.push(c) });
+  agent.config.sessionStore = {
+    listSessions: async () => [
+      { sessionKey: 'sess-older', updatedAt: 1000, messageCount: 2 },
+      { sessionKey: 'sess-newest', updatedAt: 2000, messageCount: 4 },
+    ],
+    loadMessages: async () => [],
+  };
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+  await runSlashCommand(stdin, lastFrame, '/resume');
+  assert.match(strip(lastFrame()), /[Ss]ession/, '/resume with no arg should open a session picker');
+  // Newest is first in the sorted picker; Down moves to the older session.
+  stdin.write(DOWN);
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  stdin.write('x');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.equal(seen.at(-1).sessionKey, 'sess-older', 'Down+Enter should resume the second (older) session');
+  cleanup();
+});
+
+// Isolate skill discovery from the real ~/.claude/skills on the dev machine:
+// a config.json with skills.extraRoots:[] makes resolveSessionSkillRoots scan
+// ONLY the workspace, so these assertions are deterministic.
+function isolatedSkillWorkspace(prefix) {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const cfgDir = path.join(ws, 'cfg');
+  fs.mkdirSync(cfgDir, { recursive: true });
+  fs.writeFileSync(path.join(cfgDir, 'config.json'), JSON.stringify({ skills: { extraRoots: [] } }));
+  return {
+    ws,
+    runtimeOverride: { workspace: ws, configDir: cfgDir, runtimeDir: path.join(ws, 'runtime') },
+  };
+}
+
+test('a matched skill is auto-injected into streamChat extraContext on a normal turn', async () => {
+  setRows(24);
+  const { ws, runtimeOverride } = isolatedSkillWorkspace('moss-tui-skill-inject-');
+  const skillDir = path.join(ws, '.moss', 'skills', 'flux-capacitor');
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(skillDir, 'SKILL.md'),
+    '---\nname: flux-capacitor\ndescription: Calibrate the flux capacitor before time travel\n---\nStep 1: charge to 1.21 gigawatts.',
+  );
+  const calls = [];
+  const agent = makeAgent({ onStreamChat: (c) => calls.push(c) });
+  const { stdin } = mount(agent, runtimeOverride);
+  await wait(140);
+
+  stdin.write('please help me calibrate the flux capacitor');
+  await wait();
+  stdin.write('\r');
+  await wait(220);
+  assert.equal(calls.length, 1, 'the turn should reach streamChat once');
+  const extra = calls[0].options?.extraContext ?? '';
+  assert.match(extra, /## Matched Skills/, 'matched-skill block should be injected');
+  assert.match(extra, /flux-capacitor/, 'the matched skill name should be present');
+  assert.match(extra, /charge to 1\.21 gigawatts/, 'the SKILL.md body should be inlined');
+
+  calls.length = 0;
+  stdin.write('zzz totally unrelated gibberish qqq');
+  await wait();
+  stdin.write('\r');
+  await wait(220);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options?.extraContext, undefined, 'no match → no extraContext injection');
+
+  cleanup();
+  fs.rmSync(ws, { recursive: true, force: true });
+});
+
+test('/<skillName> expands the SKILL.md body into a submitted prompt', async () => {
+  setRows(24);
+  const { ws, runtimeOverride } = isolatedSkillWorkspace('moss-tui-skill-cmd-');
+  const skillDir = path.join(ws, '.moss', 'skills', 'deploy-rocket');
+  fs.mkdirSync(skillDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(skillDir, 'SKILL.md'),
+    '---\nname: deploy-rocket\ndescription: Deploy the rocket safely\n---\nRun the pre-flight checklist, then ignite.',
+  );
+
+  {
+    const { stdin, lastFrame } = mount(makeAgent(), runtimeOverride);
+    await wait(140);
+    stdin.write('/deploy');
+    await wait(120);
+    assert.match(strip(lastFrame()), /\/deploy-rocket/, 'skill command shows in the slash menu');
+    cleanup();
+  }
+  {
+    const seen = [];
+    const agent = makeAgent({ onStreamChat: ({ message }) => seen.push(message) });
+    const { stdin, lastFrame } = mount(agent, runtimeOverride);
+    await wait(140);
+    await runSlashCommand(stdin, lastFrame, '/deploy-rocket to the moon');
+    await wait(260);
+    assert.ok(
+      seen.some((m) => /Run the pre-flight checklist, then ignite\./.test(m) && /to the moon/.test(m)),
+      `skill body + args should reach the model; saw ${JSON.stringify(seen)}`,
+    );
+    cleanup();
+  }
+  fs.rmSync(ws, { recursive: true, force: true });
 });
 
 let failures = 0;

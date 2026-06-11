@@ -2,8 +2,8 @@
 /**
  * Test: web_search tool
  *
- * Verifies the keyless DuckDuckGo backend parsing, input validation, result
- * capping, custom-backend injection, and Brave provider config handling.
+ * Verifies the keyless Bing/DuckDuckGo backend parsing, input validation,
+ * result capping, custom-backend injection, and Brave provider config handling.
  */
 
 import assert from 'node:assert/strict';
@@ -49,7 +49,7 @@ await withMockedFetch(
     return new Response(DDG_HTML, { status: 200, headers: { 'content-type': 'text/html' } });
   },
   async () => {
-    const tool = createWebSearchTool();
+    const tool = createWebSearchTool({ provider: 'duckduckgo' });
     const out = await tool.execute({ query: 'RDK X5 BPU docs' }, CTX);
     assert.match(out, /Found 2 result\(s\) for "RDK X5 BPU docs"/);
     assert.match(out, /https:\/\/developer\.d-robotics\.cc\/rdk_doc/, 'first url should be unwrapped from uddg');
@@ -76,7 +76,7 @@ console.log('[TEST] max_results caps the result set');
 await withMockedFetch(
   async () => new Response(DDG_HTML, { status: 200, headers: { 'content-type': 'text/html' } }),
   async () => {
-    const tool = createWebSearchTool();
+    const tool = createWebSearchTool({ provider: 'duckduckgo' });
     const out = await tool.execute({ query: 'rdk', max_results: 1 }, CTX);
     assert.match(out, /Found 1 result\(s\)/, 'should cap to 1 result');
     assert.doesNotMatch(out, /github\.com/, 'second result should be dropped by the cap');
@@ -150,7 +150,7 @@ await withMockedFetch(
     { status: 200, headers: { 'content-type': 'text/html' } },
   ),
   async () => {
-    const tool = createWebSearchTool(NO_SLEEP);
+    const tool = createWebSearchTool({ ...NO_SLEEP, provider: 'duckduckgo' });
     await assert.rejects(
       () => tool.execute({ query: 'rdk x5' }, CTX),
       (err) =>
@@ -170,7 +170,7 @@ await withMockedFetch(
     { status: 200, headers: { 'content-type': 'text/html' } },
   ),
   async () => {
-    const tool = createWebSearchTool();
+    const tool = createWebSearchTool({ provider: 'duckduckgo' });
     const out = await tool.execute({ query: 'zxqwv nonsense token' }, CTX);
     assert.match(out, /No results for "zxqwv nonsense token"/, 'genuine empty must report No results, not throw');
   },
@@ -211,14 +211,14 @@ await withMockedFetch(
     if (String(url).includes('lite.duckduckgo.com')) {
       return new Response(LITE_HTML, { status: 200, headers: { 'content-type': 'text/html' } });
     }
-    // Primary html endpoint serves an anti-bot/anomaly page.
+    // Primary html endpoint (and the Bing fallback) serve anti-bot pages.
     return new Response(
-      '<html><body>anomaly detected <form class="challenge-form"></form></body></html>',
+      '<html><body>anomaly detected <form class="challenge-form"></form> captcha</body></html>',
       { status: 200, headers: { 'content-type': 'text/html' } },
     );
   },
   async () => {
-    const tool = createWebSearchTool(NO_SLEEP);
+    const tool = createWebSearchTool({ ...NO_SLEEP, provider: 'duckduckgo' });
     const out = await tool.execute({ query: 'rdk docs' }, CTX);
     assert.match(out, /Lite Result Title/, 'should return the Lite endpoint result after the html endpoint is blocked');
     assert.match(out, /https:\/\/example\.com\/lite/, 'lite redirect href should be unwrapped');
@@ -272,13 +272,14 @@ await withMockedFetch(
   },
 )();
 
-// Test 14: fallback:false uses only the primary backend (no Lite fallback).
-console.log('[TEST] fallback:false -> single backend, no Lite call');
+// Test 14: fallback:false uses only the primary backend (no DDG fallback).
+console.log('[TEST] fallback:false -> single backend, no fallback call');
 await withMockedFetch(
   async (url) => {
-    assert.ok(String(url).includes('html.duckduckgo.com'), 'fallback:false must not hit the lite endpoint');
+    assert.ok(String(url).includes('bing.com/search'), 'fallback:false must only hit the primary (Bing) endpoint');
+    // Genuine Bing "no results" page (b_no marker, zero b_algo blocks).
     return new Response(
-      '<html><body><div class="no-results">No results found.</div></body></html>',
+      '<html><body><ol id="b_results"><li class="b_no">没有与此相关的结果</li></ol></body></html>',
       { status: 200, headers: { 'content-type': 'text/html' } },
     );
   },
@@ -286,6 +287,58 @@ await withMockedFetch(
     const tool = createWebSearchTool({ ...NO_SLEEP, fallback: false });
     const out = await tool.execute({ query: 'single backend' }, CTX);
     assert.match(out, /No results for "single backend"/, 'a genuine empty result must still report "No results"');
+  },
+)();
+
+// A minimal Bing result page: one direct link, one /ck/a redirect-wrapped link
+// (u=a1<base64url> encodes https://github.com/D-Robotics).
+const BING_HTML = `
+<html><body><ol id="b_results">
+<li class="b_algo"><div class="b_title"><h2><a href="https://developer.d-robotics.cc/rdk_doc" h="ID=SERP,1">RDK X5 &amp; BPU 文档</a></h2></div>
+  <div class="b_caption"><p>Official RDK documentation &amp; model conversion guide.</p></div></li>
+<li class="b_algo"><h2><a href="https://www.bing.com/ck/a?!&amp;&amp;p=abc123&amp;u=a1aHR0cHM6Ly9naXRodWIuY29tL0QtUm9ib3RpY3M&amp;ntb=1">D-Robotics on GitHub</a></h2>
+  <div class="b_caption"><p>Source &lt;repos&gt; for the RDK ecosystem.</p></div></li>
+</ol></body></html>`;
+
+// Test 15: Bing is the default primary backend; it parses titles, snippets,
+// and unwraps /ck/a redirect links to the real target URL.
+console.log('[TEST] Bing default backend parses + unwraps /ck/a results');
+await withMockedFetch(
+  async (url, init) => {
+    const u = String(url);
+    assert.ok(u.startsWith('https://www.bing.com/search?'), 'default primary must be the Bing endpoint');
+    assert.match(u, /q=RDK\+X5/, 'query should be URL-encoded');
+    assert.equal((init?.method ?? 'GET'), 'GET', 'Bing endpoint expects GET');
+    return new Response(BING_HTML, { status: 200, headers: { 'content-type': 'text/html' } });
+  },
+  async () => {
+    const tool = createWebSearchTool();
+    const out = await tool.execute({ query: 'RDK X5 BPU docs' }, CTX);
+    assert.match(out, /Found 2 result\(s\) for "RDK X5 BPU docs"/);
+    assert.match(out, /https:\/\/developer\.d-robotics\.cc\/rdk_doc/, 'direct urls should pass through');
+    assert.match(out, /RDK X5 & BPU 文档/, 'title entities should be decoded');
+    assert.match(out, /https:\/\/github\.com\/D-Robotics/, '/ck/a redirect should be unwrapped to the target URL');
+    assert.match(out, /Source <repos> for the RDK ecosystem\./, 'snippet entities should be decoded');
+    assert.doesNotMatch(out, /bing\.com\/ck\//, 'no redirect wrapper should leak through');
+  },
+)();
+
+// Test 16: a blocked Bing primary (captcha page) falls through to DuckDuckGo.
+console.log('[TEST] blocked Bing primary -> falls back to DuckDuckGo');
+await withMockedFetch(
+  async (url) => {
+    if (String(url).includes('html.duckduckgo.com')) {
+      return new Response(DDG_HTML, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    return new Response(
+      '<html><body>Please verify you are a human. captcha</body></html>',
+      { status: 200, headers: { 'content-type': 'text/html' } },
+    );
+  },
+  async () => {
+    const tool = createWebSearchTool(NO_SLEEP);
+    const out = await tool.execute({ query: 'rdk docs' }, CTX);
+    assert.match(out, /RDK X5 & BPU 文档/, 'should return DDG results after Bing is blocked');
   },
 )();
 

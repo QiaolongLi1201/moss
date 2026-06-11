@@ -31,6 +31,15 @@ export interface CliToolApprovalOptions {
   workspaceDir?: string;
   /** Connected board target, shown in device-mutation approval cards. */
   device?: { host: string; user?: string; port?: number } | null;
+  /**
+   * Live board-mode signal. When true, /connect has put the session in BOARD
+   * MODE: device-scoped + workspace tools are auto-approved and not blocked by
+   * the base workspace-write floor, so connected-board ops are frictionless.
+   * A getter (not a boolean) so the hook — created once — observes /connect and
+   * /disconnect flipping the flag without being recreated. read-only mode is
+   * still honored; the hard isCommandDangerous block stays inside the tools.
+   */
+  boardMode?: () => boolean;
 }
 
 export interface CliToolApprovalPreview {
@@ -45,6 +54,8 @@ export interface CliToolApprovalPreview {
   denied: boolean;
   deniedPattern?: string;
   autoApproved: boolean;
+  /** Auto-approved because the session is in board mode (device/workspace tool). */
+  boardAutoApproved: boolean;
 }
 
 export function setCliApprovalAsker(asker: AskUser | null): void {
@@ -221,9 +232,23 @@ function inferRequestSideEffectClass(request: ToolApprovalRequest): ToolSideEffe
   return sideEffect;
 }
 
-function isAllowedInMode(mode: CliSafetyMode, sideEffect: ToolSideEffectClass): boolean {
+/** Side effects board mode releases on top of the base mode's allowance. */
+function isBoardScopedSideEffect(sideEffect: ToolSideEffectClass): boolean {
+  return sideEffect === 'device_mutation' || sideEffect === 'local_write';
+}
+
+function isAllowedInMode(
+  mode: CliSafetyMode,
+  sideEffect: ToolSideEffectClass,
+  boardMode = false,
+): boolean {
   if (sideEffect === 'readonly') return true;
   if (mode === 'read-only') return false;
+  // Board mode releases device/workspace tools so connected-board ops are
+  // frictionless — but never in read-only (handled above): that is an explicit
+  // user opt-in and stays safe even on a board. The hard isCommandDangerous
+  // floor lives inside the tools, so it is unaffected.
+  if (boardMode && isBoardScopedSideEffect(sideEffect)) return true;
   if (mode === 'workspace-write') {
     return sideEffect === 'local_write' ||
       sideEffect === 'memory_write' ||
@@ -413,9 +438,15 @@ export function describeCliToolApproval(
   const denied = deniedPattern !== undefined;
   const trusted = trustedPattern !== undefined;
   const autoApprovalConfigured = hasAutoApproval(env, options);
-  const allowedBySafety = isAllowedInMode(mode, sideEffect);
+  const boardMode = options.boardMode?.() === true;
+  const allowedBySafety = isAllowedInMode(mode, sideEffect, boardMode);
   const requiresApproval = needsApproval(request, sideEffect);
   const autoApproved = !denied && allowedBySafety && requiresApproval && autoApprovalConfigured;
+  // In board mode, device/workspace tools run without a per-call prompt — the
+  // user already opted in by running /connect. (isCommandDangerous still blocks
+  // inside the tool; deniedTools still wins via the !denied guard.)
+  const boardAutoApproved =
+    boardMode && !denied && allowedBySafety && requiresApproval && isBoardScopedSideEffect(sideEffect);
   let decisionContext = 'readonly tool; approval is not required';
 
   if (denied) {
@@ -424,6 +455,8 @@ export function describeCliToolApproval(
     decisionContext = `blocked by ${mode} safety mode`;
   } else if (requiresApproval && trusted) {
     decisionContext = `trusted by configured trustedTools (${trustedPattern})`;
+  } else if (requiresApproval && boardAutoApproved) {
+    decisionContext = 'auto-approved by board mode (/connect) after safety checks';
   } else if (requiresApproval && autoApproved) {
     decisionContext = 'auto-approved by approval policy after safety checks';
   } else if (requiresApproval) {
@@ -442,6 +475,7 @@ export function describeCliToolApproval(
     denied,
     deniedPattern,
     autoApproved,
+    boardAutoApproved,
   };
 }
 
@@ -487,7 +521,7 @@ export function createCliToolApprovalHook(
         reason: `计划模式(plan)：先产出实施计划，暂不执行变更。按 Shift+Tab 切到 default / accept-edits 后再运行 "${tool.name}"。`,
       };
     }
-    if (!isAllowedInMode(mode, preview.sideEffect)) {
+    if (!isAllowedInMode(mode, preview.sideEffect, options.boardMode?.() === true)) {
       return {
         approved: false,
         reason: `Tool "${tool.name}" is blocked by ${mode} safety mode (side effect: ${preview.sideEffect}).`,
@@ -500,6 +534,10 @@ export function createCliToolApprovalHook(
     }
 
     if (trustedWorkspace) {
+      return { approved: true };
+    }
+
+    if (preview.boardAutoApproved) {
       return { approved: true };
     }
 

@@ -26,6 +26,7 @@ import {
 import { formatModelChoices, loadModelChoicesForRuntime } from '../model-catalog.js';
 import {
   renderCliExamples,
+  renderCliMcp,
   renderCliPermissions,
   renderCliQuickStart,
   renderCliStatus,
@@ -136,6 +137,14 @@ const toolsCommand: CommandSpec = {
   },
 };
 
+const mcpCommand: CommandSpec = {
+  name: '/mcp',
+  summary: 'show configured MCP servers, connection status, and tool counts',
+  run(ctx) {
+    ctx.say('system', renderCliMcp(ctx.runtime));
+  },
+};
+
 const permissionsCommand: CommandSpec = {
   name: '/permissions',
   aliases: ['/config'],
@@ -225,6 +234,7 @@ const COMMANDS: readonly CommandSpec[] = [
   quickstartCommand,
   statusCommand,
   toolsCommand,
+  mcpCommand,
   permissionsCommand,
   examplesCommand,
   upgradeCommand,

@@ -357,6 +357,16 @@ async function main() {
 
   const oneShotMessage = parsedArgs.prompt;
 
+  // `--continue` on a bare `moss` auto-resumes the most recent session (parity
+  // with `claude --continue`): treat it as a resume+useLast for session resolution.
+  const continueLatest = parsedArgs.continueLast && parsedArgs.command === 'chat';
+  const sessionCommand: 'chat' | 'resume' | 'fork' =
+    parsedArgs.command === 'resume' || parsedArgs.command === 'fork'
+      ? parsedArgs.command
+      : continueLatest
+        ? 'resume'
+        : 'chat';
+
   // Diagnose `resume`/`fork` with no saved sessions BEFORE the model-config
   // gate: "needs a model configuration" was the wrong message for that case.
   if (parsedArgs.command === 'resume' || parsedArgs.command === 'fork') {
@@ -386,10 +396,10 @@ async function main() {
 
   const sessionStore = new JsonlSessionStore({ dir: workspacePathMigration.paths.sessionsDir });
   const session = await resolveCliSession({
-    command: parsedArgs.command === 'resume' || parsedArgs.command === 'fork' ? parsedArgs.command : 'chat',
+    command: sessionCommand,
     store: sessionStore,
     sessionKey: parsedArgs.sessionKey,
-    useLast: parsedArgs.sessionLast,
+    useLast: parsedArgs.sessionLast || continueLatest,
     forkSource: parsedArgs.forkSource,
   });
   if (session.notice) console.error(`[session] ${session.notice}`);
@@ -408,12 +418,18 @@ async function main() {
   // Resolved early so device-mutation approval cards can show the board target.
   // (A board connected later via /connect falls back to the generic label.)
   const envDeviceConfig = getDeviceConfigFromEnv();
+  // The live runtime object board mode mutates in place. /connect and the
+  // startup env-device connect both set runtime.deviceSession.boardMode here;
+  // the approval hook closes over a getter so it observes those flips without
+  // being recreated (it is created once, below).
+  const liveRuntime: CliRuntimeStatus = { device: null, deviceSession: null };
   const approvalHook = createCliToolApprovalHook(safetyMode, process.env, {
     approvalPolicy: resolvedConfig.approvalPolicy,
     trustedTools: resolvedConfig.trustedTools,
     deniedTools: resolvedConfig.deniedTools,
     workspaceDir: workspace,
     device: envDeviceConfig ? { host: envDeviceConfig.host, user: envDeviceConfig.user, port: envDeviceConfig.port } : null,
+    boardMode: () => liveRuntime.deviceSession?.boardMode === true,
   });
   const configPreHook = configuredHooks.onBeforeToolExec;
   const onBeforeToolExec: AgentHooks['onBeforeToolExec'] = configPreHook
@@ -452,25 +468,22 @@ async function main() {
       await setupMesh(agent, deviceConfig);
     }
 
-    let startupDevice: CliRuntimeStatus['device'] = null;
-    let startupDeviceSession: CliRuntimeStatus['deviceSession'] = null;
     if (deviceConfig) {
       // Same verified path as /connect: probe SSH before claiming the device
       // is connected — an env var being set proves nothing about the board.
       const skipVerify = process.env.DMOSS_DEVICE_NO_VERIFY === '1' || process.env.DMOSS_DEVICE_NO_VERIFY === 'true';
       const mode = process.env.DMOSS_DEVICE_HYBRID === '1' || process.env.DMOSS_DEVICE_HYBRID === 'true' ? 'hybrid' : 'board';
-      const deviceRuntime: CliRuntimeStatus = {};
       if (!skipVerify) {
         console.error(`[device] Verifying SSH to ${deviceConfig.user || 'root'}@${deviceConfig.host}:${deviceConfig.port || 22} (set DMOSS_DEVICE_NO_VERIFY=1 to skip) ...`);
       }
-      const startupConnect = await connectDeviceForSession(agent, deviceRuntime, deviceConfig, {
+      // Mutates liveRuntime in place so the approval hook's boardMode getter
+      // sees the startup connect, exactly like an in-session /connect.
+      const startupConnect = await connectDeviceForSession(agent, liveRuntime, deviceConfig, {
         skipVerify,
         mode,
         locale: process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG,
       });
       console.error(startupConnect.message);
-      startupDevice = deviceRuntime.device ?? null;
-      startupDeviceSession = deviceRuntime.deviceSession ?? null;
     }
 
     extraPromptLayers.push(buildRuntimeCapabilitiesPrompt({
@@ -507,7 +520,11 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    await runInteractive(agent, skillLearner, {
+    // Same object the approval hook's boardMode getter reads — so an in-session
+    // /connect (which mutates runtime.deviceSession via the command registry)
+    // flips board-mode auto-approval live. Preserves the device/deviceSession
+    // already set in place by the startup connect.
+    Object.assign(liveRuntime, {
       workspace,
       runtimeDir,
       configDir,
@@ -519,9 +536,13 @@ async function main() {
       sessionKey: session.sessionKey,
       config: resolvedConfig,
       communityAuth: communityAuthRuntime,
-      device: startupDevice,
-      deviceSession: startupDeviceSession,
-    }, { sessionKey: session.sessionKey });
+      mcp: mcpConnections.map((connection) => ({
+        name: connection.serverName,
+        connected: true,
+        toolCount: connection.tools.length,
+      })),
+    });
+    await runInteractive(agent, skillLearner, liveRuntime, { sessionKey: session.sessionKey });
   } finally {
     await closeMcpConnections(mcpConnections);
   }

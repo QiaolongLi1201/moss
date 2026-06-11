@@ -14,6 +14,8 @@ import {
   execLogsTool,
   execStopTool,
   clearBackgroundRegistryForTests,
+  getBackgroundProcessSnapshot,
+  setKillEscalationMsForTests,
 } from '../dist/tools/background-exec.js';
 
 if (process.platform === 'win32') {
@@ -75,6 +77,33 @@ console.log('[TEST] exec_stop terminates the process');
     return /\[(killed|exited)/.test(s);
   });
   assert.ok(killed, 'process should be killed/exited after exec_stop');
+}
+
+console.log('[TEST] a SIGTERM-ignoring process is force-killed (SIGKILL escalation)');
+{
+  clearBackgroundRegistryForTests();
+  setKillEscalationMsForTests(300); // shorten grace so the test is fast
+  try {
+    // trap '' TERM makes the shell ignore SIGTERM entirely; only SIGKILL ends it.
+    const out = await execBackgroundTool.execute(
+      { command: "trap '' TERM; while true; do sleep 0.2; done", settle_ms: 200, label: 'stubborn' },
+      CTX,
+    );
+    const m = out.match(/Started (bg_\d+)/);
+    assert.ok(m, `stubborn process should start: ${out}`);
+    const stubbornId = m[1];
+
+    await execStopTool.execute({ id: stubbornId }, CTX);
+    const killed = await waitFor(() => {
+      const snap = getBackgroundProcessSnapshot(stubbornId);
+      return snap && (snap.status === 'killed' || snap.status === 'exited');
+    }, 4000);
+    assert.ok(killed, 'a SIGTERM-ignoring process must be SIGKILL-escalated, not survive exec_stop');
+    const snap = getBackgroundProcessSnapshot(stubbornId);
+    assert.equal(snap.signal, 'SIGKILL', 'the process should have been ended by SIGKILL, not SIGTERM');
+  } finally {
+    setKillEscalationMsForTests(2000); // restore default for the rest of the suite
+  }
 }
 
 console.log('[TEST] exec_logs / exec_stop reject unknown ids');

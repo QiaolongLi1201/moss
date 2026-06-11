@@ -7,10 +7,12 @@
  *
  * Design (mirrors web-fetch.ts):
  *   - Zero hard dependency beyond global `fetch` (Node 18+).
- *   - Pluggable backend: keyless **DuckDuckGo** by default; **Brave** when an
- *     API key is supplied; or a host-injected `search` function (e.g. a
- *     multi-engine backplane). Tool name + `query` input stay stable
- *     so consumers work regardless of backend.
+ *   - Pluggable backend: keyless **Bing** by default (reachable without a
+ *     proxy in regions where DuckDuckGo is not, e.g. mainland China);
+ *     keyless **DuckDuckGo** as fallback or by explicit `provider` choice;
+ *     **Brave** when an API key is supplied; or a host-injected `search`
+ *     function (e.g. a multi-engine backplane). Tool name + `query` input
+ *     stay stable so consumers work regardless of backend.
  *   - Safe-by-default: per-call timeout, result cap, fixed provider host
  *     (the model's query is URL-encoded into a constant host — no SSRF surface).
  *   - Returns a compact, source-linked result list for the LLM to act on
@@ -85,15 +87,15 @@ export interface WebSearchOptions {
    * fallback chain is bypassed entirely (the host owns routing).
    */
   search?: WebSearchBackend;
-  /** Built-in provider when `search` is not supplied. Default: `duckduckgo`. */
-  provider?: 'duckduckgo' | 'brave';
+  /** Built-in provider when `search` is not supplied. Default: `bing`. */
+  provider?: 'bing' | 'duckduckgo' | 'brave';
   /** API key for providers that need one (brave). Falls back to `BRAVE_API_KEY`. */
   apiKey?: string;
   /** Default max results (capped at 20). Default 8. */
   maxResults?: number;
   /** Per-call timeout in ms. Default 15 000. */
   timeoutMs?: number;
-  /** Region / locale hint, e.g. `wt-wt` (DDG) or `zh-CN` (Brave). */
+  /** Region / locale hint, e.g. `zh-CN` (Bing `mkt` / Brave) or `wt-wt` (DDG). */
   region?: string;
   /** Custom User-Agent. */
   userAgent?: string;
@@ -105,9 +107,9 @@ export interface WebSearchOptions {
   /**
    * Keyless provider fallback chain. When true (default), a blocked/failed
    * primary backend falls through to the next available keyless endpoint
-   * (DuckDuckGo HTML → DuckDuckGo Lite; Brave is prepended automatically when an
-   * API key is present). Set false to use only the single resolved backend.
-   * Ignored when a custom `search` backend is supplied.
+   * (Bing → DuckDuckGo HTML → DuckDuckGo Lite; Brave is prepended automatically
+   * when an API key is present). Set false to use only the single resolved
+   * backend. Ignored when a custom `search` backend is supplied.
    * @beta
    */
   fallback?: boolean;
@@ -129,6 +131,8 @@ const HTML_ENTITIES: Record<string, string> = {
   '#x27': "'",
   '#x2F': '/',
   nbsp: ' ',
+  ensp: ' ',
+  emsp: ' ',
 };
 
 function decodeEntities(text: string): string {
@@ -384,6 +388,115 @@ export async function duckDuckGoLiteSearch(
   return results;
 }
 
+/**
+ * Bing wraps some result links in a `/ck/a?...&u=a1<base64url-target>` redirect.
+ * Unwrap it so the LLM gets a directly fetchable URL. Hrefs arrive HTML-entity
+ * encoded (`&amp;`), so decode before parsing.
+ */
+function unwrapBingHref(href: string): string {
+  const normalized = decodeEntities(href);
+  try {
+    const u = new URL(normalized, 'https://www.bing.com');
+    if (u.hostname.endsWith('bing.com') && u.pathname.startsWith('/ck/')) {
+      const wrapped = u.searchParams.get('u');
+      if (wrapped && wrapped.startsWith('a1')) {
+        const b64 = wrapped.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+        const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+        const decoded = Buffer.from(padded, 'base64').toString('utf8');
+        if (/^https?:\/\//i.test(decoded)) return decoded;
+      }
+      return normalized; // redirect we couldn't decode — return as-is
+    }
+    return u.toString();
+  } catch {
+    return normalized;
+  }
+}
+
+/**
+ * Keyless Bing web-search backend (GET `www.bing.com/search`). Default primary:
+ * unlike the DuckDuckGo endpoints it is directly reachable from networks where
+ * duckduckgo.com is blocked (e.g. mainland China), and it serves parseable
+ * `b_algo` result markup to a plain HTTP client. Same blocked-page honesty
+ * contract as the DuckDuckGo backends.
+ * @beta
+ */
+export async function bingSearch(
+  query: string,
+  opts: WebSearchBackendOptions,
+): Promise<WebSearchResult[]> {
+  const u = new URL('https://www.bing.com/search');
+  u.searchParams.set('q', query);
+  u.searchParams.set('count', String(opts.maxResults));
+  if (opts.region) u.searchParams.set('mkt', opts.region);
+  const { ok, status, text } = await fetchWithTimeout(
+    u.toString(),
+    {
+      method: 'GET',
+      headers: { 'user-agent': opts.userAgent, accept: 'text/html' },
+    },
+    opts.timeoutMs,
+    opts.signal,
+  );
+
+  if (!ok) {
+    throw new DmossError({
+      code: status === 429 ? ErrorCode.PROVIDER_RATE_LIMITED : ErrorCode.PROVIDER_UPSTREAM_ERROR,
+      message: `web_search: Bing returned HTTP ${status}`,
+      hint:
+        status === 429
+          ? 'Rate-limited by Bing. Retry shortly, or configure a Brave API key (provider: "brave").'
+          : undefined,
+      recoverable: true,
+    });
+  }
+
+  // Each organic result is a `b_algo` block whose `<h2><a href>` carries the
+  // title + target; the matching `b_caption` paragraph holds the description.
+  // Index-paired scans, same approach as the DuckDuckGo backends.
+  const results: WebSearchResult[] = [];
+  const linkRe = /<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a><\/h2>/g;
+  const snippetRe = /class="b_caption"[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/g;
+  const snippets: string[] = [];
+  let sm: RegExpExecArray | null;
+  while ((sm = snippetRe.exec(text)) !== null) snippets.push(stripTags(sm[1]));
+
+  let lm: RegExpExecArray | null;
+  let i = 0;
+  while ((lm = linkRe.exec(text)) !== null && results.length < opts.maxResults) {
+    const url = unwrapBingHref(lm[1]);
+    const title = stripTags(lm[2]);
+    if (!title || !/^https?:\/\//i.test(url)) {
+      i++;
+      continue;
+    }
+    results.push({ title, url, snippet: snippets[i] ?? '' });
+    i++;
+  }
+  if (results.length === 0 && bingResponseLooksBlocked(text)) {
+    throw new DmossError({
+      code: ErrorCode.PROVIDER_UPSTREAM_ERROR,
+      message:
+        'web_search: Bing blocked automated access (captcha/anti-bot page) — no results could be retrieved. This is a backend failure, NOT an empty result set; do not infer the topic has no information.',
+      hint:
+        'Configure a Brave API key (set BRAVE_API_KEY or pass provider: "brave") for reliable search, or call web_fetch on a specific known URL instead.',
+      recoverable: true,
+    });
+  }
+  return results;
+}
+
+/**
+ * Given Bing's HTML response body that yielded zero parsed results, decide
+ * whether the backend is blocked/broken (captcha page, or no result markup at
+ * all) vs a genuinely empty result set (`b_no` marker). Exported for testing.
+ */
+export function bingResponseLooksBlocked(text: string): boolean {
+  const looksBlocked = /captcha|challenge|verify you are|unusual traffic|异常流量/i.test(text);
+  const hasResultMarkup = /b_algo|b_no|b_results/i.test(text);
+  return looksBlocked || !hasResultMarkup;
+}
+
 /** Brave Search API backend (requires an API key). */
 export function createBraveSearch(apiKey: string): WebSearchBackend {
   return async (query, opts) => {
@@ -491,14 +604,14 @@ function backoffDelay(attempt: number, baseDelayMs: number): number {
 /**
  * Resolve the ordered backend chain. A custom `search` backend bypasses the
  * chain (host owns routing). Otherwise: Brave is used (and, with fallback on,
- * prepended) whenever an API key is available; the keyless DuckDuckGo HTML and
- * Lite endpoints provide a no-key fallback. Selecting `provider: 'brave'`
- * without a key still fails fast at construction.
+ * prepended) whenever an API key is available; the keyless Bing, DuckDuckGo
+ * HTML, and DuckDuckGo Lite endpoints provide a no-key fallback. Selecting
+ * `provider: 'brave'` without a key still fails fast at construction.
  */
 function resolveBackendChain(opts: WebSearchOptions): NamedBackend[] {
   if (opts.search) return [{ name: 'custom', backend: opts.search }];
 
-  const provider = opts.provider ?? 'duckduckgo';
+  const provider = opts.provider ?? 'bing';
   const braveKey = opts.apiKey ?? process.env.BRAVE_API_KEY;
   const braveBackend = (): NamedBackend => {
     if (!braveKey) {
@@ -513,14 +626,19 @@ function resolveBackendChain(opts: WebSearchOptions): NamedBackend[] {
   };
 
   // Primary: explicit Brave, or Brave auto-selected when a key is present;
-  // otherwise the keyless DuckDuckGo html endpoint.
+  // otherwise the explicitly chosen keyless endpoint (default Bing).
   const primary: NamedBackend =
-    provider === 'brave' || braveKey ? braveBackend() : { name: 'duckduckgo', backend: duckDuckGoSearch };
+    provider === 'brave' || braveKey
+      ? braveBackend()
+      : provider === 'duckduckgo'
+        ? { name: 'duckduckgo', backend: duckDuckGoSearch }
+        : { name: 'bing', backend: bingSearch };
 
   if (opts.fallback === false) return [primary];
 
   const chain: NamedBackend[] = [primary];
   for (const candidate of [
+    { name: 'bing', backend: bingSearch },
     { name: 'duckduckgo', backend: duckDuckGoSearch },
     { name: 'duckduckgo-lite', backend: duckDuckGoLiteSearch },
   ] satisfies NamedBackend[]) {

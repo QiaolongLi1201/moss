@@ -32,6 +32,11 @@ test('prints usage', () => {
   assert.equal(result.status, 0);
   assert.match(result.stdout, /create-dmoss-app <project-name>/);
   assert.match(result.stdout, /--skip-install/);
+  assert.match(result.stdout, /Minimal Moss agent with Anthropic API key support/);
+  assert.doesNotMatch(result.stdout, /D-Moss/);
+  const packageJson = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+  assert.match(packageJson.description, /Moss agent project/);
+  assert.doesNotMatch(packageJson.description, /D-Moss/);
 });
 
 test('scaffolds minimal project without installing dependencies', () => {
@@ -62,6 +67,7 @@ test('scaffolds minimal project without installing dependencies', () => {
   assert.match(source, /ANTHROPIC_API_KEY/);
   assert.match(source, /DMOSS_API_KEY/);
   const readme = fs.readFileSync(path.join(target, 'README.md'), 'utf8');
+  assert.match(readme, /A Moss agent project/);
   assert.match(readme, /Node\.js 22\.16 or newer/);
   assert.match(readme, /OpenSSH Client/);
   assert.match(readme, /Windows PowerShell/);
@@ -69,6 +75,8 @@ test('scaffolds minimal project without installing dependencies', () => {
   assert.match(readme, /Windows cmd\.exe/);
   assert.match(readme, /set ANTHROPIC_API_KEY=your-key && npm start/);
   assert.match(readme, /accepts `DMOSS_API_KEY` as a compatibility fallback/);
+  assert.match(readme, /Moss Documentation/);
+  assert.doesNotMatch(readme, /D-Moss/);
   assert.match(readme, /Copy-Item mcp\.json\.example mcp\.json/);
   assert.match(readme, /copy mcp\.json\.example mcp\.json/);
   assert.equal(fs.existsSync(path.join(target, 'node_modules')), false);

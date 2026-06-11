@@ -357,7 +357,7 @@ export function createMeshTools(mesh: AgentMesh): Tool[] {
   const meshQuery: Tool = {
     name: 'mesh_ask_peers',
     description:
-      'Ask other D-Moss agents in the mesh network for help or information. Use when you need expertise from agents connected to other devices.',
+      'Ask other Moss agents in the mesh network for help or information. Use when you need expertise from agents connected to other devices.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -390,7 +390,7 @@ export function createMeshTools(mesh: AgentMesh): Tool[] {
 
   const meshPeers: Tool = {
     name: 'mesh_list_peers',
-    description: 'List all discovered D-Moss peer agents in the mesh network.',
+    description: 'List all discovered Moss peer agents in the mesh network.',
     inputSchema: { type: 'object', properties: {} },
     async execute() {
       const peers = mesh.getPeers();
@@ -406,7 +406,7 @@ export function createMeshTools(mesh: AgentMesh): Tool[] {
 
   const meshDiscover: Tool = {
     name: 'mesh_discover',
-    description: 'Discover a D-Moss peer agent at a specific address.',
+    description: 'Discover a Moss peer agent at a specific address.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -418,7 +418,7 @@ export function createMeshTools(mesh: AgentMesh): Tool[] {
     async execute(input) {
       const port = input.port || 9090;
       const peer = await mesh.discoverPeer(input.host, port, { allowPrivate: true });
-      if (!peer) return `No D-Moss agent found at ${input.host}:${port}`;
+      if (!peer) return `No Moss agent found at ${input.host}:${port}`;
       return `Discovered: ${peer.name} (${peer.id}) — capabilities: ${peer.capabilities.join(', ') || 'general'} — device: ${peer.deviceInfo || 'unknown'}`;
     },
   };

@@ -198,7 +198,7 @@ if (parsedArgs.version) displayVersion(c);
 async function setupMesh(agent: DmossAgent, deviceConfig: DeviceSshConfig | null) {
   const meshPort = parseInt(process.env.DMOSS_MESH_PORT || '9090', 10);
   const meshId = process.env.DMOSS_MESH_ID || `dmoss-${Date.now()}`;
-  const meshName = process.env.DMOSS_MESH_NAME || `D-Moss @ ${os.hostname()}`;
+  const meshName = process.env.DMOSS_MESH_NAME || `Moss @ ${os.hostname()}`;
   const meshListenHost = process.env.DMOSS_MESH_LISTEN_HOST || undefined;
   const meshSharedSecret = process.env.DMOSS_MESH_SHARED_SECRET || process.env.DMOSS_MESH_SECRET || undefined;
   const meshPeers = (process.env.DMOSS_MESH_PEERS || '').split(',').filter(Boolean).map((p) => {

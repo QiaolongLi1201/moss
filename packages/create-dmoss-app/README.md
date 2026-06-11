@@ -1,6 +1,6 @@
 # create-dmoss-app
 
-Scaffold a new D-Moss agent project in seconds.
+Scaffold a new Moss agent project in seconds.
 
 ## Usage
 
@@ -26,7 +26,7 @@ npx create-dmoss-app my-agent --skip-install
 
 | Template | Description |
 |----------|-------------|
-| `minimal` | Minimal agent with Anthropic provider (default) |
+| `minimal` | Minimal Moss agent with Anthropic API key support (default) |
 | `openai` | Agent with OpenAI-compatible provider (works with DeepSeek, Ollama, etc.) |
 
 ## What Gets Created

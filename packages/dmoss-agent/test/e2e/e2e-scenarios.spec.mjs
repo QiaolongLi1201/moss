@@ -106,7 +106,7 @@ async function loadTranscript(name) {
   /** @type {import('../../dist/core/tools/tool-types.js').Tool} */
   const mockMeshDiscover = {
     name: 'mesh_discover',
-    description: 'Discover a D-Moss peer agent at a specific address.',
+    description: 'Discover a Moss peer agent at a specific address.',
     inputSchema: {
       type: 'object',
       properties: {

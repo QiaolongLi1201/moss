@@ -376,15 +376,29 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
       { approved: true },
       'trustedTools should approve matching allowed tool glob patterns without interactive stdin',
     );
+    assert.deepEqual(
+      await approve({
+        tool: tool('write_file', 'local_write', 'requires_user_confirmation'),
+        input: { path: 'a.txt', content: 'x' },
+        sessionKey: 's',
+      }),
+      { approved: true },
+      'headless workspace-write should auto-run mode-allowed local writes when no TTY exists',
+    );
     const denied = await approve({
+      tool: tool('device_exec', 'device_mutation', 'requires_user_confirmation'),
+      input: { command: 'uptime' },
+      sessionKey: 's',
+    });
+    assert.equal(denied.approved, false, 'headless workspace-write still blocks device mutation');
+    assert.match(denied.reason, /workspace-write/);
+    const readOnlyDenied = await createCliToolApprovalHook('read-only', {}, { trustedTools: ['exec'] })({
       tool: tool('write_file', 'local_write', 'requires_user_confirmation'),
       input: { path: 'a.txt', content: 'x' },
       sessionKey: 's',
     });
-    assert.equal(denied.approved, false, 'untrusted mutating tools still require approval');
-    assert.match(denied.reason, /moss config set approvalPolicy never/);
-    assert.match(denied.reason, /moss config set trustedTools <tool>/);
-    assert.match(denied.reason, /DMOSS_CLI_AUTO_APPROVE=1/);
+    assert.equal(readOnlyDenied.approved, false, 'headless read-only still blocks local writes');
+    assert.match(readOnlyDenied.reason, /read-only/);
   } finally {
     Object.defineProperty(process.stdin, 'isTTY', { value: oldIsTty, configurable: true });
   }

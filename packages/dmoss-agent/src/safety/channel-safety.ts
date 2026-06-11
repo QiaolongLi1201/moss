@@ -39,6 +39,7 @@ const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bnpm\s+(un)?publish\b/i, reason: '禁止外部通道发布/撤回 npm 包' },
   { pattern: /\bgit\s+push\s+.*--force\b/i, reason: '禁止强制推送' },
   { pattern: /\b(curl|wget)\b.*\|\s*(python|python3|perl|ruby|node)\b/i, reason: '禁止从网络管道执行脚本' },
+  { pattern: at('(?:cat|less|more|head|tail|grep|sed|awk)\\b[^\\n;&|`]*\\s/(?:etc/(?:shadow|passwd|sudoers)|root/\\.ssh)\\b'), reason: '禁止读取敏感系统账户/凭据文件' },
   // Privilege escalation
   { pattern: at('(?:chown|chgrp)\\b'), reason: '禁止修改文件所有者/组' },
   { pattern: at('(?:useradd|usermod|userdel|groupadd|groupmod|passwd)\\b'), reason: '禁止用户/密码管理操作' },

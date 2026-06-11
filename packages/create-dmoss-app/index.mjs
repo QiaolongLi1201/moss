@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * create-dmoss-app — scaffold a new D-Moss agent project.
+ * create-dmoss-app — scaffold a new Moss agent project.
  *
  * Usage:
  *   npm create dmoss-app my-agent
@@ -74,7 +74,7 @@ function shellQuotePath(value) {
 
 const TEMPLATES = {
   minimal: {
-    description: 'Minimal agent with Anthropic provider (default)',
+    description: 'Minimal Moss agent with Anthropic API key support (default)',
     primaryApiKeyEnv: 'ANTHROPIC_API_KEY',
     fallbackApiKeyEnv: 'DMOSS_API_KEY',
     files: {
@@ -209,7 +209,7 @@ if (fs.existsSync(targetDir)) {
   process.exit(1);
 }
 
-console.log(`\nCreating D-Moss project: ${projectDirName}`);
+console.log(`\nCreating Moss project: ${projectDirName}`);
 if (projectName !== projectDirName) console.log(`Package name: ${projectName}`);
 console.log(`Template: ${templateName}\n`);
 
@@ -245,7 +245,7 @@ for (const [filename, content] of Object.entries({ ...COMMON_FILES, ...template.
 
 const readme = `# ${projectDirName}
 
-A D-Moss agent project.
+A Moss agent project.
 
 ## Prerequisites
 
@@ -307,7 +307,7 @@ See the [MCP documentation](https://modelcontextprotocol.io) for available serve
 
 ## Learn More
 
-- [D-Moss Documentation](https://github.com/D-Robotics/moss)
+- [Moss Documentation](https://github.com/D-Robotics/moss)
 `;
 
 fs.writeFileSync(path.join(targetDir, 'README.md'), readme);

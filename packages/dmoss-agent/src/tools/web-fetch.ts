@@ -358,7 +358,7 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
   const maxTextChars = Math.max(256, opts.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS);
   const timeoutMs = Math.max(1000, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const blockPrivate = opts.blockPrivateNetwork !== false;
-  const userAgent = opts.userAgent ?? 'dmoss-agent/0.1 (+https://github.com/D-Moss)';
+  const userAgent = opts.userAgent ?? 'dmoss-agent/0.1 (+https://github.com/D-Robotics/moss)';
   const allowHosts = (opts.allowHosts ?? []).map((s) => s.toLowerCase());
   const resolveAllowPrivate = (): string[] => {
     const raw = typeof opts.allowPrivateHosts === 'function' ? opts.allowPrivateHosts() : opts.allowPrivateHosts;

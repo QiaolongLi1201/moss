@@ -224,6 +224,7 @@ async function testCommandDangerDetection() {
     'find . -name "*.ts" | xargs grep -l foo',
     'node --version',
     'cat notes.txt | grep more',
+    'cat /etc/os-release',
   ];
 
   for (const cmd of dangerousCommands) {

@@ -34,7 +34,7 @@ export function isMissingExecutableError(err: unknown, executable: string): bool
 export function formatMissingSshExecutable(executable: string): string {
   if (executable === 'sshpass') {
     return process.platform === 'win32'
-      ? 'Required SSH helper "sshpass" was not found. sshpass is not standard on Windows; use key-based auth with DMOSS_DEVICE_KEY, install sshpass in WSL, or run D-Moss from an environment that provides sshpass.'
+      ? 'Required SSH helper "sshpass" was not found. sshpass is not standard on Windows; use key-based auth with DMOSS_DEVICE_KEY, install sshpass in WSL, or run Moss from an environment that provides sshpass.'
       : 'Required SSH helper "sshpass" was not found. Install sshpass, or use key-based auth with DMOSS_DEVICE_KEY.';
   }
   return process.platform === 'win32'

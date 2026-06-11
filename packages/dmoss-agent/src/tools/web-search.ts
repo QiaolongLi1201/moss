@@ -40,7 +40,7 @@ const DEFAULT_RETRY_BASE_DELAY_MS = 400;
 const RETRY_MAX_DELAY_MS = 4_000;
 /** Browser-like UA: public search endpoints reject the default agent UA. Overridable. */
 const DEFAULT_UA =
-  'Mozilla/5.0 (compatible; dmoss-agent/0.1; +https://github.com/D-Moss)';
+  'Mozilla/5.0 (compatible; dmoss-agent/0.1; +https://github.com/D-Robotics/moss)';
 
 export interface WebSearchResult {
   title: string;

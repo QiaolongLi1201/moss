@@ -30,8 +30,9 @@ import { getPackageVersion } from './package-info.js';
 import { createCliSessionKey } from './session.js';
 import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, label, ui } from './ui.js';
-import { formatTuiSessions, renderSkills, runInkInteractive, runLocalShellCommand } from './tui.js';
+import { AGENTS_MD_TEMPLATE, formatTuiSessions, renderSkills, runInkInteractive, runLocalShellCommand } from './tui.js';
 import { getMossWorkspacePaths } from '../utils/workspace-paths.js';
+import { appendQuickAddMemory, openInEditor, parseQuickAddMemory, resolveEditorCommand } from './memory-editor.js';
 
 let currentModel = '';
 
@@ -361,7 +362,24 @@ export async function runInteractive(
       continue;
     }
 
-    if (msg === '/memory') {
+    if (msg === '/memory' || msg === '/memory list') {
+      // The basic REPL uses a plain readline, so handing the TTY to $EDITOR is
+      // safe here (unlike the Ink TUI). `/memory` opens AGENTS.md in $EDITOR;
+      // `/memory list` (and the editor-less fallback) shows the stored listing.
+      if (msg === '/memory' && resolveEditorCommand() && process.stdin.isTTY) {
+        const target = path.join(workspace, 'AGENTS.md');
+        if (!fs.existsSync(target)) {
+          try { fs.writeFileSync(target, AGENTS_MD_TEMPLATE, 'utf8'); } catch { /* fall through to listing */ }
+        }
+        try {
+          await openInEditor(target);
+          console.error(`[memory] Edited ${compactPath(target)} — auto-loads next session.`);
+          rl.prompt();
+          continue;
+        } catch (err) {
+          console.error(`[memory] Editor failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       const paths = getMossWorkspacePaths(workspace);
       const memDir = fs.existsSync(paths.memoryDir) ? paths.memoryDir : paths.legacyMemoryDir;
       try {
@@ -401,6 +419,18 @@ export async function runInteractive(
         ...customCommands.map((command) => command.name),
       ];
       console.error(`[help] Available: ${availableCommands.join(' ')}`);
+      rl.prompt();
+      continue;
+    }
+
+    const quickMemory = parseQuickAddMemory(msg);
+    if (quickMemory !== null) {
+      try {
+        const target = appendQuickAddMemory(workspace, quickMemory, AGENTS_MD_TEMPLATE);
+        console.error(`[memory] Added to ${compactPath(target)}: ${quickMemory}`);
+      } catch (err) {
+        console.error(`[memory] Could not add memory: ${err instanceof Error ? err.message : String(err)}`);
+      }
       rl.prompt();
       continue;
     }

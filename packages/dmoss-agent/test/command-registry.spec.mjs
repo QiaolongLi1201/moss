@@ -125,4 +125,32 @@ function fakeCtx(overrides = {}) {
   assert.match(zh[2], /不会发给模型/);
 }
 
+// ── Fuzzy slash-command matching (subsequence, prefix-first) ────────────────
+{
+  const { commandRowsForSlashInput } = await import('../dist/cli/interactive-commands.js');
+  const cmd = (value, extra = []) => commandRowsForSlashInput(value, extra).map(([command]) => command);
+
+  assert.deepEqual(commandRowsForSlashInput('hello'), []);
+  const allRows = cmd('/');
+  assert.ok(allRows.includes('/compact'));
+  assert.ok(allRows.includes('/resume'));
+
+  assert.ok(cmd('/cmp').includes('/compact'), '/cmp should fuzzy-match /compact');
+  assert.ok(cmd('/rsm').includes('/resume'), '/rsm should fuzzy-match /resume');
+  assert.ok(cmd('/cpt').includes('/compact'), '/cpt should fuzzy-match /compact');
+
+  assert.equal(cmd('/comp')[0], '/compact', '/comp ranks /compact first');
+
+  const coRows = cmd('/co');
+  const firstNonPrefix = coRows.findIndex((c) => !c.startsWith('/co'));
+  const lastPrefix = coRows.reduce((acc, c, i) => (c.startsWith('/co') ? i : acc), -1);
+  if (firstNonPrefix !== -1) {
+    assert.ok(lastPrefix < firstNonPrefix, 'all /co* prefix rows rank before subsequence rows');
+  }
+
+  assert.equal(cmd('/help')[0], '/help');
+  const withExtra = cmd('/dpl', [['/deploy-board', 'custom: deploy to board']]);
+  assert.ok(withExtra.includes('/deploy-board'), '/dpl should fuzzy-match custom /deploy-board');
+}
+
 console.log('[PASS] command registry: matching, pilot commands, fall-through, unknown-command UX');

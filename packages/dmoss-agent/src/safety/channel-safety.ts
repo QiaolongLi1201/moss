@@ -39,6 +39,7 @@ const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bnpm\s+(un)?publish\b/i, reason: '禁止外部通道发布/撤回 npm 包' },
   { pattern: /\bgit\s+push\s+.*--force\b/i, reason: '禁止强制推送' },
   { pattern: /\b(curl|wget)\b.*\|\s*(python|python3|perl|ruby|node)\b/i, reason: '禁止从网络管道执行脚本' },
+  { pattern: at('(?:cat|less|more|head|tail|grep|sed|awk)\\b[^\\n;&|`]*\\s/(?:etc/(?:shadow|passwd|sudoers)|root/\\.ssh)\\b'), reason: '禁止读取敏感系统账户/凭据文件' },
   // Privilege escalation
   { pattern: at('(?:chown|chgrp)\\b'), reason: '禁止修改文件所有者/组' },
   { pattern: at('(?:useradd|usermod|userdel|groupadd|groupmod|passwd)\\b'), reason: '禁止用户/密码管理操作' },
@@ -49,8 +50,8 @@ const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\b(python|python3|perl|ruby|node)\s+-[a-zA-Z]*c\b/i, reason: '禁止解释器 -c 任意代码执行' },
   { pattern: /\b(node|python|python3|perl|ruby)\s+-e\b/i, reason: '禁止解释器 -e 任意代码执行' },
   // Persistent/scheduled execution
-  { pattern: at('crontab\\b'), reason: '禁止定时任务修改' },
-  { pattern: at('at\\s+'), reason: '禁止延迟任务执行' },
+  { pattern: at('crontab\\b(?!\\s+-l\\b)'), reason: '禁止定时任务修改（crontab -l 只读列出除外）' },
+  { pattern: at('at\\s+(?!-l\\b)'), reason: '禁止延迟任务执行（at -l/atq 只读除外）' },
   // Filesystem manipulation
   { pattern: at('u?mount\\b'), reason: '禁止挂载/卸载文件系统' },
   { pattern: at('(?:iptables|ufw|pft?ctl)\\b'), reason: '禁止防火墙修改' },
@@ -62,7 +63,10 @@ const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   // Encoded/binary payload
   { pattern: /\bbase64\b.*\|\s*(sh|bash|zsh|dash)/i, reason: '禁止 base64 解码执行' },
   // Shell escape from editors/pagers (only when actually invoked as a command)
-  { pattern: at('(?:vim?|nano|less|more)\\b'), reason: '禁止编辑器/分页器（支持 shell escape）' },
+  // Real interactive editors keep a shell-escape (:!sh); less/more are dropped —
+  // a non-interactive agent can't trigger their `!cmd` escape, and read-only
+  // paging is a common false positive (read_file is the better tool anyway).
+  { pattern: at('(?:vim?|nano)\\b'), reason: '禁止编辑器（支持 shell escape）' },
 ];
 
 const BASE_PROTECTED_PATH_KEYWORDS = [

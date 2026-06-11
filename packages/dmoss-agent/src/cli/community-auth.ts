@@ -468,7 +468,7 @@ async function readManualCommunityLoginToken(options: {
 }): Promise<string> {
   const state = crypto.randomBytes(16).toString('hex');
   const loginUrl = buildPortalLoginUrl(options.ssoBaseUrl, buildManualCallbackUrl(state));
-  options.print('[auth] Manual login mode for SSH/remote terminals.');
+  options.print('[auth] Manual login mode for browserless or remote terminals.');
   options.print(`[auth] Login URL: ${loginUrl}`);
   options.print('[auth] Open it in any browser. After the browser redirects to 127.0.0.1 and cannot connect, paste the full redirected URL here.');
   options.print('[auth] You may also paste the token itself if the portal shows one.');
@@ -622,7 +622,7 @@ export function renderCommunityAuthRequiredMessage(options: { interactive?: bool
       '',
       'To link this Moss session, run:',
       '  /auth login',
-      '  /auth login --manual   # SSH/remote terminal fallback',
+      '  /auth login --manual   # browserless/remote terminal fallback',
       '',
       'You can keep using Moss without logging in.',
     ].join(os.EOL);
@@ -632,7 +632,7 @@ export function renderCommunityAuthRequiredMessage(options: { interactive?: bool
     '',
     'To link Moss to your community account, run:',
     '  moss auth login',
-    '  moss auth login --manual   # SSH/remote terminal fallback',
+    '  moss auth login --manual   # browserless/remote terminal fallback',
     '',
     'You can keep using Moss without logging in.',
   ].join(os.EOL);
@@ -643,7 +643,7 @@ export function formatCommunityAuthLoginError(err: unknown): string {
   return [
     `Login failed: ${message}`,
     'Hint: check network access to the D-Robotics SSO page, then retry `/auth login`.',
-    'If you are running over SSH or on a board, use `/auth login --manual` or `moss auth login --manual` and paste the browser redirect URL.',
+    'If this machine cannot open a browser, use `/auth login --manual` or `moss auth login --manual` and paste the browser redirect URL.',
   ].join(os.EOL);
 }
 

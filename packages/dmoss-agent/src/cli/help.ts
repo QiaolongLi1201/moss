@@ -30,7 +30,7 @@ export function displayHelp(c: Colors, options: { all?: boolean } = {}): void {
       `  ${c.bold('Most useful')}`,
       `    ${c.cyan('$')} moss                          ${c.dim('# start interactive Moss; built-in model is ready')}`,
       `    ${c.cyan('$')} moss auth login               ${c.dim('# optional: link a D-Robotics community account')}`,
-      `    ${c.cyan('$')} moss auth login --manual      ${c.dim('# optional SSH/board login fallback: paste redirect URL or token')}`,
+      `    ${c.cyan('$')} moss auth login --manual      ${c.dim('# optional browserless community login: paste redirect URL or token')}`,
       `    ${c.cyan('$')} moss setup                    ${c.dim('# use your own provider/model/API key instead')}`,
       `    ${c.cyan('$')} moss "check this project"      ${c.dim('# one-shot mode')}`,
       '',

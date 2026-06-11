@@ -111,7 +111,7 @@ await runLoginCallbackTest((redirectUrl) => {
   });
   assert.equal(prompted, true);
   assert.equal(auth.user.id, 'user-123');
-  assert.match(lines.join('\n'), /Manual login mode for SSH\/remote terminals/);
+  assert.match(lines.join('\n'), /Manual login mode for browserless or remote terminals/);
   assert.equal(getDmossCommunityAuthStatus({ configDir }).authenticated, true);
 }
 

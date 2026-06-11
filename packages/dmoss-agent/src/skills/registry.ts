@@ -191,7 +191,7 @@ export class SkillRegistry {
         const fm = parseFrontmatter(raw);
         metas.push({
           name: fm.name || path.basename(path.dirname(file)),
-          description: fm.description || 'D-Moss skill',
+          description: fm.description || 'Moss skill',
           sourcePath: file,
           version: fm.version || '0.1.0',
           tags: parseList(fm.tags),

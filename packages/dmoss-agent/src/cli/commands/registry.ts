@@ -29,11 +29,14 @@ import {
   renderCliMcp,
   renderCliPermissions,
   renderCliQuickStart,
+  renderCliSessionDoctor,
   renderCliStatus,
   renderCliTools,
   renderCliUpgradeHelp,
   type CliRuntimeStatus,
 } from '../onboarding.js';
+import { runProcess } from '../../utils/run-process.js';
+import { DmossError, ErrorCode } from '../../errors.js';
 import { getPackageVersion } from '../package-info.js';
 
 export type CommandSurface = 'repl' | 'tui';
@@ -145,6 +148,38 @@ const mcpCommand: CommandSpec = {
   },
 };
 
+const doctorCommand: CommandSpec = {
+  name: '/doctor',
+  summary: 'health-check model, egress, board, MCP, and config in this session',
+  run(ctx) {
+    ctx.say('system', renderCliSessionDoctor(ctx.agent, ctx.runtime));
+  },
+};
+
+const yoloCommand: CommandSpec = {
+  name: '/yolo',
+  summary: 'grant FULL POWER for this session — run any tool without per-call approval (/yolo off to revert)',
+  run(ctx, args) {
+    const off = /^(off|0|false|stop|no)$/i.test(args.trim());
+    if (!ctx.runtime) {
+      ctx.say('error', '/yolo is unavailable in this context.');
+      return;
+    }
+    if (off) {
+      ctx.runtime.fullPower = false;
+      ctx.say('system', 'Full power OFF — back to your base safety mode (mutating tools ask for approval again).');
+      return;
+    }
+    ctx.runtime.fullPower = true;
+    ctx.say('system', [
+      '⚡ FULL POWER ON for this session — every tool the model picks runs WITHOUT a per-call prompt,',
+      'including file writes, shell commands, and (after /connect) board actuation.',
+      'Still enforced: dangerous commands (rm -rf /, mkfs, curl|sh, …) stay blocked, and configured',
+      'deniedTools are never run. Type /yolo off to revert to approval prompts.',
+    ].join('\n'));
+  },
+};
+
 const permissionsCommand: CommandSpec = {
   name: '/permissions',
   aliases: ['/config'],
@@ -227,6 +262,118 @@ const contextCommand: CommandSpec = {
   },
 };
 
+/**
+ * Code-review instruction modeled on Claude Code's /review (pr-review-toolkit):
+ * four dimensions — correctness/bugs, security, simplification, type design —
+ * with high-signal filtering and file:line citations. The diff is gathered by
+ * the CLI (so the model reviews a concrete change, not the whole repo) and the
+ * model runs the review as a normal turn with its own tools.
+ */
+function buildReviewPrompt(diff: string, scopeLabel: string): string {
+  return [
+    `You are reviewing the following code change (${scopeLabel}). Review ONLY the diff below;`,
+    'do not review pre-existing code unrelated to these changes. Read surrounding files with your',
+    'tools only when a hunk is ambiguous.',
+    '',
+    'Review across these dimensions and report HIGH-SIGNAL findings only (skip style nitpicks a',
+    'linter would catch and anything you cannot confirm from the diff):',
+    '  1. Correctness & bugs — logic errors, null/undefined handling, race conditions, off-by-one,',
+    '     wrong results regardless of input, broken control flow.',
+    '  2. Security — injection, unsafe child-process/shell, secret/credential leaks, missing input',
+    '     validation, path traversal, unsafe deserialization.',
+    '  3. Simplification — duplicated logic, dead code, needless abstraction or nesting that can be',
+    '     removed without changing behavior.',
+    '  4. Type design — weak invariants, types that allow invalid states, `any`/unsafe casts that',
+    '     hide real type debt.',
+    '',
+    'For each finding give: dimension, file:line, a one-line description, and a concrete fix. If a',
+    'project guideline file (CLAUDE.md / AGENTS.md) covers a changed file, flag clear violations and',
+    'quote the rule. Group findings by severity (Critical / Important / Suggestion). If nothing is',
+    'wrong, say so explicitly — do not invent issues.',
+    '',
+    '--- BEGIN DIFF ---',
+    diff,
+    '--- END DIFF ---',
+  ].join('\n');
+}
+
+const reviewCommand: CommandSpec = {
+  name: '/review',
+  summary: 'review the working-tree diff (or `/review <PR#>`) for bugs, security, and simplification',
+  async run(ctx, args) {
+    if (!ctx.submitPrompt) {
+      ctx.say('error', '/review needs a session that can start a run; it is unavailable in this context.');
+      return;
+    }
+    const arg = args.trim();
+    try {
+      let diff: string;
+      let scopeLabel: string;
+      if (arg) {
+        const prNumber = arg.replace(/^#/, '');
+        if (!/^\d+$/.test(prNumber)) {
+          ctx.say('error', 'Usage: /review            (working tree + staged changes)\n       /review <PR#>     (a GitHub pull request via `gh pr diff`)');
+          return;
+        }
+        const result = await runProcess('gh', { args: ['pr', 'diff', prNumber], cwd: ctx.workspace, timeout: 30_000 });
+        if (result.exitCode !== 0) {
+          throw new DmossError({
+            code: ErrorCode.TOOL_EXECUTION_FAILED,
+            message: `gh pr diff ${prNumber} failed (exit ${result.exitCode})`,
+            hint: 'Install and authenticate the GitHub CLI (`gh auth login`) and run inside the repo, or use `/review` with no argument to review local changes.',
+            cause: result.stderr.trim() || undefined,
+          });
+        }
+        diff = result.stdout;
+        scopeLabel = `GitHub PR #${prNumber}`;
+      } else {
+        const result = await runProcess('git', { args: ['--no-pager', 'diff', 'HEAD'], cwd: ctx.workspace, timeout: 30_000 });
+        if (result.exitCode !== 0) {
+          const notRepo = /not a git repository/i.test(result.stderr);
+          throw new DmossError({
+            code: ErrorCode.TOOL_EXECUTION_FAILED,
+            message: notRepo
+              ? `Not a git repository: ${ctx.workspace} — /review needs a git workspace.`
+              : `git diff failed (exit ${result.exitCode})`,
+            hint: notRepo ? 'Open a git repository, or pass a PR number: `/review <PR#>`.' : result.stderr.trim() || undefined,
+          });
+        }
+        diff = result.stdout;
+        scopeLabel = 'local working tree + staged changes';
+      }
+
+      if (!diff.trim()) {
+        ctx.say('system', arg
+          ? `No changes found in PR ${arg}.`
+          : 'No changes to review (working tree and index are clean). Make some edits, or pass a PR number: /review <PR#>.');
+        return;
+      }
+
+      // Soft cap: a huge or binary-heavy diff would overflow the model context.
+      // Truncate with a clear marker rather than streaming megabytes verbatim.
+      const MAX_DIFF_CHARS = 400_000;
+      const totalLines = diff.split('\n').length;
+      let reviewDiff = diff;
+      let truncatedNote = '';
+      if (diff.length > MAX_DIFF_CHARS) {
+        const kept = diff.slice(0, MAX_DIFF_CHARS);
+        const keptLines = kept.split('\n').length;
+        reviewDiff = `${kept}\n\n[diff truncated: showing ${keptLines} of ${totalLines} lines (${Math.round(MAX_DIFF_CHARS / 1024)} KB cap). Narrow the scope — review specific paths or stage a subset — for a complete review.]`;
+        truncatedNote = ` — truncated to ${Math.round(MAX_DIFF_CHARS / 1024)} KB; narrow the scope for full coverage`;
+      }
+
+      ctx.say('system', `Reviewing ${scopeLabel} (${totalLines} diff lines)${truncatedNote} …`);
+      ctx.submitPrompt(buildReviewPrompt(reviewDiff, scopeLabel));
+    } catch (err) {
+      const dmoss = err instanceof DmossError ? err : new DmossError({
+        code: ErrorCode.TOOL_EXECUTION_FAILED,
+        message: `Could not gather a diff for review: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      ctx.say('error', dmoss.hint ? `${dmoss.message}\n  ${dmoss.hint}` : dmoss.message);
+    }
+  },
+};
+
 const COMMANDS: readonly CommandSpec[] = [
   versionCommand,
   connectCommand,
@@ -235,6 +382,9 @@ const COMMANDS: readonly CommandSpec[] = [
   statusCommand,
   toolsCommand,
   mcpCommand,
+  doctorCommand,
+  reviewCommand,
+  yoloCommand,
   permissionsCommand,
   examplesCommand,
   upgradeCommand,

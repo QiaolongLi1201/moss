@@ -40,6 +40,21 @@ export interface CliToolApprovalOptions {
    * still honored; the hard isCommandDangerous block stays inside the tools.
    */
   boardMode?: () => boolean;
+  /**
+   * Live safety-mode override (getter). When it returns a mode, that mode
+   * replaces the base mode for the current call — lets an in-session escalation
+   * (/yolo) widen the allowlist without recreating the hook. Returns undefined
+   * to use the base mode.
+   */
+  safetyModeOverride?: () => CliSafetyMode | undefined;
+  /**
+   * Live "no per-call prompt" signal (getter). When true, tools ALLOWED by the
+   * (possibly overridden) safety mode run without an interactive prompt. The
+   * user opted into this (--full-access / /yolo / approvalPolicy never); it
+   * never bypasses isAllowedInMode (read-only still blocks all mutation), the
+   * isCommandDangerous floor, or deniedTools.
+   */
+  autoApprove?: () => boolean;
 }
 
 export interface CliToolApprovalPreview {
@@ -253,7 +268,11 @@ function isAllowedInMode(
     return sideEffect === 'local_write' ||
       sideEffect === 'memory_write' ||
       sideEffect === 'runtime_state' ||
-      sideEffect === 'subagent';
+      sideEffect === 'subagent' ||
+      // MCP + browser tools (external_message) are PROMPTABLE in workspace-write
+      // rather than hard-blocked: a user who configured an MCP server clearly
+      // wants it, and the per-call approval prompt keeps each use consented.
+      sideEffect === 'external_message';
   }
   return true;
 }
@@ -503,7 +522,16 @@ export function createCliToolApprovalHook(
 
   return async (request: ToolApprovalRequest) => {
     const { tool } = request;
-    const preview = describeCliToolApproval(request, mode, env, {
+    // Live mode: an in-session escalation (/yolo) can widen the allowlist by
+    // overriding the base mode for this call.
+    const liveMode = options.safetyModeOverride?.() ?? mode;
+    // "Full power" = no per-call prompt for mode-allowed tools. Sources: an
+    // explicit --full-access / /yolo, approvalPolicy never, or DMOSS_*_AUTO_APPROVE.
+    // full-access mode itself implies it (choosing full access means full power).
+    const fullPower = options.autoApprove?.() === true
+      || liveMode === 'full-access'
+      || hasAutoApproval(env, options);
+    const preview = describeCliToolApproval(request, liveMode, env, {
       ...options,
       trustedTools: [...(options.trustedTools ?? []), ...sessionTrustedTools],
     });
@@ -521,10 +549,12 @@ export function createCliToolApprovalHook(
         reason: `计划模式(plan)：先产出实施计划，暂不执行变更。按 Shift+Tab 切到 default / accept-edits 后再运行 "${tool.name}"。`,
       };
     }
-    if (!isAllowedInMode(mode, preview.sideEffect, options.boardMode?.() === true)) {
+    if (!isAllowedInMode(liveMode, preview.sideEffect, options.boardMode?.() === true)) {
       return {
         approved: false,
-        reason: `Tool "${tool.name}" is blocked by ${mode} safety mode (side effect: ${preview.sideEffect}).`,
+        reason:
+          `Tool "${tool.name}" is blocked by ${liveMode} safety mode (side effect: ${preview.sideEffect}). ` +
+          'Run /yolo (or relaunch with --full-access) to allow it for this session.',
       };
     }
     if (!preview.requiresApproval) return { approved: true };
@@ -545,18 +575,24 @@ export function createCliToolApprovalHook(
       return { approved: true };
     }
 
+    // Full power (--full-access / /yolo / approvalPolicy never): the tool already
+    // passed isAllowedInMode above, so this runs mode-allowed tools without a
+    // per-call prompt. read-only still blocks all mutation, isCommandDangerous
+    // still blocks dangerous commands inside the tool, and deniedTools still wins.
+    if (fullPower) {
+      return { approved: true };
+    }
+
     if (interaction === 'acceptEdits') {
       return { approved: true };
     }
 
+    // Non-interactive (headless / piped / `-p`): there is no TTY to prompt on, so
+    // auto-approve what the mode already allows rather than dead-ending (`moss -p`
+    // was unusable for any mutating tool). read-only still blocks all mutation at
+    // isAllowedInMode above; the dangerous-command floor and deniedTools still apply.
     if (!process.stdin.isTTY) {
-      return {
-        approved: false,
-        reason:
-          `Tool "${tool.name}" requires approval, but stdin is not interactive. ` +
-          'Use `moss config set approvalPolicy never` or `moss config set trustedTools <tool>` only in a trusted workspace; ' +
-          'DMOSS_CLI_AUTO_APPROVE=1 is also supported for one-off automation.',
-      };
+      return { approved: true };
     }
 
     const prompt = renderCliApprovalPrompt(preview, request.input, {

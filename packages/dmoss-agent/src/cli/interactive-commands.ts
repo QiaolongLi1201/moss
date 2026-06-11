@@ -26,6 +26,8 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       { command: '/attach <path>', description: 'fallback: attach an image or text file to the next prompt', hidden: true },
       { command: '/connect <ip>', description: 'connect an RDK board and enter board mode (verifies SSH; flags: --user --port --key --password --no-verify --hybrid)' },
       { command: '/disconnect', description: 'leave board mode and restore local tools (Ctrl+D on an empty prompt also works)' },
+      { command: '/review', description: 'review the working-tree diff for bugs, security, and simplification' },
+      { command: '/review <PR#>', description: 'review a GitHub pull request via `gh pr diff`', hidden: true },
     ],
   },
   {
@@ -34,6 +36,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       { command: '/sessions', description: 'list saved conversations (use /resume to switch into one)' },
       { command: '/resume [key|--last]', description: 'switch this session to a saved conversation (no arg opens a picker)' },
       { command: '/mcp', description: 'show configured MCP servers, connection status, and tool counts' },
+      { command: '/doctor', description: 'health-check model, egress, board, MCP, and config in this session' },
       { command: '/cost', description: 'show recorded token usage and estimated cost', hidden: true },
       { command: '/diff', description: 'show git working-tree changes' },
       { command: '/rewind [seq]', description: 'undo file edits from a checkpoint', hidden: true },
@@ -48,7 +51,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
     title: 'Configure',
     rows: [
       { command: '/auth login', description: 'optional: link a D-Robotics developer community account' },
-      { command: '/auth login --manual', description: 'optional SSH login by pasting the browser redirect URL or token', hidden: true },
+      { command: '/auth login --manual', description: 'optional browserless community login by pasting the redirect URL or token', hidden: true },
       { command: '/logout', description: 'log out of the D-Robotics developer community', hidden: true },
       {
         command: '/quickstart',
@@ -58,6 +61,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       },
       { command: '/examples', description: 'show task examples for enabled capabilities', hidden: true },
       { command: '/permissions', description: 'show safety, approvals, cache, and config policy', hidden: true },
+      { command: '/yolo', description: 'grant full power for this session — no per-call approval (/yolo off to revert)' },
       { command: '/config', description: 'show config file and policy commands', hidden: true },
       { command: '/tools', description: 'view available tool groups and how Moss chooses them', hidden: true },
       { command: '/models', description: 'list selectable models for the active provider', hidden: true },
@@ -108,6 +112,37 @@ export const INTERACTIVE_COMPLETION_COMMANDS: readonly string[] = Array.from(new
   ...SLASH_MENU_ROWS.flatMap((row) => row.aliases ?? []),
 ]));
 
+/**
+ * Subsequence-fuzzy match of `query` against `candidate` (both lowercased,
+ * leading slash stripped). Returns a rank tuple `[tier, span, firstIndex]`
+ * (lower = better) or null when `query`'s chars don't appear in order.
+ * tier 0 = exact, 1 = prefix, 2 = subsequence; ties break on tighter spans,
+ * then earliest first match, so e.g. `/cmp`→`/compact`, `/rsm`→`/resume`.
+ * @internal
+ */
+function fuzzyCommandRank(candidate: string, query: string): [number, number, number] | null {
+  const cand = candidate.replace(/^\//, '');
+  const q = query.replace(/^\//, '');
+  if (q.length === 0) return [1, 0, 0];
+  if (cand === q) return [0, 0, 0];
+  if (cand.startsWith(q)) return [1, q.length, 0];
+  let ci = 0;
+  let first = -1;
+  let last = -1;
+  for (let qi = 0; qi < q.length; qi += 1) {
+    const ch = q[qi]!;
+    let found = -1;
+    while (ci < cand.length) {
+      if (cand[ci] === ch) { found = ci; ci += 1; break; }
+      ci += 1;
+    }
+    if (found === -1) return null;
+    if (first === -1) first = found;
+    last = found;
+  }
+  return [2, last - first, first];
+}
+
 export function commandRowsForSlashInput(
   value: string,
   extra: ReadonlyArray<readonly [string, string]> = [],
@@ -119,9 +154,20 @@ export function commandRowsForSlashInput(
     ...SLASH_MENU_ROWS.map((row): [string, string] => [row.command, row.description]),
     ...extra.map(([command, description]): [string, string] => [command, description]),
   ];
-  return normalized === '/'
-    ? rows
-    : rows.filter(([command]) => command.toLowerCase().startsWith(normalized));
+  if (normalized === '/') return rows;
+  // Fuzzy (subsequence) match, prefix-first. Keep original order as the final
+  // tie-breaker so equally-ranked rows stay in their declared section order.
+  const ranked: Array<{ row: [string, string]; rank: [number, number, number]; order: number }> = [];
+  rows.forEach((row, order) => {
+    const rank = fuzzyCommandRank(row[0].toLowerCase(), normalized);
+    if (rank) ranked.push({ row, rank, order });
+  });
+  ranked.sort((a, b) =>
+    a.rank[0] - b.rank[0]
+    || a.rank[1] - b.rank[1]
+    || a.rank[2] - b.rank[2]
+    || a.order - b.order);
+  return ranked.map((entry) => entry.row);
 }
 
 export function formatInteractiveCommandSections(options: {

@@ -174,7 +174,10 @@ assert.equal(promptEditorRowBudget('', { placeholder: 'Ask Moss', hint: 'Ctrl+O 
 // '/' previews a windowed command palette (≤6 rows) so it does not crowd short terminals.
 assert.equal(promptEditorRowBudget('/'), 11);
 assert.equal(promptEditorRowBudget('/que'), 4);
-assert.equal(promptEditorRowBudget('/staus'), 5);
+// Fuzzy slash matching surfaces the intended command even for a typo, so
+// '/staus' now previews the '/status' command window instead of a single
+// "did you mean" suggestion line.
+assert.equal(promptEditorRowBudget('/staus'), 6);
 assert.equal(promptEditorRowBudget(Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join('\n')), 11);
 
 assert.equal(formatQueueWait(undefined, 10_000), null);

@@ -4,6 +4,7 @@ import { checkForCliUpdate } from './update-check.js';
 import { auditResolvedCliConfig, hasTrustedToolWildcard } from './config.js';
 import type { ResolvedCliConfig } from './config.js';
 import { loadMcpConfigWithDiagnostics } from '../mcp/index.js';
+import { MIN_NODE_MAJOR, MIN_NODE_MINOR, nodeVersionProblem } from './node-version-check.js';
 
 interface DoctorOptions {
   config: ResolvedCliConfig;
@@ -26,6 +27,12 @@ function warn(label: string, detail: string): string {
 
 function fail(label: string, detail: string): string {
   return `  fail  ${label}: ${detail}`;
+}
+
+export function renderNodeDoctorLine(version: string = process.version): string {
+  return nodeVersionProblem(version)
+    ? fail('node', `${version}; requires >=${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.0`)
+    : ok('node', version);
 }
 
 function canWriteDir(dir: string): boolean {
@@ -119,8 +126,7 @@ function renderBaseUrlDoctor(config: ResolvedCliConfig): string {
 
 export async function renderCliDoctor(options: DoctorOptions): Promise<string> {
   const lines = ['[doctor] Moss'];
-  const nodeMajor = Number.parseInt(process.versions.node.split('.')[0] || '0', 10);
-  lines.push(nodeMajor >= 22 ? ok('node', process.version) : fail('node', `${process.version}; requires >=22.16.0`));
+  lines.push(renderNodeDoctorLine());
   lines.push(ok('version', options.currentVersion));
   lines.push(options.config.apiKey
     ? ok('auth', `configured via ${options.config.apiKeySource}`)

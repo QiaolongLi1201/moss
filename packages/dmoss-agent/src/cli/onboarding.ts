@@ -8,6 +8,7 @@ import { formatInteractiveCommandSections } from './interactive-commands.js';
 import { resolveCliDetailMode, type CliDetailMode } from './output.js';
 import { getPackageVersion } from './package-info.js';
 import { compactPath, label, ui } from './ui.js';
+import { MIN_NODE_MAJOR, MIN_NODE_MINOR, nodeVersionProblem } from './node-version-check.js';
 
 export interface CliDeviceStatus {
   host: string;
@@ -49,6 +50,12 @@ export interface CliRuntimeStatus {
    * host-neutral. Surfaced in-session by /mcp.
    */
   mcp?: CliMcpServerStatus[];
+  /**
+   * Session "full power" flag, flipped by /yolo. When true the approval hook
+   * treats the session as full-access with no per-call prompt (the hard
+   * isCommandDangerous floor and deniedTools still apply). Off by default.
+   */
+  fullPower?: boolean;
 }
 
 /** One configured MCP server's live connection state, for /mcp. */
@@ -89,6 +96,7 @@ const DEFAULT_RUNTIME: Required<Omit<CliRuntimeStatus, 'device' | 'deviceSession
   dockerImage: process.env.DMOSS_DOCKER_IMAGE,
   meshEnabled: process.env.DMOSS_MESH_ENABLED === 'true' || process.argv.includes('--mesh'),
   sessionKey: 'cli',
+  fullPower: false,
   config: loadDefaultRuntimeConfig(),
   communityAuth: undefined,
   device: null,
@@ -378,6 +386,88 @@ export function renderCliMcp(runtime: CliRuntimeStatus = {}): string {
       return `  ${marker} ${server.name}  ${ui.dim(state)}`;
     }),
   ].join('\n');
+}
+
+/** Severity marker for the in-session doctor; text carries the severity (no ui.red in the palette). */
+function doctorLine(kind: 'ok' | 'warn' | 'fail', name: string, detail: string): string {
+  const dot = kind === 'ok' ? ui.green('●') : ui.yellow('○');
+  return `  ${dot} ${kind.padEnd(4)} ${label(name)} ${detail}`;
+}
+
+/**
+ * In-session health summary for `/doctor`. Sibling of renderCliStatus/renderCliMcp:
+ * synchronous, host-neutral, and reuses the resolved config audit plus the LIVE
+ * runtime (device/board session and the MCP connection snapshot captured at
+ * startup) — the parts `moss doctor` (src/cli/doctor.ts) cannot see because it
+ * runs before a session exists. No network egress here; reachability is reported
+ * from the resolved provider/proxy config, not a probe.
+ */
+export function renderCliSessionDoctor(agent: DmossAgent, runtime: CliRuntimeStatus = {}): string {
+  const rt = runtimeWithDefaults(runtime);
+  const auth = rt.config;
+  const lines: string[] = [ui.bold('Doctor')];
+
+  const nodeProblem = nodeVersionProblem(process.version);
+  lines.push(!nodeProblem
+    ? doctorLine('ok', 'node', process.version)
+    : doctorLine('fail', 'node', `${process.version}; requires >=${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.0`));
+  if (auth.usingBundledDefault) {
+    lines.push(doctorLine('ok', 'model', `${agent.config.model} (built-in D-Robotics model)`));
+    lines.push(doctorLine('ok', 'auth', 'built-in gateway (no API key needed)'));
+  } else {
+    lines.push(doctorLine('ok', 'model', `${agent.config.model} (${auth.providerSource})`));
+    lines.push(doctorLine('ok', 'provider', `${auth.provider} (${auth.providerSource})`));
+    lines.push(auth.apiKey
+      ? doctorLine('ok', 'auth', `API key configured via ${auth.apiKeySource}`)
+      : doctorLine('fail', 'auth', 'no API key; run `moss setup` or `moss config set apiKey ...`'));
+  }
+
+  // Network / proxy egress. Moss installs an EnvHttpProxyAgent when HTTP(S)_PROXY
+  // is set (provider/keep-alive-dispatcher.ts); surface which path egress takes.
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+  if (auth.usingBundledDefault) {
+    lines.push(doctorLine('ok', 'egress', proxy ? `built-in gateway via proxy ${shortBaseUrl(proxy)}` : 'built-in gateway (direct)'));
+  } else {
+    lines.push(doctorLine('ok', 'egress', proxy
+      ? `${shortBaseUrl(auth.baseUrl)} via proxy ${shortBaseUrl(proxy)}`
+      : `${shortBaseUrl(auth.baseUrl)} (direct, no proxy)`));
+  }
+
+  if (rt.device) {
+    const target = `${rt.device.user || 'root'}@${rt.device.host}:${rt.device.port || 22}`;
+    lines.push(doctorLine('ok', 'board', `${target}${rt.deviceSession?.boardMode ? ' — BOARD MODE' : ' (hybrid)'}`));
+  } else {
+    lines.push(doctorLine('ok', 'board', 'not connected (/connect <ip> to attach an RDK board)'));
+  }
+
+  if (auth.mcpEnabled !== true) {
+    lines.push(doctorLine('ok', 'mcp', `disabled (${auth.mcpEnabledSource ?? 'default'})`));
+  } else {
+    const servers = rt.mcp ?? [];
+    if (servers.length === 0) {
+      lines.push(doctorLine('warn', 'mcp', `enabled (${auth.mcpEnabledSource ?? 'config'}) but no servers connected; config ${auth.mcpConfigPath}`));
+    } else {
+      const connected = servers.filter((s) => s.connected).length;
+      const total = servers.reduce((n, s) => n + s.toolCount, 0);
+      lines.push(connected === servers.length
+        ? doctorLine('ok', 'mcp', `${connected}/${servers.length} servers connected · ${total} tools`)
+        : doctorLine('warn', 'mcp', `${connected}/${servers.length} servers connected (${servers.filter((s) => !s.connected).map((s) => s.name).join(', ')} failed) · ${total} tools`));
+    }
+  }
+
+  const warnings = auditResolvedCliConfig(auth);
+  if (warnings.length === 0) {
+    lines.push(doctorLine('ok', 'config', 'no warnings'));
+  } else {
+    for (const w of warnings) lines.push(doctorLine('warn', w.code, w.message));
+  }
+
+  if ((auth.ignoredModelEnvVars ?? []).length > 0) {
+    lines.push(doctorLine('warn', 'env ignored', `${auth.ignoredModelEnvVars.join(', ')} — model settings come only from moss config`));
+  }
+
+  lines.push('', '  Full report: `moss doctor` (adds update-check and writable-path probes)');
+  return lines.join('\n');
 }
 
 export function renderCliPermissions(runtime: CliRuntimeStatus = {}): string {

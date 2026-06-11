@@ -33,6 +33,7 @@ import { runRegistryCommand, unknownSlashCommandLines, type CommandSpec } from '
 import { loadCustomCommands, reservedBuiltinNames } from './commands/custom-commands.js';
 import { FileCheckpointStore, checkpointTargetPaths } from './file-checkpoint.js';
 import { INTERACTIVE_COMPLETION_COMMANDS, commandRowsForSlashInput } from './interactive-commands.js';
+import { suggestWorkspaceFiles, detectAtReference, parseAtReferences, type FileSuggestion } from './file-suggest.js';
 import {
   describeModelListSource,
   formatCustomModelConfigInstructions,
@@ -50,6 +51,15 @@ import { startCliUpdateCheck } from './update-check.js';
 import { compactPath, ui } from './ui.js';
 import { handleGoalCommand } from '../goal.js';
 import { getMossWorkspacePaths } from '../utils/workspace-paths.js';
+import { appendQuickAddMemory, parseQuickAddMemory, resolveEditorCommand } from './memory-editor.js';
+import {
+  getVimModeColor,
+  getVimModeIndicator,
+  getVimState,
+  handleVimKey,
+  isVimEnabled,
+  setVimMode,
+} from './input/vim.js';
 
 type TranscriptKind = 'user' | 'assistant' | 'system' | 'error' | 'shell' | 'tool';
 type TuiRunState = 'ready' | 'running' | 'approval';
@@ -221,7 +231,7 @@ const MAX_MARKDOWN_TABLE_WIDTH = 160;
 const MARKDOWN_TABLE_CELL = '\u001F';
 const MARKDOWN_TABLE_ROW = '\u001E';
 
-const AGENTS_MD_TEMPLATE = `# AGENTS.md
+export const AGENTS_MD_TEMPLATE = `# AGENTS.md
 
 Project memory for Moss and coding agents. Auto-loaded at the start of every session.
 
@@ -353,6 +363,18 @@ export function visibleText(text: string, maxLines = Number.POSITIVE_INFINITY): 
     `... ${lines.length - maxLines} earlier lines hidden ...`,
     ...lines.slice(-maxLines),
   ].join('\n');
+}
+
+export function truncateTerminalText(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return '';
+  if (stringWidth(text) <= maxWidth) return text;
+  if (maxWidth === 1) return '…';
+  let out = '';
+  for (const ch of Array.from(text)) {
+    if (stringWidth(`${out}${ch}…`) > maxWidth) break;
+    out += ch;
+  }
+  return `${out}…`;
 }
 
 export function formatQueueWait(enqueuedAt: number | undefined, now = Date.now()): string | null {
@@ -1461,7 +1483,8 @@ function ctxUsageBarColor(usage: { used: number; total: number }): string {
 }
 
 function activityLabel(event: DmossAgentEvent): string | null {
-  if (event.type === 'compaction') return `compacted ${event.droppedMessages} messages`;
+  // 'compaction' is surfaced as a full transcript banner (with the kept-context
+  // outline) by the event loop, not a one-word activity flash — see runPrompt.
   if (event.type === 'microcompact') return `compressed ${event.compressedCount} items`;
   if (event.type === 'working_context_checkpoint') return `${event.status}`;
   return null;
@@ -1769,6 +1792,7 @@ export function SessionHeader({ device: _device, workspace, model, state: _state
  *   - rest: dim
  */
 export function StatusBar({ state, device, workspace, version, notice, model, ctxUsage, flashHint, hint }: StatusBarProps): React.ReactElement {
+  const { columns } = useTerminalSize();
   const ctxPct = ctxUsage && ctxUsage.total > 0 ? (ctxUsage.used / ctxUsage.total) * 100 : null;
   const ctxColor = ctxPct === null
     ? theme.textDim
@@ -1778,6 +1802,15 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
   const ctxLabel = ctxUsage
     ? `ctx ${humanTokens(ctxUsage.used)}/${humanTokens(ctxUsage.total)} (${Math.round(ctxPct ?? 0)}%)`
     : '';
+  const statusText = statusBadge(state);
+  const leftReserve = stringWidth(`Default  ${statusText}  `)
+    + (state === 'running' ? 2 : 0)
+    + (ctxLabel ? stringWidth(ctxLabel) + 2 : 0)
+    + (flashHint ? stringWidth(flashHint) + 2 : 0)
+    + 2;
+  const rightText = `${device}  ·  ${compactPath(workspace)}  ·  ${model || 'connecting...'}  ·  ${version}${hint ? `  |  ${hint}` : ''}`;
+  const rightMax = Math.max(8, columns - leftReserve);
+  const rightDisplay = truncateTerminalText(rightText, rightMax);
 
   return React.createElement(
     Box,
@@ -1791,7 +1824,7 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
       React.createElement(Text, { color: theme.textMuted }, '  '),
       // Status badge + live spinner while the agent is working (self-animating;
       // re-renders on its own interval so the run never looks frozen)
-      React.createElement(Text, { color: statusBarColor(state), bold: true }, statusBadge(state)),
+      React.createElement(Text, { color: statusBarColor(state), bold: true }, statusText),
       state === 'running'
         ? React.createElement(StreamingSpinner, { active: true })
         : null,
@@ -1805,9 +1838,7 @@ export function StatusBar({ state, device, workspace, version, notice, model, ct
       // Spacer
       React.createElement(Box, { flexGrow: 1 }),
       // Right side: device · workspace · model · version · hint
-      React.createElement(Text, { color: theme.textMuted },
-        `${device}  ·  ${compactPath(workspace)}  ·  ${model || 'connecting...'}  ·  ${version}${hint ? `  |  ${hint}` : ''}`,
-      ),
+      React.createElement(Text, { color: theme.textMuted, wrap: 'truncate' }, rightDisplay),
     ),
   );
 }
@@ -2205,8 +2236,12 @@ export interface PromptEditorProps {
   hint?: string;
   model?: string;
   mode?: string;
+  /** When true, route keystrokes through the vim modal handler. */
+  vimEnabled?: boolean;
   /** File-based custom commands to merge into the slash-command menu. */
   extraCommandRows?: ReadonlyArray<readonly [string, string]>;
+  /** Workspace root for `@`-file reference autocomplete (omit to disable). */
+  workspace?: string;
 }
 
 function commandRowsForInput(
@@ -2224,6 +2259,7 @@ export function promptEditorRowBudget(
     placeholder?: string;
     maxPreviewLines?: number;
     extraCommandRows?: ReadonlyArray<readonly [string, string]>;
+    workspace?: string;
   } = {},
 ): number {
   const maxPreviewLines = options.maxPreviewLines ?? 6;
@@ -2233,6 +2269,11 @@ export function promptEditorRowBudget(
     rows += Math.min(6, commandRows.length) + 1; // visible command window (cap 6) plus marginBottom.
   } else if (value.startsWith('/') && commandSuggestion(value)) {
     rows += 1;
+  } else if (options.workspace) {
+    // An open @-file picker reserves the same window (cap 6) + marginBottom.
+    const atRef = detectAtReference(value, clampPromptCursor(value, value.length));
+    const fileRows = atRef ? suggestWorkspaceFiles(atRef.partial, options.workspace, { limit: 8 }) : [];
+    if (fileRows.length > 0) rows += Math.min(6, fileRows.length) + 1;
   }
   const lineCount = value.length > 0 ? value.split('\n').length : 0;
   if (lineCount > 1) rows += 1;
@@ -2263,7 +2304,9 @@ export function PromptEditor({
   hint,
   model: _model,
   mode,
+  vimEnabled,
   extraCommandRows,
+  workspace,
 }: PromptEditorProps): React.ReactElement {
   const lineCount = value.length > 0 ? value.split('\n').length : 0;
   const isMulti = lineCount > 1;
@@ -2287,11 +2330,103 @@ export function PromptEditor({
     ? Math.max(0, Math.min(clampedMenuIndex - Math.floor(maxVisibleCommands / 2), commandRows.length - maxVisibleCommands))
     : 0;
   const menuWindow = menuOpen ? commandRows.slice(menuStart, menuStart + maxVisibleCommands) : [];
-  // Typing re-filters → reset selection to the top and re-open a dismissed menu.
+
+  // Mirror the module-level vim mode into component state so the indicator
+  // repaints on every mode transition (handleVimKey mutates vim.ts state).
+  const [vimTick, setVimTick] = useState(0);
+  const vimActive = (vimEnabled ?? false) && isVimEnabled();
+
+  // ── @-file reference picker: discovery UI over the existing attachment path ──
+  // Active only when not driving the slash menu, a workspace is known, and the
+  // cursor sits inside an `@token`. It reuses the slash-menu row UI/navigation.
+  const atRef = (!menuOpen && workspace)
+    ? detectAtReference(value, currentCursor)
+    : null;
+  const fileRows: FileSuggestion[] = atRef && workspace
+    ? suggestWorkspaceFiles(atRef.partial, workspace, { limit: 8 })
+    : [];
+  const [fileMenuIndex, setFileMenuIndex] = useState(0);
+  const [fileMenuDismissed, setFileMenuDismissed] = useState(false);
+  const fileMenuOpen = fileRows.length > 0 && !fileMenuDismissed;
+  const clampedFileIndex = fileMenuOpen ? Math.max(0, Math.min(fileMenuIndex, fileRows.length - 1)) : 0;
+  const fileMenuStart = fileMenuOpen
+    ? Math.max(0, Math.min(clampedFileIndex - Math.floor(maxVisibleCommands / 2), fileRows.length - maxVisibleCommands))
+    : 0;
+  const fileMenuWindow = fileMenuOpen ? fileRows.slice(fileMenuStart, fileMenuStart + maxVisibleCommands) : [];
+
+  // Replace the active `@token` with the chosen path. Directories keep their
+  // trailing `/` (and re-open the picker) so the user drills in with another
+  // Tab/Enter; files are inserted with a trailing space, ready to keep typing.
+  const applyFileSuggestion = (suggestion: FileSuggestion): void => {
+    if (!atRef) return;
+    const insert = `@${suggestion.rel}${suggestion.kind === 'dir' ? '' : ' '}`;
+    const head = value.slice(0, atRef.start);
+    // Consume the WHOLE `@token` (the run of non-whitespace from `@`), not just up
+    // to the cursor — otherwise a mid-token selection leaves the old suffix behind
+    // and corrupts the path (e.g. `@ro|bot` → `@robot.tsbot`).
+    const tokenMatch = /^@\S*/.exec(value.slice(atRef.start));
+    const tokenEnd = atRef.start + (tokenMatch ? tokenMatch[0].length : currentCursor - atRef.start);
+    const tail = value.slice(tokenEnd);
+    const next = `${head}${insert}${tail}`;
+    onChange(next);
+    onCursorChange?.(head.length + insert.length);
+  };
+
+  // Typing re-filters → reset selection to the top and re-open dismissed menus.
   useEffect(() => { setMenuIndex(0); setMenuDismissed(false); }, [value]);
+  useEffect(() => { setFileMenuIndex(0); setFileMenuDismissed(false); }, [value]);
 
   useInput((inputChar, key) => {
     if (disabled) return;
+    // ── Vim modal routing (only when enabled, no menu/picker open). In INSERT
+    // mode handleVimKey returns { type: 'none' } so normal editing below runs
+    // unchanged; NORMAL/VISUAL consumes the key. Cursor moves set the cursor
+    // directly (NOT a loop of applyEdit, which would re-read the same closure
+    // cursor and net to one step). Multi-line/register features degrade to
+    // no-ops rather than being faked. ──
+    if (vimActive && !menuOpen && !fileMenuOpen) {
+      const vimKey = key.escape ? 'escape' : key.return ? '\r' : inputChar;
+      const action = handleVimKey(vimKey, currentCursor, value.length);
+      if (action.type === 'mode' || vimKey === 'escape') setVimTick((t) => t + 1);
+      if (action.type !== 'none') {
+        if (action.type === 'move' && action.move) {
+          const m = action.move;
+          const next = m.direction === 'left'
+            ? Math.max(0, currentCursor - m.distance)
+            : m.direction === 'right'
+              ? Math.min(value.length, currentCursor + m.distance)
+              : currentCursor; // up/down: no-op in a single-line prompt
+          onCursorChange?.(next);
+          return;
+        }
+        if (action.type === 'edit' && action.edit) {
+          if (action.edit.op === 'delete' || action.edit.op === 'change') applyEdit({ type: 'delete' });
+          setVimTick((t) => t + 1);
+          return;
+        }
+        return; // 'mode' / 'delete' with no further intent: consume the key
+      }
+      // NORMAL mode swallows any unmapped printable key (don't type it).
+      if (getVimState().mode === 'normal' && !key.return && !key.escape) return;
+      // INSERT mode (action.type === 'none') falls through to normal editing.
+    }
+    // While the @-file picker is open it owns arrows / Ctrl+n,p / Tab / Enter / Esc.
+    if (fileMenuOpen) {
+      if (key.upArrow || (key.ctrl && inputChar.toLowerCase() === 'p')) {
+        setFileMenuIndex((i) => (i <= 0 ? fileRows.length - 1 : i - 1));
+        return;
+      }
+      if (key.downArrow || (key.ctrl && inputChar.toLowerCase() === 'n')) {
+        setFileMenuIndex((i) => (i >= fileRows.length - 1 ? 0 : i + 1));
+        return;
+      }
+      if (key.escape) { setFileMenuDismissed(true); return; }
+      if ((key.tab && !key.shift) || inputChar === '\t'
+        || (key.return && !shouldPromptReturnInsertNewline(key))) {
+        const picked = fileRows[clampedFileIndex];
+        if (picked) { applyFileSuggestion(picked); return; }
+      }
+    }
     // While the command menu is open it owns arrows / Ctrl+n,p / Tab / Enter / Esc.
     if (menuOpen) {
       if (key.upArrow || (key.ctrl && inputChar.toLowerCase() === 'p')) {
@@ -2485,6 +2620,21 @@ export function PromptEditor({
         );
       }),
     ) : null,
+    fileMenuOpen ? React.createElement(Box, { flexDirection: 'column', marginBottom: 1, paddingLeft: 1 },
+      ...fileMenuWindow.map((suggestionRow, i) => {
+        const isSel = (fileMenuStart + i) === clampedFileIndex;
+        const marker = '› ';
+        const label = `@${suggestionRow.rel}`;
+        const labelMax = Math.max(8, termColumns - 12);
+        const shown = label.length > labelMax ? `${label.slice(0, labelMax - 1)}…` : label;
+        return React.createElement(Text, { key: suggestionRow.rel, wrap: 'truncate' },
+          React.createElement(Text, { color: theme.accent, bold: true }, isSel ? marker : '  '),
+          React.createElement(Text, { color: isSel ? theme.permission : theme.textMuted, bold: isSel }, shown),
+          React.createElement(Text, { color: isSel ? theme.text : theme.textDim },
+            suggestionRow.kind === 'dir' ? '  dir' : '  file'),
+        );
+      }),
+    ) : null,
     suggestion && commandRows.length === 0 ? React.createElement(Text, { color: theme.textDim }, `  ${suggestion}`) : null,
     isMulti ? React.createElement(Text, { color: theme.textDim }, `  ${lineCount} lines`) : null,
     React.createElement(
@@ -2493,6 +2643,8 @@ export function PromptEditor({
       ...bodyLines,
     ),
     hint ? React.createElement(Text, { color: theme.textDim }, `  ${hint}`) : null,
+    vimActive ? React.createElement(Text, { key: `vim-${vimTick}`, color: getVimModeColor(), bold: true },
+      `  -- ${getVimModeIndicator()} --`) : null,
   );
 }
 
@@ -2951,6 +3103,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
   const [localShellApproved, setLocalShellApproved] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
   const [toolsExpanded, setToolsExpanded] = useState(false);
+  // Vim modal editing in the prompt box; initializing from isVimEnabled() makes
+  // DMOSS_VIM_MODE=1 actually enable it at the TUI (closing the false-advertising
+  // gap in input/vim.ts), and /vim toggles it live.
+  const [vimEnabled, setVimEnabled] = useState(isVimEnabled());
   // Bumped by /clear to remount <Static>, which resets Ink's committed-output index
   // and accumulator (onStaticChange) so cleared history is not replayed.
   const [staticEpoch, setStaticEpoch] = useState(0);
@@ -3594,6 +3750,18 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
   });
 
   const handleCommand = useCallback(async (message: string): Promise<boolean> => {
+    // `#text` quick-add: append to AGENTS.md project memory, never send to the
+    // model. Runs before any slash/registry dispatch (and before runPrompt).
+    const quickMemory = parseQuickAddMemory(message);
+    if (quickMemory !== null) {
+      try {
+        const target = appendQuickAddMemory(workspace, quickMemory, AGENTS_MD_TEMPLATE);
+        addTranscript('system', `Added to project memory (${compactPath(target)}): ${quickMemory}`);
+      } catch (err) {
+        addTranscript('error', `Could not add memory: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
     // Registry-first dispatch (docs/slash-command-architecture.md): shared
     // commands live in the registry; the legacy chain below shrinks with
     // each migration phase.
@@ -3843,8 +4011,23 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
       }
       return true;
     }
-    if (message === '/memory') {
-      addTranscript('system', renderMemory(workspace));
+    if (message === '/memory' || message === '/memory list') {
+      // Editing the project memory file (AGENTS.md) means handing the raw TTY to
+      // $EDITOR — unreliable under Ink (it owns the alt-screen + raw stdin). So in
+      // the TUI /memory shows the path + how to edit + the stored-memory listing;
+      // the real $EDITOR handoff lives in the plain-readline REPL (repl.ts).
+      const target = path.join(workspace, 'AGENTS.md');
+      const resolved = resolveEditorCommand();
+      const head = message === '/memory list'
+        ? []
+        : [
+            `Project memory: ${compactPath(target)}`,
+            resolved
+              ? `Edit it from the basic REPL (moss --no-tui) where $EDITOR (${resolved.command}) can take over, or open it directly. Quick-add a single fact with: # <fact>`
+              : 'Set $EDITOR or $VISUAL to edit it, or open it directly. Quick-add a single fact with: # <fact>',
+            '',
+          ];
+      addTranscript('system', [...head, renderMemory(workspace)].join('\n'));
       return true;
     }
     if (message === '/skills') {
@@ -4017,6 +4200,16 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
       } catch (err) {
         addTranscript('error', `Could not write AGENTS.md: ${err instanceof Error ? err.message : String(err)}`);
       }
+      return true;
+    }
+    if (message === '/vim') {
+      const next = !isVimEnabled();
+      process.env.DMOSS_VIM_MODE = next ? '1' : '0';
+      setVimMode(next ? 'normal' : 'insert');
+      setVimEnabled(next);
+      addTranscript('system', next
+        ? 'Vim mode ON — Esc for NORMAL (h/l/w/b/0/$ move, x delete), i/a to INSERT. /vim to turn off.'
+        : 'Vim mode OFF.');
       return true;
     }
     if (message === '/diff' || message.startsWith('/diff ')) {
@@ -4233,6 +4426,16 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
             }
           }
         }
+        if (event.type === 'compaction') {
+          // The summary is the user's only window into what survived auto-
+          // compaction on a long session — show the kept-context outline as a
+          // banner (even in quiet mode), not just a one-word flash.
+          const outline = (event.checkpointOutline ?? []).filter(Boolean);
+          addTranscript('system', [
+            `Compacted ${event.droppedMessages ?? 0} older message(s) into a summary to free context.`,
+            ...(outline.length > 0 ? ['Kept context:', ...outline.slice(0, 8).map((o) => `  • ${o}`)] : []),
+          ].join('\n'));
+        }
         const label = detailMode === 'quiet' ? null : activityLabel(event);
         if (label) {
           addTranscript('system', label);
@@ -4426,11 +4629,25 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
     }
     if (suppressedAutoAttachInputRef.current === message) suppressedAutoAttachInputRef.current = null;
     if (attachesToPrompt) rememberInput(message);
+    // Resolve `@path` reference tokens (from the @-file picker) into attachments
+    // via the same pipeline as /attach, so the referenced file content reaches
+    // the model THIS turn. The @path text stays in the message as the user's
+    // reading context; the file rides alongside as an attachment block.
+    // Skip @-resolution for `#` quick-add notes (a `#fact` line is memory, not a
+    // prompt with file refs). An `@word` that doesn't resolve to a real file is
+    // almost always prose (a social @mention, a @decorator, an @ inside a note),
+    // so unresolved @-refs are SILENTLY ignored — never an error — and only
+    // successfully-resolved files attach. This avoids spurious "not a file" noise.
+    const isQuickMemory = parseQuickAddMemory(message) !== null;
+    const atRefs = (attachesToPrompt && !isQuickMemory) ? parseAtReferences(message) : [];
+    const atPrepared = atRefs.length > 0
+      ? preparePromptAttachments(atRefs, { cwd: workspace, startIndex: pendingAttachments.length + 1 })
+      : { attachments: [], blocks: [], warnings: [] };
     const selectedAttachments = attachesToPrompt
       ? selectReferencedPromptAttachments(message, pendingAttachments, pendingAttachmentBlocks)
       : { attachments: [], blocks: [] };
-    const attachmentsForSubmit = selectedAttachments.attachments;
-    const attachmentBlocksForSubmit = selectedAttachments.blocks;
+    const attachmentsForSubmit = [...selectedAttachments.attachments, ...atPrepared.attachments];
+    const attachmentBlocksForSubmit = [...selectedAttachments.blocks, ...atPrepared.blocks];
     if (attachesToPrompt && pendingAttachments.length > 0) {
       setPendingAttachments([]);
       setPendingAttachmentBlocks([]);
@@ -4665,6 +4882,8 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
             onShiftEnter: () => undefined,
             onPasteAttachmentShortcut: () => { void pasteClipboardAttachment(); },
             extraCommandRows: customCommandRows,
+            workspace,
+            vimEnabled,
           }),
       // Structured goal progress gets its own full-width line so the latest
       // checkpoint is never truncated away by the footer row.

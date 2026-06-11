@@ -151,7 +151,7 @@ async function testMeshDiscoverToolRejectsPrivateWithoutSecret() {
 
     const result = await discover.execute({ host: '127.0.0.1', port }, {});
     assert.ok(
-      result.includes('No D-Moss agent found'),
+      result.includes('No Moss agent found'),
       `mesh_discover without sharedSecret must not probe private peers, got: ${result}`,
     );
   } finally {

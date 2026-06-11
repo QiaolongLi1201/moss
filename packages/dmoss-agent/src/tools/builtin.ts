@@ -31,6 +31,19 @@ import micromatch from 'micromatch';
 
 const IS_WIN = process.platform === 'win32';
 
+/**
+ * Default foreground exec timeout. 30s was too tight for the product's real
+ * workloads (colcon/npm builds, BPU model conversion, short training runs), so a
+ * legitimate build looked like a failure. Default is now build-friendly (120s)
+ * and host-overridable via DMOSS_EXEC_TIMEOUT_MS; the per-call timeout_ms still
+ * wins, and genuinely unbounded processes belong in exec_background. Bounded and
+ * cancellable — no safety impact.
+ */
+const EXEC_DEFAULT_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.DMOSS_EXEC_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 120_000;
+})();
+
 function childEnv(_workspaceDir: string): Record<string, string> {
   return safeChildEnv({ LANG: process.env.LANG || 'en_US.UTF-8' });
 }
@@ -479,12 +492,12 @@ export const execTool: Tool = {
     type: 'object',
     properties: {
       command: { type: 'string', description: 'Shell command to execute' },
-      timeout_ms: { type: 'number', description: 'Timeout in milliseconds (default: 30000)' },
+      timeout_ms: { type: 'number', description: 'Timeout in ms (default 120000). Raise it for slow builds/installs/training; for genuinely unbounded processes use exec_background instead.' },
     },
     required: ['command'],
   },
   async execute(input, ctx) {
-    const timeoutMs = Number(input.timeout_ms) || 30_000;
+    const timeoutMs = Number(input.timeout_ms) || EXEC_DEFAULT_TIMEOUT_MS;
     if (IS_WIN && /\buname\b/i.test(input.command)) {
       return (
         `Command skipped: uname is not available on Windows cmd.\n${WIN_POSIX_HINT}`

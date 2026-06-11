@@ -123,6 +123,27 @@ function buildCorrectionMessage(systemText: string): Message {
   };
 }
 
+/**
+ * Pick the self-heal correction text for a recoverable turn error. A tool call
+ * whose JSON arguments were truncated mid-stream (typically a whole large file
+ * passed to one write_file) must NOT be retried verbatim — the model re-emits
+ * the same oversized payload and truncates again, burning the retry budget to a
+ * fatal exit. Steer it to produce the work in smaller pieces instead. @internal
+ */
+export function correctionTextForTurnError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/malformed tool call arguments|Unterminated string in JSON|Unexpected end of (?:JSON|input)/i.test(message)) {
+    return [
+      '[System] Your last tool call was cut off mid-argument — its JSON was truncated,',
+      'usually because the content (e.g. a whole file in one write_file) was too large for a',
+      'single response. Do NOT repeat the same large call. Instead do it in smaller pieces:',
+      'write a large file with an initial write_file holding only the first portion, then',
+      'append the remainder with several smaller apply_patch calls.',
+    ].join(' ');
+  }
+  return '[System] An internal error occurred processing the last response. Please re-state your last action concisely.';
+}
+
 // ============== Main loop ==============
 
 export function runAgentLoop(
@@ -524,9 +545,7 @@ export function runAgentLoop(
                 timestamp: Date.now(),
               });
             }
-            correctionMessages.push(buildCorrectionMessage(
-              '[System] An internal error occurred processing the last response. Please re-state your last action concisely.',
-            ));
+            correctionMessages.push(buildCorrectionMessage(correctionTextForTurnError(turnErr)));
             state.pendingMessages = correctionMessages;
             continue;
           } finally {

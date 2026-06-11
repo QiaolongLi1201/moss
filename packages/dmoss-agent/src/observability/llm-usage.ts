@@ -55,14 +55,17 @@ export interface LLMUsageSummary {
 
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   // Anthropic
-  'claude-opus-4-7': { input: 0.015, output: 0.075 },
+  'claude-opus-4-8': { input: 0.015, output: 0.075 },
   'claude-sonnet-4-6': { input: 0.003, output: 0.015 },
-  'claude-haiku-4-5': { input: 0.001, output: 0.005 },
+  'claude-haiku-4-5-20251001': { input: 0.001, output: 0.005 },
   // OpenAI
   'gpt-4o': { input: 0.0025, output: 0.01 },
   'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+  // DeepSeek
+  'deepseek-chat': { input: 0.00027, output: 0.0011 },
+  'deepseek-reasoner': { input: 0.00055, output: 0.00219 },
   // Qwen
-  'qwen3.6-plus': { input: 0.0008, output: 0.002 },
+  'qwen-plus': { input: 0.0008, output: 0.002 },
   'qwen-coder-plus': { input: 0.0008, output: 0.002 },
 };
 

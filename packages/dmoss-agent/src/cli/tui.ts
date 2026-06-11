@@ -2562,7 +2562,11 @@ function ModelPicker({ state }: { state: ModelPickerState }): React.ReactElement
       }, `${isSelected ? '› ' : '  '}${String(index + 1).padStart(2, ' ')}. ${choice.model}${modelLabel}${current}`);
     }),
     React.createElement(Text, { color: theme.textDim },
-      'Enter choose · Up/Down move · Esc cancel · /model <number> · /model config base_url=<url> key=<api-key> model_name=<model>'),
+      'Enter choose · Up/Down move · Esc cancel · /model <number>'),
+    React.createElement(Text, { color: theme.textDim },
+      'Add your own model: run `moss setup` (asks provider, model, API key), or'),
+    React.createElement(Text, { color: theme.textDim },
+      '  /model config base_url=<url> key=<api-key> model_name=<model>'),
   );
 }
 
@@ -4226,7 +4230,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     hint: footerHint(runState),
     extraCommandRows: customCommandRows,
   });
-  const modelPickerRows = modelPicker ? Math.min(10, modelPicker.list.choices.length + 5) : 0;
+  const modelPickerRows = modelPicker ? Math.min(14, modelPicker.list.choices.length + 7) : 0;
   const queueRows = queuedInputs.length > 0 ? Math.min(5, queuedInputs.length + 2) : 0;
   const subagentRows = subagentTasks.length > 0 ? Math.min(8, subagentTasks.length + 2) : 0;
   const footerRows = approval ? 0 : 1;

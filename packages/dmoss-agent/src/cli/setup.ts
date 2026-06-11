@@ -871,7 +871,7 @@ export function printMissingConfigGuidance(interactive: boolean, options: { bund
   print('');
   print('Script path (no TTY — model settings are read from config files, never env vars):');
   print('  moss config set provider deepseek');
-  print('  moss config set model deepseek-v4-pro');
+  print('  moss config set model deepseek-chat');
   print('  write the API key with `moss setup` once, or provide a config file:');
   print('  moss --config-file /path/to/config.json  # {"provider":"deepseek","apiKey":"..."}');
   print('');

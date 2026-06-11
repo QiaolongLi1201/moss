@@ -40,7 +40,7 @@ export function describeModelListSource(list: ModelChoiceList): string {
     ? (list.usingBundledDefault ? 'live from the built-in Moss gateway' : 'live from the provider /v1/models')
     : list.source === 'built-in'
       ? 'built-in Moss gateway defaults'
-      : 'common example names (no live list available)';
+      : 'your configured model only (no live list available)';
   if (list.usingBundledDefault) {
     return `models: ${origin} · no user model config (run moss setup to use your own)`;
   }
@@ -61,14 +61,6 @@ export interface CustomModelConfig {
 export type CustomModelConfigParseResult =
   | { ok: true; config: CustomModelConfig }
   | { ok: false; message: string };
-
-const COMMON_MODELS: Record<CliProviderPreset, string[]> = {
-  deepseek: ['deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'],
-  qwen: ['qwen3.7-max', 'qwen-plus', 'qwen-max', 'qwen-coder-plus'],
-  openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-5', 'gpt-5-mini'],
-  anthropic: ['claude-sonnet-4-20250514', 'claude-opus-4-7', 'claude-haiku-4-5'],
-  'openai-compatible': ['gpt-4o-mini', 'gpt-4o', 'qwen-plus', 'deepseek-chat'],
-};
 
 function uniqueModels(models: readonly string[]): string[] {
   const seen = new Set<string>();
@@ -181,6 +173,14 @@ function providerFromRuntime(config?: Partial<ResolvedCliConfig>, fallbackProvid
   return normalizeProvider(config?.provider || fallbackProvider || 'openai-compatible');
 }
 
+/**
+ * Fallback choices when no live /v1/models list is available: ONLY what the
+ * user actually has — the current model, the built-in Moss gateway model, and
+ * the provider's operative default. No invented "common model" suggestions:
+ * a hardcoded name the provider cannot serve reads as a broken picker
+ * (user feedback 2026-06-11). Adding models is the user's call, via
+ * `moss setup` or `/model config`.
+ */
 export function commonModelChoices(
   provider: CliProviderPreset,
   currentModel = '',
@@ -190,7 +190,6 @@ export function commonModelChoices(
     currentModel,
     options.usingBundledDefault ? 'Moss' : '',
     PROVIDER_PRESETS[provider].defaultModel,
-    ...(COMMON_MODELS[provider] ?? []),
   ]);
   return models.map((model) => ({
     provider,
@@ -278,7 +277,9 @@ export async function loadModelChoicesForRuntime(
     configPath: config?.configPath,
     configPathExists,
     usingBundledDefault: config?.usingBundledDefault,
-    warning: canFetchLive ? 'Live model list was unavailable; showing common model names for this provider.' : undefined,
+    warning: canFetchLive
+      ? 'Live model list was unavailable; showing only your configured model. Add models with `moss setup` or /model config.'
+      : undefined,
   };
 }
 

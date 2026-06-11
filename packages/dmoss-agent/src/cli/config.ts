@@ -35,15 +35,15 @@ export const PROVIDER_PRESETS: Record<CliProviderPreset, ProviderPreset> = {
   deepseek: {
     id: 'deepseek',
     displayName: 'DeepSeek',
-    defaultModel: 'deepseek-v4-pro',
+    defaultModel: 'deepseek-chat',
     defaultBaseUrl: 'https://api.deepseek.com',
     defaultImageInput: true,
   },
   qwen: {
     id: 'qwen',
     displayName: 'Aliyun / Qwen',
-    defaultModel: 'qwen3.7-max',
-    defaultBaseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode',
+    defaultModel: 'qwen-plus',
+    defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode',
     defaultImageInput: true,
   },
   openai: {

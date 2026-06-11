@@ -84,6 +84,7 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
   const ros2TopicList: Tool = {
     name: 'ros2_topic_list',
     description: 'List all active ROS2 topics on the device.',
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: { type: 'object', properties: {} },
     async execute(_input, ctx) {
       return sshExec(config, 'ros2 topic list -t', 15_000, ctx);
@@ -93,6 +94,7 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
   const ros2TopicEcho: Tool = {
     name: 'ros2_topic_echo',
     description: 'Subscribe to a ROS2 topic and show one message.',
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: {
       type: 'object',
       properties: {
@@ -108,6 +110,7 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
   const ros2TopicHz: Tool = {
     name: 'ros2_topic_hz',
     description: 'Measure the publishing rate of a ROS2 topic.',
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: {
       type: 'object',
       properties: {
@@ -123,6 +126,7 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
   const ros2NodeList: Tool = {
     name: 'ros2_node_list',
     description: 'List all active ROS2 nodes on the device.',
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: { type: 'object', properties: {} },
     async execute(_input, ctx) {
       return sshExec(config, 'ros2 node list', 15_000, ctx);
@@ -132,6 +136,7 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
   const ros2ServiceList: Tool = {
     name: 'ros2_service_list',
     description: 'List all active ROS2 services on the device.',
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: { type: 'object', properties: {} },
     async execute(_input, ctx) {
       return sshExec(config, 'ros2 service list -t', 15_000, ctx);
@@ -141,6 +146,10 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
   const ros2ServiceCall: Tool = {
     name: 'ros2_service_call',
     description: 'Call a ROS2 service with specified arguments.',
+    // Actuates the robot (can move motors, arm/disarm, trigger motion) — a real
+    // device mutation. Without this the approval layer's name-inference defaults
+    // it to readonly (no 'call' verb) and runs it ungated, even in --read-only.
+    metadata: { sideEffectClass: 'device_mutation', planMode: 'requires_user_confirmation' },
     inputSchema: {
       type: 'object',
       properties: {
@@ -159,6 +168,9 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
   const ros2Launch: Tool = {
     name: 'ros2_launch',
     description: 'Launch a ROS2 launch file on the device (runs detached; verifies the process is still alive after 1s).',
+    // Starts node processes on the robot — a device mutation; same gating as
+    // ros2_service_call (name-inference has no 'launch' verb either).
+    metadata: { sideEffectClass: 'device_mutation', planMode: 'requires_user_confirmation' },
     inputSchema: {
       type: 'object',
       properties: {
@@ -187,6 +199,7 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
   const ros2PkgList: Tool = {
     name: 'ros2_pkg_list',
     description: 'List installed ROS2 packages on the device.',
+    metadata: { sideEffectClass: 'readonly', planMode: 'allow' },
     inputSchema: {
       type: 'object',
       properties: {

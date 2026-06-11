@@ -28,6 +28,16 @@ const MAX_BUFFER = 256 * 1024;
 const MAX_PROCS = 32;
 /** Default window (ms) to watch a freshly started process for an immediate crash. */
 const DEFAULT_SETTLE_MS = 1200;
+/**
+ * Grace period (ms) after SIGTERM before escalating to SIGKILL. A process that
+ * traps/ignores SIGTERM (common for servers with custom shutdown handlers) would
+ * otherwise survive exec_stop forever and pin the slot.
+ */
+let killEscalationMs = 2000;
+/** @internal Test seam: shorten the SIGKILL grace so escalation is observable fast. */
+export function setKillEscalationMsForTests(ms: number): void {
+  killEscalationMs = ms;
+}
 
 type BackgroundStatus = 'running' | 'exited' | 'killed' | 'error';
 
@@ -75,6 +85,8 @@ interface BackgroundProc {
   endedAt?: number;
   buffer: string;
   errorMessage?: string;
+  /** Pending SIGKILL-escalation timer armed by killProc; cleared once the child exits. */
+  killTimer?: ReturnType<typeof setTimeout>;
   /** Per-process output subscribers (host-side live log streaming). */
   outputListeners: Set<BackgroundOutputListener>;
 }
@@ -203,12 +215,15 @@ function killProc(proc: BackgroundProc): void {
   const pid = proc.child.pid;
   try {
     if (IS_WIN && pid) {
+      // taskkill /F is already a force-kill; no escalation needed.
       spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
       proc.child.kill();
     } else if (pid) {
       process.kill(-pid, 'SIGTERM');
+      scheduleSigkillEscalation(proc, pid);
     } else {
       proc.child.kill('SIGTERM');
+      scheduleSigkillEscalation(proc, undefined);
     }
   } catch {
     try {
@@ -217,6 +232,27 @@ function killProc(proc: BackgroundProc): void {
       /* already dead */
     }
   }
+}
+
+/**
+ * SIGTERM is catchable/ignorable; if the child is still running after the grace
+ * period, force-kill it (and its group) so exec_stop can never hang on a process
+ * that swallows SIGTERM. Idempotent per process; cleared on exit.
+ */
+function scheduleSigkillEscalation(proc: BackgroundProc, pid: number | undefined): void {
+  if (proc.killTimer) return;
+  const timer = setTimeout(() => {
+    proc.killTimer = undefined;
+    if (proc.status !== 'running') return; // exited within the grace window
+    try {
+      if (pid) process.kill(-pid, 'SIGKILL');
+      else proc.child.kill('SIGKILL');
+    } catch {
+      /* already dead */
+    }
+  }, killEscalationMs);
+  if (typeof timer.unref === 'function') timer.unref();
+  proc.killTimer = timer;
 }
 
 function describe(proc: BackgroundProc): string {
@@ -312,6 +348,7 @@ export const execBackgroundTool: Tool = {
         resolve();
       };
       child.on('exit', (code, signal) => {
+        if (proc.killTimer) { clearTimeout(proc.killTimer); proc.killTimer = undefined; }
         proc.status = signal ? 'killed' : 'exited';
         proc.exitCode = code;
         proc.signal = signal;
@@ -320,6 +357,7 @@ export const execBackgroundTool: Tool = {
         finish();
       });
       child.on('error', (err) => {
+        if (proc.killTimer) { clearTimeout(proc.killTimer); proc.killTimer = undefined; }
         proc.status = 'error';
         proc.errorMessage = err.message;
         proc.endedAt = Date.now();

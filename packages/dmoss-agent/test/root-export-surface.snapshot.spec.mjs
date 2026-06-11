@@ -36,6 +36,7 @@ const expectedExports = [
   'applyPlatformExtensionForce',
   'auditResolvedCliConfig',
   'backgroundExecTools',
+  'bingSearch',
   'bridgeAgentToChannel',
   'buildMossDefaultWorkflowPrompt',
   'buildRoboticsEngineeringPrompt',

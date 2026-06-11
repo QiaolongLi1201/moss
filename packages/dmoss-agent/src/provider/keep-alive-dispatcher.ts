@@ -31,6 +31,26 @@ function hasProxyEnv(): boolean {
   );
 }
 
+function normalizeProxyUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  // curl-style socks5h means "SOCKS5 with remote DNS". undici's SOCKS5
+  // implementation sends hostnames through the SOCKS tunnel already, but its
+  // URL parser accepts only socks5:// or socks://.
+  return url.replace(/^socks5h:/i, "socks5:");
+}
+
+function proxyEnvOptions(): {
+  httpProxy?: string;
+  httpsProxy?: string;
+  noProxy?: string;
+} {
+  return {
+    httpProxy: normalizeProxyUrl(process.env.http_proxy ?? process.env.HTTP_PROXY),
+    httpsProxy: normalizeProxyUrl(process.env.https_proxy ?? process.env.HTTPS_PROXY),
+    noProxy: process.env.no_proxy ?? process.env.NO_PROXY,
+  };
+}
+
 /**
  * Idempotent singleton installer. Safe to call from any entry point.
  * - Dynamic-imports undici to stay platform-tolerant.
@@ -59,7 +79,7 @@ export async function ensureKeepAliveDispatcherInstalled(): Promise<void> {
   let nextDispatcher: InstanceType<typeof Agent> | InstanceType<typeof EnvHttpProxyAgent>;
   try {
     nextDispatcher = hasProxyEnv()
-      ? new EnvHttpProxyAgent(common)
+      ? new EnvHttpProxyAgent({ ...common, ...proxyEnvOptions() })
       : new Agent(common);
   } catch {
     try {

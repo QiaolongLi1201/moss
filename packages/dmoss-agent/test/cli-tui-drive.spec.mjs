@@ -646,6 +646,82 @@ test('a custom command is discoverable in the slash menu and expands into a prom
   fs.rmSync(tmpWs, { recursive: true, force: true });
 });
 
+test('/clear starts a fresh conversation with a new sessionKey (Claude Code parity)', async () => {
+  setRows(24);
+  const seen = [];
+  const agent = makeAgent({ onStreamChat: (c) => seen.push(c) });
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+  stdin.write('hello one');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.equal(seen[0]?.sessionKey, 'cli', 'baseline prompt uses the mounted sessionKey');
+
+  await runSlashCommand(stdin, lastFrame, '/clear');
+  assert.match(strip(lastFrame()), /new conversation|新对话/, '/clear should announce a fresh context');
+
+  stdin.write('hello two');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.equal(seen.length, 2, 'second prompt should still be sent');
+  assert.notEqual(seen[1].sessionKey, 'cli', '/clear must switch to a fresh session, not keep the old context');
+  cleanup();
+});
+
+test('/resume --last switches the active session to the most recent saved one', async () => {
+  setRows(24);
+  const seen = [];
+  const agent = makeAgent({ onStreamChat: (c) => seen.push(c) });
+  agent.config.sessionStore = {
+    listSessions: async () => [
+      { sessionKey: 'sess-older', updatedAt: 1000, messageCount: 2 },
+      { sessionKey: 'sess-newest', updatedAt: 2000, messageCount: 4 },
+    ],
+    loadMessages: async () => [{}, {}, {}, {}],
+  };
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+  await runSlashCommand(stdin, lastFrame, '/resume --last');
+  assert.match(strip(lastFrame()), /sess-newest/, '/resume --last should resume the most recent session');
+
+  stdin.write('after resume');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.equal(seen.at(-1).sessionKey, 'sess-newest', 'subsequent prompts run against the resumed session');
+  cleanup();
+});
+
+test('/resume opens a session picker; Down+Enter resumes the highlighted session', async () => {
+  setRows(24);
+  const seen = [];
+  const agent = makeAgent({ onStreamChat: (c) => seen.push(c) });
+  agent.config.sessionStore = {
+    listSessions: async () => [
+      { sessionKey: 'sess-older', updatedAt: 1000, messageCount: 2 },
+      { sessionKey: 'sess-newest', updatedAt: 2000, messageCount: 4 },
+    ],
+    loadMessages: async () => [],
+  };
+  const { stdin, lastFrame } = mount(agent);
+  await wait(140);
+  await runSlashCommand(stdin, lastFrame, '/resume');
+  assert.match(strip(lastFrame()), /[Ss]ession/, '/resume with no arg should open a session picker');
+  // Newest is first in the sorted picker; Down moves to the older session.
+  stdin.write(DOWN);
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  stdin.write('x');
+  await wait();
+  stdin.write('\r');
+  await wait(180);
+  assert.equal(seen.at(-1).sessionKey, 'sess-older', 'Down+Enter should resume the second (older) session');
+  cleanup();
+});
+
 let failures = 0;
 for (const { name, fn } of tests) {
   try {

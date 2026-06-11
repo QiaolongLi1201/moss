@@ -357,6 +357,16 @@ async function main() {
 
   const oneShotMessage = parsedArgs.prompt;
 
+  // `--continue` on a bare `moss` auto-resumes the most recent session (parity
+  // with `claude --continue`): treat it as a resume+useLast for session resolution.
+  const continueLatest = parsedArgs.continueLast && parsedArgs.command === 'chat';
+  const sessionCommand: 'chat' | 'resume' | 'fork' =
+    parsedArgs.command === 'resume' || parsedArgs.command === 'fork'
+      ? parsedArgs.command
+      : continueLatest
+        ? 'resume'
+        : 'chat';
+
   // Diagnose `resume`/`fork` with no saved sessions BEFORE the model-config
   // gate: "needs a model configuration" was the wrong message for that case.
   if (parsedArgs.command === 'resume' || parsedArgs.command === 'fork') {
@@ -386,10 +396,10 @@ async function main() {
 
   const sessionStore = new JsonlSessionStore({ dir: workspacePathMigration.paths.sessionsDir });
   const session = await resolveCliSession({
-    command: parsedArgs.command === 'resume' || parsedArgs.command === 'fork' ? parsedArgs.command : 'chat',
+    command: sessionCommand,
     store: sessionStore,
     sessionKey: parsedArgs.sessionKey,
-    useLast: parsedArgs.sessionLast,
+    useLast: parsedArgs.sessionLast || continueLatest,
     forkSource: parsedArgs.forkSource,
   });
   if (session.notice) console.error(`[session] ${session.notice}`);

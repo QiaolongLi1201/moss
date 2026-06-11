@@ -9,6 +9,12 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createWebFetchTool } from '../dist/tools/web-fetch.js';
 
+// DNS pinning / IP-rewrite is the NO-PROXY path: when a proxy is configured the
+// proxy terminates DNS+routing and web_fetch deliberately skips pinning. Clear
+// any ambient proxy env so this test exercises the pinning path deterministically
+// regardless of the dev machine / CI proxy configuration.
+for (const k of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy']) delete process.env[k];
+
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
 // Test 0: HTTPS pinning uses undici at runtime, so package metadata must ship it.

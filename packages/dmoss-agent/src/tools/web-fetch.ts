@@ -329,6 +329,23 @@ function coerceString(v: unknown, fallback = ''): string {
   return String(v);
 }
 
+/**
+ * Whether an outbound HTTP proxy is configured via env. When it is, web_fetch
+ * must NOT pin DNS via a per-request dispatcher (it would override the global
+ * EnvHttpProxyAgent and connect direct) nor rewrite the hostname to its IP (the
+ * proxy must resolve+route the name) — both would bypass the proxy and fail in
+ * proxy-only egress networks. The SSRF pre-flight (resolveHostIp) still runs.
+ * Mirrors hasProxyEnv() in provider/keep-alive-dispatcher.ts.
+ */
+function proxyEnvActive(): boolean {
+  return Boolean(
+    process.env.HTTP_PROXY ||
+      process.env.HTTPS_PROXY ||
+      process.env.http_proxy ||
+      process.env.https_proxy,
+  );
+}
+
 export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: string }> {
   const maxBytes = Math.max(1024, opts.maxBytes ?? DEFAULT_MAX_BYTES);
   const maxTextChars = Math.max(256, opts.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS);
@@ -432,13 +449,17 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
           const originalHost = currentUrl.host;
           // HTTP can be rewritten directly. HTTPS keeps the original hostname
           // for SNI/cert validation and pins DNS through a per-request dispatcher.
+          // Both DNS-pinning paths are skipped when a proxy is configured: the
+          // proxy terminates DNS + routing, so pinning/rewriting here would
+          // bypass it entirely (the SSRF pre-flight above still gates the host).
           const isHttps = currentUrl.protocol === 'https:';
-          const shouldRewriteToIp = verifiedIp && !isHttps;
+          const useProxy = proxyEnvActive();
+          const shouldRewriteToIp = verifiedIp && !isHttps && !useProxy;
           if (shouldRewriteToIp) {
             fetchUrl.hostname = verifiedIp!;
           }
           const pinnedDispatcher =
-            verifiedIp && isHttps ? await createPinnedHttpsDispatcher(verifiedIp) : undefined;
+            verifiedIp && isHttps && !useProxy ? await createPinnedHttpsDispatcher(verifiedIp) : undefined;
           if (pinnedDispatcher) dispatchersToClose.push(pinnedDispatcher);
           const fetchInit: RequestInit = {
             signal: mergedSignal,

@@ -30,7 +30,8 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
   {
     title: 'Inspect',
     rows: [
-      { command: '/sessions', description: 'list saved conversations you can resume' },
+      { command: '/sessions', description: 'list saved conversations (use /resume to switch into one)' },
+      { command: '/resume [key|--last]', description: 'switch this session to a saved conversation (no arg opens a picker)' },
       { command: '/cost', description: 'show recorded token usage and estimated cost', hidden: true },
       { command: '/diff', description: 'show git working-tree changes' },
       { command: '/rewind [seq]', description: 'undo file edits from a checkpoint', hidden: true },
@@ -67,7 +68,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       { command: '/queue', description: 'show, drop, resume, or clear queued prompts', hidden: true },
       { command: '/detail [mode]', description: 'set quiet, progress, or verbose output', hidden: true },
       { command: '/thinking', description: 'toggle thinking deltas', hidden: true },
-      { command: '/clear', description: 'clear the visible transcript', hidden: true },
+      { command: '/clear', description: 'start a new conversation — clears the context window (aliases: /new, /reset)', aliases: ['/new', '/reset'] },
       { command: '/version', description: 'show the installed Moss version', hidden: true },
       { command: '/upgrade', description: 'show install and update commands', hidden: true },
       { command: '/init', description: 'create an AGENTS.md project memory file', hidden: true },

@@ -35,11 +35,13 @@ const socksProxyEnv = {
 
 {
   const dispatcherUrl = pathToFileURL(path.resolve(__dirname, '../dist/provider/keep-alive-dispatcher.js')).href;
+  const undiciUrl = pathToFileURL(path.resolve(__dirname, '../../../node_modules/undici/index.js')).href;
   const code = `
     import { ensureKeepAliveDispatcherInstalled, __resetForTest } from ${JSON.stringify(dispatcherUrl)};
+    import { getGlobalDispatcher } from ${JSON.stringify(undiciUrl)};
     __resetForTest();
     await ensureKeepAliveDispatcherInstalled();
-    console.log('ok');
+    console.log(getGlobalDispatcher().constructor.name);
   `;
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], {
     env: socksProxyEnv,
@@ -47,7 +49,7 @@ const socksProxyEnv = {
   });
 
   assertSocksProxyTolerated(result, 'keep-alive dispatcher');
-  assert.match(result.stdout, /ok/);
+  assert.match(result.stdout, /EnvHttpProxyAgent/);
 }
 
 for (const rel of [

@@ -89,6 +89,11 @@ interface ModelPickerState {
   selectedIndex: number;
 }
 
+interface SessionPickerState {
+  sessions: SessionMeta[];
+  selectedIndex: number;
+}
+
 interface ApprovalState {
   question: string;
   selectedIndex: number;
@@ -2570,6 +2575,35 @@ function ModelPicker({ state }: { state: ModelPickerState }): React.ReactElement
   );
 }
 
+function SessionPicker({ state }: { state: SessionPickerState }): React.ReactElement {
+  const maxVisible = 7;
+  const sessions = state.sessions;
+  const selected = Math.max(0, Math.min(sessions.length - 1, state.selectedIndex));
+  const start = Math.min(
+    Math.max(0, selected - Math.floor(maxVisible / 2)),
+    Math.max(0, sessions.length - maxVisible),
+  );
+  const visible = sessions.slice(start, start + maxVisible);
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', paddingX: 1, marginBottom: 1 },
+    React.createElement(Text, { color: theme.accent, bold: true }, 'Resume session'),
+    React.createElement(Text, { color: theme.textMuted }, 'Switch this session to a saved conversation:'),
+    ...visible.map((session, offset) => {
+      const index = start + offset;
+      const isSelected = index === selected;
+      const count = `${session.messageCount} msg${session.messageCount === 1 ? '' : 's'}`;
+      return React.createElement(Text, {
+        key: `${session.sessionKey}-${index}`,
+        color: isSelected ? theme.permission : theme.text,
+        bold: isSelected,
+      }, `${isSelected ? '› ' : '  '}${String(index + 1).padStart(2, ' ')}. ${session.sessionKey} · ${count} · ${formatSessionTimestamp(session.updatedAt)}`);
+    }),
+    React.createElement(Text, { color: theme.textDim },
+      'Enter resume · Up/Down move · Esc cancel · /resume <number|key|--last>'),
+  );
+}
+
 function formatPromptEcho(message: string, attachments: PreparedPromptAttachment[]): string {
   if (attachments.length === 0) return message;
   return `${message}\n${renderPendingAttachmentSummary(attachments)}`;
@@ -2731,17 +2765,24 @@ function WorkingIndicator(): React.ReactElement {
   );
 }
 
-export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiProps): React.ReactElement {
+export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSessionKey }: DmossTuiProps): React.ReactElement {
   const app = useApp();
   const { rows: termRows } = useTerminalSize();
   const workspace = runtime?.workspace || process.cwd();
+  // sessionKey is React state so /resume and /clear can re-point the active
+  // conversation in-session. The agent holds no in-memory history — chat/streamChat
+  // load+persist per sessionKey each turn — so switching the key is enough to swap
+  // conversations without rebuilding the agent.
+  const [sessionKey, setSessionKey] = useState(initialSessionKey);
   const checkpointRef = useRef<FileCheckpointStore | null>(null);
-  if (!checkpointRef.current) {
+  const checkpointKeyRef = useRef<string | null>(null);
+  if (checkpointKeyRef.current !== sessionKey) {
     const paths = getMossWorkspacePaths(workspace);
     checkpointRef.current = new FileCheckpointStore({
       runtimeDir: runtime?.runtimeDir || paths.runtimeDir,
       sessionKey,
     });
+    checkpointKeyRef.current = sessionKey;
   }
   // File-based custom commands (.moss/commands/*.md) join the registry dispatch.
   // Loaded once per session; submitPromptRef bridges to runInput (defined below)
@@ -2764,6 +2805,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
   const [busy, setBusy] = useState(false);
   const [currentModel, setCurrentModel] = useState(agent.config.model || '');
   const [modelPicker, setModelPicker] = useState<ModelPickerState | null>(null);
+  const [sessionPicker, setSessionPicker] = useState<SessionPickerState | null>(null);
   const [detailMode, setDetailMode] = useState(process.env.DMOSS_CLI_DETAIL || 'quiet');
   const [showThinking, setShowThinking] = useState(process.env.DMOSS_SHOW_THINKING === 'true');
   const [notice, setNotice] = useState('');
@@ -3024,6 +3066,31 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       : `Model switched to ${model} (${provider})`);
   }, [addTranscript, agent, runtime]);
 
+  // Re-point the active conversation to `nextKey`: wipe the screen + scrollback
+  // (so the old transcript does not bleed into the new context), reset the live
+  // transcript, remount <Static> (epoch bump), drop goal activity, and set the new
+  // sessionKey. checkpointRef rebuilds on the next render via checkpointKeyRef.
+  const switchToSession = useCallback((nextKey: string): void => {
+    if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+    setTranscript([]);
+    setStaticEpoch((n) => n + 1);
+    clearGoalActivity();
+    setSessionKey(nextKey);
+  }, [clearGoalActivity]);
+
+  const resumeSession = useCallback(async (session: SessionMeta): Promise<void> => {
+    switchToSession(session.sessionKey);
+    let count = session.messageCount ?? 0;
+    try {
+      count = (await agent.config.sessionStore.loadMessages(session.sessionKey)).length;
+    } catch {
+      /* fall back to the listed count */
+    }
+    addTranscript('system', /^zh/i.test(cliLocale() ?? '')
+      ? `已恢复会话 ${session.sessionKey}（${count} 条消息），可继续对话。`
+      : `Resumed session ${session.sessionKey} (${count} message${count === 1 ? '' : 's'}). Continue chatting.`);
+  }, [addTranscript, agent, switchToSession]);
+
   const applyCustomModelConfig = useCallback((rawConfig: string): void => {
     const configPath = runtime?.config?.configPath ?? resolveConfigPath();
     const parsed = parseCustomModelConfigInput(rawConfig);
@@ -3226,6 +3293,35 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     // mouse-report bytes Ink surfaces here so they never fire keys (e.g. a stray
     // Esc from a wheel event must not cancel the run).
     if (isLikelyMouseInput(inputChar)) return;
+    if (sessionPicker) {
+      const sessions = sessionPicker.sessions;
+      if (key.escape) {
+        setSessionPicker(null);
+        showFlash('session selection cancelled');
+        return;
+      }
+      if (key.upArrow || (key.ctrl && inputChar.toLowerCase() === 'p')) {
+        setSessionPicker((picker) => picker ? {
+          ...picker,
+          selectedIndex: picker.selectedIndex <= 0 ? picker.sessions.length - 1 : picker.selectedIndex - 1,
+        } : picker);
+        return;
+      }
+      if (key.downArrow || (key.ctrl && inputChar.toLowerCase() === 'n')) {
+        setSessionPicker((picker) => picker ? {
+          ...picker,
+          selectedIndex: picker.selectedIndex >= picker.sessions.length - 1 ? 0 : picker.selectedIndex + 1,
+        } : picker);
+        return;
+      }
+      if (key.return) {
+        const session = sessions[Math.max(0, Math.min(sessions.length - 1, sessionPicker.selectedIndex))];
+        setSessionPicker(null);
+        if (session) void resumeSession(session);
+        return;
+      }
+      return;
+    }
     if (modelPicker) {
       const choices = modelPicker.list.choices;
       if (key.escape) {
@@ -3394,13 +3490,46 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       await pasteClipboardAttachment();
       return true;
     }
-    if (message === '/clear') {
-      // History lives in the terminal's scrollback now, so clearing means wiping the
-      // screen AND scrollback (2J + 3J), then remounting <Static> (epoch bump) so Ink
-      // forgets the committed output it already emitted.
-      if (process.stdout.isTTY) process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
-      setTranscript([]);
-      setStaticEpoch((n) => n + 1);
+    if (message === '/clear' || message === '/new' || message === '/reset') {
+      // Claude Code parity: /clear resets the CONTEXT, not just the screen. Switch to
+      // a fresh sessionKey so the next turn starts with an empty history (the old
+      // session file is left intact and remains resumable via /resume). switchToSession
+      // also wipes the screen + scrollback and remounts <Static>.
+      switchToSession(createCliSessionKey());
+      addTranscript('system', /^zh/i.test(cliLocale() ?? '')
+        ? '已开始新对话——上一段上下文已清空（旧会话仍可用 /resume 恢复）。'
+        : 'Started a new conversation — previous context cleared (the old session is still resumable via /resume).');
+      return true;
+    }
+    if (message === '/resume' || message.startsWith('/resume ')) {
+      const arg = message.slice('/resume'.length).trim();
+      let sessions: SessionMeta[];
+      try {
+        sessions = await agent.config.sessionStore.listSessions();
+      } catch (err) {
+        addTranscript('error', `Could not list sessions: ${err instanceof Error ? err.message : String(err)}`);
+        return true;
+      }
+      const recent = [...(sessions ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
+      if (recent.length === 0) {
+        addTranscript('system', 'No saved sessions to resume yet.');
+        return true;
+      }
+      if (arg === '--last' || arg === '-l') {
+        await resumeSession(recent[0]);
+        return true;
+      }
+      if (arg) {
+        const byIndex = /^\d+$/.test(arg) ? recent[Number.parseInt(arg, 10) - 1] : undefined;
+        const target = recent.find((s) => s.sessionKey === arg) ?? byIndex;
+        if (!target) {
+          addTranscript('error', `No session matching "${arg}". Use /sessions to list keys, or /resume for a picker.`);
+          return true;
+        }
+        await resumeSession(target);
+        return true;
+      }
+      setSessionPicker({ sessions: recent.slice(0, 50), selectedIndex: 0 });
       return true;
     }
     if (message === '/queue' || message === '/queued') {
@@ -3777,7 +3906,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       return true;
     }
     return false;
-  }, [activateGoalActivity, addTranscript, agent, app, applyCustomModelConfig, clearGoalActivity, currentModel, input, pasteClipboardAttachment, pendingAttachmentBlocks, pendingAttachments, requestStop, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, switchModelForSession, workspace]);
+  }, [activateGoalActivity, addTranscript, agent, app, applyCustomModelConfig, clearGoalActivity, currentModel, input, pasteClipboardAttachment, pendingAttachmentBlocks, pendingAttachments, requestStop, resumeSession, runtime, sessionKey, setBusyState, setQueuePausedAfterCancel, setQueuedInputs, switchModelForSession, switchToSession, workspace]);
 
   const runLocalShell = useCallback(async (raw: string): Promise<void> => {
     const command = raw.slice(1);
@@ -4231,6 +4360,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     extraCommandRows: customCommandRows,
   });
   const modelPickerRows = modelPicker ? Math.min(14, modelPicker.list.choices.length + 7) : 0;
+  const sessionPickerRows = sessionPicker ? Math.min(12, sessionPicker.sessions.length + 4) : 0;
   const queueRows = queuedInputs.length > 0 ? Math.min(5, queuedInputs.length + 2) : 0;
   const subagentRows = subagentTasks.length > 0 ? Math.min(8, subagentTasks.length + 2) : 0;
   const footerRows = approval ? 0 : 1;
@@ -4316,6 +4446,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
     1 /* paddingTop */
     + (busy && !approval ? 1 : 0) /* working indicator */
     + modelPickerRows
+    + sessionPickerRows
     + subagentRows
     + queueRows
     + noticeRows
@@ -4357,6 +4488,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
       // is always clear the agent is alive (not frozen) even between visible output.
       busy && !approval ? React.createElement(WorkingIndicator, { key: 'working' }) : null,
       modelPicker ? React.createElement(ModelPicker, { state: modelPicker }) : null,
+      sessionPicker ? React.createElement(SessionPicker, { state: sessionPicker }) : null,
       React.createElement(SubagentTaskPanel, {
         tasks: subagentTasks,
         completions: subagentCompletions,
@@ -4377,7 +4509,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey }: DmossTuiP
             onCursorChange: setInputCursor,
             onSubmit: submit,
             placeholder: promptPlaceholder(runState),
-            disabled: modelPicker !== null,
+            disabled: modelPicker !== null || sessionPicker !== null,
             mode: interactionMode,
             onHistoryPrevious: recallHistoryPrevious,
             onHistoryNext: recallHistoryNext,

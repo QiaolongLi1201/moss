@@ -82,13 +82,21 @@ await wait(300);
 stdin.write('/goal finish the demo project');
 await wait(150);
 stdin.write('\r');
-await wait(900);
 
-const all = frames.map(strip).join('\n');
+// The goal run advances asynchronously; a fixed sleep is flaky on slow CI
+// runners (a single 900ms capture failed intermittently on Windows). Poll the
+// accumulated frames until the counters render, up to a generous deadline.
+const flatten = () => frames.map(strip).join('\n').replace(/\s+/g, ' ');
+const counterRe = /turns [1-9]\d* · tools [1-9]\d*/;
+let flat = flatten();
+for (let waited = 0; waited < 6000 && !counterRe.test(flat); waited += 100) {
+  await wait(100);
+  flat = flatten();
+}
+
 // The status line wraps at terminal width — collapse whitespace before matching.
-const flat = all.replace(/\s+/g, ' ');
 assert.match(flat, /goal: finish the demo project/, 'status line must show the goal objective');
-assert.match(flat, /turns [1-9]\d* · tools [1-9]\d*/, 'counters must actually advance during the run');
+assert.match(flat, counterRe, 'counters must actually advance during the run');
 assert.match(flat, /next: re-run the failing test/, 'status line must surface the latest checkpoint next action');
 
 cleanup();

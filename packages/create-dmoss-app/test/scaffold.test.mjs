@@ -118,6 +118,5 @@ test('supports nested target paths and sanitizes package name from the leaf dire
   const packageJson = JSON.parse(fs.readFileSync(path.join(target, 'package.json'), 'utf8'));
   assert.equal(packageJson.name, 'my-agent');
   assert.equal(fs.existsSync(path.join(cwd, 'My Agent')), false);
-  const normalizedStdout = result.stdout.replace(/\\/g, '/');
-  assert.match(normalizedStdout, /cd "apps\/My Agent"/);
+  assert.match(result.stdout, /cd "apps[\\/]+My Agent"/);
 });

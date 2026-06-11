@@ -16,7 +16,7 @@ import { markedTerminal } from 'marked-terminal';
 import type { DmossAgent, DmossAgentEvent, GoalState, Tool, ToolResultOutcome } from '../core/index.js';
 import type { SkillLearner } from '../core/memory/skill-learner.js';
 import type { SessionMeta } from '../core/session/session.js';
-import { SkillRegistry, type SkillMeta } from '../skills/index.js';
+import { SkillRegistry, resolveDefaultSkillRoots, type SkillMeta } from '../skills/index.js';
 import { setCliApprovalAsker, setCliInteractionMode, getCliInteractionMode, type CliInteractionMode } from './approval.js';
 import {
   parseAttachArgs,
@@ -1154,6 +1154,7 @@ export function commandArgumentHint(value: string): string | null {
   if (command === '/model') return hasArg ? null : '<model-name-or-number>';
   if (command === '/auth') return hasArg ? null : '[login | status | logout]';
   if (command === '/status') return hasArg ? null : '[--verbose]';
+  if (command === '/compact') return hasArg ? null : '[instructions]';
   return null;
 }
 
@@ -1194,6 +1195,103 @@ function formatSkillLine(skill: SkillMeta): string {
   const disabled = skill.enabled ? '' : ' · disabled';
   const description = visibleText(skill.description, 1);
   return `  • ${skill.name} · ${skill.risk}${disabled}${tags} - ${description}`;
+}
+
+/** Skills auto-injected per turn (cap so a broad query can't flood context). */
+const MAX_INJECTED_SKILLS = 3;
+
+/**
+ * Read a skill's SKILL.md body (frontmatter stripped). Builtins use a virtual
+ * `builtin://` path and have no readable file, so they return undefined.
+ */
+function readSkillBody(skill: SkillMeta): string | undefined {
+  if (!skill.sourcePath || skill.sourcePath.startsWith('builtin://')) return undefined;
+  let raw: string;
+  try {
+    raw = fs.readFileSync(skill.sourcePath, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  const body = raw.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
+  return body || undefined;
+}
+
+/**
+ * Build the per-turn matched-skill context block. Matches the user's message
+ * against registry skills (name/description/trigger) and inlines the top few
+ * skills' instructions. Returns '' when nothing matches. The caller passes this
+ * via ChatOptions.extraContext (dynamic bucket) so it never breaks prompt cache.
+ * @internal
+ */
+export function buildMatchedSkillContext(
+  registry: SkillRegistry | null,
+  message: string,
+): string {
+  if (!registry) return '';
+  let matched: SkillMeta[];
+  try {
+    matched = registry.matchByText(message).slice(0, MAX_INJECTED_SKILLS);
+  } catch {
+    return '';
+  }
+  if (matched.length === 0) return '';
+  const sections: string[] = [];
+  for (const skill of matched) {
+    const body = readSkillBody(skill);
+    sections.push(
+      body
+        ? `### ${skill.name}\n${skill.description}\n\n${body}`
+        : `### ${skill.name}\n${skill.description}`,
+    );
+  }
+  return [
+    '## Matched Skills',
+    'The following skill instructions match this request. Apply the relevant ones.',
+    ...sections,
+  ].join('\n\n');
+}
+
+/**
+ * Build `/<skillName>` slash commands from file-backed registry skills. Mirrors
+ * loadCustomCommands: a skill resolves to a command that expands its SKILL.md
+ * body into a submitted prompt. Builtins (no readable body) and names already
+ * owned by a built-in or custom command are skipped, so a skill can never
+ * shadow a shipped command.
+ * @internal
+ */
+export function loadSkillCommands(
+  registry: SkillRegistry,
+  reserved: ReadonlySet<string>,
+): CommandSpec[] {
+  const seen = new Set<string>();
+  const specs: CommandSpec[] = [];
+  let skills: SkillMeta[];
+  try {
+    skills = registry.list();
+  } catch {
+    return specs;
+  }
+  for (const skill of skills) {
+    const slug = skill.name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!slug) continue;
+    const slash: `/${string}` = `/${slug}`;
+    if (reserved.has(slash) || seen.has(slash)) continue;
+    if (skill.sourcePath.startsWith('builtin://')) continue;
+    const body = readSkillBody(skill);
+    if (!body) continue;
+    seen.add(slash);
+    const summary = `skill: ${visibleText(skill.description, 1)}`;
+    specs.push({
+      name: slash,
+      summary,
+      run(ctx, args) {
+        const prompt = args.trim() ? `${body}\n\n${args.trim()}` : body;
+        if (ctx.submitPrompt) ctx.submitPrompt(prompt);
+        else ctx.prefillInput(prompt);
+      },
+    });
+  }
+  return specs;
 }
 
 function listMarkdownFilenames(dir: string): string[] {
@@ -1247,12 +1345,31 @@ export function listSkillCandidates(workspace: string): SkillCandidateListing[] 
   }
 }
 
-export function renderSkills(workspace: string): string {
+/**
+ * Extra skill roots for a session: config `skills.extraRoots` (tilde-expanded,
+ * existence-checked) or the built-in home defaults. Best-effort — a broken
+ * config file must never stop skills from loading, so failures fall back to the
+ * defaults.
+ * @internal
+ */
+export function resolveSessionSkillRoots(runtime?: CliRuntimeStatus): string[] {
+  let configured: string[] | undefined;
+  try {
+    const configPath = resolveConfigPath(runtime?.configDir);
+    const file = loadConfigFile(configPath);
+    if (Array.isArray(file.skills?.extraRoots)) configured = file.skills?.extraRoots;
+  } catch {
+    configured = undefined;
+  }
+  return resolveDefaultSkillRoots(configured);
+}
+
+export function renderSkills(workspace: string, extraDirs: string[] = []): string {
   const learned = listLearnedSkillFiles(workspace);
   const candidates = listSkillCandidates(workspace);
   let registered: SkillMeta[] = [];
   try {
-    registered = new SkillRegistry({ workspaceDir: workspace }).list();
+    registered = new SkillRegistry({ workspaceDir: workspace, extraDirs }).list();
   } catch {
     registered = [];
   }
@@ -2795,11 +2912,31 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
       reservedNames: reservedBuiltinNames(),
     });
   }
+  // One SkillRegistry per session: scans the workspace + cross-agent home roots
+  // (`~/.claude/skills`, `~/.agents/skills`, or config `skills.extraRoots`).
+  // Shared so /skills display, per-turn auto-injection, and /<skillName>
+  // dispatch all see the same skill set.
+  const skillRegistryRef = useRef<SkillRegistry | null>(null);
+  if (!skillRegistryRef.current) {
+    skillRegistryRef.current = new SkillRegistry({
+      workspaceDir: workspace,
+      extraDirs: resolveSessionSkillRoots(runtime),
+    });
+  }
+  // Skill slash commands (/<skillName>): file-backed skills only, expanded like
+  // custom commands. Guarded against shadowing built-ins AND custom commands.
+  const skillCommandsRef = useRef<CommandSpec[] | null>(null);
+  if (!skillCommandsRef.current) {
+    const reserved = new Set(reservedBuiltinNames());
+    for (const cmd of customCommandsRef.current ?? []) reserved.add(cmd.name);
+    skillCommandsRef.current = loadSkillCommands(skillRegistryRef.current, reserved);
+  }
   const submitPromptRef = useRef<(text: string) => void>(() => {});
   // Slash-menu rows for the loaded custom commands (stable for the session).
-  const customCommandRows: ReadonlyArray<readonly [string, string]> = (customCommandsRef.current ?? []).map(
-    (command) => [command.name, command.summary] as [string, string],
-  );
+  const customCommandRows: ReadonlyArray<readonly [string, string]> = [
+    ...(customCommandsRef.current ?? []),
+    ...(skillCommandsRef.current ?? []),
+  ].map((command) => [command.name, command.summary] as [string, string]);
   const [input, setInput] = useState('');
   const [inputCursor, setInputCursor] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -3475,7 +3612,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
           showFlash(/^zh/i.test(cliLocale() ?? '') ? '已预填重试命令，补上密码回车' : 'retry command pre-filled — add the password and press Enter');
         },
         submitPrompt: (text) => submitPromptRef.current(text),
-      }, customCommandsRef.current ?? []);
+      }, [...(customCommandsRef.current ?? []), ...(skillCommandsRef.current ?? [])]);
       if (handled) return true;
     }
     if (message === '/quit' || message === '/exit') {
@@ -3483,7 +3620,10 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
       return true;
     }
     if (message === '/help') {
-      addTranscript('system', commandList(customCommandsRef.current ?? []));
+      addTranscript('system', commandList([
+        ...(customCommandsRef.current ?? []),
+        ...(skillCommandsRef.current ?? []),
+      ]));
       return true;
     }
     if (message === '/paste') {
@@ -3688,10 +3828,11 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
       }
       return true;
     }
-    if (message === '/compact') {
+    if (message === '/compact' || message.startsWith('/compact ')) {
+      const compactInstructions = message.slice('/compact'.length).trim() || undefined;
       setBusyState(true);
       try {
-        addTranscript('system', await handleCompactCommand(agent, sessionKey));
+        addTranscript('system', await handleCompactCommand(agent, sessionKey, compactInstructions));
       } catch (err) {
         addTranscript('error', [
           `Could not compact conversation: ${err instanceof Error ? err.message : String(err)}`,
@@ -3707,7 +3848,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
       return true;
     }
     if (message === '/skills') {
-      addTranscript('system', renderSkills(workspace));
+      addTranscript('system', renderSkills(workspace, skillRegistryRef.current?.extraDirsSnapshot() ?? []));
       return true;
     }
     if (message.startsWith('/skills promote ')) {
@@ -3975,8 +4116,16 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
           ephemeralTools = [...ephemeralTools, createGoalFinishTool()];
         }
       }
+      // Auto-inject skills whose name/description/trigger match this turn. Goes
+      // ONLY into extraContext (the dynamic prompt-cache bucket), never the
+      // stable layer, so matched skills never invalidate the cached prefix.
+      const matchedSkillContext = buildMatchedSkillContext(
+        skillRegistryRef.current,
+        message,
+      );
       for await (const event of agent.streamChat(sessionKey, effectiveMessage, {
         abortSignal: controller.signal,
+        ...(matchedSkillContext ? { extraContext: matchedSkillContext } : {}),
         ...(attachmentBlocks.length > 0 ? { attachments: attachmentBlocks } : {}),
         ...(ephemeralTools.length > 0 ? { ephemeralTools } : {}),
       })) {
@@ -4559,7 +4708,7 @@ function commandList(customCommands: readonly CommandSpec[] = []): string {
     '  /model [name|#]    choose or switch the active model',
     '  /model config ...  save base_url/key/model_name and use it now',
     '  /goal <condition>  run until this goal condition is met',
-    '  /compact           compress older conversation history into a summary',
+    '  /compact [instructions]  compress older conversation history into a summary',
     '  /auth login        optional: link a D-Robotics developer community account',
     '  /connect <ip>      connect an RDK board for this session',
     '  /sessions          list saved conversations you can resume',

@@ -5,6 +5,7 @@
  */
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SkillMeta, SkillPermission } from './types.js';
 import { getRootLogger } from '../logger.js';
@@ -13,6 +14,59 @@ import { listBuiltinSkills } from './builtin.js';
 
 const log = getRootLogger().child('agent:skill-registry');
 
+/**
+ * Default skill roots scanned IN ADDITION to the workspace. Cross-agent
+ * discovery: skills installed by skill-workshop / other agents live under the
+ * user's home, not the moss workspace. These are vendor-neutral home roots, not
+ * a single hard-coded vendor path — config (`skills.extraRoots`) can add to or
+ * replace them. Only roots that exist are kept (a missing dir is silently
+ * skipped, never an error).
+ * @public
+ */
+export const DEFAULT_EXTRA_SKILL_ROOTS: readonly string[] = [
+  '~/.claude/skills',
+  '~/.agents/skills',
+];
+
+/**
+ * Expand a leading `~` / `~/` to the user's home directory.
+ * @public
+ */
+export function expandTilde(p: string, home = os.homedir()): string {
+  if (p === '~') return home;
+  if (p.startsWith('~/') || p.startsWith('~\\')) return path.join(home, p.slice(2));
+  return p;
+}
+
+/**
+ * Resolve the extra skill roots for a session: tilde-expand, make absolute,
+ * keep only directories that exist, and dedupe by RESOLVED path so a root that
+ * is also reachable from the workspace (or listed twice) is scanned once.
+ * `configured` overrides the built-in defaults when provided (any array, incl.
+ * empty, is honored — pass `undefined` to use the defaults).
+ * @public
+ */
+export function resolveDefaultSkillRoots(
+  configured?: readonly string[],
+  home = os.homedir(),
+): string[] {
+  const raw = configured ?? DEFAULT_EXTRA_SKILL_ROOTS;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string' || !entry.trim()) continue;
+    const resolved = path.resolve(expandTilde(entry.trim(), home));
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    try {
+      if (fs.statSync(resolved).isDirectory()) out.push(resolved);
+    } catch {
+      // Missing root — skip silently (defaults legitimately may not exist).
+    }
+  }
+  return out;
+}
+
 export interface SkillRegistryOptions {
   workspaceDir: string;
   extraDirs?: string[];
@@ -20,14 +74,24 @@ export interface SkillRegistryOptions {
 }
 
 function parseFrontmatter(content: string): Record<string, string> {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const match = content.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
   const map: Record<string, string> = {};
   const lines = match[1].split(/\r?\n/);
   for (const line of lines) {
+    // Skip indented lines: they belong to a nested YAML block (e.g. a
+    // `metadata:` map). Flattening them produced bogus top-level keys.
+    if (/^\s/.test(line)) continue;
+    // Skip list items and comments — not `key: value` pairs.
+    if (/^\s*[-#]/.test(line)) continue;
     const i = line.indexOf(':');
-    if (i < 0) continue;
-    map[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    if (i <= 0) continue;
+    const key = line.slice(0, i).trim();
+    if (!key) continue;
+    // Strip a single layer of surrounding quotes from the value (Claude /
+    // skill-workshop SKILL.md often quotes description). A bare `key:` with no
+    // value is tolerated as an empty string.
+    map[key] = line.slice(i + 1).trim().replace(/^(['"])([\s\S]*)\1$/, '$2');
   }
   return map;
 }
@@ -88,12 +152,21 @@ export class SkillRegistry {
     }
   }
 
+  /** Snapshot of the configured extra roots (for display / reuse). @internal */
+  extraDirsSnapshot(): string[] {
+    return [...this.extraDirs];
+  }
+
   loadAll(force = false): SkillMeta[] {
     const now = Date.now();
     if (!force && now - this.lastLoadedAt < 3000 && this.cache.length > 0) {
       return this.cache;
     }
     const paths = getMossWorkspacePaths(this.workspaceDir);
+    // Source precedence: workspace-local roots first, then extra/home roots, so
+    // a workspace SKILL.md wins a same-path collision with a cross-agent root.
+    // Files are deduped by RESOLVED path so a root reachable two ways (listed
+    // twice, or nested) is parsed once.
     const sources = [
       paths.skillsDir,
       paths.agentSkillsDir,
@@ -101,7 +174,16 @@ export class SkillRegistry {
       paths.legacyAgentSkillsDir,
       ...this.extraDirs,
     ];
-    const files = sources.flatMap((d) => collectSkillFiles(d));
+    const seenFiles = new Set<string>();
+    const files: string[] = [];
+    for (const dir of sources) {
+      for (const file of collectSkillFiles(dir)) {
+        const resolved = path.resolve(file);
+        if (seenFiles.has(resolved)) continue;
+        seenFiles.add(resolved);
+        files.push(resolved);
+      }
+    }
     const metas: SkillMeta[] = this.includeBuiltin ? listBuiltinSkills() : [];
     for (const file of files) {
       try {

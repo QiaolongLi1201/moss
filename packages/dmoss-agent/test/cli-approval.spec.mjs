@@ -530,4 +530,82 @@ assert.equal(resolveCliSafetyMode([], {}), 'workspace-write');
   }
 }
 
+// --- Board mode (/connect) auto-approve ---------------------------------------
+// Live board-mode signal: a getter the hook closes over, flipped by /connect.
+{
+  let board = false;
+  const opts = { boardMode: () => board };
+
+  // (a) In board mode, device/workspace tools are APPROVED without prompting,
+  //     under base workspace-write, even though they require approval normally.
+  board = true;
+  const approve = createCliToolApprovalHook('workspace-write', {}, opts);
+
+  for (const t of [
+    tool('device_exec', 'device_mutation', 'requires_user_confirmation'),
+    tool('write_file', 'local_write', 'requires_user_confirmation'),
+    tool('ros2_launch', 'device_mutation', 'requires_user_confirmation'),
+    tool('edit_file', 'device_mutation', 'requires_user_confirmation'),
+    tool('move_file', 'device_mutation', 'requires_user_confirmation'),
+    tool('ros2_service_call', 'device_mutation', 'requires_user_confirmation'),
+  ]) {
+    const input = t.name === 'device_exec' ? { command: 'systemctl restart tros' } : { path: '/etc/motd' };
+    assert.deepEqual(
+      await approve({ tool: t, input, sessionKey: 's' }),
+      { approved: true },
+      `board mode should auto-approve ${t.name} under workspace-write without prompting`,
+    );
+  }
+
+  // Metadata is untouched — board mode changes only the decision, not the class.
+  const launchPreview = describeCliToolApproval(
+    { tool: tool('ros2_launch', 'device_mutation', 'requires_user_confirmation'), input: {}, sessionKey: 's' },
+    'workspace-write',
+    {},
+    opts,
+  );
+  assert.equal(launchPreview.sideEffect, 'device_mutation', 'ros2_launch keeps device_mutation metadata');
+  assert.equal(launchPreview.boardAutoApproved, true, 'ros2_launch is board-auto-approved in board mode');
+  assert.match(launchPreview.decisionContext, /board mode/);
+
+  // (c) NO REGRESSION: flip board mode off — same hook, same getter — and a
+  //     device_mutation is blocked again by workspace-write.
+  board = false;
+  const denied = await approve({
+    tool: tool('device_exec', 'device_mutation', 'requires_user_confirmation'),
+    input: { command: 'uptime' },
+    sessionKey: 's',
+  });
+  assert.equal(denied.approved, false, 'outside board mode, workspace-write blocks device_mutation');
+  assert.match(denied.reason, /workspace-write/);
+}
+
+// read-only stays safe even on a board: board mode does NOT override the
+// explicit read-only opt-in (documented tradeoff).
+{
+  const approve = createCliToolApprovalHook('read-only', {}, { boardMode: () => true });
+  const denied = await approve({
+    tool: tool('device_exec', 'device_mutation', 'requires_user_confirmation'),
+    input: { command: 'reboot' },
+    sessionKey: 's',
+  });
+  assert.equal(denied.approved, false, 'read-only must stay safe even in board mode');
+  assert.match(denied.reason, /read-only/);
+}
+
+// deniedTools still wins over board-mode auto-approval.
+{
+  const approve = createCliToolApprovalHook('workspace-write', {}, {
+    boardMode: () => true,
+    deniedTools: ['device_exec'],
+  });
+  const denied = await approve({
+    tool: tool('device_exec', 'device_mutation', 'requires_user_confirmation'),
+    input: { command: 'ls' },
+    sessionKey: 's',
+  });
+  assert.equal(denied.approved, false, 'deniedTools overrides board-mode auto-approval');
+  assert.match(denied.reason, /deniedTools/);
+}
+
 console.log('[PASS] CLI approval safety modes gate mutating tools');

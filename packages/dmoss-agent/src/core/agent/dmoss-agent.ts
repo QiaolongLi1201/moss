@@ -514,7 +514,7 @@ export class DmossAgent {
    * what the loop does at the proactive threshold. Returns `{ compacted:false }` when the history is
    * too short to summarize.
    */
-  async compactSession(sessionKey: string): Promise<{
+  async compactSession(sessionKey: string, customInstructions?: string): Promise<{
     compacted: boolean;
     summary?: string;
     summaryChars: number;
@@ -556,6 +556,7 @@ export class DmossAgent {
       charsPerTokenUnit: resolveContextCharsPerTokenUnit(),
       forceCompaction: true,
       remoteCompactProvider: this.remoteCompactProvider,
+      customInstructions: customInstructions?.trim() || undefined,
     });
     if (!result.summary || !result.summaryMessage) {
       return {

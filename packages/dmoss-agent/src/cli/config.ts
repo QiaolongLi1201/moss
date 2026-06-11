@@ -114,6 +114,7 @@ export interface ConfigFile {
   guardrails?: GuardrailsConfig;
   agent?: AgentRuntimeConfig;
   mcp?: McpCliConfig;
+  skills?: SkillsCliConfig;
   hooks?: HooksConfig;
   _examples?: Record<string, unknown>;
 }
@@ -157,6 +158,17 @@ export interface AgentRuntimeConfig {
   maxTurns?: number;
   contextTokens?: number;
   compaction?: Partial<Pick<CompactionSettings, 'reserveTokens' | 'keepRecentTokens'>>;
+}
+
+/** Cross-agent skill discovery: extra roots scanned for SKILL.md files. */
+export interface SkillsCliConfig {
+  /**
+   * Extra directories scanned for SKILL.md (in addition to the workspace).
+   * Tilde (`~`) is expanded; missing dirs are skipped. When set, this REPLACES
+   * the built-in home defaults (`~/.claude/skills`, `~/.agents/skills`); omit it
+   * to use those defaults.
+   */
+  extraRoots?: string[];
 }
 
 export interface McpCliConfig {

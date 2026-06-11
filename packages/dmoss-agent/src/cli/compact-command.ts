@@ -16,7 +16,11 @@ export function formatCompactSessionResult(result: Awaited<ReturnType<DmossAgent
   ].join('\n');
 }
 
-export async function handleCompactCommand(agent: DmossAgent, sessionKey: string): Promise<string> {
-  const result = await agent.compactSession(sessionKey);
+export async function handleCompactCommand(
+  agent: DmossAgent,
+  sessionKey: string,
+  customInstructions?: string,
+): Promise<string> {
+  const result = await agent.compactSession(sessionKey, customInstructions);
   return formatCompactSessionResult(result);
 }

@@ -21,6 +21,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
       { command: '/goal', description: 'show or manage the active goal runner' },
       { command: '/goal <condition>', description: 'run until this goal condition is met' },
       { command: '/compact', description: 'compress older conversation history into a summary' },
+      { command: '/compact [instructions]', description: 'compact and focus the summary on the given instructions', hidden: true },
       { command: '/context', description: 'show current context-window usage', hidden: true },
       { command: '/attach <path>', description: 'fallback: attach an image or text file to the next prompt', hidden: true },
       { command: '/connect <ip>', description: 'connect an RDK board and enter board mode (verifies SSH; flags: --user --port --key --password --no-verify --hybrid)' },
@@ -32,6 +33,7 @@ export const INTERACTIVE_COMMAND_SECTIONS: readonly InteractiveCommandSection[] 
     rows: [
       { command: '/sessions', description: 'list saved conversations (use /resume to switch into one)' },
       { command: '/resume [key|--last]', description: 'switch this session to a saved conversation (no arg opens a picker)' },
+      { command: '/mcp', description: 'show configured MCP servers, connection status, and tool counts' },
       { command: '/cost', description: 'show recorded token usage and estimated cost', hidden: true },
       { command: '/diff', description: 'show git working-tree changes' },
       { command: '/rewind [seq]', description: 'undo file edits from a checkpoint', hidden: true },

@@ -13,6 +13,7 @@ import {
   InMemorySessionStore,
   createOrUpdateTaskFrame,
   detectContinuationIntent,
+  recordTaskFrameAssistant,
 } from '../dist/core/index.js';
 
 const GUARD_MARKER = '[dmoss-agent] Tool loop guard stopped';
@@ -170,6 +171,36 @@ const preserved = createOrUpdateTaskFrame({
 assert.equal(preserved.nextAction, 'Resolve or work around the latest read err');
 assert.equal(preserved.goal, '孵化桌宠');
 assert.equal(preserved.status, 'paused_resumable');
+
+const unresolvedAfterAnswer = recordTaskFrameAssistant(
+  {
+    schemaVersion: 1,
+    sessionKey: 's',
+    runId: 'r3',
+    goal: '修复部署流程并验证',
+    constraints: [],
+    currentStep: 'Inspect failure',
+    completedSteps: ['Read deployment logs'],
+    pendingSteps: ['Run validation command'],
+    artifacts: [],
+    importantPaths: [],
+    toolFindings: [],
+    nextAction: 'Run validation command',
+    status: 'active',
+    source: 'user',
+    updatedAt: Date.now(),
+  },
+  '我已经整理了排查结论',
+  'end_turn',
+  Date.now(),
+);
+assert.equal(
+  unresolvedAfterAnswer.status,
+  'paused_resumable',
+  'assistant end_turn must not mark a task complete while explicit pending steps remain',
+);
+assert.deepEqual(unresolvedAfterAnswer.pendingSteps, ['Run validation command']);
+assert.match(unresolvedAfterAnswer.nextAction, /Run validation command/);
 
 const provider = new GuardThenResumeProvider();
 const store = new InMemorySessionStore();

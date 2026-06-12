@@ -113,13 +113,6 @@ async function runCompactionCore(
       return { attempted: true, succeeded: false, retrySameTurn: false };
     }
 
-    push({
-      type: 'compaction',
-      summaryChars: prep.summary.length,
-      droppedMessages: droppedFromPrep,
-      ...(checkpointOutline ? { checkpointOutline } : {}),
-    });
-
     let compactionSummary: Message | undefined = prep.summaryMessage;
 
     // If aborted after prepareCompaction returned, do NOT mutate currentMessages.
@@ -132,6 +125,13 @@ async function runCompactionCore(
       currentMessages.splice(0, currentMessages.length, ...prep.messages);
       compactionSummary = undefined;
     }
+
+    push({
+      type: 'compaction',
+      summaryChars: prep.summary.length,
+      droppedMessages: droppedFromPrep,
+      ...(checkpointOutline ? { checkpointOutline } : {}),
+    });
 
     const stats = computeStats({
       summary: prep.summary,

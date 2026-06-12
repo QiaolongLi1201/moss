@@ -97,6 +97,19 @@ export interface AgentLoopExtensions {
   >;
   compactHooks?: CompactHookRegistry;
   steeringEngine?: SteeringEngine;
+  completionGate?: (request: {
+    sessionKey: string;
+    runId: string;
+    turn: number;
+    response: string;
+    stopReason?: string;
+    messages: Message[];
+    totalToolCalls: number;
+    toolCallsByName: Record<string, number>;
+  }) => Promise<
+    | { ok: true }
+    | { ok: false; reason: string; correction?: string; fallbackResponse?: string }
+  >;
 }
 
 export interface AgentLoopDeps {

@@ -21,6 +21,7 @@ import type { AgentHooks } from './agent-hooks.js';
 import type { ThinkingLevel } from '../../provider/pi-ai-types.js';
 import type { SteeringRule } from '../loop/steering.js';
 import type { CapabilityPack } from '../packs/capability-pack.js';
+import type { AgentLoopExtensions } from '../loop/agent-loop-types.js';
 
 export interface ProviderConfig {
   llmProvider: LLMProvider;
@@ -193,6 +194,8 @@ export interface DmossAgentConfig
   replaceDefaultSteeringRules?: boolean;
   /** Custom steering rules to apply */
   steeringRules?: SteeringRule[];
+  /** Host-supplied completion acceptance gate; rejected responses continue the loop with a correction. */
+  completionGate?: AgentLoopExtensions['completionGate'];
 }
 
 export interface ChatOptions {

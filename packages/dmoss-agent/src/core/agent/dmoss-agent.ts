@@ -863,6 +863,7 @@ export class DmossAgent {
             ...(options?.platform ? { platform: options.platform } : {}),
           })
         : undefined,
+      completionGate: this.config.completionGate,
     };
 
     return {
@@ -917,6 +918,50 @@ export class DmossAgent {
       reason,
       goal: taskFrame.goal,
       nextAction: taskFrame.nextAction,
+    };
+  }
+
+  /**
+   * Refresh the checkpoint inside the active loop history after mid-run context
+   * compaction. `persistTaskFrameState` reads from the store, but compaction has
+   * already replaced the in-memory prompt that the next LLM call will see.
+   */
+  private async refreshActiveTaskFrameCheckpoint(
+    run: AgentLoopRun,
+    reason: string,
+  ): Promise<Extract<DmossAgentEvent, { type: 'working_context_checkpoint' }>> {
+    const goalSplit = splitGoalCheckpointMessages(run.params.currentMessages as LLMMessage[]);
+    const cleanMessages = stripTaskFrameCheckpointsFromLlmMessages(goalSplit.messages);
+    const checkpoint = createTaskFrameCheckpointMessage(run.state.taskFrame);
+    const goalCheckpoint = goalSplit.goal
+      ? createGoalCheckpointMessage(goalSplit.goal)
+      : undefined;
+    const nextMessages = lastMessageNeedsToolFollowUp(cleanMessages)
+      ? [
+          ...cleanMessages.slice(0, -1),
+          ...(goalCheckpoint ? [goalCheckpoint] : []),
+          checkpoint,
+          cleanMessages[cleanMessages.length - 1],
+        ]
+      : [
+          ...cleanMessages,
+          ...(goalCheckpoint ? [goalCheckpoint] : []),
+          checkpoint,
+        ];
+    // Type bridge: LLMMessage and session Message are the same runtime shape here.
+    const nextSessionMessages = nextMessages as unknown as typeof run.params.currentMessages;
+    run.params.currentMessages.splice(
+      0,
+      run.params.currentMessages.length,
+      ...nextSessionMessages,
+    );
+    await run.params.replaceMessages?.(run.sessionKey, run.params.currentMessages);
+    return {
+      type: 'working_context_checkpoint',
+      status: run.state.taskFrame.status,
+      reason,
+      goal: run.state.taskFrame.goal,
+      nextAction: run.state.taskFrame.nextAction,
     };
   }
 
@@ -976,6 +1021,7 @@ export class DmossAgent {
           summaryChars: miniEvent.summaryChars,
           droppedMessages: miniEvent.droppedMessages,
         });
+        yield await this.refreshActiveTaskFrameCheckpoint(run, 'compaction');
       } else if (miniEvent.type === 'turn_transition') {
         if (miniEvent.reason === 'aborted_by_user') {
           state.taskFrame = recordTaskFrameStop(state.taskFrame, { reason: 'abort' });

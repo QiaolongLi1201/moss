@@ -67,7 +67,7 @@ export function lastMessageNeedsToolFollowUp(messages: readonly MessageLike[]): 
   const last = messages[messages.length - 1];
   if (last.role !== 'user') return false;
   if (typeof last.content === 'string') return false;
-  return (last.content as LLMContentBlock[]).some((b) => b.type === 'tool_result');
+  return (last.content as LLMContentBlock[]).some((b) => b && b.type === 'tool_result');
 }
 
 /**
@@ -278,12 +278,15 @@ export interface FollowUpGuardConfig {
   extraPatterns?: FollowUpPattern[];
   /** Max follow-up nudges per turn (default 1) */
   maxFollowUps?: number;
-  /** Max consecutive follow-up turns before giving up (prevents infinite nudge loops) */
+  /**
+   * @deprecated unused — declared but never read. Hardcoded limit is 1.
+   * Max consecutive follow-up turns before giving up (prevents infinite nudge loops)
+   */
   maxConsecutiveFollowUps?: number;
 }
 
 export const DEFAULT_FOLLOW_UP_GUARD_CONFIG: FollowUpGuardConfig = {
   enabled: true,
   maxFollowUps: 1,
-  maxConsecutiveFollowUps: 1,
+  // maxConsecutiveFollowUps is unused — see interface deprecation note
 };

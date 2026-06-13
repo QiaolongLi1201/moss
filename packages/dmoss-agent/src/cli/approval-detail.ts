@@ -87,11 +87,10 @@ function editFileDetail(input: Record<string, unknown>): string[] | null {
   const oldString = typeof input.old_string === 'string' ? input.old_string : undefined;
   const newString = typeof input.new_string === 'string' ? input.new_string : undefined;
   if (oldString === undefined || newString === undefined) return null;
-  const lines = [
-    ...oldString.split('\n').map((line) => `- ${line}`),
-    ...newString.split('\n').map((line) => `+ ${line}`),
-  ];
-  return lines.length ? lines : null;
+  const diff = diffLinesForApproval(oldString, newString);
+  if (!diff) return null;
+  if (diff.every((line) => line.startsWith('  …'))) return null;
+  return diff;
 }
 
 function writeFileDetail(input: Record<string, unknown>, ctx: ApprovalDetailContext): string[] | null {

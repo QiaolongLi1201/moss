@@ -99,10 +99,16 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
     return;
   }
   if (key === 'trustedTools') {
+    if (value.trim() === '') {
+      throw new Error(`Unsupported --config key "trustedTools"; empty value not allowed (omit to use defaults)`);
+    }
     target.trustedTools = parseTrustedTools(value) ?? [];
     return;
   }
   if (key === 'deniedTools') {
+    if (value.trim() === '') {
+      throw new Error(`Unsupported --config key "deniedTools"; empty value not allowed (omit to use defaults)`);
+    }
     target.deniedTools = parseTrustedTools(value) ?? [];
     return;
   }
@@ -124,7 +130,16 @@ function applyConfigOverride(target: CliConfigOverrides, pair: string): void {
     target[key] = parsed;
     return;
   }
-  if (key === 'model' || key === 'provider' || key === 'baseUrl' || key === 'workspace') {
+  if (key === 'model' || key === 'provider' || key === 'baseUrl') {
+    if (!value.trim()) {
+      throw new Error(`Unsupported --config key "${key}"; empty value not allowed`);
+    }
+    target[key] = value;
+  }
+  if (key === 'workspace') {
+    if (!value.trim()) {
+      throw new Error(`Unsupported --config key "workspace"; empty value not allowed (use -C with a path)`);
+    }
     target[key] = value;
   }
 }

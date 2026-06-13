@@ -444,6 +444,14 @@ export class MemoryManager {
           else this.entries[existingIndex].starred = true;
         }
         await this.save();
+        if (this.embeddingProvider) {
+          try {
+            const [vec] = await this.embeddingProvider.embed([content]);
+            this.embeddingMap.set(this.entries[existingIndex].id, vec);
+          } catch {
+          }
+          await this.saveEmbeddings();
+        }
         return this.entries[existingIndex].id;
       }
 
@@ -799,7 +807,7 @@ export class MemoryManager {
     }).catch((err) => {
       memoryWarn('write chain error:', err);
     });
-    this._writeChain = result;
+    this._writeChain = result.then(() => {});
     await result;
   }
 
@@ -922,7 +930,7 @@ export class MemoryManager {
     }).catch(err => {
       memoryWarn('write chain error:', err);
     });
-    this._writeChain = result;
+    this._writeChain = result.then(() => {});
     return result;
   }
 }

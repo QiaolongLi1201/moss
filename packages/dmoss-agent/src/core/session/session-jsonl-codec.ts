@@ -108,12 +108,14 @@ export async function loadSessionFile(
   };
   const entries: SessionEntry[] = [];
 
+  const entryIds = new Set<string>();
   for (const entry of rest) {
     if (!entry || typeof entry !== "object") continue;
     const typed = entry as SessionEntry;
     if (!typed.type || typeof typed.id !== "string") continue;
     if (typed.type === "message" && (typed as MessageEntry).message) {
       entries.push(typed);
+      entryIds.add(typed.id);
       continue;
     }
     if (
@@ -121,6 +123,12 @@ export async function loadSessionFile(
       typeof (typed as CompactionEntry).summary === "string" &&
       typeof (typed as CompactionEntry).firstKeptEntryId === "string"
     ) {
+      const comp = typed as CompactionEntry;
+      if (!entryIds.has(comp.firstKeptEntryId)) {
+        console.warn(
+          `compaction entry has nonexistent firstKeptEntryId: ${comp.firstKeptEntryId}`
+        );
+      }
       entries.push(typed);
     }
   }

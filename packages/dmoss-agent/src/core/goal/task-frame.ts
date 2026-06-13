@@ -216,8 +216,8 @@ export function detectContinuationIntent(userMessage: string): ContinuationInten
       compact,
     );
   const englishPhrase =
-    /^(continue|resume|go on|carry on|next step|keep going|please continue|pls continue)$/iu.test(
-      raw,
+    /^(continue|resume|goon|carryon|nextstep|keepgoing|pleasecontinue|plscontinue)$/iu.test(
+      compact,
     );
   const politeContinue =
     /^(请|麻烦|帮我|劳烦|辛苦)(你|您)?(请)?(继续|接着|往下|执行|处理|生成)/iu.test(compact) ||
@@ -240,7 +240,7 @@ export function createOrUpdateTaskFrame(params: {
     return {
       ...params.previous,
       runId: params.runId,
-      status: params.previous.status === 'completed' ? 'active' : params.previous.status,
+      status: params.previous.status === 'completed' || params.previous.status === 'aborted' ? 'active' : params.previous.status,
       source: 'user',
       updatedAt: now,
       nextAction: params.previous.nextAction || 'Continue from the latest saved task state.',
@@ -393,7 +393,12 @@ export function recordTaskFrameCompaction(
   frame: TaskFrame,
   params: { summaryChars: number; droppedMessages: number; now?: number },
 ): TaskFrame {
-  const next = { ...frame, source: 'compaction' as const, updatedAt: params.now ?? Date.now() };
+  const next = {
+    ...frame,
+    completedSteps: [...frame.completedSteps],
+    source: 'compaction' as const,
+    updatedAt: params.now ?? Date.now(),
+  };
   uniquePush(
     next.completedSteps,
     `Saved context checkpoint (${params.summaryChars} chars, ${params.droppedMessages} messages folded)`,
@@ -417,7 +422,12 @@ export function recordTaskFrameAssistant(
   stopReason: string,
   now = Date.now(),
 ): TaskFrame {
-  const next = { ...frame, source: 'assistant' as const, updatedAt: now };
+  const next = {
+    ...frame,
+    completedSteps: [...frame.completedSteps],
+    source: 'assistant' as const,
+    updatedAt: now,
+  };
   const visible = cleanText(text, MAX_SHORT_TEXT);
   if (visible) uniquePush(next.completedSteps, `Assistant response: ${visible}`);
   if (stopReason === 'end_turn' || stopReason === 'stop_sequence') {

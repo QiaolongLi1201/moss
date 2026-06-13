@@ -136,7 +136,7 @@ function mapUsage(usage: LLMResponse['usage'] | undefined): Usage {
     output: usage.outputTokens,
     cacheRead,
     cacheWrite,
-    totalTokens: usage.inputTokens + usage.outputTokens,
+    totalTokens: usage.inputTokens + usage.outputTokens + cacheRead + cacheWrite,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };
 }

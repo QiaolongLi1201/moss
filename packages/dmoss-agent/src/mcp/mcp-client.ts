@@ -228,6 +228,7 @@ class McpServerConnection {
   private process: ChildProcess;
   private nextId = 1;
   private pending = new Map<number, PendingRequest>();
+  private MAX_REQUEST_ID = 2147483647; // ~2.1B, safe integer well below MAX_SAFE_INTEGER
   private buffer = '';
   private closed = false;
   private requestTimeoutMs: number;
@@ -256,7 +257,7 @@ class McpServerConnection {
     this.process.on('error', (err) => {
       for (const [, pending] of this.pending) {
         clearTimeout(pending.timer);
-        pending.reject(err);
+        pending.reject(new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP server ${serverName} process error: ${err instanceof Error ? err.message : String(err)}` }));
       }
       this.pending.clear();
     });
@@ -305,6 +306,7 @@ class McpServerConnection {
     if (this.closed) throw new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP server ${this.serverName} is closed` });
     if (signal?.aborted) throw new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP request aborted: ${signal.reason ?? 'aborted'}` });
     const id = this.nextId++;
+    if (this.nextId > this.MAX_REQUEST_ID) this.nextId = 1;
     const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
     return new Promise((resolve, reject) => {
       const sendCancellation = (reason: string) => {
@@ -339,7 +341,14 @@ class McpServerConnection {
         reject: (e) => { cleanup(); reject(e); },
         timer,
       });
-      this.process.stdin!.write(JSON.stringify(msg) + '\n');
+      try {
+        this.process.stdin!.write(JSON.stringify(msg) + '\n');
+      } catch (err) {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        cleanup();
+        reject(new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP server ${this.serverName} stdin write failed: ${err instanceof Error ? err.message : String(err)}` }));
+      }
     });
   }
 
@@ -377,10 +386,12 @@ class McpServerConnection {
         this.process.kill('SIGKILL');
         resolve();
       }, 3000);
-      this.process.on('exit', () => {
+      const onExit = () => {
+        this.process.off('exit', onExit);
         clearTimeout(timeout);
         resolve();
-      });
+      };
+      this.process.once('exit', onExit);
     });
   }
 }

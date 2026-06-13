@@ -166,5 +166,5 @@ export function runPerTurnContextManagement(
     });
   }
 
-  return { savedChars };
+  return { savedChars, savedTokens };
 }

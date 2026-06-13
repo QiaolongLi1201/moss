@@ -98,7 +98,7 @@ export function planContextBudgetActions(
   if (input.estimatedPromptTokens >= warningThreshold) {
     actions.push({
       kind: 'snip_tail_tool_results',
-      reason: 'warning_threshold',
+      reason: pressureReason === 'proactive_threshold' ? 'proactive_threshold' : 'warning_threshold',
     });
   }
 

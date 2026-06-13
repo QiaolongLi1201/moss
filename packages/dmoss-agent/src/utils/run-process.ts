@@ -92,11 +92,15 @@ export function runProcess(cmd: string, opts: RunProcessOptions): Promise<RunPro
     }
 
     const onAbort = () => kill();
-    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    if (opts.signal) {
+      opts.signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     const cleanup = () => {
       if (timeoutId) clearTimeout(timeoutId);
-      opts.signal?.removeEventListener('abort', onAbort);
+      if (opts.signal) {
+        opts.signal.removeEventListener('abort', onAbort);
+      }
     };
 
     child.stdout?.on('data', (chunk: Buffer) => {

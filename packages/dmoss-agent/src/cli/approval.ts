@@ -179,7 +179,10 @@ function isReadonlyTail(tokens: readonly string[]): boolean {
 
 function isReadonlySed(tokens: readonly string[]): boolean {
   if (tokens.some((token) => token === '-i' || token.startsWith('-i') || token === '--in-place' || token.startsWith('--in-place='))) return false;
-  return tokens.some((token) => token === '-n' || token === '--quiet' || token === '--silent' || (/^-[A-Za-z]*n[A-Za-z]*$/.test(token)));
+  // Default sed behavior (no -i flag) is readonly: it prints to stdout without
+  // modifying the file. The -n flag is just a convenience for quiet mode, but
+  // sed without -n is still readonly.
+  return true;
 }
 
 function isReadonlyFind(tokens: readonly string[]): boolean {

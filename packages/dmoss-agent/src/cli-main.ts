@@ -4,13 +4,13 @@ import { execSync } from 'node:child_process';
 import os from 'node:os';
 import { resolveCliAgentRuntimeOptions } from './cli/agent-runtime.js';
 import { createCliToolApprovalHook, resolveCliSafetyMode } from './cli/approval.js';
-import { CliConfigWriteError, loadCliConfigFile, loadEnvFromAncestors, resolveCliConfig, resolveConfigDir, safeProcessCwd } from './cli/config.js';
+import { CliConfigFileError, CliConfigWriteError, loadCliConfigFile, loadEnvFromAncestors, resolveCliConfig, resolveConfigDir, safeProcessCwd } from './cli/config.js';
 import { parseCliArgs } from './cli/args.js';
 import { renderCliDoctor, cliDoctorHasFailure } from './cli/doctor.js';
 import { displayHelp, displayVersion } from './cli/help.js';
 import { createConfiguredGuardrailHooks } from './cli/guardrails.js';
 import { createConfiguredHookCallbacks } from './cli/hooks.js';
-import { DMOSS_CLI_IDENTITY } from './cli/identity.js';
+import { buildDmossCliIdentity } from './cli/identity.js';
 import type { AgentHooks } from './core/agent/agent-hooks.js';
 import { createCliProvider } from './cli/providers.js';
 import type { CliProviderRuntimeConfig } from './cli/providers.js';
@@ -473,7 +473,9 @@ async function main() {
   const agent = new DmossAgent({
     llmProvider: createCliProvider(providerConfig), sessionStore, model,
     workspaceDir: workspace,
-    baseSystemPrompt: DMOSS_CLI_IDENTITY,
+    // Keep the Moss persona, but name the actual model so the agent can answer
+    // "which model are you?" honestly instead of substituting "Moss".
+    baseSystemPrompt: buildDmossCliIdentity({ model, usingBundledDefault: resolvedConfig.usingBundledDefault }),
     enableToolOutputTruncation: true, extraPromptLayers, skillPipeline,
     memoryContextProvider: () => memoryManager.buildDigest(),
     ...resolveCliAgentRuntimeOptions(resolvedConfig),
@@ -582,9 +584,11 @@ async function main() {
 }
 
 main().catch((err) => {
-  // Config-write failures already carry a clean, actionable one-liner — show it
-  // alone instead of a raw Node stack from writeFileSync.
-  if (err instanceof CliConfigWriteError) {
+  // Config file errors already carry a clean, actionable one-liner — show it
+  // alone instead of a raw Node stack. A malformed/hand-edited config.json
+  // (parse error → CliConfigFileError) is just as likely as a write failure,
+  // so both get the same friendly treatment on every entry point.
+  if (err instanceof CliConfigWriteError || err instanceof CliConfigFileError) {
     console.error(`moss: ${err.message}`);
     process.exit(1);
   }

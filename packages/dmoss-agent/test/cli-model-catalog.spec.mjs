@@ -8,11 +8,31 @@
  */
 import assert from 'node:assert/strict';
 import {
+  formatCustomModelConfigInstructions,
   formatModelChoices,
   loadModelChoicesForRuntime,
   parseCustomModelConfigInput,
   resolveModelSelection,
 } from '../dist/cli/model-catalog.js';
+
+// In-session BYOK instructions must be preset-prefilled (no looking up base_url/
+// model): a user picks their provider's line and only pastes the key. The
+// prefilled lines must themselves parse via parseCustomModelConfigInput.
+{
+  const instr = formatCustomModelConfigInstructions('/tmp/cfg.json');
+  assert.match(instr, /deepseek/i, 'instructions list DeepSeek as a ready line');
+  assert.match(instr, /api\.deepseek\.com/, 'DeepSeek line prefills the base URL');
+  assert.match(instr, /paste-your-key/, 'the only thing the user fills is the key');
+  assert.match(instr, /moss setup/, 'instructions point at the guided setup alternative');
+  // The DeepSeek prefilled line (with a real key substituted) must actually parse.
+  const dsLine = instr.split('\n').find((l) => /provider=deepseek/.test(l)) ?? '';
+  const raw = dsLine.slice(dsLine.indexOf('provider=')).replace('key=<paste-your-key>', 'key=fake-key-1234');
+  const parsed = parseCustomModelConfigInput(raw);
+  assert.equal(parsed.ok, true, 'the prefilled DeepSeek line parses once a key is pasted');
+  assert.equal(parsed.config.provider, 'deepseek');
+  assert.equal(parsed.config.baseUrl, 'https://api.deepseek.com');
+  assert.equal(parsed.config.apiKey, 'fake-key-1234');
+}
 
 const builtIn = await loadModelChoicesForRuntime({
   provider: 'openai-compatible',

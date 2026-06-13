@@ -124,7 +124,7 @@ export function displayHelp(c: Colors, options: { all?: boolean } = {}): void {
     `    ${c.yellow('--base-url')} ${c.dim('<url>')}    override provider base URL`,
     `    ${c.yellow('--session')} ${c.dim('<key>')}     continue or create a named session key`,
     `    ${c.yellow('--last')}               with resume/fork, use latest session`,
-    `    ${c.yellow('--ask-for-approval')} ${c.dim('<p>')} never | on-request | untrusted`,
+    `    ${c.yellow('--ask-for-approval')} ${c.dim('<p>')} never | prompt | on-request | read-only | workspace-write | full-access`,
     `    ${c.yellow('--read-only')}          block mutating tools`,
     `    ${c.yellow('--workspace-write')}    allow workspace writes/exec with approval (default)`,
     `    ${c.yellow('--full-access')}        allow device/external tools with approval`,

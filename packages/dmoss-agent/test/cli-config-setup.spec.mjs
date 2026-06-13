@@ -23,6 +23,7 @@ import {
 import { resolveCliAgentRuntimeOptions } from '../dist/cli/agent-runtime.js';
 import { auditResolvedCliConfig as auditResolvedCliConfigFromRoot } from '../dist/index.js';
 import {
+  probeSetupReachability,
   renderAuthStatus,
   renderConfigJson,
   renderConfigUsage,
@@ -31,6 +32,30 @@ import {
   runConfigUnset,
   runConfigValidate,
 } from '../dist/cli/setup.js';
+
+// #2 — `moss setup` must verify the gateway is reachable, not just claim "Saved".
+{
+  const okFetch = async () => ({ ok: true, json: async () => ({ data: [{ id: 'm1' }, { id: 'm2' }] }) });
+  const reachable = await probeSetupReachability(
+    { provider: 'deepseek', model: 'm1', baseUrl: 'https://gw.example', apiKey: 'k' },
+    { fetchImpl: okFetch },
+  );
+  assert.match(reachable, /reachable/i, 'a working key/gateway is reported as reachable');
+  assert.match(reachable, /2 model/, 'reachable message reports the live model count');
+
+  const badFetch = async () => ({ ok: false, json: async () => ({}) });
+  const unreachable = await probeSetupReachability(
+    { provider: 'deepseek', model: 'm1', baseUrl: 'https://gw.example', apiKey: 'bad' },
+    { fetchImpl: badFetch },
+  );
+  assert.match(unreachable, /could not reach/i, 'a bad key/gateway must NOT be reported as configured-ok');
+
+  const anthropic = await probeSetupReachability(
+    { provider: 'anthropic', model: 'claude', baseUrl: 'https://api.anthropic.com', apiKey: 'k' },
+    { fetchImpl: okFetch },
+  );
+  assert.match(anthropic, /skipping live/i, 'anthropic (no /v1/models) is saved-but-unchecked, not failed');
+}
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-cli-config-'));
 const oldConfigDir = process.env.DMOSS_CONFIG_DIR;
@@ -990,6 +1015,25 @@ try {
   assert.equal(loadConfigFile().profile, 'autonomous');
   runConfigSet(['model', 'qwen-plus']);
   assert.equal(loadConfigFile().model, 'qwen-plus');
+  // apiKey is now a settable config key. The auth-failure guidance advertised
+  // `moss config set apiKey ...` but no handler existed (it fell through to the
+  // "Supported keys" error). The confirmation must NOT echo the secret.
+  {
+    const origWrite = process.stdout.write.bind(process.stdout);
+    let captured = '';
+    process.stdout.write = (chunk, ...rest) => {
+      captured += typeof chunk === 'string' ? chunk : chunk.toString();
+      return origWrite(chunk, ...rest);
+    };
+    try {
+      runConfigSet(['apiKey', 'topsecret-do-not-print-abc']);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+    assert.equal(loadConfigFile().apiKey, 'topsecret-do-not-print-abc', 'config set apiKey writes the key');
+    assert.doesNotMatch(captured, /topsecret-do-not-print-abc/, 'config set apiKey must never echo the key value');
+    assert.match(renderConfigUsage(), /apiKey/, 'usage must list apiKey as a settable key');
+  }
   runConfigSet(['baseUrl', 'https://example.com/v1/']);
   assert.equal(loadConfigFile().baseUrl, 'https://example.com');
   runConfigSet(['baseUrl', 'https://user:pass@example.com/compatible-mode/v1?api_key=secret#frag']);

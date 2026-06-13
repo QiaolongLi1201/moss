@@ -310,7 +310,16 @@ async function callOpenAI(
 
   if (!res.ok) {
     const text = await res.text();
-    throw providerError('OpenAI-compatible', res.status, text);
+    const error = providerError('OpenAI-compatible', res.status, text);
+    // A fresh install talks to the shared built-in gateway. When that gateway
+    // is over quota / rate-limited / payment-required, the upstream body is a
+    // raw (often non-English) limit message — a newcomer cannot tell the free
+    // pool is just depleted. Give them the one actionable way forward.
+    if (config.usingBundledDefault && (res.status === 429 || res.status === 402 || res.status === 503)) {
+      error.message +=
+        '\nThe free built-in Moss model is over its shared quota right now — run `moss setup` to use your own model key (DeepSeek/Qwen/OpenAI/Anthropic/any OpenAI-compatible), or try again later.';
+    }
+    throw error;
   }
 
   const data: OpenAIResponse = (await res.json()) as OpenAIResponse;

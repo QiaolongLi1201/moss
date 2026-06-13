@@ -579,7 +579,14 @@ function buildSessionContext(state: SessionState): Message[] {
     const compactionIdx = path.findIndex(
       (entry) => entry.type === "compaction" && entry.id === compaction.id,
     );
-    let foundFirstKept = false;
+    // If firstKeptEntryId is missing from the path (corruption/race — the codec
+    // only warns on load), the kept tail would otherwise be silently dropped on
+    // replay, losing recent history the compaction summary does NOT cover. Fall
+    // back to keeping every pre-compaction entry instead of dropping them.
+    const firstKeptExists = path
+      .slice(0, compactionIdx < 0 ? 0 : compactionIdx)
+      .some((entry) => entry.id === compaction.firstKeptEntryId);
+    let foundFirstKept = !firstKeptExists;
     for (let i = 0; i < compactionIdx; i++) {
       const entry = path[i];
       if (entry.id === compaction.firstKeptEntryId) {

@@ -13,6 +13,17 @@ import { buildSshCommand, runSsh, sshBinFor, shellEscape, sshFailureToError } fr
 
 const ROS_SETUP = 'source /opt/tros/humble/setup.bash 2>/dev/null || source /opt/ros/humble/setup.bash 2>/dev/null || true';
 
+/**
+ * Clamp a user-supplied sampling window (seconds) for topic echo/hz. Defaults
+ * to 5s (the historical window) and is bounded so a typo can't pin an SSH
+ * session open. Exported for tests. @internal
+ */
+export function clampSampleSeconds(value: unknown): number {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 1) return 5;
+  return Math.min(n, 60);
+}
+
 /** @internal */
 export const ROS2_LAUNCH_OK_MARKER = '__MOSS_ROS2_LAUNCH_OK__';
 /** @internal */
@@ -45,13 +56,24 @@ export function interpretRos2LaunchOutput(output: string, pkg: string, launchFil
   );
 }
 
+/**
+ * Prefix that pins the ROS2 DDS domain when the device config specifies one.
+ * Without it, a robot on a non-default ROS_DOMAIN_ID silently returns empty
+ * topic/node/service lists. Exported for tests. @internal
+ */
+export function ros2DomainPrefix(config: DeviceSshConfig): string {
+  return typeof config.rosDomainId === 'number' && Number.isInteger(config.rosDomainId)
+    ? `export ROS_DOMAIN_ID=${config.rosDomainId}; `
+    : '';
+}
+
 async function sshExec(
   config: DeviceSshConfig,
   cmd: string,
   timeout = 15_000,
   ctx?: ToolContext,
 ): Promise<string> {
-  const remoteCmd = `${ROS_SETUP} && ${cmd}`;
+  const remoteCmd = `${ros2DomainPrefix(config)}${ROS_SETUP} && ${cmd}`;
   const sshArgs = buildSshCommand(config, remoteCmd, 5);
 
   try {
@@ -93,11 +115,13 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
       type: 'object',
       properties: {
         topic: { type: 'string', description: 'Topic name (e.g. /camera/image_raw)' },
+        timeout_sec: { type: 'number', description: 'Seconds to wait for a message (default 5, max 60). Raise it for low-rate topics.' },
       },
       required: ['topic'],
     },
     async execute(input, ctx) {
-      return sshExec(config, `timeout 5 ros2 topic echo ${shellEscape(input.topic)} --once 2>&1 || echo "(no message within 5s)"`, 10_000, ctx);
+      const window = clampSampleSeconds(input.timeout_sec);
+      return sshExec(config, `timeout ${window} ros2 topic echo ${shellEscape(input.topic)} --once 2>&1 || echo "(no message within ${window}s)"`, (window + 5) * 1000, ctx);
     },
   };
 
@@ -109,11 +133,13 @@ export function createRos2Tools(config: DeviceSshConfig): Tool[] {
       type: 'object',
       properties: {
         topic: { type: 'string', description: 'Topic name' },
+        timeout_sec: { type: 'number', description: 'Seconds to sample the rate (default 5, max 60). Raise it for low-rate topics.' },
       },
       required: ['topic'],
     },
     async execute(input, ctx) {
-      return sshExec(config, `timeout 5 ros2 topic hz ${shellEscape(input.topic)} 2>&1 | tail -5`, 10_000, ctx);
+      const window = clampSampleSeconds(input.timeout_sec);
+      return sshExec(config, `timeout ${window} ros2 topic hz ${shellEscape(input.topic)} 2>&1 | tail -5`, (window + 5) * 1000, ctx);
     },
   };
 

@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as readline from 'node:readline';
 import { stdin as input, stderr as output, stdout as standardOutput } from 'node:process';
-import { stripEndpointSuffix } from '../provider/api-v1-url.js';
+import { isHttpUrl, stripEndpointSuffix } from '../provider/api-v1-url.js';
 import {
   auditResolvedCliConfig,
+  isBroadTrustedToolPattern,
   loadCliConfigFile,
   loadConfigFile,
   normalizeApprovalPolicyConfig,
@@ -420,7 +421,14 @@ export async function runSetupWizard(): Promise<void> {
   const modelAnswer = rl ? await questionWith(rl, `Model [${defaultModel}]: `) : nextPipedAnswer();
   const model = modelAnswer || defaultModel;
   const baseUrlAnswer = rl ? await questionWith(rl, `Base URL [${defaultBaseUrl}]: `) : nextPipedAnswer();
-  const baseUrl = sanitizeBaseUrl(baseUrlAnswer || defaultBaseUrl);
+  const baseUrlInput = baseUrlAnswer || defaultBaseUrl;
+  if (!isHttpUrl(baseUrlInput)) {
+    rl?.close();
+    print(`Setup cancelled: base URL must be a full http(s) URL, got: ${baseUrlInput}`);
+    process.exitCode = 1;
+    return;
+  }
+  const baseUrl = sanitizeBaseUrl(baseUrlInput);
   const imageInput = current.imageInput ?? preset.defaultImageInput;
   let apiKey: string;
   if (input.isTTY) {
@@ -657,6 +665,12 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
   }
   else if (key === 'model') next.model = value;
   else if (key === 'baseUrl') {
+    if (!isHttpUrl(value)) {
+      print(`Invalid baseUrl: ${value.trim()}`);
+      print('baseUrl must be a full http(s) URL, e.g. https://your-gateway.example/v1');
+      process.exitCode = 1;
+      return;
+    }
     const sanitized = sanitizeBaseUrl(value);
     if (sanitized !== value.trim().replace(/\/+$/, '')) {
       print(`[config] baseUrl normalized to API root: ${sanitized}`);
@@ -692,7 +706,14 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
     next.approvalPolicy = policy;
   } else if (key === 'trustedTools') {
     try {
-      next.trustedTools = parseTrustedTools(value) ?? [];
+      const parsedTrusted = parseTrustedTools(value) ?? [];
+      next.trustedTools = parsedTrusted;
+      const broad = parsedTrusted.filter(isBroadTrustedToolPattern);
+      if (broad.length > 0) {
+        print(
+          `[config] WARNING: broad trusted pattern(s) ${broad.join(', ')} auto-approve every mutating tool the safety mode allows; prefer exact tool names or narrow server__tool globs.`,
+        );
+      }
     } catch (err) {
       print(err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

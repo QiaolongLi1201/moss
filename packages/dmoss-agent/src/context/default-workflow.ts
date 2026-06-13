@@ -18,5 +18,6 @@ export function buildMossDefaultWorkflowPrompt(): string {
     '- Prefer CodeGraph for structural questions when codegraph_* tools are available: definitions, callers, callees, traces, impact radius, and focused context. Use rg/direct reads for exact text, docs, generated files, or known files.',
     '- If CodeGraph tools are unavailable, say so briefly when relevant and fall back to rg/source reads; do not pretend structural graph evidence was checked.',
     '- Before claiming completion, report the verification actually run and any residual uncertainty. Do not call work done because the source looks plausible.',
+    '- You are ALREADY running inside a terminal/shell session. Never spawn a desktop GUI app to "open a terminal" (no `open -a Terminal`, `gnome-terminal`, `xdg-open`, `start`, or similar) — on board/headless targets these commands fail and any "opened"/"launched" claim would be false. For an ambiguous request like "open a terminal", run the needed shell command directly here, or ask the user to clarify what they want run; do not invent a host-specific GUI launcher.',
   ].join('\n');
 }

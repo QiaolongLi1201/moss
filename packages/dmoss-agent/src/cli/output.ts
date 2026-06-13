@@ -219,7 +219,7 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
         breakAnswerForStatus();
         stderrLine(`${mark('fail')} error ${event.retriable ? 'retryable ' : ''}${summarizeForCli(event.error, 400)}`);
         break;
-      case 'done':
+      case 'done': {
         if (state.thinkingOpen) {
           stderr.write('\n');
           state.thinkingOpen = false;
@@ -228,7 +228,19 @@ export function createCliRunRenderer(options: CliRunRendererOptions = {}) {
           stdout.write('\n');
           state.answerOpen = false;
         }
+        // Long-horizon continuity: a run stopped by the turn cap is TRUNCATED,
+        // not finished. Without this the partial answer is indistinguishable
+        // from normal completion and the user never learns to continue. Printed
+        // even in quiet mode because it is a hard stop, not progress noise;
+        // gated on the truncation stop reason so normal completions stay silent.
+        const stopReason = event.result?.stopReason;
+        if (stopReason === 'max_turns_reached' || stopReason === 'tool_followup_cap_reached') {
+          stderrLine(
+            `${mark('fail')} stopped at the turn limit before finishing — the task is paused, not complete. Continue with ${ui.bold('moss resume --last')} (or ${ui.bold('moss --continue')}).`,
+          );
+        }
         break;
+      }
     }
   }
 

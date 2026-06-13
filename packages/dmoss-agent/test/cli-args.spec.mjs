@@ -143,4 +143,66 @@ assert.throws(() => parseCliArgs(['-c', 'maxTurns=0']), /Unsupported maxAgentTur
 assert.throws(() => parseCliArgs(['-c', 'contextTokens=1.5']), /Unsupported contextTokens/);
 assert.throws(() => parseCliArgs(['--max-turns', '0', 'hello']), /--max-turns/);
 
+// --ask-for-approval must reject unknown values instead of silently ignoring
+// them (a typo like `--ask-for-approval yolo` used to look accepted while
+// changing nothing).
+assert.throws(() => parseCliArgs(['--ask-for-approval', 'yolo', 'hi']), /--ask-for-approval must be/);
+assert.throws(() => parseCliArgs(['--ask-for-approval=bogus', 'hi']), /--ask-for-approval must be/);
+{
+  // Every documented value is still accepted with its existing effect.
+  assert.equal(parseCliArgs(['--ask-for-approval', 'never', 'hi']).approvalPolicy, 'never');
+  assert.equal(parseCliArgs(['--ask-for-approval', 'never', 'hi']).configOverrides.approvalPolicy, 'never');
+  const prompt = parseCliArgs(['--ask-for-approval', 'prompt', 'hi']);
+  assert.equal(prompt.approvalPolicy, 'prompt');
+  assert.equal(prompt.safetyModeOverride, undefined);
+  const onRequest = parseCliArgs(['--ask-for-approval', 'on-request', 'hi']);
+  assert.equal(onRequest.approvalPolicy, 'prompt');
+  assert.equal(onRequest.safetyModeOverride, 'workspace-write');
+  assert.equal(parseCliArgs(['--ask-for-approval', 'full-access', 'hi']).safetyModeOverride, 'full-access');
+  assert.equal(parseCliArgs(['--ask-for-approval', 'read-only', 'hi']).safetyModeOverride, 'read-only');
+}
+
+// Mistyped subcommands must be caught before they become billable chat one-shots.
+import { closestKnownCommand } from '../dist/cli/args.js';
+{
+  // Typos close to a real command are flagged with a suggestion, NOT run as chat.
+  for (const [typo, expected] of [
+    ['confgi', 'config'],
+    ['resme', 'resume'],
+    ['setpu', 'setup'],
+    ['doctr', 'doctor'],
+    ['mcpp', 'mcp'],
+  ]) {
+    const parsed = parseCliArgs([typo]);
+    assert.equal(parsed.command, 'chat', `${typo} still parses as chat command`);
+    assert.ok(parsed.unknownCommand, `${typo} should be flagged as an unknown command`);
+    assert.equal(parsed.unknownCommand.token, typo);
+    assert.equal(parsed.unknownCommand.suggestion, expected, `${typo} -> ${expected}`);
+  }
+}
+{
+  // Legitimate one-word prompts are far from every command and must reach chat.
+  for (const word of ['hi', 'help me', 'ls', 'why', 'go']) {
+    const parsed = parseCliArgs(word.split(' '));
+    assert.equal(parsed.unknownCommand, undefined, `'${word}' must NOT be treated as a typo'd command`);
+    assert.equal(parsed.prompt, word);
+  }
+}
+{
+  // Multi-word prose and flag-bearing invocations are never intercepted.
+  assert.equal(parseCliArgs(['tell', 'me', 'about', 'confgi']).unknownCommand, undefined);
+  assert.equal(parseCliArgs(['-m', 'x', 'confgi']).unknownCommand, undefined);
+  assert.equal(parseCliArgs(['--', 'confgi']).unknownCommand, undefined);
+  // Real commands never trip the typo guard.
+  assert.equal(parseCliArgs(['config']).unknownCommand, undefined);
+  assert.equal(parseCliArgs(['doctor']).unknownCommand, undefined);
+}
+{
+  // closestKnownCommand: conservative edit-distance-2 matcher.
+  assert.equal(closestKnownCommand('confgi'), 'config');
+  assert.equal(closestKnownCommand('config'), null, 'exact command is not a typo');
+  assert.equal(closestKnownCommand('hi'), null, 'far from every command');
+  assert.equal(closestKnownCommand(''), null);
+}
+
 console.log('[PASS] CLI argument parser preserves prompts and override flags');

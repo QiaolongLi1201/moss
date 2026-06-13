@@ -58,6 +58,7 @@ export {
 
 export {
   SkillPipeline,
+  DEFAULT_READONLY_TOOL_NAMES,
   type SkillPipelineConfig,
   type SkillPipelineResult,
 } from "./skill-pipeline.js";

@@ -14,7 +14,32 @@ import {
   createOrUpdateTaskFrame,
   detectContinuationIntent,
   recordTaskFrameAssistant,
+  recordTaskFrameToolEnd,
 } from '../dist/core/index.js';
+
+// Regression: a tool error the agent works around (write_file fails → exec
+// succeeds → end_turn) must complete, NOT latch into paused_resumable with a
+// stale "resolve write_file error" marker (this also wrongly blocked skill
+// learning, which gates on status === 'completed').
+{
+  let frame = createOrUpdateTaskFrame({ sessionKey: 's', runId: 'r', userMessage: 'create files a b c' });
+  frame = recordTaskFrameToolEnd(frame, { toolName: 'write_file', result: 'EACCES permission denied', isError: true });
+  assert.equal(frame.status, 'paused_resumable', 'an unrecovered error pauses the task');
+  frame = recordTaskFrameToolEnd(frame, { toolName: 'exec', result: 'wrote file', isError: false });
+  assert.equal(frame.status, 'active', 'a successful tool call resumes forward progress');
+  assert.deepEqual(frame.pendingSteps, [], 'the worked-around error marker is cleared on success');
+  frame = recordTaskFrameAssistant(frame, 'Done, all three files created.', 'end_turn');
+  assert.equal(frame.status, 'completed', 'a worked-around error must not block completion');
+}
+
+// Guard the other direction: an error that is NOT worked around (error is the
+// last tool, then end_turn) still pauses for resume.
+{
+  let frame = createOrUpdateTaskFrame({ sessionKey: 's', runId: 'r', userMessage: 'deploy the service' });
+  frame = recordTaskFrameToolEnd(frame, { toolName: 'exec', result: 'connection refused', isError: true });
+  frame = recordTaskFrameAssistant(frame, 'I hit an error and stopped.', 'end_turn');
+  assert.equal(frame.status, 'paused_resumable', 'an unrecovered error at end_turn stays resumable');
+}
 
 const GUARD_MARKER = '[dmoss-agent] Tool loop guard stopped';
 

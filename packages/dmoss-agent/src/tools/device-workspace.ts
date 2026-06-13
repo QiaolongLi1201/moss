@@ -84,6 +84,12 @@ async function boardRun(
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
   } catch (err) {
+    if (err instanceof ProcessError && err.timedOut) {
+      throw new Error(
+        `Board command timed out after ${Math.round(opts.timeout / 1000)}s. ` +
+          `Raise the limit with timeout_ms (e.g. timeout_ms: ${opts.timeout * 4}) for long commands like colcon build or apt install.`,
+      );
+    }
     if (err instanceof ProcessError && opts.allowNonZeroExit && !isTransportFailure(config, err)) {
       return { stdout: err.stdout, stderr: err.stderr, exitCode: err.exitCode };
     }

@@ -291,6 +291,17 @@ function isWorkspaceTrustEligible(sideEffect: ToolSideEffectClass): boolean {
   return sideEffect === 'local_write';
 }
 
+/**
+ * Whether answering "a" (Always) may blanket-trust this tool for the rest of
+ * the session. device_mutation is excluded: those are idempotent:false physical
+ * board operations (reboot, restart, rm on the device), so trusting the whole
+ * tool by name after one approval would silently auto-approve every later
+ * device command. They re-prompt every time; "a" only approves the current call.
+ */
+function isSessionTrustEligible(sideEffect: ToolSideEffectClass): boolean {
+  return sideEffect !== 'device_mutation';
+}
+
 function previewInput(input: Record<string, unknown>): string {
   const raw = sanitizeSecrets(JSON.stringify(input, null, 2));
   return raw.length > 1200 ? `${raw.slice(0, 1200)}\n... [truncated ${raw.length} chars]` : raw;
@@ -401,8 +412,11 @@ function approvalScopeSummary(preview: CliToolApprovalPreview, input: Record<str
   }
 }
 
-function approvalAlwaysSummary(preview: CliToolApprovalPreview): string {
+function approvalAlwaysSummary(preview: CliToolApprovalPreview): string | undefined {
   if (isWorkspaceTrustEligible(preview.sideEffect)) return 'trust this workspace for the session';
+  // Device mutations never blanket-trust — don't advertise an "always" option
+  // the hook won't honor.
+  if (!isSessionTrustEligible(preview.sideEffect)) return undefined;
   return 'allow this scope for the session';
 }
 
@@ -415,13 +429,16 @@ export function renderCliApprovalPrompt(
   // Decision-time detail: ± diff for file edits, action plan for device
   // mutations — so the user can decide without expanding anything.
   const detail = buildApprovalDetailLines(preview.toolName, preview.sideEffect, input, detailCtx);
+  const always = approvalAlwaysSummary(preview);
   const lines = [
     '',
     `Moss wants to ${approvalActionSummary(preview, input)}`,
     target ? `  ${target}` : '',
     ...detail,
     `Scope: ${approvalScopeSummary(preview, input)}`,
-    `Allow once, ${approvalAlwaysSummary(preview)}, or deny. [y/a/N] `,
+    always
+      ? `Allow once, ${always}, or deny. [y/a/N] `
+      : 'Allow once, or deny (device mutations always re-prompt). [y/N] ',
   ].filter((line) => line !== '');
   return lines.join('\n');
 }
@@ -592,6 +609,12 @@ export function createCliToolApprovalHook(
     // was unusable for any mutating tool). read-only still blocks all mutation at
     // isAllowedInMode above; the dangerous-command floor and deniedTools still apply.
     if (!process.stdin.isTTY) {
+      // Headless auto-approval is a real decision with no human in the loop:
+      // leave a one-line audit trail on stderr so `-p` runs are observable.
+      // (deniedTools / read-only / isCommandDangerous already gated above.)
+      console.error(
+        `[approval] headless auto-approve: ${tool.name} (${preview.sideEffect}) under ${liveMode} — no TTY to prompt`,
+      );
       return { approved: true };
     }
 
@@ -603,9 +626,11 @@ export function createCliToolApprovalHook(
     if (answer === 'a' || answer === 'always') {
       if (isWorkspaceTrustEligible(preview.sideEffect)) {
         sessionTrustedWorkspaces.add(workspaceRoot);
-      } else {
+      } else if (isSessionTrustEligible(preview.sideEffect)) {
         sessionTrustedTools.add(tool.name);
       }
+      // device_mutation: "a" approves this call only — never blanket-trust the
+      // tool, so the next device command still prompts.
       return { approved: true };
     }
     if (answer === 'y' || answer === 'yes') {

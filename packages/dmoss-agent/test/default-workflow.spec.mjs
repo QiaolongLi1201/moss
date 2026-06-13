@@ -23,6 +23,17 @@ import { SkillRegistry } from '../dist/skills/index.js';
 }
 
 {
+  // The agent must be told it is already in a terminal and must not invent
+  // desktop GUI launchers (which fail on headless/board targets).
+  const prompt = buildMossDefaultWorkflowPrompt();
+  assert.match(prompt, /ALREADY running inside a terminal/);
+  assert.match(prompt, /open -a Terminal/);
+  assert.match(prompt, /xdg-open/);
+  assert.match(prompt, /headless/);
+  assert.match(prompt, /clarify/);
+}
+
+{
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'moss-default-skills-'));
   try {
     const registry = new SkillRegistry({ workspaceDir: workspace });

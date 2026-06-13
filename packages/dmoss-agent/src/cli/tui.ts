@@ -501,6 +501,7 @@ export function formatTuiSessions(
       const marker = session.sessionKey === currentSessionKey ? '*' : ' ';
       const count = `${session.messageCount} message${session.messageCount === 1 ? '' : 's'}`;
       lines.push(`  ${marker} ${session.sessionKey} · ${count} · updated ${formatSessionTimestamp(session.updatedAt)}`);
+      if (session.title) lines.push(`      ${session.title}`);
     }
   }
   lines.push('');
@@ -2862,11 +2863,12 @@ function SessionPicker({ state }: { state: SessionPickerState }): React.ReactEle
       const index = start + offset;
       const isSelected = index === selected;
       const count = `${session.messageCount} msg${session.messageCount === 1 ? '' : 's'}`;
+      const titleSuffix = session.title ? ` — ${truncateTerminalText(session.title, 48)}` : '';
       return React.createElement(Text, {
         key: `${session.sessionKey}-${index}`,
         color: isSelected ? theme.permission : theme.text,
         bold: isSelected,
-      }, `${isSelected ? '› ' : '  '}${String(index + 1).padStart(2, ' ')}. ${session.sessionKey} · ${count} · ${formatSessionTimestamp(session.updatedAt)}`);
+      }, `${isSelected ? '› ' : '  '}${String(index + 1).padStart(2, ' ')}. ${session.sessionKey} · ${count} · ${formatSessionTimestamp(session.updatedAt)}${titleSuffix}`);
     }),
     React.createElement(Text, { color: theme.textDim },
       'Enter resume · Up/Down move · Esc cancel · /resume <number|key|--last>'),
@@ -4912,7 +4914,8 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
   );
 }
 
-function commandList(customCommands: readonly CommandSpec[] = []): string {
+/** In-TUI `/help` command reference. Exported for discoverability tests. @internal */
+export function commandList(customCommands: readonly CommandSpec[] = []): string {
   const customSection = customCommands.length
     ? [
         '',
@@ -4931,6 +4934,7 @@ function commandList(customCommands: readonly CommandSpec[] = []): string {
     '  /auth login        optional: link a D-Robotics developer community account',
     '  /connect <ip>      connect an RDK board for this session',
     '  /sessions          list saved conversations you can resume',
+    '  /resume [key|--last]  switch into a saved conversation (no arg opens a picker)',
     '  /diff              show git working-tree changes',
     '',
     'Shortcuts',

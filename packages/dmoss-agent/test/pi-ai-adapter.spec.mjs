@@ -207,3 +207,87 @@ import { PiAiFirstEventTimeoutError } from '../dist/provider/pi-ai-adapter.js';
 }
 
 console.log('All pi-ai-adapter checks passed.');
+// ── pi-ai cache usage tokens are surfaced (prompt-cache observability) ──
+// Before the fix the parser dropped cache tokens, so cacheReadTokens /
+// cacheCreationTokens were always undefined on the pi-ai path and the
+// downstream cache_metrics event always reported 0 — making it impossible to
+// verify prompt caching works on the dominant production path.
+{
+  const { PiAiLLMProvider } = await import('../dist/provider/index.js');
+
+  // Gateway that reports cache tokens in pi-ai cost-style naming.
+  const provider = new PiAiLLMProvider({
+    streamFn: async function* () {
+      yield {
+        type: 'done',
+        stopReason: 'stop',
+        message: {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { input: 1200, output: 30, cacheRead: 1000, cacheWrite: 200 },
+        },
+      };
+    },
+    model: { api: 'anthropic-messages', provider: 'anthropic', id: 'claude-sonnet-4-20250514' },
+    apiKey: 'sk-ant-api03-abcdef1234567890ghijklmnopqrstuv',
+  });
+
+  const res = await provider.complete({
+    model: 'claude-sonnet-4-20250514',
+    systemPrompt: 'stable prompt\n\ndynamic turn context',
+    systemPromptParts: { stable: 'stable prompt', dynamic: 'dynamic turn context' },
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assert.equal(res.usage.inputTokens, 1200);
+  assert.equal(res.usage.outputTokens, 30);
+  assert.equal(res.usage.cacheReadTokens, 1000, 'cache read tokens must be surfaced on the pi-ai path');
+  assert.equal(res.usage.cacheCreationTokens, 200, 'cache creation tokens must be surfaced on the pi-ai path');
+}
+
+// Alternate gateway naming (cacheReadTokens / cacheCreationTokens) also works.
+{
+  const { PiAiLLMProvider } = await import('../dist/provider/index.js');
+  const provider = new PiAiLLMProvider({
+    streamFn: async function* () {
+      yield {
+        type: 'done',
+        stopReason: 'stop',
+        message: {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { input: 50, output: 5, cacheReadTokens: 40, cacheCreationTokens: 10 },
+        },
+      };
+    },
+    model: { api: 'openai', provider: 'openai', id: 'gpt-5' },
+    apiKey: 'sk-test',
+  });
+  const res = await provider.complete({
+    model: 'gpt-5',
+    systemPrompt: 's',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+  assert.equal(res.usage.cacheReadTokens, 40);
+  assert.equal(res.usage.cacheCreationTokens, 10);
+}
+
+// No cache fields reported → usage still valid, cache fields simply absent.
+{
+  const { PiAiLLMProvider } = await import('../dist/provider/index.js');
+  const provider = new PiAiLLMProvider({
+    streamFn: async function* () {
+      yield {
+        type: 'done',
+        stopReason: 'stop',
+        message: { content: [{ type: 'text', text: 'ok' }], usage: { input: 7, output: 2 } },
+      };
+    },
+    model: { api: 'openai', provider: 'openai', id: 'gpt-5' },
+    apiKey: 'sk-test',
+  });
+  const res = await provider.complete({ model: 'gpt-5', systemPrompt: 's', messages: [{ role: 'user', content: 'hi' }] });
+  assert.equal(res.usage.inputTokens, 7);
+  assert.equal(res.usage.cacheReadTokens, undefined);
+}
+
+console.log('[PASS] pi-ai cache usage tokens are surfaced for prompt-cache observability');
+

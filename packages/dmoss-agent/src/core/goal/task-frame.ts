@@ -373,6 +373,16 @@ export function recordTaskFrameToolEnd(
   }
 
   uniquePush(next.completedSteps, `Ran ${params.toolName}`);
+  // A successful tool call means the agent is making forward progress, so any
+  // earlier tool-error recovery markers are no longer blocking work. Without
+  // this, a worked-around error (e.g. write_file fails → the agent retries via
+  // exec and finishes) leaves its "Resolve …error" marker in pendingSteps
+  // forever — `unresolvedPendingSteps` never string-matches it — which latches
+  // an otherwise-completed run into `paused_resumable` at end_turn (and wrongly
+  // suppresses skill learning, which gates on status === 'completed').
+  next.pendingSteps = next.pendingSteps.filter(
+    (step) => !/^resolve or work around the latest .* error/i.test(step),
+  );
   next.currentStep = `Processed ${params.toolName} result`;
   next.nextAction = `Use the latest ${params.toolName} result to continue.`;
   next.status = 'active';

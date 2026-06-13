@@ -162,13 +162,24 @@ export function parseCustomModelConfigInput(input: string): CustomModelConfigPar
 }
 
 export function formatCustomModelConfigInstructions(configPath?: string): string {
+  // Preset-prefilled, copy-paste-ready lines for the common first-party
+  // providers so the user only pastes their key — no looking up base_url/model.
+  // `moss setup` remains the guided alternative with a hidden key field.
+  const presetLine = (p: CliProviderPreset): string => {
+    const preset = PROVIDER_PRESETS[p];
+    return `  ${preset.displayName.padEnd(10)} /model config provider=${p} base_url=${preset.defaultBaseUrl} model_name=${preset.defaultModel} key=<paste-your-key>`;
+  };
   return [
-    'Configure a custom model',
+    'Add your own model & key',
     `  config file  ${configPath || '(default user config)'}`,
-    '  command      /model config base_url=<url> key=<api-key> model_name=<model> [image_input=true]',
     '',
-    'Example:',
-    '  /model config base_url=https://your-gateway.example/v1 key=sk-... model_name=your-model-name',
+    'Pick your provider, paste your key after key=, and press Enter:',
+    presetLine('deepseek'),
+    presetLine('qwen'),
+    presetLine('openai'),
+    '  Custom     /model config base_url=<url> model_name=<model> key=<api-key> [image_input=true]',
+    '',
+    'Or run `moss setup` for a guided prompt with a hidden key field.',
   ].join('\n');
 }
 

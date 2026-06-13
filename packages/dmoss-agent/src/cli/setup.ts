@@ -22,12 +22,44 @@ import {
   saveConfigFileAtPath,
   type CliProviderPreset,
   type ConfigFile,
+  type ResolvedCliConfig,
 } from './config.js';
 import {
   clearDmossCommunityAuthSession,
   formatCommunityAuthStatus,
   getDmossCommunityAuthStatus,
 } from './community-auth.js';
+import { loadModelChoicesForRuntime } from './model-catalog.js';
+
+/**
+ * After saving a model config, check whether the gateway is actually reachable
+ * with the configured key, so `moss setup` reports a verified outcome instead
+ * of an unconditional "Saved configuration". Reuses the live /v1/models probe
+ * (timeout-bounded, never throws). Anthropic has no /v1/models, so it is
+ * reported as saved-but-unchecked rather than failed.
+ * @internal
+ */
+export async function probeSetupReachability(
+  config: Partial<ResolvedCliConfig>,
+  options: { fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+): Promise<string> {
+  let result;
+  try {
+    result = await loadModelChoicesForRuntime(config, config.model ?? '', {
+      timeoutMs: options.timeoutMs ?? 2500,
+      fetchImpl: options.fetchImpl,
+    });
+  } catch {
+    return 'Saved, but could not reach the gateway with this key — check baseUrl/key, then re-run `moss setup`.';
+  }
+  if (result.source === 'live') {
+    return `Configured and reachable — ${result.choices.length} model(s) available from the gateway.`;
+  }
+  if (result.warning) {
+    return 'Saved, but could not reach the gateway with this key — check baseUrl/key, then re-run `moss setup`.';
+  }
+  return `Key saved (${result.providerLabel} — skipping live reachability check).`;
+}
 
 function print(line = ''): void {
   output.write(`${line}\n`);
@@ -319,7 +351,8 @@ export function renderConfigUsage(): string {
     '  moss config show',
     '  moss config show --json',
     '  moss config validate [--strict] [--json]',
-    '  moss config set <profile|provider|model|baseUrl|imageInput|workspace|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|guardrails.*|mcp.enabled|mcp.configPath|agent.*> <value>',
+    '  moss config set <provider|model|baseUrl|apiKey|imageInput> <value>             # model',
+    '  moss config set <profile|safetyMode|approvalPolicy|trustedTools|deniedTools|promptCache|promptCacheDebug|guardrails.*|mcp.*|agent.*> <value>   # operational',
     '  moss config set --project <key> <value>',
     '  moss config unset <key>',
     '  moss config unset --project <key>',
@@ -336,6 +369,7 @@ export function renderConfigUsage(): string {
     '  moss config set provider openai-compatible',
     '  moss config set model <your-model>',
     '  moss config set baseUrl https://your-gateway.example/v1',
+    '  moss config set apiKey <your-api-key>',
     '  moss config set imageInput true',
     '  moss config set --project safetyMode workspace-write',
     '  moss config set approvalPolicy prompt',
@@ -418,10 +452,25 @@ export async function runSetupWizard(): Promise<void> {
 
   const defaultModel = current.model || preset.defaultModel;
   const defaultBaseUrl = current.baseUrl || preset.defaultBaseUrl;
-  const modelAnswer = rl ? await questionWith(rl, `Model [${defaultModel}]: `) : nextPipedAnswer();
-  const model = modelAnswer || defaultModel;
-  const baseUrlAnswer = rl ? await questionWith(rl, `Base URL [${defaultBaseUrl}]: `) : nextPipedAnswer();
-  const baseUrlInput = baseUrlAnswer || defaultBaseUrl;
+  // Key-only fast path: a first-party preset already carries a sensible model
+  // and base URL, so an interactive user goes straight to the API key (2 inputs
+  // instead of 4). openai-compatible has no default endpoint, so it keeps the
+  // full prompts. Non-TTY (piped) always asks every field in order so scripted
+  // answer lines stay aligned with the existing tests.
+  const fastPath = Boolean(rl) && provider !== 'openai-compatible';
+  let model: string;
+  let baseUrlInput: string;
+  if (fastPath) {
+    model = defaultModel;
+    baseUrlInput = defaultBaseUrl;
+    print(`Using ${preset.displayName} defaults — model ${defaultModel}, base URL ${defaultBaseUrl}.`);
+    print('(Change later with `moss config set model <name>` or `moss config set baseUrl <url>`.)');
+  } else {
+    const modelAnswer = rl ? await questionWith(rl, `Model [${defaultModel}]: `) : nextPipedAnswer();
+    model = modelAnswer || defaultModel;
+    const baseUrlAnswer = rl ? await questionWith(rl, `Base URL [${defaultBaseUrl}]: `) : nextPipedAnswer();
+    baseUrlInput = baseUrlAnswer || defaultBaseUrl;
+  }
   if (!isHttpUrl(baseUrlInput)) {
     rl?.close();
     print(`Setup cancelled: base URL must be a full http(s) URL, got: ${baseUrlInput}`);
@@ -460,6 +509,14 @@ export async function runSetupWizard(): Promise<void> {
   print(`Model: ${model}`);
   print(`Base URL: ${withoutSecret(baseUrl)}`);
   print(`Image input: ${imageInput ? 'enabled' : 'disabled'}${imageInput ? '' : ' (enable with `moss config set imageInput true` for a vision-capable gateway)'}`);
+  // No success claim without a verified outcome: probe the gateway interactively
+  // so the user knows the key actually works, not just that it was written.
+  // Skipped for non-TTY/scripted setup so CI does not make a network call.
+  if (input.isTTY) {
+    print('');
+    print('Checking the gateway…');
+    print(await probeSetupReachability({ provider, model, baseUrl, apiKey }));
+  }
   print('');
   print('Try `dmoss "explain this project and how to run it"` or run `dmoss` for interactive mode.');
 }
@@ -584,7 +641,7 @@ function buildProjectConfigTemplate(): ConfigFile {
 }
 
 function supportedConfigKeys(): string {
-  return 'Supported keys: profile, provider, model, baseUrl, imageInput, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, guardrails.input.blockPatterns, guardrails.input.redactPatterns, guardrails.output.blockPatterns, guardrails.output.redactPatterns, mcp.enabled, mcp.configPath, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
+  return 'Supported keys — model: provider, model, baseUrl, apiKey, imageInput; operational: profile, workspace, safetyMode, approvalPolicy, trustedTools, deniedTools, promptCache, promptCacheDebug, guardrails.input.blockPatterns, guardrails.input.redactPatterns, guardrails.output.blockPatterns, guardrails.output.redactPatterns, mcp.enabled, mcp.configPath, agent.maxTurns, agent.contextTokens, agent.compaction.reserveTokens, agent.compaction.keepRecentTokens';
 }
 
 function removeEmptyNestedConfig(config: ConfigFile): ConfigFile {
@@ -664,6 +721,7 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
     next.provider = provider;
   }
   else if (key === 'model') next.model = value;
+  else if (key === 'apiKey') next.apiKey = value;
   else if (key === 'baseUrl') {
     if (!isHttpUrl(value)) {
       print(`Invalid baseUrl: ${value.trim()}`);
@@ -800,6 +858,10 @@ export function runConfigSet(args: string[], startDir = process.cwd()): void {
   saveConfigFileAtPath(next, target.configPath);
   const scope = target.scope === 'project' ? 'project ' : '';
   print(`[config] ${scope}${key} updated in ${target.configPath}`);
+  if (key === 'apiKey') {
+    // Never echo the key value; just confirm and flag the shell-history caveat.
+    print('[config] The API key is stored in the config file; avoid leaving it in shell history.');
+  }
 }
 
 export function runConfigUnset(args: string[], startDir = process.cwd()): void {
@@ -893,8 +955,8 @@ export function printMissingConfigGuidance(interactive: boolean, options: { bund
   print('Script path (no TTY — model settings are read from config files, never env vars):');
   print('  moss config set provider deepseek');
   print('  moss config set model deepseek-chat');
-  print('  write the API key with `moss setup` once, or provide a config file:');
-  print('  moss --config-file /path/to/config.json  # {"provider":"deepseek","apiKey":"..."}');
+  print('  moss config set apiKey <your-api-key>');
+  print('  # or point Moss at a JSON file: moss --config-file /path/to/config.json  # {"provider":"deepseek","apiKey":"..."}');
   print('');
   if (interactive) {
     print('You can run setup now, then start `dmoss` again.');

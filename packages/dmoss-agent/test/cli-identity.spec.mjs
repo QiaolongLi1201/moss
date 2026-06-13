@@ -23,9 +23,12 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { DmossAgent, InMemorySessionStore } from '../dist/core/index.js';
 import { PiAiLLMProvider } from '../dist/provider/index.js';
-import { DMOSS_CLI_IDENTITY } from '../dist/cli/identity.js';
+import { DMOSS_CLI_IDENTITY, buildDmossCliIdentity } from '../dist/cli/identity.js';
 
-const UNIQUE_CLAUSE = /never claim to be any other assistant/;
+// Persona is kept (do not role-play as a different assistant product), but the
+// underlying model is disclosed honestly (no substituting "Moss" for the model).
+const UNIQUE_CLAUSE = /do not role-play as a different assistant product/;
+const MODEL_HONESTY = /be honest about the model/i;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cliPath = path.resolve(__dirname, '../dist/cli.js');
 
@@ -45,13 +48,24 @@ function newAgent(extra = {}) {
   });
 }
 
-test('DMOSS_CLI_IDENTITY names Moss and D-Robotics/地瓜机器人 and forbids other names', () => {
+test('DMOSS_CLI_IDENTITY keeps the Moss persona but is honest about the model', () => {
   assert.match(DMOSS_CLI_IDENTITY, /\bMoss\b/);
   assert.match(DMOSS_CLI_IDENTITY, /D-Robotics/);
   assert.match(DMOSS_CLI_IDENTITY, /地瓜机器人/);
   assert.match(DMOSS_CLI_IDENTITY, UNIQUE_CLAUSE);
+  assert.match(DMOSS_CLI_IDENTITY, MODEL_HONESTY, 'identity must allow honest model disclosure');
   // bilingual: includes the Chinese identity too
   assert.match(DMOSS_CLI_IDENTITY, /地瓜机器人（D-Robotics）研发的 Agent/);
+});
+
+test('buildDmossCliIdentity names the actual model (honest, not substituted with "Moss")', () => {
+  const withModel = buildDmossCliIdentity({ model: 'deepseek-v4-pro' });
+  assert.match(withModel, /\bMoss\b/, 'persona name is still Moss');
+  assert.match(withModel, /deepseek-v4-pro/, 'the real model name is disclosed');
+  assert.match(withModel, MODEL_HONESTY);
+  // bundled gateway: honestly says built-in gateway rather than a fake model name
+  const bundled = buildDmossCliIdentity({ usingBundledDefault: true, model: 'Moss' });
+  assert.match(bundled, /built-in model gateway/);
 });
 
 test('without an identity baseSystemPrompt the system prompt has no identity (bug baseline)', () => {

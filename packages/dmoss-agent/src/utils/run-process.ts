@@ -28,13 +28,16 @@ export class ProcessError extends Error {
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
+  /** True when the child was killed because its timeout elapsed (not an abort). */
+  readonly timedOut: boolean;
 
-  constructor(exitCode: number, stdout: string, stderr: string) {
+  constructor(exitCode: number, stdout: string, stderr: string, timedOut = false) {
     super(`Process exited with code ${exitCode}`);
     this.name = 'ProcessError';
     this.exitCode = exitCode;
     this.stdout = stdout;
     this.stderr = stderr;
+    this.timedOut = timedOut;
   }
 }
 
@@ -58,6 +61,7 @@ export function runProcess(cmd: string, opts: RunProcessOptions): Promise<RunPro
     let stdout = '';
     let stderr = '';
     let killed = false;
+    let timedOut = false;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const kill = (signal: NodeJS.Signals = 'SIGKILL') => {
@@ -81,7 +85,10 @@ export function runProcess(cmd: string, opts: RunProcessOptions): Promise<RunPro
     };
 
     if (opts.timeout && opts.timeout > 0) {
-      timeoutId = setTimeout(() => kill(), opts.timeout);
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        kill();
+      }, opts.timeout);
     }
 
     const onAbort = () => kill();
@@ -115,7 +122,7 @@ export function runProcess(cmd: string, opts: RunProcessOptions): Promise<RunPro
       if (exitCode === 0) {
         resolve({ stdout, stderr, exitCode });
       } else {
-        reject(new ProcessError(exitCode, stdout, stderr));
+        reject(new ProcessError(exitCode, stdout, stderr, timedOut));
       }
     });
   });

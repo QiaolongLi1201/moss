@@ -33,9 +33,28 @@ function makeMessages(count) {
 // ── Test 1: Deterministic fallback summary is non-empty ──
 {
   const msgs = makeMessages(10);
-  const summary = buildDeterministicCompactionSummary(msgs);
+  const summary = buildDeterministicCompactionSummary(msgs, 'test');
   assert.ok(summary.length > 10, `deterministic summary must be non-empty, got ${summary.length} chars`);
   console.log('  [PASS] deterministic summary generates non-empty text for 10 messages');
+}
+
+// ── Test 1b: Deterministic fallback carries the original user goal up front ──
+{
+  const msgs = [
+    {
+      role: 'user',
+      content: [{ type: 'text', text: '请修复摄像头部署脚本并跑验证' }],
+    },
+    ...makeMessages(40),
+  ];
+  const summary = buildDeterministicCompactionSummary(msgs, 'overflow');
+  const goalSection = summary.match(/## 1\. 主要目标\n([\s\S]*?)\n\n## 2\./)?.[1] ?? '';
+  assert.match(
+    goalSection,
+    /请修复摄像头部署脚本并跑验证/,
+    'fallback summary must preserve the original user goal in section 1, not only in later excerpts',
+  );
+  console.log('  [PASS] deterministic summary preserves the original user goal in section 1');
 }
 
 // ── Test 2: Deterministic summary for empty messages ──
@@ -219,4 +238,4 @@ function makeMessages(count) {
   console.log('  [PASS] summarizeInStages: smaller-chunks second failure returns final fallback');
 }
 
-console.log('\n[pass] compaction-fallback: 13/13');
+console.log('\n[pass] compaction-fallback: 14/14');

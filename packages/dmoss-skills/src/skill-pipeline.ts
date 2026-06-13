@@ -5,10 +5,41 @@ import { distillCandidate, type DistillResult } from "./skill-distiller.js";
 import { promoteSkillCandidate, type PromoteResult } from "./skill-promoter.js";
 import { isHighConfidence } from "./skill-scorer.js";
 
+/**
+ * Read-only / info-gathering tool names used by the low-value run gate.
+ * A run whose every distinct tool is in this set did no mutating or
+ * meaningful work and is not worth persisting as a skill candidate. Hosts
+ * that know each tool's authoritative `sideEffectClass` can override this via
+ * {@link SkillPipelineConfig.readonlyToolNames}; the defaults cover the
+ * well-known vendor-neutral read-only built-ins. Mutating/verifying tools
+ * (`exec`, `device_exec`, writes) are deliberately absent.
+ * @public
+ */
+export const DEFAULT_READONLY_TOOL_NAMES: readonly string[] = [
+  "read",
+  "read_file",
+  "device_file_read",
+  "list_directory",
+  "search_files",
+  "search_code",
+  "glob",
+  "grep",
+  "memory_read",
+  "web_fetch",
+  "web_search",
+];
+
 export interface SkillPipelineConfig {
   workspaceDir: string;
   model?: string;
   autoPromoteHighConfidence?: boolean;
+  /**
+   * Tool names treated as read-only info-gathering by the low-value run gate.
+   * Defaults to {@link DEFAULT_READONLY_TOOL_NAMES}. Pass the host's set of
+   * `sideEffectClass: 'readonly'` tool names to keep the gate authoritative
+   * without hard-coding a vendor workflow into core.
+   */
+  readonlyToolNames?: readonly string[];
 }
 
 export interface SkillPipelineResult {
@@ -25,15 +56,32 @@ interface ExtractedToolCall {
   failed: boolean;
 }
 
+/**
+ * True when the assistant's final text reads as a clarifying question rather
+ * than a completed result. Conservative and language-neutral: the trimmed
+ * text ends with a question mark (ASCII `?` or fullwidth `？`). Declarative
+ * results ("Done. …") are never matched.
+ */
+function isClarifyingQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  const last = trimmed[trimmed.length - 1];
+  return last === "?" || last === "？";
+}
+
 export class SkillPipeline {
   private readonly workspaceDir: string;
   private readonly model: string;
   private readonly autoPromote: boolean;
+  private readonly readonlyToolNames: ReadonlySet<string>;
 
   constructor(config: SkillPipelineConfig) {
     this.workspaceDir = config.workspaceDir;
     this.model = config.model ?? "unknown";
     this.autoPromote = config.autoPromoteHighConfidence ?? false;
+    this.readonlyToolNames = new Set(
+      (config.readonlyToolNames ?? DEFAULT_READONLY_TOOL_NAMES).map((n) => n.trim()),
+    );
   }
 
   /**
@@ -59,6 +107,15 @@ export class SkillPipeline {
     const userMessage = this.getFirstUserMessage(messages);
     const assistantText = this.getLastAssistantText(messages);
     if (!userMessage || !assistantText) return null;
+
+    // Quality gate (host-neutral): skip persistence for low-value runs so the
+    // candidate store is not polluted by trivial info-gathering or
+    // clarification turns. Two signals, both derivable from evidence we have:
+    //  (a) the assistant's final turn is a clarifying question — the task was
+    //      not completed, it asked the user for more input; and
+    //  (b) every distinct tool used is read-only info-gathering — no mutating
+    //      or meaningful work happened.
+    if (this.isLowValueRun(toolCalls, assistantText)) return null;
 
     const currentToolNames = [...new Set(toolCalls.map((tc) => tc.name))];
     const sortedToolNamesKey = [...currentToolNames].sort().join("|");
@@ -117,6 +174,24 @@ export class SkillPipeline {
       distill,
       promoted,
     };
+  }
+
+  /**
+   * True when a finished run is not worth persisting as a skill candidate:
+   * the assistant ended by asking a clarifying question, or every distinct
+   * tool used was read-only info-gathering with no mutating/meaningful work.
+   */
+  private isLowValueRun(
+    toolCalls: ExtractedToolCall[],
+    assistantText: string,
+  ): boolean {
+    if (isClarifyingQuestion(assistantText)) return true;
+    const distinct = new Set(toolCalls.map((tc) => tc.name).filter(Boolean));
+    if (distinct.size === 0) return true;
+    for (const name of distinct) {
+      if (!this.readonlyToolNames.has(name)) return false;
+    }
+    return true;
   }
 
   private extractToolCalls(messages: LLMMessage[]): ExtractedToolCall[] {

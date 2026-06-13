@@ -20,6 +20,9 @@ const SINGLE_TOOL_LIMIT_EXEMPT_TOOLS = new Set([
   'device_file_list',
 ]);
 
+const DEFAULT_IDENTICAL_TOOL_INPUT_LIMIT = 3;
+const DEFAULT_TOOL_FAILURE_LIMIT = 3;
+
 export type ToolLoopGuardState = {
   bySignature: Map<string, number>;
   byTool: Map<string, number>;
@@ -27,11 +30,15 @@ export type ToolLoopGuardState = {
   total: number;
 };
 
-function resolveOptionalPositiveIntEnv(name: string): number | undefined {
+function resolveOptionalPositiveIntEnv(name: string, fallback?: number): number | undefined {
   const raw = readEnv(name);
-  if (!raw) return undefined;
+  if (!raw) return fallback;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === '0' || normalized === 'off' || normalized === 'false' || normalized === 'disabled') {
+    return undefined;
+  }
   const value = Number.parseInt(raw, 10);
-  return Number.isFinite(value) && value > 0 ? value : undefined;
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 export function createToolLoopGuardState(): ToolLoopGuardState {
@@ -97,10 +104,16 @@ export function shouldShortCircuitToolCall(
   toolName: string,
   input: Record<string, unknown>,
 ): string | null {
-  const identicalLimit = resolveOptionalPositiveIntEnv('DMOSS_TOOL_LOOP_IDENTICAL_LIMIT');
+  const identicalLimit = resolveOptionalPositiveIntEnv(
+    'DMOSS_TOOL_LOOP_IDENTICAL_LIMIT',
+    DEFAULT_IDENTICAL_TOOL_INPUT_LIMIT,
+  );
   const singleToolLimit = resolveOptionalPositiveIntEnv('DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT');
   const totalLimit = resolveOptionalPositiveIntEnv('DMOSS_TOOL_LOOP_TOTAL_LIMIT');
-  const failureLimit = resolveOptionalPositiveIntEnv('DMOSS_TOOL_LOOP_FAILURE_LIMIT');
+  const failureLimit = resolveOptionalPositiveIntEnv(
+    'DMOSS_TOOL_LOOP_FAILURE_LIMIT',
+    DEFAULT_TOOL_FAILURE_LIMIT,
+  );
   const signature = `${toolName}:${stableSerializeToolInput(input)}`;
   const sameSignatureCount = state.bySignature.get(signature) ?? 0;
   const sameToolCount = state.byTool.get(toolName) ?? 0;

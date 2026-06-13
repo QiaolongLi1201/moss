@@ -236,6 +236,9 @@ moss "prompt"        run a one-shot prompt
 moss auth login      optional: link a D-Robotics developer community account
 moss auth status     show community login and provider/model/key source
 moss setup           configure your own provider/model/API key
+moss doctor          health-check config, auth, workspace, board, and MCP (non-zero exit on failure)
+moss resume --last   continue the most recent saved session (fork --last branches a copy)
+moss mcp add <name> <cmd> [args...]  register an MCP server without editing JSON (mcp list / mcp remove)
 moss config --help   show configuration commands
 moss --help          show the focused CLI help
 moss --help --all    show the complete CLI reference
@@ -249,8 +252,12 @@ Inside Moss:
 /goal        show or manage the active goal runner
 /compact     compress older conversation history into a summary
 /attach      attach an image or text file to the next prompt
-/connect     connect an RDK board for this session
-/sessions    list saved conversations you can resume
+/connect     connect an RDK board and enter board mode (/disconnect to leave)
+/sessions    list saved conversations (use /resume to switch into one)
+/resume      switch this session to a saved conversation ([key|--last])
+/mcp         show configured MCP servers, status, and tool counts
+/doctor      health-check model, egress, board, MCP, and config in this session
+/yolo        grant full power for this session — no per-call approval (/yolo off reverts)
 /diff        show git working-tree changes
 /auth login  optional: link a D-Robotics developer community account
 /help        show focused command help

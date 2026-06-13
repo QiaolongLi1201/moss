@@ -8,7 +8,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderCliDoctor, renderNodeDoctorLine } from '../dist/cli/doctor.js';
+import { renderCliDoctor, renderNodeDoctorLine, cliDoctorHasFailure } from '../dist/cli/doctor.js';
+
+// Exit-code gate: any `fail` line must make the report report a failure so the
+// CLI can exit non-zero (doctor previously always exited 0, masking problems).
+assert.equal(cliDoctorHasFailure('[doctor] Moss\n  ok    node: v22\n  ok    auth: ok'), false);
+assert.equal(cliDoctorHasFailure('[doctor] Moss\n  ok    node: v22\n  fail  workspace: /x is not writable'), true);
+assert.equal(cliDoctorHasFailure('  warn  env ignored: DEEPSEEK_API_KEY'), false);
 
 function resolvedConfig(overrides = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dmoss-doctor-config-'));

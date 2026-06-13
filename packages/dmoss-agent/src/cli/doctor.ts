@@ -29,6 +29,17 @@ function fail(label: string, detail: string): string {
   return `  fail  ${label}: ${detail}`;
 }
 
+/**
+ * True when a rendered doctor report contains at least one `fail` line. The
+ * caller exits non-zero on failure so `moss doctor` is usable as a CI/automation
+ * health gate (it previously always exited 0, masking unwritable workspaces,
+ * missing API keys, and broken MCP config).
+ * @public
+ */
+export function cliDoctorHasFailure(report: string): boolean {
+  return report.split('\n').some((line) => line.startsWith('  fail '));
+}
+
 export function renderNodeDoctorLine(version: string = process.version): string {
   return nodeVersionProblem(version)
     ? fail('node', `${version}; requires >=${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}.0`)

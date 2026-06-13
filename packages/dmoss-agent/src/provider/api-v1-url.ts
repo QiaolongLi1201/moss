@@ -16,6 +16,23 @@ export function stripEndpointSuffix(value: string): string {
     .replace(/\/v1$/i, '');
 }
 
+/**
+ * True only for a syntactically valid absolute http(s) URL. Used at config
+ * SET time so a malformed or non-http(s) baseUrl (typo'd scheme, bare host,
+ * ftp://...) is rejected up front instead of failing opaquely at the first
+ * model call.
+ *
+ * @public
+ */
+export function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export function buildApiV1Url(baseUrl: string, path: string): string {
   const normalizedBaseUrl = stripEndpointSuffix(baseUrl.trim());
   const normalizedPath = path.trim().replace(/^\/+/, '');

@@ -7,6 +7,12 @@ export interface CliSessionResolution {
   sourceSessionKey?: string;
   forked: boolean;
   notice?: string;
+  /**
+   * Set when an explicit session key was requested but does not exist. The CLI
+   * must surface this and exit non-zero instead of printing a false
+   * "Resuming session" notice over an empty conversation.
+   */
+  error?: string;
 }
 
 function sortRecent(sessions: SessionMeta[]): SessionMeta[] {
@@ -59,8 +65,14 @@ async function resolveExistingSession(
   store: SessionStore,
   explicit: string | undefined,
   useLast: boolean,
-): Promise<{ key: string; notice?: string } | null> {
-  if (explicit) return { key: explicit };
+): Promise<{ key: string; notice?: string; error?: string } | null> {
+  if (explicit) {
+    // Verify the key actually exists before claiming a resume. Returning it
+    // unchecked printed "Resuming session: <key>" then ran an empty session
+    // when the key was a typo (no success without a verified outcome).
+    if (await store.exists(explicit)) return { key: explicit };
+    return { key: explicit, error: `No saved session named "${explicit}" in this workspace.` };
+  }
   const sessions = sortRecent(await store.listSessions());
   if (sessions.length === 0) return null;
   if (useLast) return { key: sessions[0].sessionKey };
@@ -82,6 +94,9 @@ export async function resolveCliSession(options: {
 
   if (options.command === 'resume') {
     const resolved = await resolveExistingSession(options.store, options.sessionKey, Boolean(options.useLast));
+    if (resolved?.error) {
+      return { sessionKey: resolved.key, forked: false, error: resolved.error };
+    }
     if (!resolved) {
       const sessionKey = options.sessionKey || createCliSessionKey();
       return {
@@ -98,8 +113,11 @@ export async function resolveCliSession(options: {
   }
 
   const source = await resolveExistingSession(options.store, options.forkSource || options.sessionKey, Boolean(options.useLast));
+  if (source?.error) {
+    return { sessionKey: source.key, forked: true, error: source.error };
+  }
   if (!source) {
-    const fallback = `cli-fork-${timestampForKey()}`;
+    const fallback = `cli-fork-${timestampForKey()}-${randomUUID().slice(0, 8)}`;
     return {
       sessionKey: fallback,
       forked: true,
@@ -107,7 +125,10 @@ export async function resolveCliSession(options: {
     };
   }
   const messages = await options.store.loadMessages(source.key);
-  const forkKey = `cli-fork-${timestampForKey()}`;
+  // Second-precision timestamps collide when two forks land in the same second;
+  // the random suffix (mirroring createCliSessionKey) keeps rapid forks distinct
+  // so one long-task branch never silently overwrites another.
+  const forkKey = `cli-fork-${timestampForKey()}-${randomUUID().slice(0, 8)}`;
   await options.store.replaceMessages(forkKey, messages);
   return {
     sessionKey: forkKey,

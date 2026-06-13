@@ -199,6 +199,113 @@ function makeAgent(config) {
 
 {
   const store = new InMemorySessionStore();
+  const gateCalls = [];
+  const { provider, streamRequests } = createModelEventProvider((options, onEvent, callNumber) => {
+    if (callNumber === 1) {
+      onEvent({ type: 'content_block_delta', text: 'premature completion', deltaRole: 'visible' });
+      return {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: 'premature completion' }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    }
+    onEvent({ type: 'content_block_delta', text: 'continued with evidence', deltaRole: 'visible' });
+    return {
+      stopReason: 'end_turn',
+      content: [{ type: 'text', text: 'continued with evidence' }],
+      usage: { inputTokens: 1, outputTokens: 1 },
+    };
+  });
+  const agent = makeAgent({
+    llmProvider: provider,
+    sessionStore: store,
+    enableCompaction: false,
+    enableContextPruning: false,
+    maxAgentTurns: 4,
+    completionGate: async ({ response, turn }) => {
+      gateCalls.push({ response, turn });
+      if (gateCalls.length === 1) {
+        return {
+          ok: false,
+          reason: 'no verification evidence',
+          correction: '[System] Completion rejected: run validation before claiming the task is complete.',
+        };
+      }
+      return { ok: true };
+    },
+  });
+
+  const events = await collect(
+    agent.streamChat('bridge-completion-gate', 'finish only after verification', {
+      runId: 'run-completion-gate',
+    }),
+  );
+
+  const done = events.find((event) => event.type === 'done');
+  assert(done, 'expected done event');
+  assert.equal(done.result.response, 'continued with evidence');
+  assert.equal(gateCalls.length, 2, 'completion gate should inspect the retry response too');
+  assert.equal(streamRequests.length, 2, 'rejected completion should trigger another LLM turn');
+  assert(
+    !events.some((event) => event.type === 'text_delta' && event.delta.includes('premature completion')),
+    'completion-gate rejected text must not stream to the UI before retry',
+  );
+  assert(
+    events.some((event) => event.type === 'text_delta' && event.delta.includes('continued with evidence')),
+    'approved completion text should stream after the gate passes',
+  );
+  assert(
+    streamRequests[1].messages.some((message) =>
+      JSON.stringify(message).includes('Completion rejected: run validation'),
+    ),
+    'second LLM request should include the completion-gate correction message',
+  );
+}
+
+{
+  const store = new InMemorySessionStore();
+  const { provider } = createModelEventProvider((_options, onEvent) => {
+    onEvent({ type: 'content_block_delta', text: 'still claiming completion', deltaRole: 'visible' });
+    return {
+      stopReason: 'end_turn',
+      content: [{ type: 'text', text: 'still claiming completion' }],
+      usage: { inputTokens: 1, outputTokens: 1 },
+    };
+  });
+  const agent = makeAgent({
+    llmProvider: provider,
+    sessionStore: store,
+    enableCompaction: false,
+    enableContextPruning: false,
+    maxAgentTurns: 5,
+    completionGate: async () => ({
+      ok: false,
+      reason: 'missing validation evidence',
+      correction: '[System] Completion rejected: gather validation evidence.',
+      fallbackResponse: 'I could not verify completion after retrying; this remains unverified.',
+    }),
+  });
+
+  const events = await collect(
+    agent.streamChat('bridge-completion-gate-exhausted', 'finish only after verification', {
+      runId: 'run-completion-gate-exhausted',
+    }),
+  );
+
+  const done = events.find((event) => event.type === 'done');
+  assert(done, 'expected done event after completion-gate retry exhaustion');
+  assert.equal(
+    done.result.response,
+    'I could not verify completion after retrying; this remains unverified.',
+  );
+  assert(
+    !events.some((event) => event.type === 'text_delta' && event.delta.includes('still claiming completion')),
+    'completion-gate exhausted path must not stream the rejected completion claim',
+  );
+}
+
+{
+  const store = new InMemorySessionStore();
   const compactHooks = new CompactHookRegistry();
   const preHooks = [];
   const postHooks = [];
@@ -292,6 +399,19 @@ function makeAgent(config) {
     countCompactionSummaries(streamRequests[1].messages),
     1,
     'recovered provider request should not receive duplicate compaction summaries',
+  );
+  const recoveredCheckpoints = checkpointMessages(streamRequests[1].messages);
+  assert.equal(
+    recoveredCheckpoints.length,
+    1,
+    'recovered provider request must receive the live TaskFrame checkpoint after compaction',
+  );
+  const recoveredFrame = parseCheckpoint(recoveredCheckpoints[0]);
+  assert.equal(recoveredFrame.source, 'compaction');
+  assert.match(recoveredFrame.goal, /overflow compaction please/);
+  assert(
+    recoveredFrame.completedSteps.some((step) => step.includes('Saved context checkpoint')),
+    'compaction checkpoint should preserve the saved-context step for the next LLM request',
   );
   assert.equal(
     countCompactionSummaries(await store.loadMessages('bridge-context-overflow')),

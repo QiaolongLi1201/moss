@@ -44,3 +44,22 @@ await store.appendMessage('newer', { role: 'user', content: 'new' });
 }
 
 console.log('[PASS] CLI session resume and fork resolve existing JSONL sessions');
+{
+  // resume/fork of a non-existent (typo'd) explicit key must NOT print a false
+  // "Resuming session" notice and run empty — it must surface a clear error.
+  const resumeMissing = await resolveCliSession({ command: 'resume', store, sessionKey: 'does-not-exist' });
+  assert.match(resumeMissing.error, /No saved session named "does-not-exist"/);
+  assert.equal(resumeMissing.notice, undefined);
+
+  const forkMissing = await resolveCliSession({ command: 'fork', store, sessionKey: 'also-missing' });
+  assert.match(forkMissing.error, /No saved session named "also-missing"/);
+  assert.equal(forkMissing.notice, undefined);
+
+  // An explicit key that DOES exist still resolves cleanly with no error.
+  const resumeReal = await resolveCliSession({ command: 'resume', store, sessionKey: 'newer' });
+  assert.equal(resumeReal.error, undefined);
+  assert.equal(resumeReal.sessionKey, 'newer');
+  assert.match(resumeReal.notice, /Resuming session/);
+}
+
+console.log('[PASS] CLI session resume rejects missing explicit keys');

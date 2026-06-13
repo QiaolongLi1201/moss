@@ -14,6 +14,7 @@ import type { ToolHookRegistry } from '../tools/tool-hooks.js';
 import type { AgentLoopMutableState } from './agent-loop-state.js';
 import type { ToolLoopGuardState } from '../tools/tool-loop-guard.js';
 import type { LoopControlSignal } from './agent-loop-context-prep.js';
+import type { AgentLoopExtensions } from './agent-loop-types.js';
 import {
   injectToolCallFromPlanText,
   normalizeAssistantToolCalls,
@@ -31,6 +32,7 @@ import {
 } from './agent-loop-tool-execution.js';
 
 const GUARDED_DELTA_CHUNK = 96;
+const MAX_COMPLETION_GATE_ATTEMPTS = 2;
 
 function pushGuardedMessageDeltas(push: (event: MiniAgentEvent) => void, text: string): void {
   if (!text) return;
@@ -100,6 +102,8 @@ export interface ProcessLlmResponseParams {
     | { approved: true; response?: string }
     | { approved: false; reason: string; response?: string }
   >;
+  completionGate?: AgentLoopExtensions['completionGate'];
+  delayedVisibleDeltas?: boolean;
   toolAbortSignalFor?: (toolCallId: string) => AbortSignal | undefined;
   enrichToolContext?: (baseCtx: ToolContext, sessionKey: string) => ToolContext;
   evaluateSteering: () => Message[];
@@ -160,6 +164,8 @@ export async function processLlmResponse(
     maxToolCalls,
     checkToolApproval,
     guardAssistantOutput,
+    completionGate,
+    delayedVisibleDeltas,
     toolAbortSignalFor,
     enrichToolContext,
     evaluateSteering,
@@ -285,16 +291,53 @@ export async function processLlmResponse(
     }
     replaceAssistantVisibleText(assistantContent, visibleAssistantText);
   }
-  if (guardAssistantOutput && !hasThinkingOnly) {
-    pushGuardedMessageDeltas(push, visibleAssistantText);
-  }
-  push({ type: 'message_end', message: assistantMsg, text: visibleAssistantText });
 
   // ===== Update state =====
   state.hasMoreToolCalls = toolCalls.length > 0;
   if (!state.hasMoreToolCalls) {
     state.finalText = visibleAssistantText;
   }
+
+  if (completionGate && !state.hasMoreToolCalls && state.finalText.trim().length > 0 && !abortSignal.aborted) {
+    const decision = await completionGate({
+      sessionKey,
+      runId,
+      turn: state.turns,
+      response: state.finalText,
+      ...(streamStopReason ? { stopReason: streamStopReason } : {}),
+      messages: currentMessages,
+      totalToolCalls: state.toolExecutionMetrics.totalToolCalls,
+      toolCallsByName: state.toolExecutionMetrics.toolCallsByName,
+    });
+    if (!decision.ok && state.completionGateAttempts < MAX_COMPLETION_GATE_ATTEMPTS) {
+      state.completionGateAttempts += 1;
+      state.finalText = '';
+      const bufferedIndex = assistantBuffer.lastIndexOf(assistantMsg);
+      if (bufferedIndex >= 0) assistantBuffer.splice(bufferedIndex, 1);
+      state.pendingMessages = [buildCorrectionMessage(
+        decision.correction ??
+          `[System] Completion rejected: ${decision.reason}. Continue the task and only finish when the required evidence is available.`,
+      )];
+      pushTurnEnd();
+      state.lastTurnEndMs = Date.now();
+      return { control: 'continue' };
+    }
+    if (decision.ok) {
+      state.completionGateAttempts = 0;
+    } else {
+      visibleAssistantText =
+        decision.fallbackResponse ??
+        `I could not verify completion after retrying: ${decision.reason}. I cannot mark this task complete without the required evidence.`;
+      replaceAssistantVisibleText(assistantContent, visibleAssistantText);
+      state.finalText = visibleAssistantText;
+      state.completionGateAttempts = 0;
+    }
+  }
+
+  if (delayedVisibleDeltas && !hasThinkingOnly) {
+    pushGuardedMessageDeltas(push, visibleAssistantText);
+  }
+  push({ type: 'message_end', message: assistantMsg, text: visibleAssistantText });
 
   // ===== Nudge predicate =====
   const toolsForNudge = resolveToolsForRun();

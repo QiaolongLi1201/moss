@@ -67,3 +67,16 @@ assert.equal(invalidCustomConfig.ok, false);
 assert.match(invalidCustomConfig.message, /api key/i);
 
 console.log('[PASS] CLI model catalog supports selectable model lists');
+// Malformed / non-http(s) base_url must be rejected, not silently accepted and
+// then fail opaquely at the first model call.
+for (const badBaseUrl of ['notaurl', 'htps://gateway.example', 'ftp://gateway.example/api', 'localhost:8080']) {
+  const bad = parseCustomModelConfigInput(`base_url=${badBaseUrl} key=sk-test model_name=custom-coder`);
+  assert.equal(bad.ok, false, `expected ${badBaseUrl} to be rejected`);
+  assert.match(bad.message, /Invalid base_url/);
+}
+
+// A valid http(s) base_url still parses.
+const goodBaseUrl = parseCustomModelConfigInput('base_url=https://gateway.example/v1 key=sk-test model_name=custom-coder');
+assert.equal(goodBaseUrl.ok, true);
+
+console.log('[PASS] CLI model catalog rejects malformed base_url');

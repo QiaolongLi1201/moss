@@ -135,6 +135,23 @@ export class CliConfigFileError extends Error {
   }
 }
 
+/**
+ * Raised when persisting a config file fails (EACCES on a read-only dir, ENOSPC,
+ * a root-owned config.json after `sudo npm i -g`, …). Carries a one-line,
+ * stack-free message so the CLI surfaces `cannot write config to <path>: <reason>`
+ * instead of dumping a raw `writeFileSync` Node stack at the user.
+ * @public
+ */
+export class CliConfigWriteError extends Error {
+  readonly configPath: string;
+
+  constructor(configPath: string, reason: string) {
+    super(`cannot write config to ${configPath}: ${reason}`);
+    this.name = 'CliConfigWriteError';
+    this.configPath = configPath;
+  }
+}
+
 export type CliConfigProfile = 'cautious' | 'balanced' | 'autonomous';
 export type CliSafetyModeConfig = 'read-only' | 'workspace-write' | 'full-access';
 export type ConfigApprovalPolicy = 'prompt' | 'never';
@@ -430,11 +447,19 @@ export function loadCliConfigFile(
 }
 
 export function saveConfigFileAtPath(config: ConfigFile, configPath: string): void {
-  fs.mkdirSync(path.dirname(configPath), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, {
-    encoding: 'utf-8',
-    mode: 0o600,
-  });
+  try {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, {
+      encoding: 'utf-8',
+      mode: 0o600,
+    });
+  } catch (err) {
+    // A write failure (EACCES/EPERM/ENOSPC/EROFS) must read as a clean,
+    // actionable line — never a raw Node stack trace through the top-level
+    // `Fatal:` handler.
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new CliConfigWriteError(configPath, reason);
+  }
   try {
     fs.chmodSync(configPath, 0o600);
   } catch {

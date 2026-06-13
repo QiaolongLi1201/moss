@@ -193,7 +193,7 @@ export class PiAiLLMProvider implements LLMProvider {
      */
     const thinkingChunks: string[] = [];
     let stopReason: LLMResponse['stopReason'] = 'end_turn';
-    let usage = { inputTokens: 0, outputTokens: 0 };
+    let usage: NonNullable<LLMResponse['usage']> = { inputTokens: 0, outputTokens: 0 };
 
     const requestThinkingMode = hasThinkingModeConfigured(
       this.model,
@@ -258,7 +258,7 @@ export class PiAiLLMProvider implements LLMProvider {
     const content: LLMContentBlock[] = [];
     const thinkingChunks: string[] = [];
     let stopReason: LLMResponse['stopReason'] = 'end_turn';
-    let usage = { inputTokens: 0, outputTokens: 0 };
+    let usage: NonNullable<LLMResponse['usage']> = { inputTokens: 0, outputTokens: 0 };
     let incomplete: LLMResponse['incomplete'] | undefined;
 
     const requestThinkingMode = hasThinkingModeConfigured(

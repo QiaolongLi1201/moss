@@ -1002,6 +1002,39 @@ try {
   assert.equal(loadConfigFile().approvalPolicy, 'never');
   runConfigSet(['trustedTools', 'exec,filesystem__*']);
   assert.deepEqual(loadConfigFile().trustedTools, ['exec', 'filesystem__*']);
+  // config set must LOUDLY warn when a broad trusted pattern is set, since '*'
+  // means 'auto-approve every mutating tool the safety mode allows'. A narrow
+  // 'server__*' glob must NOT trigger the warning.
+  {
+    const origWrite = process.stderr.write.bind(process.stderr);
+    let captured = '';
+    process.stderr.write = (chunk, ...rest) => {
+      captured += typeof chunk === 'string' ? chunk : chunk.toString();
+      return origWrite(chunk, ...rest);
+    };
+    try {
+      captured = '';
+      runConfigSet(['trustedTools', 'exec,filesystem__*']);
+      assert.doesNotMatch(
+        captured,
+        /WARNING: broad trusted pattern/,
+        'narrow trusted globs must not warn',
+      );
+      captured = '';
+      runConfigSet(['trustedTools', '*']);
+      assert.match(
+        captured,
+        /WARNING: broad trusted pattern\(s\) \*/,
+        'config set trustedTools * must loudly warn at set time',
+      );
+      assert.deepEqual(loadConfigFile().trustedTools, ['*'], '* is still saved (escape hatch stays usable)');
+      // restore a narrow value so later assertions in this block keep their expectations
+      runConfigSet(['trustedTools', 'exec,filesystem__*']);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+  }
+
   runConfigSet(['deniedTools', 'device_*,write_file']);
   assert.deepEqual(loadConfigFile().deniedTools, ['device_*', 'write_file']);
   runConfigSet(['promptCache', 'false']);

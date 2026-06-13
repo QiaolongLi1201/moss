@@ -24,6 +24,13 @@ export interface DeviceSshConfig {
   password?: string;
   port?: number;
   keyPath?: string;
+  /**
+   * DDS domain the robot's ROS2 graph lives on. When set, the ros2_* tools
+   * export ROS_DOMAIN_ID before each command — without it, a robot on a
+   * non-default domain silently returns empty topic/node/service lists.
+   * @beta
+   */
+  rosDomainId?: number;
 }
 
 async function sshRun(
@@ -166,6 +173,12 @@ export function createDeviceSshTools(config: DeviceSshConfig): Tool[] {
       try {
         return await sshRun(config, input.command, timeout, ctx);
       } catch (err) {
+        if (err instanceof ProcessError && err.timedOut) {
+          throw new Error(
+            `Device command timed out after ${Math.round(timeout / 1000)}s. ` +
+              `Raise the limit with timeout_ms (e.g. timeout_ms: ${timeout * 4}) for long commands like colcon build or apt install.`,
+          );
+        }
         if (err instanceof ProcessError) {
           const output = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
           throw new Error(`Device command failed (exit ${err.exitCode}):\n${output || err.message}`);
@@ -280,11 +293,14 @@ export function getDeviceConfigFromEnv(): DeviceSshConfig | null {
   const host = process.env.DMOSS_DEVICE_HOST;
   if (!host) return null;
 
+  const rawDomain = process.env.DMOSS_ROS_DOMAIN_ID;
+  const parsedDomain = rawDomain !== undefined ? Number.parseInt(rawDomain, 10) : NaN;
   return {
     host,
     user: process.env.DMOSS_DEVICE_USER || 'root',
     password: process.env.DMOSS_DEVICE_PASSWORD,
     port: parseInt(process.env.DMOSS_DEVICE_PORT || '22', 10),
     keyPath: process.env.DMOSS_DEVICE_KEY,
+    ...(Number.isInteger(parsedDomain) && parsedDomain >= 0 ? { rosDomainId: parsedDomain } : {}),
   };
 }

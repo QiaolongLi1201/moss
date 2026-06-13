@@ -373,6 +373,16 @@ export function recordTaskFrameToolEnd(
   }
 
   uniquePush(next.completedSteps, `Ran ${params.toolName}`);
+  // A successful tool call means the agent is making forward progress, so any
+  // earlier tool-error recovery markers are no longer blocking work. Without
+  // this, a worked-around error (e.g. write_file fails → the agent retries via
+  // exec and finishes) leaves its "Resolve …error" marker in pendingSteps
+  // forever — `unresolvedPendingSteps` never string-matches it — which latches
+  // an otherwise-completed run into `paused_resumable` at end_turn (and wrongly
+  // suppresses skill learning, which gates on status === 'completed').
+  next.pendingSteps = next.pendingSteps.filter(
+    (step) => !/^resolve or work around the latest .* error/i.test(step),
+  );
   next.currentStep = `Processed ${params.toolName} result`;
   next.nextAction = `Use the latest ${params.toolName} result to continue.`;
   next.status = 'active';
@@ -392,27 +402,13 @@ export function recordTaskFrameCompaction(
   return next;
 }
 
-/**
- * Plan closure discipline:
- * Before marking a task as completed, reconcile all pending steps.
- * Each unfinished step is either promoted to completed (if the assistant
- * response covers it) or explicitly marked as deferred.
- */
-function reconcilePendingSteps(frame: TaskFrame): TaskFrame {
-  if (frame.pendingSteps.length === 0) return frame;
-  const next = {
-    ...frame,
-    completedSteps: [...frame.completedSteps],
-    pendingSteps: [] as string[],
-  };
-  for (const step of frame.pendingSteps) {
-    const alreadyDone = next.completedSteps.some(
-      (cs) => cs.toLowerCase().includes(step.toLowerCase().slice(0, 40)),
+function unresolvedPendingSteps(frame: TaskFrame): string[] {
+  return frame.pendingSteps.filter((step) => {
+    const needle = step.toLowerCase().slice(0, 40);
+    return !frame.completedSteps.some((completed) =>
+      completed.toLowerCase().includes(needle),
     );
-    if (alreadyDone) continue;
-    uniquePush(next.completedSteps, `Deferred: ${step}`);
-  }
-  return next;
+  });
 }
 
 export function recordTaskFrameAssistant(
@@ -429,11 +425,18 @@ export function recordTaskFrameAssistant(
       next.nextAction =
         next.nextAction || 'Continue from the latest resumable checkpoint.';
     } else {
-      const reconciled = reconcilePendingSteps(next);
-      reconciled.status = 'completed';
-      reconciled.currentStep = 'Task response completed';
-      reconciled.nextAction = 'No automatic continuation is required unless the user asks for a follow-up.';
-      return reconciled;
+      const unresolved = unresolvedPendingSteps(next);
+      if (unresolved.length > 0) {
+        next.status = 'paused_resumable';
+        next.pendingSteps = unresolved;
+        next.currentStep = 'Assistant response recorded; pending work remains';
+        next.nextAction = unresolved[0] ?? 'Continue with the pending task steps.';
+        return next;
+      }
+      next.status = 'completed';
+      next.currentStep = 'Task response completed';
+      next.nextAction = 'No automatic continuation is required unless the user asks for a follow-up.';
+      return next;
     }
   }
   return next;

@@ -25,6 +25,12 @@ export interface ParsedCliArgs {
   print: boolean;
   outputFormat: 'text' | 'json' | 'stream-json';
   maxTurns?: number;
+  /**
+   * Set when a bare single-token invocation looks like a mistyped subcommand
+   * (e.g. `moss confgi`). The caller must surface "unknown command, did you
+   * mean …?" and exit non-zero instead of starting a billable chat one-shot.
+   */
+  unknownCommand?: { token: string; suggestion: string };
   rawArgv: string[];
 }
 
@@ -137,20 +143,60 @@ function normalizeDetail(value: string): ParsedCliArgs['detailMode'] {
   throw new Error(`Unsupported detail mode "${value}"`);
 }
 
+const KNOWN_COMMANDS: readonly CliCommand[] = [
+  'setup',
+  'auth',
+  'config',
+  'doctor',
+  'update',
+  'resume',
+  'fork',
+  'mcp',
+];
+
 function asCommand(value: string | undefined): CliCommand | null {
-  if (
-    value === 'setup' ||
-    value === 'auth' ||
-    value === 'config' ||
-    value === 'doctor' ||
-    value === 'update' ||
-    value === 'resume' ||
-    value === 'fork' ||
-    value === 'mcp'
-  ) {
-    return value;
+  return value && (KNOWN_COMMANDS as readonly string[]).includes(value) ? (value as CliCommand) : null;
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  let curr = new Array<number>(n + 1);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
   }
-  return null;
+  return prev[n];
+}
+
+/**
+ * Closest known subcommand within edit distance 2, or null. Used to turn a
+ * mistyped `moss confgi` into a "did you mean 'config'?" error instead of a
+ * silent billable chat one-shot. Deliberately conservative: an exact command
+ * match is handled earlier, and legitimate one-word prompts (`moss hi`) sit far
+ * outside distance 2 from every command so they keep flowing to chat.
+ * @public
+ */
+export function closestKnownCommand(token: string): string | null {
+  const candidate = token.toLowerCase().trim();
+  if (!candidate || (KNOWN_COMMANDS as readonly string[]).includes(candidate)) return null;
+  let best: string | null = null;
+  let bestDistance = Infinity;
+  for (const command of KNOWN_COMMANDS) {
+    const distance = levenshtein(candidate, command);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = command;
+    }
+  }
+  return bestDistance <= 2 ? best : null;
 }
 
 function flagConsumesNext(arg: string): boolean {
@@ -322,11 +368,19 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     if (arg === '--ask-for-approval' || arg.startsWith('--ask-for-approval=')) {
       const parsed = readValue(argv, i, arg);
       const raw = parsed.value.toLowerCase().trim();
-      if (raw === 'never') {
+      const approval = normalizeApprovalPolicyConfig(raw);
+      const safety = normalizeSafetyMode(raw);
+      if (!approval && !safety) {
+        // Silently dropping unknown values let `--ask-for-approval yolo` look
+        // accepted while changing nothing; reject so the user sees the typo.
+        throw new Error(
+          `--ask-for-approval must be never|prompt|on-request|read-only|workspace-write|full-access, got "${parsed.value}"`,
+        );
+      }
+      if (approval === 'never') {
         approvalPolicy = 'never';
         configOverrides.approvalPolicy = 'never';
       }
-      const safety = normalizeSafetyMode(raw);
       if (safety) safetyModeOverride = safety;
       i = parsed.nextIndex;
       continue;
@@ -371,6 +425,21 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     }
   }
 
+  // Catch a mistyped subcommand BEFORE it becomes a billable chat one-shot.
+  // Only a bare single-token invocation (`moss confgi`) with no flags qualifies;
+  // multi-word prose prompts and flag-bearing invocations are never intercepted.
+  let unknownCommand: ParsedCliArgs['unknownCommand'];
+  if (
+    command === 'chat' &&
+    commandArgs.length === 0 &&
+    promptParts.length === 1 &&
+    !argv.includes('--') &&
+    !argv.some((token) => token.startsWith('-'))
+  ) {
+    const suggestion = closestKnownCommand(promptParts[0]);
+    if (suggestion) unknownCommand = { token: promptParts[0], suggestion };
+  }
+
   return {
     command,
     commandArgs,
@@ -390,6 +459,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     print,
     outputFormat,
     maxTurns,
+    unknownCommand,
     rawArgv: argv,
   };
 }

@@ -419,7 +419,7 @@ export function runAgentLoop(
               compactHooks,
               recordLlmUsage,
               lastMessageNeedsToolFollowUpLlm,
-              suppressVisibleDeltas: Boolean(params.guardAssistantOutput),
+              suppressVisibleDeltas: Boolean(params.guardAssistantOutput || params.completionGate),
             });
 
             if (llmResult.control === 'retry') {
@@ -458,6 +458,8 @@ export function runAgentLoop(
               maxToolCalls,
               checkToolApproval: params.checkToolApproval,
               guardAssistantOutput: params.guardAssistantOutput,
+              completionGate: params.completionGate,
+              delayedVisibleDeltas: Boolean(params.guardAssistantOutput || params.completionGate),
               toolAbortSignalFor: params.toolAbortSignalFor,
               enrichToolContext: params.enrichToolContext,
               evaluateSteering,

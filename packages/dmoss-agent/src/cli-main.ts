@@ -4,9 +4,9 @@ import { execSync } from 'node:child_process';
 import os from 'node:os';
 import { resolveCliAgentRuntimeOptions } from './cli/agent-runtime.js';
 import { createCliToolApprovalHook, resolveCliSafetyMode } from './cli/approval.js';
-import { loadCliConfigFile, loadEnvFromAncestors, resolveCliConfig, resolveConfigDir, safeProcessCwd } from './cli/config.js';
+import { CliConfigWriteError, loadCliConfigFile, loadEnvFromAncestors, resolveCliConfig, resolveConfigDir, safeProcessCwd } from './cli/config.js';
 import { parseCliArgs } from './cli/args.js';
-import { renderCliDoctor } from './cli/doctor.js';
+import { renderCliDoctor, cliDoctorHasFailure } from './cli/doctor.js';
 import { displayHelp, displayVersion } from './cli/help.js';
 import { createConfiguredGuardrailHooks } from './cli/guardrails.js';
 import { createConfiguredHookCallbacks } from './cli/hooks.js';
@@ -195,6 +195,17 @@ if (parsedArgs.help && parsedArgs.command === 'config') {
 if (parsedArgs.help) displayHelp(c, { all: parsedArgs.helpAll });
 if (parsedArgs.version) displayVersion(c);
 
+// A mistyped subcommand (`moss confgi`) must NOT silently become a billable chat
+// one-shot. Fail fast with a suggestion; the user can still force a prompt via
+// `moss chat "<text>"`. Only bare single-token typos reach here (see parseCliArgs).
+if (parsedArgs.unknownCommand) {
+  const { token, suggestion } = parsedArgs.unknownCommand;
+  console.error(`moss: unknown command '${token}'`);
+  console.error(`Did you mean '${suggestion}'?  Run \`moss --help\` for usage.`);
+  console.error(`To send it to the agent as a prompt instead: moss chat "${token}"`);
+  process.exit(1);
+}
+
 async function setupMesh(agent: DmossAgent, deviceConfig: DeviceSshConfig | null) {
   const meshPort = parseInt(process.env.DMOSS_MESH_PORT || '9090', 10);
   const meshId = process.env.DMOSS_MESH_ID || `dmoss-${Date.now()}`;
@@ -324,7 +335,11 @@ async function main() {
   // Model settings are config-only (decision 2026-06). Say so once when a
   // leftover provider env var is present, instead of silently ignoring it —
   // doctor shows the same list as a structured `env ignored` line.
-  if (resolvedConfig.ignoredModelEnvVars.length > 0 && parsedArgs.command !== 'doctor') {
+  // Gate on the resolved CLI log level so `--quiet` / `DMOSS_LOG_LEVEL=warn`
+  // silence this notice; doctor's `env ignored` line stays the source of truth.
+  const cliLogLevel = resolveCliLogLevel();
+  const noticesVisible = cliLogLevel === 'debug' || cliLogLevel === 'info';
+  if (resolvedConfig.ignoredModelEnvVars.length > 0 && parsedArgs.command !== 'doctor' && noticesVisible) {
     console.error(
       `[config] ignoring model env var(s): ${resolvedConfig.ignoredModelEnvVars.join(', ')} — ` +
       'model settings come only from moss config (moss setup / moss config set)',
@@ -338,15 +353,17 @@ async function main() {
   const runtimeDir = workspacePathMigration.paths.runtimeDir;
 
   if (parsedArgs.command === 'doctor') {
-    console.error(await renderCliDoctor({
+    const report = await renderCliDoctor({
       config: resolvedConfig,
       configDir: resolveConfigDir(),
       runtimeDir,
       currentVersion: getPackageVersion(),
       safetyMode,
       detailMode: resolveCliDetailMode(argv),
-    }));
-    return;
+    });
+    console.error(report);
+    // Exit non-zero on any `fail` line so doctor works as an automation health gate.
+    process.exit(cliDoctorHasFailure(report) ? 1 : 0);
   }
   if (parsedArgs.command === 'update') {
     const code = await runCliUpdate({
@@ -403,6 +420,11 @@ async function main() {
     useLast: parsedArgs.sessionLast || continueLatest,
     forkSource: parsedArgs.forkSource,
   });
+  if (session.error) {
+    console.error(`[session] ${session.error}`);
+    console.error('[session] List saved sessions with `moss sessions`, or start a new one with `moss`.');
+    process.exit(1);
+  }
   if (session.notice) console.error(`[session] ${session.notice}`);
   const memoryManager = new MemoryManager(workspacePathMigration.paths.memoryDir);
   const skillLearner = new SkillLearner({ skillsDir: workspacePathMigration.paths.skillsDir });
@@ -559,4 +581,13 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error('Fatal:', err); process.exit(1); });
+main().catch((err) => {
+  // Config-write failures already carry a clean, actionable one-liner — show it
+  // alone instead of a raw Node stack from writeFileSync.
+  if (err instanceof CliConfigWriteError) {
+    console.error(`moss: ${err.message}`);
+    process.exit(1);
+  }
+  console.error('Fatal:', err);
+  process.exit(1);
+});

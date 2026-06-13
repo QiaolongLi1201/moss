@@ -48,9 +48,8 @@ import {
   assert.equal(plan.reason, 'baseline_hygiene');
   assert.deepEqual(
     plan.actions.map((a) => a.kind),
-    ['invalidate_stale_reads', 'microcompact'],
+    ['invalidate_stale_reads'],
   );
-  assert.deepEqual(plan.actions.at(-1).microcompactConfig, {});
 }
 
 {
@@ -108,14 +107,8 @@ import {
     push: (event) => events.push(event),
   });
 
-  assert(result.savedChars > 0);
-  assert.equal(events.length, 1);
-  assert.equal(events[0].type, 'context_action');
-  assert.deepEqual(
-    events[0].actions.map((a) => a.kind),
-    ['microcompact'],
-  );
-  assert.equal(events[0].savedChars, result.savedChars);
+  assert.equal(result.savedChars, 0);
+  assert.equal(events.length, 0, 'low-pressure context hygiene must not compact active history');
 }
 
 {

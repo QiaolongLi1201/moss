@@ -58,21 +58,32 @@ function runHighVolumeLocalToolGuardTests() {
         'unset tool-loop env should not create an implicit by-tool or total-count guard',
       );
     }
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < 3; i += 1) {
       assert.equal(
         shouldShortCircuitToolCall(state, 'preset_probe', { value: 'same' }),
         null,
-        'unset tool-loop env should not create an implicit identical-input guard',
+        'default identical-input guard should allow a small retry budget',
       );
     }
-    for (let i = 0; i < 8; i += 1) {
+    assert.match(
+      shouldShortCircuitToolCall(state, 'preset_probe', { value: 'same' }) ?? '',
+      /identical input was already requested 3 time/,
+      'unset tool-loop env should conservatively stop the fourth identical call',
+    );
+    for (let i = 0; i < 2; i += 1) {
       recordToolLoopOutcome(state, 'web_fetch', true);
       assert.equal(
         shouldShortCircuitToolCall(state, 'web_fetch', { value: `failed-${i}` }),
         null,
-        'unset tool-loop env should not create an implicit repeated-failure guard',
+        'default failure guard should allow a small retry budget',
       );
     }
+    recordToolLoopOutcome(state, 'web_fetch', true);
+    assert.match(
+      shouldShortCircuitToolCall(state, 'web_fetch', { value: 'failed-2' }) ?? '',
+      /web_fetch has failed 3 time/,
+      'unset tool-loop env should conservatively stop a repeatedly failing tool',
+    );
   });
 
   withEnv({
@@ -88,6 +99,30 @@ function runHighVolumeLocalToolGuardTests() {
         new_string: `after ${i}`,
       });
       assert.equal(reason, null, 'distinct edit_file calls should not hit implicit single-tool or total-count guards');
+    }
+  });
+
+  withEnv({
+    DMOSS_TOOL_LOOP_IDENTICAL_LIMIT: '0',
+    DMOSS_TOOL_LOOP_SINGLE_TOOL_LIMIT: undefined,
+    DMOSS_TOOL_LOOP_TOTAL_LIMIT: undefined,
+    DMOSS_TOOL_LOOP_FAILURE_LIMIT: 'off',
+  }, () => {
+    const state = createToolLoopGuardState();
+    for (let i = 0; i < 8; i += 1) {
+      assert.equal(
+        shouldShortCircuitToolCall(state, 'preset_probe', { value: 'same' }),
+        null,
+        'explicit 0 should disable the default identical-input guard',
+      );
+    }
+    for (let i = 0; i < 8; i += 1) {
+      recordToolLoopOutcome(state, 'web_fetch', true);
+      assert.equal(
+        shouldShortCircuitToolCall(state, 'web_fetch', { value: `failed-${i}` }),
+        null,
+        'explicit off should disable the default repeated-failure guard',
+      );
     }
   });
 
@@ -374,8 +409,9 @@ await runChatScenario(
 );
 
 await runChatScenario(
-  'invalid env values do not create hidden default limits',
+  'invalid env values fall back to conservative defaults',
   [
+    { name: 'preset_probe', input: { value: 'same' } },
     { name: 'preset_probe', input: { value: 'same' } },
     { name: 'preset_probe', input: { value: 'same' } },
     { name: 'preset_probe', input: { value: 'same' } },
@@ -387,9 +423,9 @@ await runChatScenario(
     DMOSS_TOOL_LOOP_FAILURE_LIMIT: undefined,
   },
   ({ calls, result, messages }) => {
-    assert.equal(calls.length, 1, 'idempotent replay may reuse the result, but the hidden guard must stay off');
-    assert.equal(result.response, 'done');
-    assert.ok(!lastToolResultText(messages).includes(GUARD_MARKER));
+    assert.equal(calls.length, 1, 'idempotent replay may reuse the result before the default guard trips');
+    assert.equal(result.response, 'saw guard and pivoted');
+    assert.ok(lastToolResultText(messages).includes(GUARD_MARKER));
   },
 );
 

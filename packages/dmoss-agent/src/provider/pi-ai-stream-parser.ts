@@ -28,6 +28,37 @@ import {
 
 const log = getRootLogger().child('provider:pi-ai');
 
+/**
+ * Map a pi-ai usage payload to the D-Moss usage shape, preserving prompt-cache
+ * token counts when the gateway reports them. pi-ai's own cost model uses
+ * `cacheRead`/`cacheWrite` (see PiAiModelCost); some OpenAI-compatible gateways
+ * surface `cacheReadTokens`/`cacheCreationTokens` instead. Read both so cache
+ * metrics are observable on the pi-ai path (the native Anthropic provider already
+ * reports them). Without this, `cache_metrics` is always 0 on the pi-ai path and
+ * prompt-cache effectiveness cannot be verified.
+ */
+function mapPiUsage(
+  evtUsage: { input?: number; output?: number } | undefined,
+): { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number } | undefined {
+  if (!evtUsage) return undefined;
+  const raw = evtUsage as Record<string, unknown>;
+  const num = (...keys: string[]): number | undefined => {
+    for (const k of keys) {
+      const v = raw[k];
+      if (typeof v === 'number' && Number.isFinite(v)) return v;
+    }
+    return undefined;
+  };
+  const cacheReadTokens = num('cacheRead', 'cacheReadTokens', 'cache_read_input_tokens');
+  const cacheCreationTokens = num('cacheWrite', 'cacheCreationTokens', 'cache_creation_input_tokens');
+  return {
+    inputTokens: evtUsage.input ?? 0,
+    outputTokens: evtUsage.output ?? 0,
+    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+  };
+}
+
 class PiAiProviderRuntimeError extends Error {
   readonly surface: import('./error-classify.js').ProviderErrorSurface;
 
@@ -50,7 +81,7 @@ export function processEvent(
   thinkingChunks?: string[],
 ): {
   stopReason?: LLMResponse['stopReason'];
-  usage?: { inputTokens: number; outputTokens: number };
+  usage?: NonNullable<LLMResponse['usage']>;
 } {
   const t = event.type;
 
@@ -151,9 +182,7 @@ export function processEvent(
 
     return {
       stopReason: stopReasonOut,
-      usage: evtUsage
-        ? { inputTokens: evtUsage.input ?? 0, outputTokens: evtUsage.output ?? 0 }
-        : undefined,
+      usage: mapPiUsage(evtUsage),
     };
   } else if (
     t === 'start' ||
@@ -254,9 +283,7 @@ export function processEvent(
     if (hasToolUseAfterErr) {
       return {
         stopReason: 'tool_use',
-        usage: errUsage
-          ? { inputTokens: errUsage.input ?? 0, outputTokens: errUsage.output ?? 0 }
-          : undefined,
+        usage: mapPiUsage(errUsage),
       };
     }
     if (errUsage) {
@@ -265,7 +292,7 @@ export function processEvent(
           errPayload?.stopReason === 'toolCall' || errPayload?.stopReason === 'toolUse'
             ? 'tool_use'
             : 'end_turn',
-        usage: { inputTokens: errUsage.input ?? 0, outputTokens: errUsage.output ?? 0 },
+        usage: mapPiUsage(errUsage),
       };
     }
   }

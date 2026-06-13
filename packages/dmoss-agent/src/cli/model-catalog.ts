@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { buildApiV1Url } from '../provider/api-v1-url.js';
+import { buildApiV1Url, isHttpUrl } from '../provider/api-v1-url.js';
 import {
   normalizeProvider,
   parseConfigBoolean,
@@ -139,6 +139,9 @@ export function parseCustomModelConfigInput(input: string): CustomModelConfigPar
   const model = values.model;
   if (!baseUrl || !apiKey || !model) {
     return { ok: false, message: 'Missing base_url, api key, or model_name.' };
+  }
+  if (!isHttpUrl(baseUrl)) {
+    return { ok: false, message: `Invalid base_url: ${baseUrl}. Use a full http(s) URL, e.g. https://your-gateway.example/v1.` };
   }
 
   const imageInput = values.imageInput === undefined ? undefined : parseConfigBoolean(values.imageInput);

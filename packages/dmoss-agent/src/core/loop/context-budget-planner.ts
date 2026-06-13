@@ -102,16 +102,16 @@ export function planContextBudgetActions(
     });
   }
 
-  actions.push({
-    kind: 'microcompact',
-    reason: pressureReason,
-    microcompactConfig:
-      pressureReason === 'proactive_threshold'
-        ? { keepRecentResults: 2, minContentLength: 50 }
-        : pressureReason === 'warning_threshold'
-          ? { keepRecentResults: 4, minContentLength: 100 }
-          : {},
-  });
+  if (pressureReason === 'warning_threshold' || pressureReason === 'proactive_threshold') {
+    actions.push({
+      kind: 'microcompact',
+      reason: pressureReason,
+      microcompactConfig:
+        pressureReason === 'proactive_threshold'
+          ? { keepRecentResults: 2, minContentLength: 50 }
+          : { keepRecentResults: 4, minContentLength: 100 },
+    });
+  }
 
   return {
     actions,

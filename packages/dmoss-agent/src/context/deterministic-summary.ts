@@ -1,4 +1,7 @@
-import type { Message } from "../core/session/session-jsonl.js";
+import {
+  COMPACTION_SUMMARY_PREFIX,
+  type Message,
+} from "../core/session/session-jsonl.js";
 import { sanitizeSecrets } from "../safety/secret-sanitizer.js";
 
 const DEFAULT_SUMMARY_FALLBACK = "No prior history.";
@@ -60,11 +63,35 @@ function fallbackMessageNote(message: Message, index: number): string {
   return `${label}: ${parts.join("; ")}`;
 }
 
+function textFromUserMessage(message: Message): string {
+  if (message.role !== "user") return "";
+  if (typeof message.content === "string") {
+    return message.content;
+  }
+  return message.content
+    .filter((block) => block.type === "text" && Boolean(block.text))
+    .map((block) => block.type === "text" ? block.text : "")
+    .join("\n");
+}
+
+function extractPrimaryUserGoal(messages: Message[]): string {
+  for (const message of messages) {
+    const text = textFromUserMessage(message).trim();
+    if (!text) continue;
+    if (text.trimStart().startsWith(COMPACTION_SUMMARY_PREFIX)) continue;
+    if (text.includes("<dmoss_working_context_checkpoint")) continue;
+    if (text.includes("<dmoss_goal_checkpoint")) continue;
+    return sanitizeSecrets(truncateMiddle(text, DETERMINISTIC_NOTE_MAX_CHARS));
+  }
+  return "未能从压缩窗口中可靠提取原始用户目标；继续前先核对当前任务。";
+}
+
 export function buildDeterministicCompactionSummary(
   messages: Message[],
   reason: string,
 ): string {
   if (messages.length === 0) return DEFAULT_SUMMARY_FALLBACK;
+  const primaryGoal = extractPrimaryUserGoal(messages);
   const firstCount = 8;
   const lastCount = 18;
   const selected =
@@ -97,7 +124,7 @@ export function buildDeterministicCompactionSummary(
     "## 0. 历史脉络",
     `本摘要由本地规则生成，用于防止上下文裁剪时失去主线。触发原因：${reason}。`,
     "## 1. 主要目标",
-    "见第 9 节的用户消息摘录；若目标不明确，继续前先向用户核对。",
+    primaryGoal,
     "## 2. 关键决策与约束",
     "保留摘录中的用户原话、路径、命令、错误和工具调用参数；不要把未确认事项当作已完成。",
     "## 3. 已完成的工作",

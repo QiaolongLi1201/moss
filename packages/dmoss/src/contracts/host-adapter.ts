@@ -574,12 +574,13 @@ function validateMossCapabilityCoverageShape(
         return `manifest.capabilityCoverage[].tools references unknown tool: ${entry.id} -> ${toolName}`;
       }
       const toolSurface = tool.surface;
-      if (
-        entrySurfaces.size > 0 &&
-        isOneOf(toolSurface, MOSS_HOST_TOOL_SURFACE_KINDS) &&
-        !entrySurfaces.has(toolSurface)
-      ) {
-        return `manifest.capabilityCoverage[].tools references tool from different surface: ${entry.id} -> ${toolName} (${tool.surface})`;
+      if (entrySurfaces.size > 0) {
+        if (!isOneOf(toolSurface, MOSS_HOST_TOOL_SURFACE_KINDS)) {
+          return `manifest.capabilityCoverage[].tools references tool without declared surface: ${entry.id} -> ${toolName}`;
+        }
+        if (!entrySurfaces.has(toolSurface)) {
+          return `manifest.capabilityCoverage[].tools references tool from different surface: ${entry.id} -> ${toolName} (${tool.surface})`;
+        }
       }
     }
   }

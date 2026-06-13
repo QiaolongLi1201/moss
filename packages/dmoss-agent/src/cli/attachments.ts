@@ -214,7 +214,6 @@ export function preparePromptAttachments(
     const imageMime = IMAGE_MIME_BY_EXT[ext];
     const filename = path.basename(absPath);
     const label = relativeLabel(absPath, cwd);
-    const index = nextIndex;
 
     if (imageMime) {
       if (stat.size === 0) {
@@ -235,6 +234,7 @@ export function preparePromptAttachments(
         continue;
       }
       const data = buffer.toString('base64');
+      const index = nextIndex;
       attachments.push({ index, kind: 'image', path: absPath, label, filename, mimeType: detectedMime, bytes: stat.size });
       blocks.push({ type: 'text', text: attachmentTextHeader('Image', index, label) });
       blocks.push({ type: 'image', data, mimeType: detectedMime, filename });
@@ -251,6 +251,7 @@ export function preparePromptAttachments(
       continue;
     }
     const text = fs.readFileSync(absPath, 'utf8');
+    const index = nextIndex;
     attachments.push({ index, kind: 'file', path: absPath, label, filename, mimeType: 'text/plain', bytes: stat.size });
     blocks.push({
       type: 'text',

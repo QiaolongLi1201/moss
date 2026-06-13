@@ -211,7 +211,13 @@ async function withBrowser<T>(
     return `${toolName} 未执行: ${err instanceof Error ? err.message : String(err)}`;
   } finally {
     try {
-      await browser?.close();
+      if (browser) {
+        const closePromise = browser.close();
+        const timeoutPromise = new Promise<void>((resolve) => {
+          setTimeout(resolve, 2_000);
+        });
+        await Promise.race([closePromise, timeoutPromise]);
+      }
     } catch {
       /* best effort */
     }

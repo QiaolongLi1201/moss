@@ -77,7 +77,7 @@ export function handleVimKey(key: string, cursorPos: number, lineLength: number)
   }
 
   // ── Digit accumulation for count prefix (in normal mode) ──
-  if (vimState.mode === 'normal' && /^[1-9]$/.test(key)) {
+  if (vimState.mode === 'normal' && /^[0-9]$/.test(key)) {
     // Allow "0" only if we already have a prefix
     if (key === '0' && vimState.countPrefix === '') return { type: 'none' };
     vimState.countPrefix += key;
@@ -252,6 +252,7 @@ export function getVimModeIndicator(): string {
     case 'normal': return 'NORMAL';
     case 'insert': return 'INSERT';
     case 'visual': return 'VISUAL';
+    default: return 'INSERT';
   }
 }
 
@@ -261,5 +262,6 @@ export function getVimModeColor(): string {
     case 'normal': return '#38bdf8';  // blue
     case 'insert': return '#22c55e';  // green
     case 'visual': return '#a78bfa';  // purple
+    default: return '#22c55e';
   }
 }

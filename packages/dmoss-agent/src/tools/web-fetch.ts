@@ -509,7 +509,8 @@ export function createWebFetchTool(opts: WebFetchOptions = {}): Tool<{ url: stri
               });
             }
             redirectCount++;
-            if (blockPrivate) {
+            const redirectPrivateWaived = blockPrivate && resolveAllowPrivate().some((p) => hostMatches(nextUrl.hostname, p));
+            if (blockPrivate && !redirectPrivateWaived) {
               verifiedIp = await resolveHostIp(nextUrl.hostname, resolveAddresses);
               if (verifiedIp === null) {
                 res.body?.cancel?.();

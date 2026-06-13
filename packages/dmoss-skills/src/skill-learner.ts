@@ -335,8 +335,6 @@ export class SkillLearner {
           const idx = callIdToIndex.get(useId);
           if (idx !== undefined) {
             calls[idx].failed = true;
-          } else if (calls.length > 0) {
-            calls[calls.length - 1].failed = true;
           }
         }
       }

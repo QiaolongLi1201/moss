@@ -275,21 +275,23 @@ export function isHeadlessResultError(event: HeadlessResultEvent): boolean {
   return event.is_error;
 }
 
-function safeJson(value: unknown): string {
+function safeJson(value: unknown, state?: HeadlessPrintState): string {
   try {
     return JSON.stringify(value);
   } catch {
-    return JSON.stringify({
+    // Emit a result event with actual state values, not placeholders
+    const fallbackResult = {
       type: 'result',
       subtype: 'error_during_execution',
       is_error: true,
-      result: '',
-      duration_ms: 0,
-      num_turns: 0,
-      session_id: '',
+      result: state?.finalText ?? '',
+      duration_ms: state ? Math.max(0, Date.now() - state.startTime) : 0,
+      num_turns: state?.numTurns ?? 0,
+      session_id: state?.sessionId ?? 'unknown',
       total_cost_usd: 0,
-      error: 'unserializable output',
-    });
+      error: 'failed to serialize event to JSON',
+    };
+    return JSON.stringify(fallbackResult);
   }
 }
 

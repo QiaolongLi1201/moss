@@ -279,7 +279,12 @@ export class AnthropicLLMProvider implements LLMProvider {
             const block = content[currentToolBlock];
             if (block?.type === 'tool_use' && toolInputJson) {
               try {
-                (block as { type: 'tool_use'; input: Record<string, unknown> }).input = JSON.parse(toolInputJson);
+                const parsed = JSON.parse(toolInputJson);
+                if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                  (block as { type: 'tool_use'; input: Record<string, unknown> }).input = parsed as Record<string, unknown>;
+                } else {
+                  throw new Error(`Expected object, got ${typeof parsed === 'object' && Array.isArray(parsed) ? 'array' : typeof parsed}`);
+                }
               } catch (err) {
                 throw new DmossError({
                   code: ErrorCode.PROVIDER_UPSTREAM_ERROR,

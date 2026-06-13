@@ -136,7 +136,7 @@ export function processEvent(
             ? 'max_tokens'
             : 'end_turn';
     const msg = event.message;
-    const evtUsage = event.usage ?? msg?.usage;
+    const evtUsage = event.usage !== undefined && event.usage !== null ? event.usage : msg?.usage;
 
     if (msg?.content && Array.isArray(msg.content)) {
       const hasTextInContent = content.some(
@@ -325,7 +325,12 @@ export function convertStreamEvent(event: PiAiStreamEvent): LLMStreamEvent | nul
     const sr = event.stopReason ?? event.reason;
     return {
       type: 'message_delta',
-      stopReason: sr === 'toolCall' || sr === 'toolUse' ? 'tool_use' : 'end_turn',
+      stopReason:
+        sr === 'toolCall' || sr === 'toolUse'
+          ? 'tool_use'
+          : sr === 'length'
+            ? 'max_tokens'
+            : 'end_turn',
     };
   }
   return null;

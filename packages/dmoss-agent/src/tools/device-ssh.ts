@@ -295,11 +295,18 @@ export function getDeviceConfigFromEnv(): DeviceSshConfig | null {
 
   const rawDomain = process.env.DMOSS_ROS_DOMAIN_ID;
   const parsedDomain = rawDomain !== undefined ? Number.parseInt(rawDomain, 10) : NaN;
+  
+  const portStr = process.env.DMOSS_DEVICE_PORT || '22';
+  const port = Number.parseInt(portStr, 10);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid DMOSS_DEVICE_PORT: "${portStr}" (must be 1-65535)`);
+  }
+  
   return {
     host,
     user: process.env.DMOSS_DEVICE_USER || 'root',
     password: process.env.DMOSS_DEVICE_PASSWORD,
-    port: parseInt(process.env.DMOSS_DEVICE_PORT || '22', 10),
+    port,
     keyPath: process.env.DMOSS_DEVICE_KEY,
     ...(Number.isInteger(parsedDomain) && parsedDomain >= 0 ? { rosDomainId: parsedDomain } : {}),
   };

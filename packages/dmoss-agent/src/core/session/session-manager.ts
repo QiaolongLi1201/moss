@@ -710,6 +710,13 @@ async function rewriteSessionFile(
     lines = [headerLine, ...kept];
     content = `${lines.join("\n")}\n`;
 
+    // Final validation: ensure rotated content fits within the size cap
+    while (Buffer.byteLength(content, "utf-8") > MAX_SESSION_FILE_BYTES && kept.length > 0) {
+      kept.shift();
+      lines = [headerLine, ...kept];
+      content = `${lines.join("\n")}\n`;
+    }
+
     // Archive the oversized file (best-effort; ignore if it doesn't exist yet)
     try {
       await fs.rename(state.filePath, `${state.filePath}.1`);

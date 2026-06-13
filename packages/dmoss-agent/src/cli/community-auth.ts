@@ -91,7 +91,8 @@ export function resolveCommunityAuthSessionPath(configDir = resolveConfigDir()):
   return path.join(configDir, 'community-auth.json');
 }
 
-function normalizePortalToken(raw: unknown): string {
+/** @internal exported for tests — normalizes a pasted portal token. */
+export function normalizePortalToken(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   let token = raw.trim();
   if (!token) return '';
@@ -103,7 +104,7 @@ function normalizePortalToken(raw: unknown): string {
     }
   }
   token = token.replace(/^Bearer\s+/i, '').trim();
-  token = token.replace(/\s+/g, '+');
+  token = token.replace(/\s+/g, '');
   return token.length >= 8 ? token : '';
 }
 

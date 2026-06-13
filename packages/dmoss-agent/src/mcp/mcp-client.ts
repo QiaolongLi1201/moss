@@ -270,6 +270,21 @@ class McpServerConnection {
       }
       this.pending.clear();
     });
+
+    // A broken stdin pipe (the child closed its read end / already exited) is
+    // surfaced asynchronously as an 'error' event on the writable stream. With
+    // no listener Node escalates it to an uncaught exception that kills the
+    // whole process — observed as `write EPIPE` on Linux, while macOS silently
+    // discards the write. Absorb it and fail any in-flight requests; once stdin
+    // breaks the connection can no longer send, so it is effectively closed.
+    this.process.stdin!.on('error', (err) => {
+      this.closed = true;
+      for (const [, pending] of this.pending) {
+        clearTimeout(pending.timer);
+        pending.reject(new DmossError({ code: ErrorCode.MCP_CONNECTION_FAILED, message: `MCP server ${serverName} stdin error: ${err instanceof Error ? err.message : String(err)}` }));
+      }
+      this.pending.clear();
+    });
   }
 
   private processBuffer(): void {
@@ -355,7 +370,13 @@ class McpServerConnection {
   notify(method: string, params?: unknown): void {
     if (this.closed) return;
     const msg: JsonRpcNotification = { jsonrpc: '2.0', method, params };
-    this.process.stdin!.write(JSON.stringify(msg) + '\n');
+    try {
+      this.process.stdin!.write(JSON.stringify(msg) + '\n');
+    } catch {
+      // Best-effort notification: writing to an already-destroyed stdin throws
+      // synchronously (ERR_STREAM_DESTROYED). Async pipe errors are handled by
+      // the stdin 'error' listener; nothing here needs the failure to surface.
+    }
   }
 
   async initialize(): Promise<void> {

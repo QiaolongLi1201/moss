@@ -366,7 +366,8 @@ export class MemoryManager {
     const tokens = content.toLowerCase().match(/[a-z0-9一-鿿]+/g) ?? [];
     const terms = new Set<string>();
     for (const token of tokens) {
-      for (let len = 2; len <= token.length; len++) {
+      const maxNgramLen = Math.min(6, token.length);
+      for (let len = 2; len <= maxNgramLen; len++) {
         for (let start = 0; start <= token.length - len; start++) {
           terms.add(token.slice(start, start + len));
         }

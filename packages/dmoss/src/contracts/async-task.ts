@@ -295,7 +295,7 @@ export class InMemoryMossAsyncTaskRegistry implements MossAsyncTaskRegistry {
           this.complete(record, {
             status: 'failed',
             success: false,
-            summary: result.summary,
+            summary: result.summary || 'task failed',
             error: result.summary || 'task failed',
             data: result.data,
           });

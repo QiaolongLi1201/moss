@@ -3638,7 +3638,7 @@ export function DmossTui({ agent, skillLearner, runtime, sessionKey: initialSess
         } : picker);
         return;
       }
-      if (/^\d$/.test(inputChar)) {
+      if (/^[1-9]$/.test(inputChar)) {
         const selected = Number.parseInt(inputChar, 10) - 1;
         const choice = choices[selected];
         if (choice) {

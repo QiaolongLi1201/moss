@@ -6,9 +6,10 @@ import { ProcessError } from '../dist/utils/run-process.js';
 // Test that aborting a process works correctly and cleanup is idempotent.
 const controller = new AbortController();
 
-// Start a process that will sleep
-const promise = runProcess('/bin/sh', {
-  args: ['-c', 'sleep 10'],
+// Start a long-running child via the Node binary (present on every platform —
+// '/bin/sh' does not exist on Windows and would ENOENT before the abort fires).
+const promise = runProcess(process.execPath, {
+  args: ['-e', 'setTimeout(() => {}, 10000)'],
   signal: controller.signal,
 });
 

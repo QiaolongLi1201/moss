@@ -278,6 +278,9 @@ export async function executeOneToolCall(
     let attemptErrFlag = false;
     let attemptText = '';
     let attemptTimeout = false;
+    // Reset per-attempt structured output so a retry that rejects can't surface
+    // a previous attempt's blocks alongside this attempt's error text.
+    structuredBlocks = undefined;
     const timeoutAbortCtrl = new AbortController();
 
     try {
@@ -378,16 +381,18 @@ export async function executeOneToolCall(
         logger.debug(
           `[execute-tool-call] retry #${retriesUsed}/${MAX_RETRY_ATTEMPTS} for ${call.name}(${call.id}) after ${delayMs}ms: ${rawMsg.slice(0, 120)}`,
         );
-        // Abortable backoff — abort immediately cancels the wait
+        // Abortable backoff — abort immediately cancels the wait. The abort
+        // listener must be removed on the normal-completion path too, otherwise
+        // it leaks on the long-lived run signal across every retry.
         let backoffTimer: ReturnType<typeof setTimeout> | undefined;
-        await Promise.race([
-          new Promise<void>((resolve) => { backoffTimer = setTimeout(resolve, delayMs); }),
-          abortable(
-            new Promise<never>(() => {}),
-            deps.abortSignal,
-          ).catch(() => {}),
-        ]);
+        let onBackoffAbort: (() => void) | undefined;
+        await new Promise<void>((resolve) => {
+          backoffTimer = setTimeout(resolve, delayMs);
+          onBackoffAbort = () => resolve();
+          deps.abortSignal.addEventListener('abort', onBackoffAbort, { once: true });
+        });
         if (backoffTimer) clearTimeout(backoffTimer);
+        if (onBackoffAbort) deps.abortSignal.removeEventListener('abort', onBackoffAbort);
         // Re-check abort after backoff; if aborted, break with cancelled path
         if (deps.abortSignal.aborted) {
           aborted = { by: 'user' };

@@ -101,6 +101,7 @@
     "src",
     "zero-config-default.json",
     "README.md",
+    "README.zh-CN.md",
     "USAGE.md",
     "API.md",
     "CONTRIBUTING.md",
